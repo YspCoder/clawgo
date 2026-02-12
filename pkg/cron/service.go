@@ -208,6 +208,15 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 		return &next
 	}
 
+	if schedule.Kind == "cron" && schedule.Expr != "" {
+		parser := NewSimpleCronParser(schedule.Expr)
+		next := parser.Next(time.UnixMilli(nowMS))
+		if !next.IsZero() {
+			ms := next.UnixMilli()
+			return &ms
+		}
+	}
+
 	return nil
 }
 
