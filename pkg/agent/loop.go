@@ -84,6 +84,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	// Register parallel execution tool (leveraging Go's concurrency)
 	toolsRegistry.Register(tools.NewParallelTool(toolsRegistry))
 
+	// Register browser tool (integrated Chromium support)
+	toolsRegistry.Register(tools.NewBrowserTool())
+
 	// Register camera tool
 	toolsRegistry.Register(tools.NewCameraTool(workspace))
 	// Register system info tool
