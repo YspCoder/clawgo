@@ -171,7 +171,7 @@ func printHelp() {
 	fmt.Println("  gateway     Start clawgo gateway")
 	fmt.Println("  status      Show clawgo status")
 	fmt.Println("  cron        Manage scheduled tasks")
-	fmt.Println("  login       Configure model provider credentials")
+	fmt.Println("  login       Configure CLIProxyAPI upstream")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  version     Show version information")
 }
@@ -205,8 +205,8 @@ func onboard() {
 
 	fmt.Printf("%s clawgo is ready!\n", logo)
 	fmt.Println("\nNext steps:")
-	fmt.Println("  1. Add your API key to", configPath)
-	fmt.Println("     Get one at: https://openrouter.ai/keys")
+	fmt.Println("  1. Configure CLIProxyAPI at", configPath)
+	fmt.Println("     Ensure CLIProxyAPI is running: https://github.com/router-for-me/CLIProxyAPI")
 	fmt.Println("  2. Chat: clawgo agent -m \"Hello!\"")
 }
 
@@ -681,32 +681,13 @@ func statusCmd() {
 
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("Model: %s\n", cfg.Agents.Defaults.Model)
-
-		hasOpenRouter := cfg.Providers.OpenRouter.APIKey != ""
-		hasAnthropic := cfg.Providers.Anthropic.APIKey != ""
-		hasOpenAI := cfg.Providers.OpenAI.APIKey != ""
-		hasGemini := cfg.Providers.Gemini.APIKey != ""
-		hasZhipu := cfg.Providers.Zhipu.APIKey != ""
-		hasGroq := cfg.Providers.Groq.APIKey != ""
-		hasVLLM := cfg.Providers.VLLM.APIBase != ""
-
-		status := func(enabled bool) string {
-			if enabled {
-				return "✓"
-			}
-			return "not set"
+		fmt.Printf("CLIProxyAPI Base: %s\n", cfg.Providers.Proxy.APIBase)
+		hasKey := cfg.Providers.Proxy.APIKey != ""
+		status := "not set"
+		if hasKey {
+			status = "✓"
 		}
-		fmt.Println("OpenRouter API:", status(hasOpenRouter))
-		fmt.Println("Anthropic API:", status(hasAnthropic))
-		fmt.Println("OpenAI API:", status(hasOpenAI))
-		fmt.Println("Gemini API:", status(hasGemini))
-		fmt.Println("Zhipu API:", status(hasZhipu))
-		fmt.Println("Groq API:", status(hasGroq))
-		if hasVLLM {
-			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
-		} else {
-			fmt.Println("vLLM/Local: not set")
-		}
+		fmt.Printf("CLIProxyAPI Key: %s\n", status)
 	}
 }
 
@@ -1181,91 +1162,28 @@ func loginCmd() {
 		os.Exit(1)
 	}
 
-	providersList := []string{"OpenAI", "Anthropic", "Gemini", "OpenRouter", "Zhipu", "Groq", "VLLM"}
+	fmt.Println("Configuring CLIProxyAPI...")
+	fmt.Printf("Current Base: %s\n", cfg.Providers.Proxy.APIBase)
 
-	if len(os.Args) > 2 {
-		provider := os.Args[2]
-		found := false
-		for _, p := range providersList {
-			if strings.EqualFold(p, provider) {
-				configureProvider(cfg, p)
-				found = true
-				break
-			}
-		}
-		if !found {
-			fmt.Printf("Unknown provider: %s\n", provider)
-			fmt.Println("Available providers:", strings.Join(providersList, ", "))
-		}
-		return
+	fmt.Print("Enter CLIProxyAPI Base URL (e.g. http://localhost:8080/v1): ")
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	apiBase := strings.TrimSpace(line)
+	if apiBase != "" {
+		cfg.Providers.Proxy.APIBase = apiBase
 	}
 
-	fmt.Println("Select provider to configure:")
-	for i, p := range providersList {
-		fmt.Printf("%d. %s\n", i+1, p)
-	}
-
-	fmt.Print("\nEnter choice (number): ")
-	var choice int
-	_, err = fmt.Scanln(&choice)
-	if err != nil || choice < 1 || choice > len(providersList) {
-		fmt.Println("Invalid choice.")
-		return
-	}
-
-	selected := providersList[choice-1]
-	configureProvider(cfg, selected)
-}
-
-func configureProvider(cfg *config.Config, provider string) {
-	fmt.Printf("\nConfiguring %s...\n", provider)
-
-	fmt.Print("Enter API Key: ")
-	var apiKey string
-	fmt.Scanln(&apiKey)
-
-	var apiBase string
-	// For VLLM or OpenAI, user might want custom base
-	if provider == "VLLM" || provider == "OpenAI" || provider == "OpenRouter" {
-		fmt.Print("Enter API Base URL (optional, press Enter to skip): ")
-		reader := bufio.NewReader(os.Stdin)
-		line, _ := reader.ReadString('\n')
-		apiBase = strings.TrimSpace(line)
-	}
-
-	switch provider {
-	case "OpenAI":
-		cfg.Providers.OpenAI.APIKey = apiKey
-		if apiBase != "" {
-			cfg.Providers.OpenAI.APIBase = apiBase
-		}
-	case "Anthropic":
-		cfg.Providers.Anthropic.APIKey = apiKey
-		if apiBase != "" {
-			cfg.Providers.Anthropic.APIBase = apiBase
-		}
-	case "Gemini":
-		cfg.Providers.Gemini.APIKey = apiKey
-	case "OpenRouter":
-		cfg.Providers.OpenRouter.APIKey = apiKey
-		if apiBase != "" {
-			cfg.Providers.OpenRouter.APIBase = apiBase
-		}
-	case "Zhipu":
-		cfg.Providers.Zhipu.APIKey = apiKey
-	case "Groq":
-		cfg.Providers.Groq.APIKey = apiKey
-	case "VLLM":
-		cfg.Providers.VLLM.APIKey = apiKey
-		if apiBase != "" {
-			cfg.Providers.VLLM.APIBase = apiBase
-		}
-	}
+	fmt.Print("Enter API Key (optional): ")
+	fmt.Scanln(&cfg.Providers.Proxy.APIKey)
 
 	if err := config.SaveConfig(getConfigPath(), cfg); err != nil {
 		fmt.Printf("Error saving config: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("✓ %s configuration saved.\n", provider)
+	fmt.Println("✓ CLIProxyAPI configuration saved.")
+}
+
+func configureProvider(cfg *config.Config, provider string) {
+	// Deprecated: Migrated to CLIProxyAPI logic in loginCmd
 }

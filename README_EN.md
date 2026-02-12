@@ -7,7 +7,7 @@
 - **💰 Ultra-Low Cost**: Perfect for $10 SBCs like LicheeRV Nano or Orange Pi Zero.
 - **🔌 Plug & Play**: Single binary. No complex dependencies.
 - **🧩 Skill System**: Extend capabilities with `clawhub`, `coding-agent`, and more.
-- **🔐 Easy Auth**: Interactive `login` command for OpenAI, Anthropic, Gemini, etc.
+- **🔐 Unified Interface**: Mandatory use of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) as the upstream proxy.
 
 ## 🏁 Quick Start
 
@@ -16,14 +16,10 @@
 clawgo onboard
 ```
 
-**2. Configure Provider**
-Interactively set up your API key (OpenAI, Anthropic, Gemini, Zhipu, etc.):
+**2. Configure CLIProxyAPI**
+Ensure [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) is running.
 ```bash
 clawgo login
-# Or specify provider directly:
-# clawgo login openai
-# clawgo login anthropic
-# clawgo login gemini
 ```
 
 **3. Chat!**

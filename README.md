@@ -11,7 +11,7 @@
 - **💰 极低成本**：完美适配 LicheeRV Nano 或 Orange Pi Zero 等 $10 级别的单板机。
 - **🔌 即插即用**：单二进制文件，无复杂依赖。
 - **🧩 技能系统**：通过 `clawhub`、`coding-agent` 等技能扩展能力。
-- **🔐 便捷认证**：交互式 `login` 命令，支持 OpenAI、Anthropic、Gemini 等主流服务商。
+- **🔐 统一接口**：强制要求使用 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 作为上游。
 
 ## 🏁 快速开始
 
@@ -20,14 +20,10 @@
 clawgo onboard
 ```
 
-**2. 配置服务商**
-交互式设置您的 API Key (OpenAI, Anthropic, Gemini, Zhipu 等)：
+**2. 配置 CLIProxyAPI**
+确保您的 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 正在运行。
 ```bash
 clawgo login
-# 或者直接指定服务商：
-# clawgo login openai
-# clawgo login anthropic
-# clawgo login gemini
 ```
 
 **3. 开始聊天！**

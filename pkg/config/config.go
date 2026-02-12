@@ -89,13 +89,7 @@ type DingTalkConfig struct {
 }
 
 type ProvidersConfig struct {
-	Anthropic  ProviderConfig `json:"anthropic"`
-	OpenAI     ProviderConfig `json:"openai"`
-	OpenRouter ProviderConfig `json:"openrouter"`
-	Groq       ProviderConfig `json:"groq"`
-	Zhipu      ProviderConfig `json:"zhipu"`
-	VLLM       ProviderConfig `json:"vllm"`
-	Gemini     ProviderConfig `json:"gemini"`
+	Proxy ProviderConfig `json:"proxy"`
 }
 
 type ProviderConfig struct {
@@ -203,13 +197,9 @@ func DefaultConfig() *Config {
 			},
 		},
 		Providers: ProvidersConfig{
-			Anthropic:  ProviderConfig{},
-			OpenAI:     ProviderConfig{},
-			OpenRouter: ProviderConfig{},
-			Groq:       ProviderConfig{},
-			Zhipu:      ProviderConfig{},
-			VLLM:       ProviderConfig{},
-			Gemini:     ProviderConfig{},
+			Proxy: ProviderConfig{
+				APIBase: "http://localhost:8080/v1",
+			},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
@@ -274,46 +264,13 @@ func (c *Config) WorkspacePath() string {
 func (c *Config) GetAPIKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.Providers.OpenRouter.APIKey != "" {
-		return c.Providers.OpenRouter.APIKey
-	}
-	if c.Providers.Anthropic.APIKey != "" {
-		return c.Providers.Anthropic.APIKey
-	}
-	if c.Providers.OpenAI.APIKey != "" {
-		return c.Providers.OpenAI.APIKey
-	}
-	if c.Providers.Gemini.APIKey != "" {
-		return c.Providers.Gemini.APIKey
-	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIKey
-	}
-	if c.Providers.Groq.APIKey != "" {
-		return c.Providers.Groq.APIKey
-	}
-	if c.Providers.VLLM.APIKey != "" {
-		return c.Providers.VLLM.APIKey
-	}
-	return ""
+	return c.Providers.Proxy.APIKey
 }
 
 func (c *Config) GetAPIBase() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.Providers.OpenRouter.APIKey != "" {
-		if c.Providers.OpenRouter.APIBase != "" {
-			return c.Providers.OpenRouter.APIBase
-		}
-		return "https://openrouter.ai/api/v1"
-	}
-	if c.Providers.Zhipu.APIKey != "" {
-		return c.Providers.Zhipu.APIBase
-	}
-	if c.Providers.VLLM.APIKey != "" && c.Providers.VLLM.APIBase != "" {
-		return c.Providers.VLLM.APIBase
-	}
-	return ""
+	return c.Providers.Proxy.APIBase
 }
 
 func expandHome(path string) string {
