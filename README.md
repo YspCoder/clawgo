@@ -1,17 +1,15 @@
-# ClawGo: 极致轻量的 Go 语言 AI 助手
+# ClawGo: 高性能 Go 语言 AI 助手 (Linux Server 专用)
 
 [English](./README_EN.md)
 
-**ClawGo** 是一个用 Go 编写的小巧而强大的 AI 助手。受 [nanobot](https://github.com/HKUDS/nanobot) 启发，它从底层进行了重构，可以在几乎任何设备上运行——从高端服务器到 $10 的 RISC-V 开发板。
+**ClawGo** 是一个为 Linux 服务器量身定制的高性能 AI 助手。通过 Go 语言的并发优势与二进制分发特性，它能以极低的资源占用提供完整的 Agent 能力。
 
-## 🚀 为什么选择 ClawGo?
+## 🚀 核心优势
 
-- **🪶 极小占用**：内存占用 <10MB。在 Node.js 和 Python 无法运行的地方自如穿梭。
-- **⚡ 瞬时启动**：启动时间 <1 秒。无需沉重的运行时预热。
-- **💰 极低成本**：完美适配 LicheeRV Nano 或 Orange Pi Zero 等 $10 级别的单板机。
-- **🔌 即插即用**：单二进制文件，无复杂依赖。
-- **🧩 技能系统**：通过 `clawhub`、`coding-agent` 等技能扩展能力。
-- **🔐 统一接口**：强制要求使用 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 作为上游。
+- **⚡ 纯净运行**：专为 Linux 服务器环境优化，不依赖 Node.js 或 Python。
+- **🏗️ 生产级稳定**：单二进制文件部署，完美集成到 systemd 等服务管理工具。
+- **🔌 强制上游代理**：通过 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 统一管理模型配额与鉴权。
+- **🧩 强力技能扩展**：内置 `coding-agent`、`github`、`context7` 等生产力工具。
 
 ## 🏁 快速开始
 
@@ -21,71 +19,36 @@ clawgo onboard
 ```
 
 **2. 配置 CLIProxyAPI**
-确保您的 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 正在运行。
+ClawGo 强制要求使用 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 作为模型接入层。
 ```bash
 clawgo login
 ```
 
-**3. 开始聊天！**
+**3. 开始运行**
 ```bash
-clawgo agent -m "你好！你是谁？"
+# 交互模式
+clawgo agent
+
+# 后台网关模式 (支持 Telegram/Discord 等)
+clawgo gateway
 ```
 
-## 📦 技能系统 (Skills System)
+## 📦 迁移与技能
 
-ClawGo 不仅仅是一个聊天机器人，它是一个可以使用工具的智能体。
+ClawGo 现在集成了原 OpenClaw 的所有核心扩展能力：
+- **coding-agent**: 结合 Codex/Claude Code 实现自主编程。
+- **github**: 深度集成 `gh` CLI，管理 Issue、PR 及 CI 状态。
+- **context7**: 针对代码库与文档的智能上下文搜索。
 
-**管理技能：**
-```bash
-# 列出已安装的技能
-clawgo skills list
-
-# 列出内置技能
-clawgo skills list-builtin
-
-# 安装特定技能 (例如 weather)
-clawgo skills install-builtin
-```
-
-**特色技能：**
-- **coding-agent**: 运行 Codex/Claude 执行自主编程任务。
-- **healthcheck**: 安全审计与主机加固。
-- **video-frames**: 使用 ffmpeg 从视频中提取帧。
-- **clawhub**: 管理社区提供的技能。
-
-## 💬 连接频道 (Channels)
-
-运行 `clawgo gateway` 让 ClawGo 在你最喜欢的平台上 24/7 在线。
-
-| 频道 | 状态 | 配置方式 |
-|---------|--------|-------|
-| **Telegram** | ✅ 就绪 | Bot Token |
-| **Discord** | ✅ 就绪 | Bot Token + Intents |
-| **QQ** | ✅ 就绪 | AppID + AppSecret |
-| **DingTalk** | ✅ 就绪 | Client ID + Secret |
-
-*在 `~/.clawgo/config.json` 中配置频道。*
-
-## 🛠️ 安装
-
+## 🛠️ 安装 (仅限 Linux)
 
 ### 从源码编译
 ```bash
 cd clawgo
-make deps
 make build
 make install
 ```
 
-## 📊 对比
-
-| 特性 | OpenClaw (Node) | NanoBot (Python) | **ClawGo (Go)** |
-| :--- | :---: | :---: | :---: |
-| **内存占用** | >1GB | >100MB | **< 10MB** |
-| **启动时间** | 较慢 (>5s) | 中等 (>2s) | **瞬时 (<0.1s)** |
-| **二进制大小** | 无 (源码) | 无 (源码) | **单文件 (~15MB)** |
-| **架构支持** | x86/ARM | x86/ARM | **x86/ARM/RISC-V** |
-
 ## 📜 许可证
 
-MIT 许可证。永远免费开源。 🦐
+MIT 许可证。 🦐
