@@ -44,7 +44,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(&tools.ReadFileTool{})
 	toolsRegistry.Register(&tools.WriteFileTool{})
 	toolsRegistry.Register(&tools.ListDirTool{})
-	toolsRegistry.Register(tools.NewExecTool(workspace))
+	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace))
 
 	if cs != nil {
 		toolsRegistry.Register(tools.NewRemindTool(cs))

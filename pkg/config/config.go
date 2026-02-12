@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -112,8 +113,30 @@ type WebToolsConfig struct {
 	Search WebSearchConfig `json:"search"`
 }
 
+type ShellConfig struct {
+	Enabled      bool          `json:"enabled" env:"CLAWGO_TOOLS_SHELL_ENABLED"`
+	WorkingDir   string        `json:"working_dir" env:"CLAWGO_TOOLS_SHELL_WORKING_DIR"`
+	Timeout      time.Duration `json:"timeout" env:"CLAWGO_TOOLS_SHELL_TIMEOUT"`
+	DeniedCmds   []string      `json:"denied_cmds" env:"CLAWGO_TOOLS_SHELL_DENIED_CMDS"`
+	AllowedCmds  []string      `json:"allowed_cmds" env:"CLAWGO_TOOLS_SHELL_ALLOWED_CMDS"`
+	Sandbox      SandboxConfig `json:"sandbox"`
+	RestrictPath bool          `json:"restrict_path" env:"CLAWGO_TOOLS_SHELL_RESTRICT_PATH"`
+}
+
+type SandboxConfig struct {
+	Enabled bool   `json:"enabled" env:"CLAWGO_TOOLS_SHELL_SANDBOX_ENABLED"`
+	Image   string `json:"image" env:"CLAWGO_TOOLS_SHELL_SANDBOX_IMAGE"`
+}
+
+type FilesystemConfig struct {
+	AllowedPaths []string `json:"allowed_paths" env:"CLAWGO_TOOLS_FILESYSTEM_ALLOWED_PATHS"`
+	DeniedPaths  []string `json:"denied_paths" env:"CLAWGO_TOOLS_FILESYSTEM_DENIED_PATHS"`
+}
+
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web        WebToolsConfig   `json:"web"`
+	Shell      ShellConfig      `json:"shell"`
+	Filesystem FilesystemConfig `json:"filesystem"`
 }
 
 var (
@@ -211,6 +234,21 @@ func DefaultConfig() *Config {
 					APIKey:     "",
 					MaxResults: 5,
 				},
+			},
+			Shell: ShellConfig{
+				Enabled: true,
+				Timeout: 60 * time.Second,
+				DeniedCmds: []string{
+					"rm -rf /", "dd if=", "mkfs", "shutdown", "reboot",
+				},
+				Sandbox: SandboxConfig{
+					Enabled: false,
+					Image:   "golang:alpine",
+				},
+			},
+			Filesystem: FilesystemConfig{
+				AllowedPaths: []string{},
+				DeniedPaths:  []string{"/etc/shadow", "/etc/passwd"},
 			},
 		},
 	}

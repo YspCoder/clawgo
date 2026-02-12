@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"clawgo/pkg/config"
 )
 
 type ExecTool struct {
@@ -18,26 +20,23 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
+	sandboxEnabled      bool
+	sandboxImage        string
 }
 
-func NewExecTool(workingDir string) *ExecTool {
-	denyPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
-		regexp.MustCompile(`\bdel\s+/[fq]\b`),
-		regexp.MustCompile(`\brmdir\s+/s\b`),
-		regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
-		regexp.MustCompile(`\bdd\s+if=`),
-		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`),            // Block writes to disk devices (but allow /dev/null)
-		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
+func NewExecTool(cfg config.ShellConfig, workspace string) *ExecTool {
+	denyPatterns := make([]*regexp.Regexp, 0)
+	for _, p := range cfg.DeniedCmds {
+		denyPatterns = append(denyPatterns, regexp.MustCompile(`\b`+regexp.QuoteMeta(p)+`\b`))
 	}
 
 	return &ExecTool{
-		workingDir:          workingDir,
-		timeout:             60 * time.Second,
+		workingDir:          workspace,
+		timeout:             cfg.Timeout,
 		denyPatterns:        denyPatterns,
-		allowPatterns:       nil,
-		restrictToWorkspace: false,
+		restrictToWorkspace: cfg.RestrictPath,
+		sandboxEnabled:      cfg.Sandbox.Enabled,
+		sandboxImage:        cfg.Sandbox.Image,
 	}
 }
 
@@ -88,6 +87,10 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 		return fmt.Sprintf("Error: %s", guardError), nil
 	}
 
+	if t.sandboxEnabled {
+		return t.executeInSandbox(ctx, command, cwd)
+	}
+
 	cmdCtx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
 
@@ -120,6 +123,38 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 	maxLen := 10000
 	if len(output) > maxLen {
 		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
+	}
+
+	return output, nil
+}
+
+func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd string) (string, error) {
+	// 实现 Docker 沙箱执行逻辑
+	absCwd, _ := filepath.Abs(cwd)
+	dockerArgs := []string{
+		"run", "--rm",
+		"-v", fmt.Sprintf("%s:/app", absCwd),
+		"-w", "/app",
+		t.sandboxImage,
+		"sh", "-c", command,
+	}
+
+	cmdCtx, cancel := context.WithTimeout(ctx, t.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, "docker", dockerArgs...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	output := stdout.String()
+	if stderr.Len() > 0 {
+		output += "\nSTDERR:\n" + stderr.String()
+	}
+
+	if err != nil {
+		output += fmt.Sprintf("\nSandbox Exit code: %v", err)
 	}
 
 	return output, nil
