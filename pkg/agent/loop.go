@@ -52,7 +52,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	braveAPIKey := cfg.Tools.Web.Search.APIKey
 	toolsRegistry.Register(tools.NewWebSearchTool(braveAPIKey, cfg.Tools.Web.Search.MaxResults))
-	toolsRegistry.Register(tools.NewWebFetchTool(50000))
+	webFetchTool := tools.NewWebFetchTool(50000)
+	toolsRegistry.Register(webFetchTool)
+	toolsRegistry.Register(tools.NewParallelFetchTool(webFetchTool))
 
 	// Register message tool
 	messageTool := tools.NewMessageTool()
