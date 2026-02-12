@@ -271,4 +271,4 @@ command example
 3. Timestamped prompt history
 4. Session logs if using Codex/agent
 
-**Example:** https://github.com/steipete/bird/pull/222
+**Example:** https://github.com/steipete/bird/pull/22
