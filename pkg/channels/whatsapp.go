@@ -10,8 +10,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
+	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
 )
 
 type WhatsAppChannel struct {

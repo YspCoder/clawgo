@@ -15,7 +15,7 @@ import (
 	"net/http"
 	"strings"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
+	"clawgo/pkg/config"
 )
 
 type HTTPProvider struct {

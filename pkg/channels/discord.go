@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
+	"clawgo/pkg/logger"
+	"clawgo/pkg/voice"
 	"github.com/bwmarrin/discordgo"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/logger"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/voice"
 )
 
 type DiscordChannel struct {

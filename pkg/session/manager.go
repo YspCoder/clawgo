@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/providers"
+	"clawgo/pkg/providers"
 )
 
 type Session struct {

@@ -72,12 +72,9 @@ clawgo skills install-builtin
 
 ## 🛠️ 安装
 
-### 预编译二进制文件
-从 [发布页面](https://gitea.kkkk.dev/DBT/clawgo/releases) 下载适合您平台的固件 (Linux/macOS/Windows, x86/ARM/RISC-V)。
 
 ### 从源码编译
 ```bash
-git clone https://gitea.kkkk.dev/DBT/clawgo.git
 cd clawgo
 make deps
 make build
@@ -92,12 +89,6 @@ make install
 | **启动时间** | 较慢 (>5s) | 中等 (>2s) | **瞬时 (<0.1s)** |
 | **二进制大小** | 无 (源码) | 无 (源码) | **单文件 (~15MB)** |
 | **架构支持** | x86/ARM | x86/ARM | **x86/ARM/RISC-V** |
-
-## 🤝 社区
-
-加入讨论！
-- **Discord**: [加入服务器](https://discord.gg/V4sAZ9XWpN)
-- **Issues**: [GitHub Issues](https://gitea.kkkk.dev/DBT/clawgo/issues)
 
 ## 📜 许可证
 

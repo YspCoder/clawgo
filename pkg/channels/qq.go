@@ -13,9 +13,9 @@ import (
 	"github.com/tencent-connect/botgo/token"
 	"golang.org/x/oauth2"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/logger"
+	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
+	"clawgo/pkg/logger"
 )
 
 type QQChannel struct {

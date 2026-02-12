@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
+	"clawgo/pkg/bus"
 )
 
 type Channel interface {

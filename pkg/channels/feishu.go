@@ -12,9 +12,9 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/logger"
+	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
+	"clawgo/pkg/logger"
 )
 
 type FeishuChannel struct {

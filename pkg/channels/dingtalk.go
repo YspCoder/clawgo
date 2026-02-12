@@ -9,22 +9,22 @@ import (
 	"log"
 	"sync"
 
+	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
 )
 
 // DingTalkChannel implements the Channel interface for DingTalk (钉钉)
 // It uses WebSocket for receiving messages via stream mode and API for sending
 type DingTalkChannel struct {
 	*BaseChannel
-	config         config.DingTalkConfig
-	clientID       string
-	clientSecret   string
-	streamClient   *client.StreamClient
-	ctx            context.Context
-	cancel         context.CancelFunc
+	config       config.DingTalkConfig
+	clientID     string
+	clientSecret string
+	streamClient *client.StreamClient
+	ctx          context.Context
+	cancel       context.CancelFunc
 	// Map to store session webhooks for each chat
 	sessionWebhooks sync.Map // chatID -> sessionWebhook
 }

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/providers"
+	"clawgo/pkg/bus"
+	"clawgo/pkg/providers"
 )
 
 type SubagentTask struct {

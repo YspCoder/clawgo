@@ -16,9 +16,9 @@ import (
 	"github.com/mymmrac/telego"
 	"github.com/mymmrac/telego/telegoutil"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/voice"
+	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
+	"clawgo/pkg/voice"
 )
 
 type TelegramChannel struct {
@@ -125,14 +125,14 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	// Try to edit placeholder
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
 		c.placeholders.Delete(msg.ChatID)
-		
+
 		_, err := c.bot.EditMessageText(ctx, &telego.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: pID.(int),
 			Text:      htmlContent,
 			ParseMode: telego.ModeHTML,
 		})
-		
+
 		if err == nil {
 			return nil
 		}

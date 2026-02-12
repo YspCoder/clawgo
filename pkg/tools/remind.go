@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/cron"
+	"clawgo/pkg/cron"
 )
 
 type RemindTool struct {

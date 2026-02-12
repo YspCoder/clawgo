@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/logger"
+	"clawgo/pkg/logger"
 )
 
 type GroqTranscriber struct {

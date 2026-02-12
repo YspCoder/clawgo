@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/logger"
+	"clawgo/pkg/logger"
 )
 
 type ToolRegistry struct {

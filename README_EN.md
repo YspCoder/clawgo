@@ -68,12 +68,8 @@ Run `clawgo gateway` to turn ClawGo into a 24/7 bot on your favorite platform.
 
 ## 🛠️ Installation
 
-### Pre-built Binaries
-Download the latest release for your platform (Linux/macOS/Windows, x86/ARM/RISC-V) from the [Releases Page](https://gitea.kkkk.dev/DBT/clawgo/releases).
-
 ### Build from Source
 ```bash
-git clone https://gitea.kkkk.dev/DBT/clawgo.git
 cd clawgo
 make deps
 make build
@@ -88,12 +84,6 @@ make install
 | **Startup Time** | Slow (>5s) | Medium (>2s) | **Instant (<0.1s)** |
 | **Binary Size** | N/A (Source) | N/A (Source) | **Single File (~15MB)** |
 | **Architecture** | x86/ARM | x86/ARM | **x86/ARM/RISC-V** |
-
-## 🤝 Community
-
-Join the discussion!
-- **Discord**: [Join Server](https://discord.gg/V4sAZ9XWpN)
-- **Issues**: [GitHub Issues](https://gitea.kkkk.dev/DBT/clawgo/issues)
 
 ## 📜 License
 

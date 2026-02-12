@@ -15,13 +15,13 @@ import (
 	"regexp"
 	"strings"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/bus"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/cron"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/logger"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/providers"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/session"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/tools"
+	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
+	"clawgo/pkg/cron"
+	"clawgo/pkg/logger"
+	"clawgo/pkg/providers"
+	"clawgo/pkg/session"
+	"clawgo/pkg/tools"
 )
 
 type AgentLoop struct {
@@ -45,7 +45,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(&tools.WriteFileTool{})
 	toolsRegistry.Register(&tools.ListDirTool{})
 	toolsRegistry.Register(tools.NewExecTool(workspace))
-	
+
 	if cs != nil {
 		toolsRegistry.Register(tools.NewRemindTool(cs))
 	}
@@ -214,12 +214,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
 			map[string]interface{}{
-				"iteration":        iteration,
-				"model":            al.model,
-				"messages_count":   len(messages),
-				"tools_count":      len(providerToolDefs),
-				"max_tokens":       8192,
-				"temperature":      0.7,
+				"iteration":         iteration,
+				"model":             al.model,
+				"messages_count":    len(messages),
+				"tools_count":       len(providerToolDefs),
+				"max_tokens":        8192,
+				"temperature":       0.7,
 				"system_prompt_len": len(messages[0].Content),
 			})
 
@@ -290,8 +290,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			argsPreview := truncate(string(argsJSON), 200)
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
 				map[string]interface{}{
-					"tool":       tc.Name,
-					"iteration":  iteration,
+					"tool":      tc.Name,
+					"iteration": iteration,
 				})
 
 			result, err := al.tools.Execute(ctx, tc.Name, tc.Arguments)
@@ -418,12 +418,12 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
 			map[string]interface{}{
-				"iteration":        iteration,
-				"model":            al.model,
-				"messages_count":   len(messages),
-				"tools_count":      len(providerToolDefs),
-				"max_tokens":       8192,
-				"temperature":      0.7,
+				"iteration":         iteration,
+				"model":             al.model,
+				"messages_count":    len(messages),
+				"tools_count":       len(providerToolDefs),
+				"max_tokens":        8192,
+				"temperature":       0.7,
 				"system_prompt_len": len(messages[0].Content),
 			})
 

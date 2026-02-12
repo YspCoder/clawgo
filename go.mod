@@ -1,4 +1,4 @@
-module gitea.kkkk.dev/DBT/clawgo
+module clawgo
 
 go 1.25.5
 

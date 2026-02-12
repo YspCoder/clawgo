@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/logger"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/providers"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/skills"
+	"clawgo/pkg/logger"
+	"clawgo/pkg/providers"
+	"clawgo/pkg/skills"
 )
 
 type ContextBuilder struct {
@@ -159,8 +159,8 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	// Log system prompt summary for debugging (debug mode only)
 	logger.DebugCF("agent", "System prompt built",
 		map[string]interface{}{
-			"total_chars": len(systemPrompt),
-			"total_lines": strings.Count(systemPrompt, "\n") + 1,
+			"total_chars":   len(systemPrompt),
+			"total_lines":   strings.Count(systemPrompt, "\n") + 1,
 			"section_count": strings.Count(systemPrompt, "\n\n---\n\n") + 1,
 		})
 

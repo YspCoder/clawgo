@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"gitea.kkkk.dev/DBT/clawgo/pkg/config"
-	"gitea.kkkk.dev/DBT/clawgo/pkg/logger"
+	"clawgo/pkg/config"
+	"clawgo/pkg/logger"
 )
 
 type Server struct {
@@ -35,7 +35,7 @@ func (s *Server) Start() error {
 	logger.InfoCF("server", "Starting HTTP server", map[string]interface{}{
 		"addr": addr,
 	})
-	
+
 	// Check/log indicating it's ready for reverse proxying (per requirement)
 	logger.InfoC("server", "Server ready for reverse proxying")
 
