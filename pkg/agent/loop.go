@@ -86,7 +86,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
 
-	return &AgentLoop{
+	loop := &AgentLoop{
 		bus:            msgBus,
 		provider:       provider,
 		workspace:      workspace,
@@ -97,6 +97,14 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		tools:          toolsRegistry,
 		running:        false,
 	}
+
+	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
+	subagentManager.SetRunFunc(func(ctx context.Context, task, channel, chatID string) (string, error) {
+		sessionKey := fmt.Sprintf("subagent:%d", time.Now().UnixNano())
+		return loop.ProcessDirect(ctx, task, sessionKey)
+	})
+
+	return loop
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
