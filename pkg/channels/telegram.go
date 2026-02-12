@@ -58,7 +58,7 @@ func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 func (c *TelegramChannel) Start(ctx context.Context) error {
 	log.Printf("Starting Telegram bot (polling mode)...")
 
-	updates, err := c.bot.UpdatesViaLongPolling(nil)
+	updates, err := c.bot.UpdatesViaLongPolling(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to start updates polling: %w", err)
 	}
@@ -96,9 +96,9 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	log.Println("Stopping Telegram bot...")
 	c.setRunning(false)
 
-	if c.updates != nil {
-		c.bot.StopLongPolling()
-	}
+	// In telego v1.x, the long polling is stopped by canceling the context 
+	// passed to UpdatesViaLongPolling. We don't need a separate Stop call 
+	// if we use the parent context correctly.
 
 	return nil
 }
