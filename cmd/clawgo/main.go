@@ -1,8 +1,8 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// ClawGo - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 ClawGo contributors
 
 package main
 
@@ -122,7 +122,7 @@ func main() {
 		// 获取全局配置目录和内置 skills 目录
 		globalDir := filepath.Dir(getConfigPath())
 		globalSkillsDir := filepath.Join(globalDir, "skills")
-		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+		builtinSkillsDir := filepath.Join(globalDir, "clawgo", "skills")
 		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
 
 		switch subcommand {
@@ -132,7 +132,7 @@ func main() {
 			skillsInstallCmd(installer)
 		case "remove", "uninstall":
 			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills remove <skill-name>")
+				fmt.Println("Usage: clawgo skills remove <skill-name>")
 				return
 			}
 			skillsRemoveCmd(installer, os.Args[3])
@@ -144,7 +144,7 @@ func main() {
 			skillsSearchCmd(installer)
 		case "show":
 			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills show <skill-name>")
+				fmt.Println("Usage: clawgo skills show <skill-name>")
 				return
 			}
 			skillsShowCmd(skillsLoader, os.Args[3])
@@ -153,7 +153,7 @@ func main() {
 			skillsHelp()
 		}
 	case "version", "--version", "-v":
-		fmt.Printf("%s picoclaw v%s\n", logo, version)
+		fmt.Printf("%s clawgo v%s\n", logo, version)
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printHelp()
@@ -162,14 +162,14 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Printf("%s picoclaw - Personal AI Assistant v%s\n\n", logo, version)
-	fmt.Println("Usage: picoclaw <command>")
+	fmt.Printf("%s clawgo - Personal AI Assistant v%s\n\n", logo, version)
+	fmt.Println("Usage: clawgo <command>")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
+	fmt.Println("  onboard     Initialize clawgo configuration and workspace")
 	fmt.Println("  agent       Interact with the agent directly")
-	fmt.Println("  gateway     Start picoclaw gateway")
-	fmt.Println("  status      Show picoclaw status")
+	fmt.Println("  gateway     Start clawgo gateway")
+	fmt.Println("  status      Show clawgo status")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  login       Configure model provider credentials")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
@@ -203,11 +203,11 @@ func onboard() {
 
 	createWorkspaceTemplates(workspace)
 
-	fmt.Printf("%s picoclaw is ready!\n", logo)
+	fmt.Printf("%s clawgo is ready!\n", logo)
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Add your API key to", configPath)
 	fmt.Println("     Get one at: https://openrouter.ai/keys")
-	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+	fmt.Println("  2. Chat: clawgo agent -m \"Hello!\"")
 }
 
 func createWorkspaceTemplates(workspace string) {
@@ -227,7 +227,7 @@ You are a helpful AI assistant. Be concise, accurate, and friendly.
 `,
 		"SOUL.md": `# Soul
 
-I am picoclaw, a lightweight AI assistant powered by AI.
+I am clawgo, a lightweight AI assistant powered by AI.
 
 ## Personality
 
@@ -268,7 +268,7 @@ Information about user goes here.
 		"IDENTITY.md": `# Identity
 
 ## Name
-PicoClaw 🦞
+ClawGo 🦞
 
 ## Description
 Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
@@ -311,16 +311,16 @@ Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
 MIT License - Free and open source
 
 ## Repository
-https://github.com/sipeed/picoclaw
+https://github.com/sipeed/clawgo
 
 ## Contact
-Issues: https://github.com/sipeed/picoclaw/issues
-Discussions: https://github.com/sipeed/picoclaw/discussions
+Issues: https://github.com/sipeed/clawgo/issues
+Discussions: https://github.com/sipeed/clawgo/discussions
 
 ---
 
 "Every bit helps, every bit matters."
-- Picoclaw
+- Clawgo
 `,
 	}
 
@@ -448,7 +448,7 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:          prompt,
-		HistoryFile:     filepath.Join(os.TempDir(), ".picoclaw_history"),
+		HistoryFile:     filepath.Join(os.TempDir(), ".clawgo_history"),
 		HistoryLimit:    100,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
@@ -664,7 +664,7 @@ func statusCmd() {
 
 	configPath := getConfigPath()
 
-	fmt.Printf("%s picoclaw Status\n\n", logo)
+	fmt.Printf("%s clawgo Status\n\n", logo)
 
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Println("Config:", configPath, "✓")
@@ -736,7 +736,7 @@ func cronCmd() {
 		cronAddCmd(cronStorePath)
 	case "remove":
 		if len(os.Args) < 4 {
-			fmt.Println("Usage: picoclaw cron remove <job_id>")
+			fmt.Println("Usage: clawgo cron remove <job_id>")
 			return
 		}
 		cronRemoveCmd(cronStorePath, os.Args[3])
@@ -906,7 +906,7 @@ func cronRemoveCmd(storePath, jobID string) {
 
 func cronEnableCmd(storePath string, disable bool) {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw cron enable/disable <job_id>")
+		fmt.Println("Usage: clawgo cron enable/disable <job_id>")
 		return
 	}
 
@@ -945,7 +945,7 @@ func skillsCmd() {
 	// 获取全局配置目录和内置 skills 目录
 	globalDir := filepath.Dir(getConfigPath())
 	globalSkillsDir := filepath.Join(globalDir, "skills")
-	builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+	builtinSkillsDir := filepath.Join(globalDir, "clawgo", "skills")
 	skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
 
 	switch subcommand {
@@ -955,7 +955,7 @@ func skillsCmd() {
 		skillsInstallCmd(installer)
 	case "remove", "uninstall":
 		if len(os.Args) < 4 {
-			fmt.Println("Usage: picoclaw skills remove <skill-name>")
+			fmt.Println("Usage: clawgo skills remove <skill-name>")
 			return
 		}
 		skillsRemoveCmd(installer, os.Args[3])
@@ -963,7 +963,7 @@ func skillsCmd() {
 		skillsSearchCmd(installer)
 	case "show":
 		if len(os.Args) < 4 {
-			fmt.Println("Usage: picoclaw skills show <skill-name>")
+			fmt.Println("Usage: clawgo skills show <skill-name>")
 			return
 		}
 		skillsShowCmd(skillsLoader, os.Args[3])
@@ -984,11 +984,11 @@ func skillsHelp() {
 	fmt.Println("  show <name>             Show skill details")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  picoclaw skills list")
-	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills/weather")
-	fmt.Println("  picoclaw skills install-builtin")
-	fmt.Println("  picoclaw skills list-builtin")
-	fmt.Println("  picoclaw skills remove weather")
+	fmt.Println("  clawgo skills list")
+	fmt.Println("  clawgo skills install sipeed/clawgo-skills/weather")
+	fmt.Println("  clawgo skills install-builtin")
+	fmt.Println("  clawgo skills list-builtin")
+	fmt.Println("  clawgo skills remove weather")
 }
 
 func skillsListCmd(loader *skills.SkillsLoader) {
@@ -1011,8 +1011,8 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 
 func skillsInstallCmd(installer *skills.SkillInstaller) {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw skills install <github-repo>")
-		fmt.Println("Example: picoclaw skills install sipeed/picoclaw-skills/weather")
+		fmt.Println("Usage: clawgo skills install <github-repo>")
+		fmt.Println("Example: clawgo skills install sipeed/clawgo-skills/weather")
 		return
 	}
 
@@ -1042,7 +1042,7 @@ func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
 }
 
 func skillsInstallBuiltinCmd(workspace string) {
-	builtinSkillsDir := "./picoclaw/skills"
+	builtinSkillsDir := "./clawgo/skills"
 	workspaceSkillsDir := filepath.Join(workspace, "skills")
 
 	fmt.Printf("Copying builtin skills to workspace...\n")
@@ -1083,7 +1083,7 @@ func skillsListBuiltinCmd() {
 		fmt.Printf("Error loading config: %v\n", err)
 		return
 	}
-	builtinSkillsDir := filepath.Join(filepath.Dir(cfg.WorkspacePath()), "picoclaw", "skills")
+	builtinSkillsDir := filepath.Join(filepath.Dir(cfg.WorkspacePath()), "clawgo", "skills")
 
 	fmt.Println("\nAvailable Builtin Skills:")
 	fmt.Println("-----------------------")
