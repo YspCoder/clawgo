@@ -227,12 +227,15 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				continue
 			}
 
-			if err := channel.Send(ctx, msg); err != nil {
-				logger.ErrorCF("channels", "Error sending message to channel", map[string]interface{}{
-					"channel": msg.Channel,
-					"error":   err.Error(),
-				})
-			}
+			// 使用 goroutine 实现并发消息分发，避免单个通道延迟阻塞全局 dispatcher
+			go func(c Channel, m bus.OutboundMessage) {
+				if err := c.Send(ctx, m); err != nil {
+					logger.ErrorCF("channels", "Error sending message to channel", map[string]interface{}{
+						"channel": m.Channel,
+						"error":   err.Error(),
+					})
+				}
+			}(channel, msg)
 		}
 	}
 }
