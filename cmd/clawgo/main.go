@@ -1220,15 +1220,6 @@ func loginCmd() {
 func configureProvider(cfg *config.Config, provider string) {
 	fmt.Printf("\nConfiguring %s...\n", provider)
 
-	switch provider {
-	case "Gemini":
-		fmt.Print("Enter Gemini API Key: ")
-		var apiKey string
-		fmt.Scanln(&apiKey)
-		cfg.Providers.Gemini.APIKey = apiKey
-		return
-	}
-
 	fmt.Print("Enter API Key: ")
 	var apiKey string
 	fmt.Scanln(&apiKey)
@@ -1244,16 +1235,6 @@ func configureProvider(cfg *config.Config, provider string) {
 
 	switch provider {
 	case "OpenAI":
-		fmt.Println("Do you want to use codex-cli authentication? (y/n): ")
-		var useCLI string
-		fmt.Scanln(&useCLI)
-		if strings.ToLower(useCLI) == "y" {
-			if err := exec.Command("codex", "login").Run(); err != nil {
-				fmt.Printf("Error running codex login: %v\n", err)
-			}
-			return // Config handled by codex-cli
-		}
-
 		cfg.Providers.OpenAI.APIKey = apiKey
 		if apiBase != "" {
 			cfg.Providers.OpenAI.APIBase = apiBase
