@@ -1,13 +1,13 @@
-**ClawGo** is a tiny but mighty AI assistant written in Go. Inspired by [nanobot](https://github.com/HKUDS/nanobot), it was refactored from the ground up to run on almost anything—from high-end servers to $10 RISC-V boards.
+# ClawGo: High-Performance AI Agent (Linux Server Only)
 
-## 🚀 Why ClawGo?
+**ClawGo** is a high-performance AI assistant tailored for Linux servers. Leveraging the concurrency advantages and binary distribution of the Go language, it provides full agent capabilities with minimal resource overhead.
 
-- **🪶 Tiny Footprint**: <10MB RAM usage. Runs where Node.js and Python fear to tread.
-- **⚡ Instant Boot**: Starts in <1 second. No heavy runtime warmup.
-- **💰 Ultra-Low Cost**: Perfect for $10 SBCs like LicheeRV Nano or Orange Pi Zero.
-- **🔌 Plug & Play**: Single binary. No complex dependencies.
-- **🧩 Skill System**: Extend capabilities with `clawhub`, `coding-agent`, and more.
-- **🔐 Unified Interface**: Mandatory use of [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) as the upstream proxy.
+## 🚀 Key Advantages
+
+- **⚡ Native Performance**: Optimized specifically for Linux server environments, with no dependency on Node.js or Python.
+- **🏗️ Production-Ready**: Single binary deployment, perfectly integrates with service management tools like systemd.
+- **🔌 Mandatory Upstream Proxy**: Centralized management of model quotas and authentication via [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
+- **🧩 Powerful Skill Extension**: Built-in productivity tools like `coding-agent`, `github`, and `context7`.
 
 ## 🏁 Quick Start
 
@@ -17,70 +17,36 @@ clawgo onboard
 ```
 
 **2. Configure CLIProxyAPI**
-Ensure [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) is running.
+ClawGo requires [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) as the model access layer.
 ```bash
 clawgo login
 ```
 
-**3. Chat!**
+**3. Start Running**
 ```bash
-clawgo agent -m "Hello! Who are you?"
+# Interactive mode
+clawgo agent
+
+# Gateway mode (supports Telegram, Discord, etc.)
+clawgo gateway
 ```
 
-## 📦 Skills System
+## 📦 Migration & Skills
 
-ClawGo isn't just a chatbot—it's an agent that can use tools.
+ClawGo now integrates all core extended capabilities from the original OpenClaw:
+- **coding-agent**: Autonomous programming using Codex/Claude Code.
+- **github**: Deep integration with `gh` CLI for managing issues, PRs, and CI status.
+- **context7**: Intelligent context search for codebases and documentation.
 
-**Manage Skills:**
-```bash
-# List installed skills
-clawgo skills list
-
-# List builtin skills
-clawgo skills list-builtin
-
-# Install a specific skill (e.g., weather)
-clawgo skills install-builtin
-```
-
-**Featured Skills:**
-- **coding-agent**: Run Codex/Claude for autonomous coding tasks.
-- **healthcheck**: Security auditing and host hardening.
-- **video-frames**: Extract frames from video using ffmpeg.
-- **clawhub**: Manage skills from the community.
-
-## 💬 Connect Channels
-
-Run `clawgo gateway` to turn ClawGo into a 24/7 bot on your favorite platform.
-
-| Channel | Status | Setup |
-|---------|--------|-------|
-| **Telegram** | ✅ Ready | Bot Token |
-| **Discord** | ✅ Ready | Bot Token + Intents |
-| **QQ** | ✅ Ready | AppID + AppSecret |
-| **DingTalk** | ✅ Ready | Client ID + Secret |
-
-*Configure channels in `~/.clawgo/config.json`.*
-
-## 🛠️ Installation
+## 🛠️ Installation (Linux Only)
 
 ### Build from Source
 ```bash
 cd clawgo
-make deps
 make build
 make install
 ```
 
-## 📊 Comparison
-
-| Feature | OpenClaw (Node) | NanoBot (Python) | **ClawGo (Go)** |
-| :--- | :---: | :---: | :---: |
-| **RAM Usage** | >1GB | >100MB | **< 10MB** |
-| **Startup Time** | Slow (>5s) | Medium (>2s) | **Instant (<0.1s)** |
-| **Binary Size** | N/A (Source) | N/A (Source) | **Single File (~15MB)** |
-| **Architecture** | x86/ARM | x86/ARM | **x86/ARM/RISC-V** |
-
 ## 📜 License
 
-MIT License. Free and open source forever. 🦐
+MIT License. 🦐
