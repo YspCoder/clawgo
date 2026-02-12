@@ -299,6 +299,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			})
 		}
 		messages = append(messages, assistantMsg)
+		// 持久化包含 ToolCalls 的助手消息
+		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
 
 		for _, tc := range response.ToolCalls {
 			// Log tool call with arguments preview
@@ -321,6 +323,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				ToolCallID: tc.ID,
 			}
 			messages = append(messages, toolResultMsg)
+			// 持久化工具返回结果
+			al.sessions.AddMessageFull(msg.SessionKey, toolResultMsg)
 		}
 	}
 
@@ -343,11 +347,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
-	// We store the filtered content in history so the model sees what the user saw
-	// (or we could store full content if we want the model to remember its thoughts)
-	// The prompt says "filter out ... from the user-facing response".
-	// I'll store the filtered version to be safe.
-	al.sessions.AddMessage(msg.SessionKey, "assistant", userContent)
+	
+	// 使用 AddMessageFull 存储包含思考过程或工具调用的完整助手消息
+	al.sessions.AddMessageFull(msg.SessionKey, providers.Message{
+		Role:    "assistant",
+		Content: userContent,
+	})
+	
 	al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey))
 
 	// Log response preview (original content)
@@ -487,6 +493,8 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			})
 		}
 		messages = append(messages, assistantMsg)
+		// 持久化包含 ToolCalls 的助手消息
+		al.sessions.AddMessageFull(sessionKey, assistantMsg)
 
 		for _, tc := range response.ToolCalls {
 			result, err := al.tools.Execute(ctx, tc.Name, tc.Arguments)
@@ -500,6 +508,8 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 				ToolCallID: tc.ID,
 			}
 			messages = append(messages, toolResultMsg)
+			// 持久化工具返回结果
+			al.sessions.AddMessageFull(sessionKey, toolResultMsg)
 		}
 	}
 
@@ -509,7 +519,15 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	// Save to session with system message marker
 	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
-	al.sessions.AddMessage(sessionKey, "assistant", finalContent)
+	
+	// 如果 finalContent 中没有包含 tool calls (即最后一次 LLM 返回的结果)
+	// 我们已经通过循环内部的 AddMessageFull 存储了前面的步骤
+	// 这里的 AddMessageFull 会存储最终回复
+	al.sessions.AddMessageFull(sessionKey, providers.Message{
+		Role:    "assistant",
+		Content: finalContent,
+	})
+	
 	al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
 
 	logger.InfoCF("agent", "System message processing completed",
