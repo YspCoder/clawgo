@@ -105,7 +105,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
 	subagentManager.SetRunFunc(func(ctx context.Context, task, channel, chatID string) (string, error) {
-		sessionKey := fmt.Sprintf("subagent:%d", time.Now().UnixNano())
+		sessionKey := fmt.Sprintf("subagent:%d", os.Getpid()) // 改用 PID 或随机数，避免 sessionKey 冲突
 		return loop.ProcessDirect(ctx, task, sessionKey)
 	})
 

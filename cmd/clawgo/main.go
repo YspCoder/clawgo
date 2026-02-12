@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 
 	"os/signal"
 	"path/filepath"
@@ -593,9 +592,9 @@ func gatewayCmd() {
 	}
 
 	var transcriber *voice.GroqTranscriber
-	if cfg.Providers.Groq.APIKey != "" {
-		transcriber = voice.NewGroqTranscriber(cfg.Providers.Groq.APIKey)
-		logger.InfoC("voice", "Groq voice transcription enabled")
+	if cfg.Providers.Proxy.APIKey != "" && strings.Contains(cfg.Providers.Proxy.APIBase, "groq.com") {
+		transcriber = voice.NewGroqTranscriber(cfg.Providers.Proxy.APIKey)
+		logger.InfoC("voice", "Groq voice transcription enabled via Proxy config")
 	}
 
 	if transcriber != nil {
