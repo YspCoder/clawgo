@@ -1222,15 +1222,11 @@ func configureProvider(cfg *config.Config, provider string) {
 
 	switch provider {
 	case "Gemini":
-		fmt.Println("Do you want to use gemini-cli authentication? (y/n): ")
-		var useCLI string
-		fmt.Scanln(&useCLI)
-		if strings.ToLower(useCLI) == "y" {
-			if err := exec.Command("gemini", "login").Run(); err != nil {
-				fmt.Printf("Error running gemini login: %v\n", err)
-			}
-			return // Config handled by gemini-cli
-		}
+		fmt.Print("Enter Gemini API Key: ")
+		var apiKey string
+		fmt.Scanln(&apiKey)
+		cfg.Providers.Gemini.APIKey = apiKey
+		return
 	}
 
 	fmt.Print("Enter API Key: ")
