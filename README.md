@@ -31,6 +31,11 @@ clawgo agent
 
 # 后台网关模式 (支持 Telegram/Discord 等)
 clawgo gateway
+
+# 网关服务管理
+clawgo gateway start
+clawgo gateway restart
+clawgo gateway stop
 ```
 
 ## ⚙️ 配置管理与热更新

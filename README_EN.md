@@ -1,5 +1,7 @@
 # ClawGo: High-Performance AI Agent (Linux Server Only)
 
+[中文](./README.md)
+
 **ClawGo** is a high-performance AI assistant tailored for Linux servers. Leveraging the concurrency advantages and binary distribution of the Go language, it provides full agent capabilities with minimal resource overhead.
 
 ## 🚀 Key Advantages
@@ -29,6 +31,11 @@ clawgo agent
 
 # Gateway mode (supports Telegram, Discord, etc.)
 clawgo gateway
+
+# Gateway service management
+clawgo gateway start
+clawgo gateway restart
+clawgo gateway stop
 ```
 
 ## ⚙️ Config Management & Hot Reload
@@ -63,6 +70,16 @@ export CLAWGO_CONFIG=/path/to/config.json
 
 `config set` now uses atomic write, and if gateway is running but hot reload fails, it rolls back to backup automatically.
 
+Slash commands are also supported in chat channels:
+
+```text
+/help
+/status
+/config get channels.telegram.enabled
+/config set channels.telegram.enabled true
+/reload
+```
+
 ## 🧾 Logging Pipeline
 
 File logging is enabled by default with automatic rotation and retention cleanup (3 days by default):
@@ -76,6 +93,116 @@ File logging is enabled by default with automatic rotation and retention cleanup
   "retention_days": 3
 }
 ```
+
+Structured logging keys are now unified across channels and gateway:
+- `channel`
+- `chat_id`
+- `sender_id`
+- `preview`
+- `error`
+- `message_content_length`
+- `assistant_content_length`
+- `user_response_content_length`
+- `fetched_content_length`
+- `output_content_length`
+- `transcript_length`
+
+Constants are centralized in `pkg/logger/fields.go`.
+
+## 🛡️ Sentinel & Risk Protection
+
+Sentinel periodically checks critical runtime resources (config, memory, log directories), with optional auto-heal and notify:
+
+```json
+"sentinel": {
+  "enabled": true,
+  "interval_sec": 60,
+  "auto_heal": true,
+  "notify_channel": "",
+  "notify_chat_id": ""
+}
+```
+
+Shell risk gate is enabled by default. Destructive commands are blocked unless explicitly forced:
+
+```json
+"tools": {
+  "shell": {
+    "risk": {
+      "enabled": true,
+      "allow_destructive": false,
+      "require_dry_run": true,
+      "require_force_flag": true
+    }
+  }
+}
+```
+
+## 🤖 Multi-Agent Orchestration (Pipeline)
+
+Task protocol is standardized with: `role + goal + depends_on + shared_state`.
+
+Available tools:
+- `pipeline_create`: create a task graph
+- `pipeline_status`: inspect pipeline status
+- `pipeline_state_set`: write shared state
+- `pipeline_dispatch`: dispatch currently runnable tasks
+- `spawn`: supports `pipeline_id/task_id/role`
+
+Channel commands:
+
+```text
+/pipeline list
+/pipeline status <pipeline_id>
+/pipeline ready <pipeline_id>
+```
+
+## 🧠 Memory & Context Indexing
+
+- `memory_search`: structured indexing (inverted index + cache)
+- Memory layers: `profile / project / procedures / recent notes`
+- Automatically Compacted Context: when a session gets long, it auto-summarizes and trims history
+
+```json
+"memory": {
+  "layered": true,
+  "recent_days": 3,
+  "layers": {
+    "profile": true,
+    "project": true,
+    "procedures": true
+  }
+}
+```
+
+Automatic context compaction config:
+
+```json
+"agents": {
+  "defaults": {
+    "context_compaction": {
+      "enabled": true,
+      "trigger_messages": 60,
+      "keep_recent_messages": 20,
+      "max_summary_chars": 6000,
+      "max_transcript_chars": 20000
+    }
+  }
+}
+```
+
+Hot-update examples:
+
+```bash
+clawgo config set agents.defaults.context_compaction.enabled true
+clawgo config set agents.defaults.context_compaction.trigger_messages 80
+clawgo config set agents.defaults.context_compaction.keep_recent_messages 24
+```
+
+## 🗺️ Repo-Map & Atomic Skills
+
+- `repo_map`: build/query repository map before deep file reads
+- `skill_exec`: execute `skills/<name>/scripts/*` atomically to keep gateway slim
 
 ## 📦 Migration & Skills
 
