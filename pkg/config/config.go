@@ -24,11 +24,12 @@ type AgentsConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace         string  `json:"workspace" env:"CLAWGO_AGENTS_DEFAULTS_WORKSPACE"`
-	Model             string  `json:"model" env:"CLAWGO_AGENTS_DEFAULTS_MODEL"`
-	MaxTokens         int     `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature       float64 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations int     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace         string   `json:"workspace" env:"CLAWGO_AGENTS_DEFAULTS_WORKSPACE"`
+	Model             string   `json:"model" env:"CLAWGO_AGENTS_DEFAULTS_MODEL"`
+	ModelFallbacks    []string `json:"model_fallbacks" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_FALLBACKS"`
+	MaxTokens         int      `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature       float64  `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations int      `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 }
 
 type ChannelsConfig struct {
@@ -83,10 +84,10 @@ type QQConfig struct {
 }
 
 type DingTalkConfig struct {
-	Enabled          bool     `json:"enabled" env:"CLAWGO_CHANNELS_DINGTALK_ENABLED"`
-	ClientID         string   `json:"client_id" env:"CLAWGO_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret     string   `json:"client_secret" env:"CLAWGO_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom        []string `json:"allow_from" env:"CLAWGO_CHANNELS_DINGTALK_ALLOW_FROM"`
+	Enabled      bool     `json:"enabled" env:"CLAWGO_CHANNELS_DINGTALK_ENABLED"`
+	ClientID     string   `json:"client_id" env:"CLAWGO_CHANNELS_DINGTALK_CLIENT_ID"`
+	ClientSecret string   `json:"client_secret" env:"CLAWGO_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	AllowFrom    []string `json:"allow_from" env:"CLAWGO_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
 type ProvidersConfig struct {
@@ -171,6 +172,7 @@ func DefaultConfig() *Config {
 			Defaults: AgentDefaults{
 				Workspace:         filepath.Join(configDir, "workspace"),
 				Model:             "glm-4.7",
+				ModelFallbacks:    []string{},
 				MaxTokens:         8192,
 				Temperature:       0.7,
 				MaxToolIterations: 20,

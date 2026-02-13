@@ -29,6 +29,7 @@ type AgentLoop struct {
 	provider       providers.LLMProvider
 	workspace      string
 	model          string
+	modelFallbacks []string
 	maxIterations  int
 	sessions       *session.SessionManager
 	contextBuilder *ContextBuilder
@@ -99,6 +100,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		provider:       provider,
 		workspace:      workspace,
 		model:          cfg.Agents.Defaults.Model,
+		modelFallbacks: cfg.Agents.Defaults.ModelFallbacks,
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
 		contextBuilder: NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
@@ -247,7 +249,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
+		response, err := al.callLLMWithModelFallback(ctx, messages, providerToolDefs, map[string]interface{}{
 			"max_tokens":  8192,
 			"temperature": 0.7,
 		})
@@ -347,13 +349,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
-	
+
 	// 使用 AddMessageFull 存储包含思考过程或工具调用的完整助手消息
 	al.sessions.AddMessageFull(msg.SessionKey, providers.Message{
 		Role:    "assistant",
 		Content: userContent,
 	})
-	
+
 	al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey))
 
 	// Log response preview (original content)
@@ -457,7 +459,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
+		response, err := al.callLLMWithModelFallback(ctx, messages, providerToolDefs, map[string]interface{}{
 			"max_tokens":  8192,
 			"temperature": 0.7,
 		})
@@ -519,7 +521,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	// Save to session with system message marker
 	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
-	
+
 	// 如果 finalContent 中没有包含 tool calls (即最后一次 LLM 返回的结果)
 	// 我们已经通过循环内部的 AddMessageFull 存储了前面的步骤
 	// 这里的 AddMessageFull 会存储最终回复
@@ -527,7 +529,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		Role:    "assistant",
 		Content: finalContent,
 	})
-	
+
 	al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
 
 	logger.InfoCF("agent", "System message processing completed",
@@ -600,6 +602,92 @@ func formatMessagesForLog(messages []providers.Message) string {
 	}
 	result += "]"
 	return result
+}
+
+func (al *AgentLoop) callLLMWithModelFallback(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	options map[string]interface{},
+) (*providers.LLMResponse, error) {
+	candidates := al.modelCandidates()
+	var lastErr error
+
+	for idx, model := range candidates {
+		response, err := al.provider.Chat(ctx, messages, tools, model, options)
+		if err == nil {
+			if al.model != model {
+				logger.WarnCF("agent", "Model switched after quota/rate-limit error", map[string]interface{}{
+					"from_model": al.model,
+					"to_model":   model,
+				})
+				al.model = model
+			}
+			return response, nil
+		}
+
+		lastErr = err
+		if !isQuotaOrRateLimitError(err) {
+			return nil, err
+		}
+
+		if idx < len(candidates)-1 {
+			logger.WarnCF("agent", "Model quota/rate-limit reached, trying fallback model", map[string]interface{}{
+				"failed_model": model,
+				"next_model":   candidates[idx+1],
+				"error":        err.Error(),
+			})
+			continue
+		}
+	}
+
+	return nil, fmt.Errorf("all configured models failed; last error: %w", lastErr)
+}
+
+func (al *AgentLoop) modelCandidates() []string {
+	candidates := []string{}
+	seen := map[string]bool{}
+
+	add := func(model string) {
+		m := strings.TrimSpace(model)
+		if m == "" || seen[m] {
+			return
+		}
+		seen[m] = true
+		candidates = append(candidates, m)
+	}
+
+	add(al.model)
+	for _, m := range al.modelFallbacks {
+		add(m)
+	}
+
+	return candidates
+}
+
+func isQuotaOrRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	keywords := []string{
+		"status 429",
+		"429",
+		"insufficient_quota",
+		"quota",
+		"rate limit",
+		"rate_limit",
+		"too many requests",
+		"billing",
+	}
+
+	for _, keyword := range keywords {
+		if strings.Contains(msg, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 // formatToolsForLog formats tool definitions for logging
