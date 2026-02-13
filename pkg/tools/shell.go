@@ -254,7 +254,7 @@ func (t *ExecTool) applyRiskGate(command string, force bool) (string, string) {
 		return "Error: destructive command is disabled by policy (tools.shell.risk.allow_destructive=false).", ""
 	}
 
-	if t.riskCfg.RequireDryRun {
+	if t.riskCfg.RequireDryRun && !force {
 		if dryRunCmd, ok := buildDryRunCommand(command); ok {
 			return "Risk gate: dry-run required first. Review output, then execute intentionally with force=true.", dryRunCmd
 		}
