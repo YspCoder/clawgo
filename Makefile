@@ -16,12 +16,13 @@ GO?=go
 GOFLAGS?=-v
 
 # Installation
-INSTALL_PREFIX?=$(HOME)/.local
+INSTALL_PREFIX?=/usr/local
 INSTALL_BIN_DIR=$(INSTALL_PREFIX)/bin
 INSTALL_MAN_DIR=$(INSTALL_PREFIX)/share/man/man1
 
 # Workspace and Skills
-CLAWGO_HOME?=$(HOME)/.clawgo
+USER_HOME:=$(if $(SUDO_USER),$(shell eval echo ~$(SUDO_USER)),$(HOME))
+CLAWGO_HOME?=$(USER_HOME)/.clawgo
 WORKSPACE_DIR?=$(CLAWGO_HOME)/workspace
 WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
@@ -99,6 +100,10 @@ install: build
 		fi; \
 	done
 	@echo "Installation complete!"
+
+## install-user: Install clawgo to ~/.local and copy builtin skills
+install-user:
+	@$(MAKE) install INSTALL_PREFIX=$(USER_HOME)/.local
 
 ## install-skills: Install builtin skills to workspace
 install-skills:
