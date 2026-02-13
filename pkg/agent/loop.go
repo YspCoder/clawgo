@@ -30,6 +30,8 @@ import (
 
 var errGatewayNotRunningSlash = errors.New("gateway not running")
 
+const llmCallTimeout = 90 * time.Second
+
 type AgentLoop struct {
 	bus            *bus.MessageBus
 	provider       providers.LLMProvider
@@ -253,10 +255,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			})
 
 		llmStart := time.Now()
-		response, err := al.callLLMWithModelFallback(ctx, messages, providerToolDefs, map[string]interface{}{
+		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
+		response, err := al.callLLMWithModelFallback(llmCtx, messages, providerToolDefs, map[string]interface{}{
 			"max_tokens":  8192,
 			"temperature": 0.7,
 		})
+		cancelLLM()
 		llmElapsed := time.Since(llmStart)
 
 		if err != nil {
@@ -469,10 +473,12 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			})
 
 		llmStart := time.Now()
-		response, err := al.callLLMWithModelFallback(ctx, messages, providerToolDefs, map[string]interface{}{
+		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
+		response, err := al.callLLMWithModelFallback(llmCtx, messages, providerToolDefs, map[string]interface{}{
 			"max_tokens":  8192,
 			"temperature": 0.7,
 		})
+		cancelLLM()
 		llmElapsed := time.Since(llmStart)
 
 		if err != nil {

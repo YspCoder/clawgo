@@ -8,12 +8,14 @@ package providers
 
 import (
 	"bytes"
+	"clawgo/pkg/logger"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"clawgo/pkg/config"
 )
@@ -25,13 +27,15 @@ type HTTPProvider struct {
 	httpClient *http.Client
 }
 
+const defaultChatTimeout = 90 * time.Second
+
 func NewHTTPProvider(apiKey, apiBase, authMode string) *HTTPProvider {
 	return &HTTPProvider{
 		apiKey:   apiKey,
 		apiBase:  apiBase,
 		authMode: authMode,
 		httpClient: &http.Client{
-			Timeout: 0,
+			Timeout: defaultChatTimeout,
 		},
 	}
 }
@@ -40,6 +44,14 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	if p.apiBase == "" {
 		return nil, fmt.Errorf("API base not configured")
 	}
+
+	logger.DebugCF("provider", "HTTP chat request", map[string]interface{}{
+		"api_base":       p.apiBase,
+		"model":          model,
+		"messages_count": len(messages),
+		"tools_count":    len(tools),
+		"timeout":        defaultChatTimeout.String(),
+	})
 
 	requestBody := map[string]interface{}{
 		"model":    model,
