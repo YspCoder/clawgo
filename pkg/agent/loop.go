@@ -236,7 +236,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	if finalContent == "" {
-		finalContent = "I've completed processing but have no response to give."
+		finalContent = "Done."
 	}
 
 	// Filter out <think>...</think> content from user-facing response
@@ -374,6 +374,7 @@ func (al *AgentLoop) runLLMToolLoop(
 ) (string, int, error) {
 	iteration := 0
 	var finalContent string
+	var lastToolResult string
 
 	for iteration < al.maxIterations {
 		iteration++
@@ -498,6 +499,7 @@ func (al *AgentLoop) runLLMToolLoop(
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
 			}
+			lastToolResult = result
 
 			toolResultMsg := providers.Message{
 				Role:       "tool",
@@ -507,6 +509,44 @@ func (al *AgentLoop) runLLMToolLoop(
 			messages = append(messages, toolResultMsg)
 			al.sessions.AddMessageFull(sessionKey, toolResultMsg)
 		}
+	}
+
+	// When max iterations are reached without a direct answer, ask once more without tools.
+	// This avoids returning placeholder text to end users.
+	if finalContent == "" && len(messages) > 0 {
+		if !systemMode && iteration >= al.maxIterations {
+			logger.WarnCF("agent", "Max tool iterations reached without final answer; forcing finalization pass", map[string]interface{}{
+				"iteration":   iteration,
+				"max":         al.maxIterations,
+				"session_key": sessionKey,
+			})
+		}
+
+		finalizeMessages := append([]providers.Message{}, messages...)
+		finalizeMessages = append(finalizeMessages, providers.Message{
+			Role:    "user",
+			Content: "Now provide your final response to the user based on the completed tool results. Do not call any tools.",
+		})
+
+		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
+		finalResp, err := al.callLLMWithModelFallback(llmCtx, finalizeMessages, nil, map[string]interface{}{
+			"max_tokens":  1024,
+			"temperature": 0.3,
+		})
+		cancelLLM()
+		if err != nil {
+			logger.WarnCF("agent", "Finalization pass failed", map[string]interface{}{
+				"iteration":       iteration,
+				"session_key":     sessionKey,
+				logger.FieldError: err.Error(),
+			})
+		} else if strings.TrimSpace(finalResp.Content) != "" {
+			finalContent = finalResp.Content
+		}
+	}
+
+	if finalContent == "" {
+		finalContent = strings.TrimSpace(lastToolResult)
 	}
 
 	return finalContent, iteration, nil
