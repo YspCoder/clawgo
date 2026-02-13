@@ -14,13 +14,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
-	"syscall"
+	"sync/atomic"
 	"time"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
+	"clawgo/pkg/configops"
 	"clawgo/pkg/cron"
 	"clawgo/pkg/logger"
 	"clawgo/pkg/providers"
@@ -42,7 +42,8 @@ type AgentLoop struct {
 	sessions       *session.SessionManager
 	contextBuilder *ContextBuilder
 	tools          *tools.ToolRegistry
-	running        bool
+	orchestrator   *tools.Orchestrator
+	running        atomic.Bool
 }
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, cs *cron.CronService) *AgentLoop {
@@ -81,9 +82,14 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(messageTool)
 
 	// Register spawn tool
-	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus)
+	orchestrator := tools.NewOrchestrator()
+	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus, orchestrator)
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
+	toolsRegistry.Register(tools.NewPipelineCreateTool(orchestrator))
+	toolsRegistry.Register(tools.NewPipelineStatusTool(orchestrator))
+	toolsRegistry.Register(tools.NewPipelineStateSetTool(orchestrator))
+	toolsRegistry.Register(tools.NewPipelineDispatchTool(orchestrator, subagentManager))
 
 	// Register edit file tool
 	editFileTool := tools.NewEditFileTool(workspace)
@@ -92,6 +98,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	// Register memory search tool
 	memorySearchTool := tools.NewMemorySearchTool(workspace)
 	toolsRegistry.Register(memorySearchTool)
+	toolsRegistry.Register(tools.NewRepoMapTool(workspace))
+	toolsRegistry.Register(tools.NewSkillExecTool(workspace))
 
 	// Register parallel execution tool (leveraging Go's concurrency)
 	toolsRegistry.Register(tools.NewParallelTool(toolsRegistry))
@@ -114,9 +122,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		modelFallbacks: cfg.Agents.Defaults.ModelFallbacks,
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
-		contextBuilder: NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
+		contextBuilder: NewContextBuilder(workspace, cfg.Memory, func() []string { return toolsRegistry.GetSummaries() }),
 		tools:          toolsRegistry,
-		running:        false,
+		orchestrator:   orchestrator,
 	}
 
 	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
@@ -129,16 +137,16 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
-	al.running = true
+	al.running.Store(true)
 
-	for al.running {
+	for al.running.Load() {
 		select {
 		case <-ctx.Done():
 			return nil
 		default:
 			msg, ok := al.bus.ConsumeInbound(ctx)
 			if !ok {
-				continue
+				return nil
 			}
 
 			response, err := al.processMessage(ctx, msg)
@@ -160,7 +168,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 }
 
 func (al *AgentLoop) Stop() {
-	al.running = false
+	al.running.Store(false)
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
@@ -180,10 +188,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	preview := truncate(msg.Content, 80)
 	logger.InfoCF("agent", fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, preview),
 		map[string]interface{}{
-			"channel":     msg.Channel,
-			"chat_id":     msg.ChatID,
-			"sender_id":   msg.SenderID,
-			"session_key": msg.SessionKey,
+			logger.FieldChannel:  msg.Channel,
+			logger.FieldChatID:   msg.ChatID,
+			logger.FieldSenderID: msg.SenderID,
+			"session_key":        msg.SessionKey,
 		})
 
 	// Route system messages to processSystemMessage
@@ -220,133 +228,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		msg.ChatID,
 	)
 
-	iteration := 0
-	var finalContent string
-
-	for iteration < al.maxIterations {
-		iteration++
-
-		logger.DebugCF("agent", "LLM iteration",
-			map[string]interface{}{
-				"iteration": iteration,
-				"max":       al.maxIterations,
-			})
-
-		providerToolDefs, err := buildProviderToolDefs(al.tools.GetDefinitions())
-		if err != nil {
-			return "", fmt.Errorf("invalid tool definition: %w", err)
-		}
-
-		// Log LLM request details
-		logger.DebugCF("agent", "LLM request",
-			map[string]interface{}{
-				"iteration":         iteration,
-				"model":             al.model,
-				"messages_count":    len(messages),
-				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
-				"system_prompt_len": len(messages[0].Content),
-			})
-
-		// Log full messages (detailed)
-		logger.DebugCF("agent", "Full LLM request",
-			map[string]interface{}{
-				"iteration":     iteration,
-				"messages_json": formatMessagesForLog(messages),
-				"tools_json":    formatToolsForLog(providerToolDefs),
-			})
-
-		llmStart := time.Now()
-		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
-		response, err := al.callLLMWithModelFallback(llmCtx, messages, providerToolDefs, map[string]interface{}{
-			"max_tokens":  8192,
-			"temperature": 0.7,
-		})
-		cancelLLM()
-		llmElapsed := time.Since(llmStart)
-
-		if err != nil {
-			logger.ErrorCF("agent", "LLM call failed",
-				map[string]interface{}{
-					"iteration": iteration,
-					"error":     err.Error(),
-					"elapsed":   llmElapsed.String(),
-				})
-			return "", fmt.Errorf("LLM call failed: %w", err)
-		}
-		logger.InfoCF("agent", "LLM call completed",
-			map[string]interface{}{
-				"iteration": iteration,
-				"elapsed":   llmElapsed.String(),
-				"model":     al.model,
-			})
-
-		if len(response.ToolCalls) == 0 {
-			finalContent = response.Content
-			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
-				map[string]interface{}{
-					"iteration":     iteration,
-					"content_chars": len(finalContent),
-				})
-			break
-		}
-
-		toolNames := make([]string, 0, len(response.ToolCalls))
-		for _, tc := range response.ToolCalls {
-			toolNames = append(toolNames, tc.Name)
-		}
-		logger.InfoCF("agent", "LLM requested tool calls",
-			map[string]interface{}{
-				"tools":     toolNames,
-				"count":     len(toolNames),
-				"iteration": iteration,
-			})
-
-		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
-		}
-
-		for _, tc := range response.ToolCalls {
-			argumentsJSON, _ := json.Marshal(tc.Arguments)
-			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
-				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
-				},
-			})
-		}
-		messages = append(messages, assistantMsg)
-		// 持久化包含 ToolCalls 的助手消息
-		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
-
-		for _, tc := range response.ToolCalls {
-			// Log tool call with arguments preview
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := truncate(string(argsJSON), 200)
-			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]interface{}{
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
-
-			result, err := al.tools.Execute(ctx, tc.Name, tc.Arguments)
-			if err != nil {
-				result = fmt.Sprintf("Error: %v", err)
-			}
-
-			toolResultMsg := providers.Message{
-				Role:       "tool",
-				Content:    result,
-				ToolCallID: tc.ID,
-			}
-			messages = append(messages, toolResultMsg)
-			// 持久化工具返回结果
-			al.sessions.AddMessageFull(msg.SessionKey, toolResultMsg)
-		}
+	finalContent, iteration, err := al.runLLMToolLoop(ctx, messages, msg.SessionKey, false)
+	if err != nil {
+		return "", err
 	}
 
 	if finalContent == "" {
@@ -377,8 +261,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	if err := al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey)); err != nil {
 		logger.WarnCF("agent", "Failed to save session metadata", map[string]interface{}{
-			"session_key": msg.SessionKey,
-			"error":       err.Error(),
+			"session_key":     msg.SessionKey,
+			logger.FieldError: err.Error(),
 		})
 	}
 
@@ -386,9 +270,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	responsePreview := truncate(finalContent, 120)
 	logger.InfoCF("agent", fmt.Sprintf("Response to %s:%s: %s", msg.Channel, msg.SenderID, responsePreview),
 		map[string]interface{}{
-			"iterations":   iteration,
-			"final_length": len(finalContent),
-			"user_length":  len(userContent),
+			"iterations":                          iteration,
+			logger.FieldAssistantContentLength:    len(finalContent),
+			logger.FieldUserResponseContentLength: len(userContent),
 		})
 
 	return userContent, nil
@@ -402,8 +286,8 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	logger.InfoCF("agent", "Processing system message",
 		map[string]interface{}{
-			"sender_id": msg.SenderID,
-			"chat_id":   msg.ChatID,
+			logger.FieldSenderID: msg.SenderID,
+			logger.FieldChatID:   msg.ChatID,
 		})
 
 	// Parse origin from chat_id (format: "channel:chat_id")
@@ -444,102 +328,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		originChatID,
 	)
 
-	iteration := 0
-	var finalContent string
-
-	for iteration < al.maxIterations {
-		iteration++
-
-		providerToolDefs, err := buildProviderToolDefs(al.tools.GetDefinitions())
-		if err != nil {
-			return "", fmt.Errorf("invalid tool definition: %w", err)
-		}
-
-		// Log LLM request details
-		logger.DebugCF("agent", "LLM request",
-			map[string]interface{}{
-				"iteration":         iteration,
-				"model":             al.model,
-				"messages_count":    len(messages),
-				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
-				"system_prompt_len": len(messages[0].Content),
-			})
-
-		// Log full messages (detailed)
-		logger.DebugCF("agent", "Full LLM request",
-			map[string]interface{}{
-				"iteration":     iteration,
-				"messages_json": formatMessagesForLog(messages),
-				"tools_json":    formatToolsForLog(providerToolDefs),
-			})
-
-		llmStart := time.Now()
-		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
-		response, err := al.callLLMWithModelFallback(llmCtx, messages, providerToolDefs, map[string]interface{}{
-			"max_tokens":  8192,
-			"temperature": 0.7,
-		})
-		cancelLLM()
-		llmElapsed := time.Since(llmStart)
-
-		if err != nil {
-			logger.ErrorCF("agent", "LLM call failed in system message",
-				map[string]interface{}{
-					"iteration": iteration,
-					"error":     err.Error(),
-					"elapsed":   llmElapsed.String(),
-				})
-			return "", fmt.Errorf("LLM call failed: %w", err)
-		}
-		logger.InfoCF("agent", "LLM call completed (system message)",
-			map[string]interface{}{
-				"iteration": iteration,
-				"elapsed":   llmElapsed.String(),
-				"model":     al.model,
-			})
-
-		if len(response.ToolCalls) == 0 {
-			finalContent = response.Content
-			break
-		}
-
-		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
-		}
-
-		for _, tc := range response.ToolCalls {
-			argumentsJSON, _ := json.Marshal(tc.Arguments)
-			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
-				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
-				},
-			})
-		}
-		messages = append(messages, assistantMsg)
-		// 持久化包含 ToolCalls 的助手消息
-		al.sessions.AddMessageFull(sessionKey, assistantMsg)
-
-		for _, tc := range response.ToolCalls {
-			result, err := al.tools.Execute(ctx, tc.Name, tc.Arguments)
-			if err != nil {
-				result = fmt.Sprintf("Error: %v", err)
-			}
-
-			toolResultMsg := providers.Message{
-				Role:       "tool",
-				Content:    result,
-				ToolCallID: tc.ID,
-			}
-			messages = append(messages, toolResultMsg)
-			// 持久化工具返回结果
-			al.sessions.AddMessageFull(sessionKey, toolResultMsg)
-		}
+	finalContent, iteration, err := al.runLLMToolLoop(ctx, messages, sessionKey, true)
+	if err != nil {
+		return "", err
 	}
 
 	if finalContent == "" {
@@ -559,18 +350,164 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	if err := al.sessions.Save(al.sessions.GetOrCreate(sessionKey)); err != nil {
 		logger.WarnCF("agent", "Failed to save session metadata", map[string]interface{}{
-			"session_key": sessionKey,
-			"error":       err.Error(),
+			"session_key":     sessionKey,
+			logger.FieldError: err.Error(),
 		})
 	}
 
 	logger.InfoCF("agent", "System message processing completed",
 		map[string]interface{}{
-			"iterations":   iteration,
-			"final_length": len(finalContent),
+			"iterations":                       iteration,
+			logger.FieldAssistantContentLength: len(finalContent),
 		})
 
 	return finalContent, nil
+}
+
+func (al *AgentLoop) runLLMToolLoop(
+	ctx context.Context,
+	messages []providers.Message,
+	sessionKey string,
+	systemMode bool,
+) (string, int, error) {
+	iteration := 0
+	var finalContent string
+
+	for iteration < al.maxIterations {
+		iteration++
+
+		if !systemMode {
+			logger.DebugCF("agent", "LLM iteration",
+				map[string]interface{}{
+					"iteration": iteration,
+					"max":       al.maxIterations,
+				})
+		}
+
+		providerToolDefs, err := buildProviderToolDefs(al.tools.GetDefinitions())
+		if err != nil {
+			return "", iteration, fmt.Errorf("invalid tool definition: %w", err)
+		}
+
+		logger.DebugCF("agent", "LLM request",
+			map[string]interface{}{
+				"iteration":         iteration,
+				"model":             al.model,
+				"messages_count":    len(messages),
+				"tools_count":       len(providerToolDefs),
+				"max_tokens":        8192,
+				"temperature":       0.7,
+				"system_prompt_len": len(messages[0].Content),
+			})
+		logger.DebugCF("agent", "Full LLM request",
+			map[string]interface{}{
+				"iteration":     iteration,
+				"messages_json": formatMessagesForLog(messages),
+				"tools_json":    formatToolsForLog(providerToolDefs),
+			})
+
+		llmStart := time.Now()
+		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
+		response, err := al.callLLMWithModelFallback(llmCtx, messages, providerToolDefs, map[string]interface{}{
+			"max_tokens":  8192,
+			"temperature": 0.7,
+		})
+		cancelLLM()
+		llmElapsed := time.Since(llmStart)
+
+		if err != nil {
+			errLog := "LLM call failed"
+			if systemMode {
+				errLog = "LLM call failed in system message"
+			}
+			logger.ErrorCF("agent", errLog,
+				map[string]interface{}{
+					"iteration":       iteration,
+					logger.FieldError: err.Error(),
+					"elapsed":         llmElapsed.String(),
+				})
+			return "", iteration, fmt.Errorf("LLM call failed: %w", err)
+		}
+
+		doneLog := "LLM call completed"
+		if systemMode {
+			doneLog = "LLM call completed (system message)"
+		}
+		logger.InfoCF("agent", doneLog,
+			map[string]interface{}{
+				"iteration": iteration,
+				"elapsed":   llmElapsed.String(),
+				"model":     al.model,
+			})
+
+		if len(response.ToolCalls) == 0 {
+			finalContent = response.Content
+			if !systemMode {
+				logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
+					map[string]interface{}{
+						"iteration":                        iteration,
+						logger.FieldAssistantContentLength: len(finalContent),
+					})
+			}
+			break
+		}
+
+		toolNames := make([]string, 0, len(response.ToolCalls))
+		for _, tc := range response.ToolCalls {
+			toolNames = append(toolNames, tc.Name)
+		}
+		logger.InfoCF("agent", "LLM requested tool calls",
+			map[string]interface{}{
+				"tools":     toolNames,
+				"count":     len(toolNames),
+				"iteration": iteration,
+			})
+
+		assistantMsg := providers.Message{
+			Role:    "assistant",
+			Content: response.Content,
+		}
+		for _, tc := range response.ToolCalls {
+			argumentsJSON, _ := json.Marshal(tc.Arguments)
+			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
+				ID:   tc.ID,
+				Type: "function",
+				Function: &providers.FunctionCall{
+					Name:      tc.Name,
+					Arguments: string(argumentsJSON),
+				},
+			})
+		}
+		messages = append(messages, assistantMsg)
+		al.sessions.AddMessageFull(sessionKey, assistantMsg)
+
+		for _, tc := range response.ToolCalls {
+			if !systemMode {
+				argsJSON, _ := json.Marshal(tc.Arguments)
+				argsPreview := truncate(string(argsJSON), 200)
+				logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+					map[string]interface{}{
+						"tool":      tc.Name,
+						"iteration": iteration,
+					})
+			}
+
+			result, err := al.tools.Execute(ctx, tc.Name, tc.Arguments)
+			if err != nil {
+				result = fmt.Sprintf("Error: %v", err)
+			}
+
+			toolResultMsg := providers.Message{
+				Role:       "tool",
+				Content:    result,
+				ToolCallID: tc.ID,
+			}
+			messages = append(messages, toolResultMsg)
+			al.sessions.AddMessageFull(sessionKey, toolResultMsg)
+		}
+	}
+
+	return finalContent, iteration, nil
 }
 
 // truncate returns a truncated version of s with at most maxLen characters.
@@ -665,9 +602,9 @@ func (al *AgentLoop) callLLMWithModelFallback(
 
 		if idx < len(candidates)-1 {
 			logger.WarnCF("agent", "Model quota/rate-limit reached, trying fallback model", map[string]interface{}{
-				"failed_model": model,
-				"next_model":   candidates[idx+1],
-				"error":        err.Error(),
+				"failed_model":    model,
+				"next_model":      candidates[idx+1],
+				logger.FieldError: err.Error(),
 			})
 			continue
 		}
@@ -794,7 +731,7 @@ func (al *AgentLoop) handleSlashCommand(content string) (bool, string, error) {
 
 	switch fields[0] {
 	case "/help":
-		return true, "Slash commands:\n/help\n/status\n/config get <path>\n/config set <path> <value>\n/reload", nil
+		return true, "Slash commands:\n/help\n/status\n/config get <path>\n/config set <path> <value>\n/reload\n/pipeline list\n/pipeline status <pipeline_id>\n/pipeline ready <pipeline_id>", nil
 	case "/status":
 		cfg, err := config.LoadConfig(al.getConfigPathForCommands())
 		if err != nil {
@@ -878,6 +815,51 @@ func (al *AgentLoop) handleSlashCommand(content string) (bool, string, error) {
 		default:
 			return true, "Usage: /config get <path> | /config set <path> <value>", nil
 		}
+	case "/pipeline":
+		if al.orchestrator == nil {
+			return true, "Pipeline orchestrator not enabled.", nil
+		}
+		if len(fields) < 2 {
+			return true, "Usage: /pipeline list | /pipeline status <pipeline_id> | /pipeline ready <pipeline_id>", nil
+		}
+		switch fields[1] {
+		case "list":
+			items := al.orchestrator.ListPipelines()
+			if len(items) == 0 {
+				return true, "No pipelines found.", nil
+			}
+			var sb strings.Builder
+			sb.WriteString("Pipelines:\n")
+			for _, p := range items {
+				sb.WriteString(fmt.Sprintf("- %s [%s] %s\n", p.ID, p.Status, p.Label))
+			}
+			return true, sb.String(), nil
+		case "status":
+			if len(fields) < 3 {
+				return true, "Usage: /pipeline status <pipeline_id>", nil
+			}
+			s, err := al.orchestrator.SnapshotJSON(fields[2])
+			return true, s, err
+		case "ready":
+			if len(fields) < 3 {
+				return true, "Usage: /pipeline ready <pipeline_id>", nil
+			}
+			ready, err := al.orchestrator.ReadyTasks(fields[2])
+			if err != nil {
+				return true, "", err
+			}
+			if len(ready) == 0 {
+				return true, "No ready tasks.", nil
+			}
+			var sb strings.Builder
+			sb.WriteString("Ready tasks:\n")
+			for _, task := range ready {
+				sb.WriteString(fmt.Sprintf("- %s (%s) %s\n", task.ID, task.Role, task.Goal))
+			}
+			return true, sb.String(), nil
+		default:
+			return true, "Usage: /pipeline list | /pipeline status <pipeline_id> | /pipeline ready <pipeline_id>", nil
+		}
 	default:
 		return false, "", nil
 	}
@@ -891,178 +873,35 @@ func (al *AgentLoop) getConfigPathForCommands() string {
 }
 
 func (al *AgentLoop) normalizeConfigPathForAgent(path string) string {
-	p := strings.TrimSpace(path)
-	p = strings.Trim(p, ".")
-	parts := strings.Split(p, ".")
-	for i, part := range parts {
-		if part == "enable" {
-			parts[i] = "enabled"
-		}
-	}
-	return strings.Join(parts, ".")
+	return configops.NormalizeConfigPath(path)
 }
 
 func (al *AgentLoop) parseConfigValueForAgent(raw string) interface{} {
-	v := strings.TrimSpace(raw)
-	lv := strings.ToLower(v)
-	if lv == "true" {
-		return true
-	}
-	if lv == "false" {
-		return false
-	}
-	if lv == "null" {
-		return nil
-	}
-	if i, err := strconv.ParseInt(v, 10, 64); err == nil {
-		return i
-	}
-	if f, err := strconv.ParseFloat(v, 64); err == nil && strings.Contains(v, ".") {
-		return f
-	}
-	if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
-		return v[1 : len(v)-1]
-	}
-	return v
+	return configops.ParseConfigValue(raw)
 }
 
 func (al *AgentLoop) loadConfigAsMapForAgent() (map[string]interface{}, error) {
-	configPath := al.getConfigPathForCommands()
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			defaultCfg := config.DefaultConfig()
-			defData, mErr := json.Marshal(defaultCfg)
-			if mErr != nil {
-				return nil, mErr
-			}
-			var cfgMap map[string]interface{}
-			if uErr := json.Unmarshal(defData, &cfgMap); uErr != nil {
-				return nil, uErr
-			}
-			return cfgMap, nil
-		}
-		return nil, err
-	}
-	var cfgMap map[string]interface{}
-	if err := json.Unmarshal(data, &cfgMap); err != nil {
-		return nil, err
-	}
-	return cfgMap, nil
+	return configops.LoadConfigAsMap(al.getConfigPathForCommands())
 }
 
 func (al *AgentLoop) setMapValueByPathForAgent(root map[string]interface{}, path string, value interface{}) error {
-	if path == "" {
-		return fmt.Errorf("path is empty")
-	}
-	parts := strings.Split(path, ".")
-	cur := root
-	for i := 0; i < len(parts)-1; i++ {
-		key := parts[i]
-		if key == "" {
-			return fmt.Errorf("invalid path: %s", path)
-		}
-		next, ok := cur[key]
-		if !ok {
-			child := map[string]interface{}{}
-			cur[key] = child
-			cur = child
-			continue
-		}
-		child, ok := next.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("path segment is not object: %s", key)
-		}
-		cur = child
-	}
-	last := parts[len(parts)-1]
-	if last == "" {
-		return fmt.Errorf("invalid path: %s", path)
-	}
-	cur[last] = value
-	return nil
+	return configops.SetMapValueByPath(root, path, value)
 }
 
 func (al *AgentLoop) getMapValueByPathForAgent(root map[string]interface{}, path string) (interface{}, bool) {
-	if path == "" {
-		return nil, false
-	}
-	parts := strings.Split(path, ".")
-	var cur interface{} = root
-	for _, key := range parts {
-		obj, ok := cur.(map[string]interface{})
-		if !ok {
-			return nil, false
-		}
-		next, ok := obj[key]
-		if !ok {
-			return nil, false
-		}
-		cur = next
-	}
-	return cur, true
+	return configops.GetMapValueByPath(root, path)
 }
 
 func (al *AgentLoop) writeConfigAtomicWithBackupForAgent(configPath string, data []byte) (string, error) {
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return "", err
-	}
-
-	backupPath := configPath + ".bak"
-	if oldData, err := os.ReadFile(configPath); err == nil {
-		if err := os.WriteFile(backupPath, oldData, 0644); err != nil {
-			return "", fmt.Errorf("write backup failed: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("read existing config failed: %w", err)
-	}
-
-	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return "", fmt.Errorf("write temp config failed: %w", err)
-	}
-	if err := os.Rename(tmpPath, configPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("atomic replace config failed: %w", err)
-	}
-	return backupPath, nil
+	return configops.WriteConfigAtomicWithBackup(configPath, data)
 }
 
 func (al *AgentLoop) rollbackConfigFromBackupForAgent(configPath, backupPath string) error {
-	backupData, err := os.ReadFile(backupPath)
-	if err != nil {
-		return fmt.Errorf("read backup failed: %w", err)
-	}
-	tmpPath := configPath + ".rollback.tmp"
-	if err := os.WriteFile(tmpPath, backupData, 0644); err != nil {
-		return fmt.Errorf("write rollback temp failed: %w", err)
-	}
-	if err := os.Rename(tmpPath, configPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rollback replace failed: %w", err)
-	}
-	return nil
+	return configops.RollbackConfigFromBackup(configPath, backupPath)
 }
 
 func (al *AgentLoop) triggerGatewayReloadFromAgent() (bool, error) {
-	pidPath := filepath.Join(filepath.Dir(al.getConfigPathForCommands()), "gateway.pid")
-	data, err := os.ReadFile(pidPath)
-	if err != nil {
-		return false, fmt.Errorf("%w (pid file not found: %s)", errGatewayNotRunningSlash, pidPath)
-	}
-	pidStr := strings.TrimSpace(string(data))
-	pid, err := strconv.Atoi(pidStr)
-	if err != nil || pid <= 0 {
-		return true, fmt.Errorf("invalid gateway pid: %q", pidStr)
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return true, fmt.Errorf("find process failed: %w", err)
-	}
-	if err := proc.Signal(syscall.SIGHUP); err != nil {
-		return true, fmt.Errorf("send SIGHUP failed: %w", err)
-	}
-	return true, nil
+	return configops.TriggerGatewayReload(al.getConfigPathForCommands(), errGatewayNotRunningSlash)
 }
 
 // truncateString truncates a string to max length

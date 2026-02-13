@@ -17,6 +17,8 @@ type Config struct {
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
 	Logging   LoggingConfig   `json:"logging"`
+	Sentinel  SentinelConfig  `json:"sentinel"`
+	Memory    MemoryConfig    `json:"memory"`
 	mu        sync.RWMutex
 }
 
@@ -122,7 +124,15 @@ type ShellConfig struct {
 	DeniedCmds   []string      `json:"denied_cmds" env:"CLAWGO_TOOLS_SHELL_DENIED_CMDS"`
 	AllowedCmds  []string      `json:"allowed_cmds" env:"CLAWGO_TOOLS_SHELL_ALLOWED_CMDS"`
 	Sandbox      SandboxConfig `json:"sandbox"`
+	Risk         RiskConfig    `json:"risk"`
 	RestrictPath bool          `json:"restrict_path" env:"CLAWGO_TOOLS_SHELL_RESTRICT_PATH"`
+}
+
+type RiskConfig struct {
+	Enabled          bool `json:"enabled" env:"CLAWGO_TOOLS_SHELL_RISK_ENABLED"`
+	AllowDestructive bool `json:"allow_destructive" env:"CLAWGO_TOOLS_SHELL_RISK_ALLOW_DESTRUCTIVE"`
+	RequireDryRun    bool `json:"require_dry_run" env:"CLAWGO_TOOLS_SHELL_RISK_REQUIRE_DRY_RUN"`
+	RequireForceFlag bool `json:"require_force_flag" env:"CLAWGO_TOOLS_SHELL_RISK_REQUIRE_FORCE_FLAG"`
 }
 
 type SandboxConfig struct {
@@ -147,6 +157,24 @@ type LoggingConfig struct {
 	Filename      string `json:"filename" env:"CLAWGO_LOGGING_FILENAME"`
 	MaxSizeMB     int    `json:"max_size_mb" env:"CLAWGO_LOGGING_MAX_SIZE_MB"`
 	RetentionDays int    `json:"retention_days" env:"CLAWGO_LOGGING_RETENTION_DAYS"`
+}
+
+type SentinelConfig struct {
+	Enabled       bool   `json:"enabled" env:"CLAWGO_SENTINEL_ENABLED"`
+	IntervalSec   int    `json:"interval_sec" env:"CLAWGO_SENTINEL_INTERVAL_SEC"`
+	AutoHeal      bool   `json:"auto_heal" env:"CLAWGO_SENTINEL_AUTO_HEAL"`
+	NotifyChannel string `json:"notify_channel" env:"CLAWGO_SENTINEL_NOTIFY_CHANNEL"`
+	NotifyChatID  string `json:"notify_chat_id" env:"CLAWGO_SENTINEL_NOTIFY_CHAT_ID"`
+}
+
+type MemoryConfig struct {
+	Layered    bool `json:"layered" env:"CLAWGO_MEMORY_LAYERED"`
+	RecentDays int  `json:"recent_days" env:"CLAWGO_MEMORY_RECENT_DAYS"`
+	Layers     struct {
+		Profile    bool `json:"profile" env:"CLAWGO_MEMORY_LAYERS_PROFILE"`
+		Project    bool `json:"project" env:"CLAWGO_MEMORY_LAYERS_PROJECT"`
+		Procedures bool `json:"procedures" env:"CLAWGO_MEMORY_LAYERS_PROCEDURES"`
+	} `json:"layers"`
 }
 
 var (
@@ -256,6 +284,12 @@ func DefaultConfig() *Config {
 					Enabled: false,
 					Image:   "golang:alpine",
 				},
+				Risk: RiskConfig{
+					Enabled:          true,
+					AllowDestructive: false,
+					RequireDryRun:    true,
+					RequireForceFlag: true,
+				},
 			},
 			Filesystem: FilesystemConfig{
 				AllowedPaths: []string{},
@@ -268,6 +302,26 @@ func DefaultConfig() *Config {
 			Filename:      "clawgo.log",
 			MaxSizeMB:     20,
 			RetentionDays: 3,
+		},
+		Sentinel: SentinelConfig{
+			Enabled:       true,
+			IntervalSec:   60,
+			AutoHeal:      true,
+			NotifyChannel: "",
+			NotifyChatID:  "",
+		},
+		Memory: MemoryConfig{
+			Layered:    true,
+			RecentDays: 3,
+			Layers: struct {
+				Profile    bool `json:"profile" env:"CLAWGO_MEMORY_LAYERS_PROFILE"`
+				Project    bool `json:"project" env:"CLAWGO_MEMORY_LAYERS_PROJECT"`
+				Procedures bool `json:"procedures" env:"CLAWGO_MEMORY_LAYERS_PROCEDURES"`
+			}{
+				Profile:    true,
+				Project:    true,
+				Procedures: true,
+			},
 		},
 	}
 }

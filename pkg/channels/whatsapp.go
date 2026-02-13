@@ -3,8 +3,9 @@ package channels
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"net"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
+	"clawgo/pkg/logger"
 )
 
 type WhatsAppChannel struct {
@@ -19,6 +21,7 @@ type WhatsAppChannel struct {
 	conn      *websocket.Conn
 	config    config.WhatsAppConfig
 	url       string
+	runCancel cancelGuard
 	mu        sync.Mutex
 	connected bool
 }
@@ -35,7 +38,14 @@ func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsA
 }
 
 func (c *WhatsAppChannel) Start(ctx context.Context) error {
-	log.Printf("Starting WhatsApp channel connecting to %s...", c.url)
+	if c.IsRunning() {
+		return nil
+	}
+	logger.InfoCF("whatsapp", "Starting WhatsApp channel", map[string]interface{}{
+		"url": c.url,
+	})
+	runCtx, cancel := context.WithCancel(ctx)
+	c.runCancel.set(cancel)
 
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
@@ -51,22 +61,28 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 	c.mu.Unlock()
 
 	c.setRunning(true)
-	log.Println("WhatsApp channel connected")
+	logger.InfoC("whatsapp", "WhatsApp channel connected")
 
-	go c.listen(ctx)
+	go c.listen(runCtx)
 
 	return nil
 }
 
 func (c *WhatsAppChannel) Stop(ctx context.Context) error {
-	log.Println("Stopping WhatsApp channel...")
+	if !c.IsRunning() {
+		return nil
+	}
+	logger.InfoC("whatsapp", "Stopping WhatsApp channel")
+	c.runCancel.cancelAndClear()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil {
-			log.Printf("Error closing WhatsApp connection: %v", err)
+			logger.WarnCF("whatsapp", "Error closing WhatsApp connection", map[string]interface{}{
+				logger.FieldError: err.Error(),
+			})
 		}
 		c.conn = nil
 	}
@@ -104,6 +120,9 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 }
 
 func (c *WhatsAppChannel) listen(ctx context.Context) {
+	backoff := 200 * time.Millisecond
+	const maxBackoff = 3 * time.Second
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -114,20 +133,40 @@ func (c *WhatsAppChannel) listen(ctx context.Context) {
 			c.mu.Unlock()
 
 			if conn == nil {
-				time.Sleep(1 * time.Second)
+				if !sleepWithContext(ctx, backoff) {
+					return
+				}
+				backoff = nextBackoff(backoff, maxBackoff)
 				continue
 			}
 
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Printf("WhatsApp read error: %v", err)
-				time.Sleep(2 * time.Second)
+				if ctx.Err() != nil {
+					return
+				}
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) || errors.Is(err, net.ErrClosed) {
+					logger.InfoCF("whatsapp", "WhatsApp connection closed", map[string]interface{}{
+						logger.FieldError: err.Error(),
+					})
+					return
+				}
+				logger.WarnCF("whatsapp", "WhatsApp read error", map[string]interface{}{
+					logger.FieldError: err.Error(),
+				})
+				if !sleepWithContext(ctx, backoff) {
+					return
+				}
+				backoff = nextBackoff(backoff, maxBackoff)
 				continue
 			}
+			backoff = 200 * time.Millisecond
 
 			var msg map[string]interface{}
 			if err := json.Unmarshal(message, &msg); err != nil {
-				log.Printf("Failed to unmarshal WhatsApp message: %v", err)
+				logger.WarnCF("whatsapp", "Failed to unmarshal WhatsApp message", map[string]interface{}{
+					logger.FieldError: err.Error(),
+				})
 				continue
 			}
 
@@ -177,7 +216,29 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]interface{}) {
 		metadata["user_name"] = userName
 	}
 
-	log.Printf("WhatsApp message from %s: %s...", senderID, truncateString(content, 50))
+	logger.InfoCF("whatsapp", "WhatsApp message received", map[string]interface{}{
+		logger.FieldSenderID: senderID,
+		logger.FieldPreview:  truncateString(content, 50),
+	})
 
 	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
+}
+
+func nextBackoff(current, max time.Duration) time.Duration {
+	next := current * 2
+	if next > max {
+		return max
+	}
+	return next
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }

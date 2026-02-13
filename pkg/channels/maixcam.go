@@ -18,7 +18,6 @@ type MaixCamChannel struct {
 	listener   net.Listener
 	clients    map[net.Conn]bool
 	clientsMux sync.RWMutex
-	running    bool
 }
 
 type MaixCamMessage struct {
@@ -35,7 +34,6 @@ func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamC
 		BaseChannel: base,
 		config:      cfg,
 		clients:     make(map[net.Conn]bool),
-		running:     false,
 	}, nil
 }
 
@@ -72,9 +70,9 @@ func (c *MaixCamChannel) acceptConnections(ctx context.Context) {
 		default:
 			conn, err := c.listener.Accept()
 			if err != nil {
-				if c.running {
+				if c.IsRunning() {
 					logger.ErrorCF("maixcam", "Failed to accept connection", map[string]interface{}{
-						"error": err.Error(),
+						logger.FieldError: err.Error(),
 					})
 				}
 				return
@@ -115,7 +113,7 @@ func (c *MaixCamChannel) handleConnection(conn net.Conn, ctx context.Context) {
 			if err := decoder.Decode(&msg); err != nil {
 				if err.Error() != "EOF" {
 					logger.ErrorCF("maixcam", "Failed to decode message", map[string]interface{}{
-						"error": err.Error(),
+						logger.FieldError: err.Error(),
 					})
 				}
 				return
@@ -136,15 +134,17 @@ func (c *MaixCamChannel) processMessage(msg MaixCamMessage, conn net.Conn) {
 		c.handleStatusUpdate(msg)
 	default:
 		logger.WarnCF("maixcam", "Unknown message type", map[string]interface{}{
-			"type": msg.Type,
+			"message_type": msg.Type,
 		})
 	}
 }
 
 func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
-	logger.InfoCF("maixcam", "", map[string]interface{}{
-		"timestamp": msg.Timestamp,
-		"data":      msg.Data,
+	logger.InfoCF("maixcam", "Person detected event", map[string]interface{}{
+		logger.FieldSenderID: "maixcam",
+		logger.FieldChatID:   "default",
+		"timestamp":          msg.Timestamp,
+		"data":               msg.Data,
 	})
 
 	senderID := "maixcam"
@@ -217,10 +217,10 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	}
 
 	response := map[string]interface{}{
-		"type":      "command",
-		"timestamp": float64(0),
-		"message":   msg.Content,
-		"chat_id":   msg.ChatID,
+		"type":             "command",
+		"timestamp":        float64(0),
+		"message":          msg.Content,
+		logger.FieldChatID: msg.ChatID,
 	}
 
 	data, err := json.Marshal(response)
@@ -232,8 +232,8 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	for conn := range c.clients {
 		if _, err := conn.Write(data); err != nil {
 			logger.ErrorCF("maixcam", "Failed to send to client", map[string]interface{}{
-				"client": conn.RemoteAddr().String(),
-				"error":  err.Error(),
+				"client":          conn.RemoteAddr().String(),
+				logger.FieldError: err.Error(),
 			})
 			sendErr = err
 		}

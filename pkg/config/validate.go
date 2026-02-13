@@ -41,6 +41,13 @@ func Validate(cfg *Config) []error {
 		}
 	}
 
+	if cfg.Sentinel.Enabled && cfg.Sentinel.IntervalSec <= 0 {
+		errs = append(errs, fmt.Errorf("sentinel.interval_sec must be > 0 when sentinel.enabled=true"))
+	}
+	if cfg.Memory.RecentDays <= 0 {
+		errs = append(errs, fmt.Errorf("memory.recent_days must be > 0"))
+	}
+
 	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token == "" {
 		errs = append(errs, fmt.Errorf("channels.telegram.token is required when channels.telegram.enabled=true"))
 	}

@@ -45,14 +45,14 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 
 	audioFile, err := os.Open(audioFilePath)
 	if err != nil {
-		logger.ErrorCF("voice", "Failed to open audio file", map[string]interface{}{"path": audioFilePath, "error": err})
+		logger.ErrorCF("voice", "Failed to open audio file", map[string]interface{}{"path": audioFilePath, logger.FieldError: err})
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
 	}
 	defer audioFile.Close()
 
 	fileInfo, err := audioFile.Stat()
 	if err != nil {
-		logger.ErrorCF("voice", "Failed to get file info", map[string]interface{}{"path": audioFilePath, "error": err})
+		logger.ErrorCF("voice", "Failed to get file info", map[string]interface{}{"path": audioFilePath, logger.FieldError: err})
 		return nil, fmt.Errorf("failed to get file info: %w", err)
 	}
 
@@ -66,37 +66,37 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 
 	part, err := writer.CreateFormFile("file", filepath.Base(audioFilePath))
 	if err != nil {
-		logger.ErrorCF("voice", "Failed to create form file", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to create form file", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to create form file: %w", err)
 	}
 
 	copied, err := io.Copy(part, audioFile)
 	if err != nil {
-		logger.ErrorCF("voice", "Failed to copy file content", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to copy file content", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to copy file content: %w", err)
 	}
 
 	logger.DebugCF("voice", "File copied to request", map[string]interface{}{"bytes_copied": copied})
 
 	if err := writer.WriteField("model", "whisper-large-v3"); err != nil {
-		logger.ErrorCF("voice", "Failed to write model field", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to write model field", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
 	if err := writer.WriteField("response_format", "json"); err != nil {
-		logger.ErrorCF("voice", "Failed to write response_format field", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to write response_format field", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to write response_format field: %w", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		logger.ErrorCF("voice", "Failed to close multipart writer", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to close multipart writer", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
 	url := t.apiBase + "/audio/transcriptions"
 	req, err := http.NewRequestWithContext(ctx, "POST", url, &requestBody)
 	if err != nil {
-		logger.ErrorCF("voice", "Failed to create request", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to create request", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -111,14 +111,14 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 
 	resp, err := t.httpClient.Do(req)
 	if err != nil {
-		logger.ErrorCF("voice", "Failed to send request", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to send request", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		logger.ErrorCF("voice", "Failed to read response", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to read response", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
@@ -137,15 +137,15 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 
 	var result TranscriptionResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		logger.ErrorCF("voice", "Failed to unmarshal response", map[string]interface{}{"error": err})
+		logger.ErrorCF("voice", "Failed to unmarshal response", map[string]interface{}{logger.FieldError: err})
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	logger.InfoCF("voice", "Transcription completed successfully", map[string]interface{}{
-		"text_length":           len(result.Text),
-		"language":              result.Language,
-		"duration_seconds":      result.Duration,
-		"transcription_preview": truncateText(result.Text, 50),
+		logger.FieldTranscriptLength: len(result.Text),
+		"language":                   result.Language,
+		"duration_seconds":           result.Duration,
+		"transcription_preview":      truncateText(result.Text, 50),
 	})
 
 	return &result, nil

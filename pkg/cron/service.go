@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"clawgo/pkg/lifecycle"
 )
 
 type CronSchedule struct {
@@ -56,34 +58,26 @@ type CronService struct {
 	store     *CronStore
 	onJob     JobHandler
 	mu        sync.RWMutex
-	wg        sync.WaitGroup
-	running   bool
-	stopChan  chan struct{}
+	runner    *lifecycle.LoopRunner
 }
 
 func NewCronService(storePath string, onJob JobHandler) *CronService {
 	cs := &CronService{
 		storePath: storePath,
 		onJob:     onJob,
-		stopChan:  make(chan struct{}),
+		runner:    lifecycle.NewLoopRunner(),
 	}
 	cs.loadStore()
 	return cs
 }
 
 func (cs *CronService) Start() error {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-
-	if cs.running {
+	if cs.runner.Running() {
 		return nil
 	}
 
-	select {
-	case <-cs.stopChan:
-		cs.stopChan = make(chan struct{})
-	default:
-	}
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
 
 	if err := cs.loadStore(); err != nil {
 		return fmt.Errorf("failed to load store: %w", err)
@@ -94,35 +88,22 @@ func (cs *CronService) Start() error {
 		return fmt.Errorf("failed to save store: %w", err)
 	}
 
-	cs.running = true
-	cs.wg.Add(1)
-	go cs.runLoop()
+	cs.runner.Start(cs.runLoop)
 
 	return nil
 }
 
 func (cs *CronService) Stop() {
-	cs.mu.Lock()
-	if !cs.running {
-		cs.mu.Unlock()
-		return
-	}
-
-	cs.running = false
-	close(cs.stopChan)
-	cs.mu.Unlock()
-
-	cs.wg.Wait()
+	cs.runner.Stop()
 }
 
-func (cs *CronService) runLoop() {
-	defer cs.wg.Done()
+func (cs *CronService) runLoop(stopCh <-chan struct{}) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-cs.stopChan:
+		case <-stopCh:
 			return
 		case <-ticker.C:
 			cs.checkJobs()
@@ -131,12 +112,11 @@ func (cs *CronService) runLoop() {
 }
 
 func (cs *CronService) checkJobs() {
-	cs.mu.RLock()
-	if !cs.running {
-		cs.mu.RUnlock()
+	if !cs.runner.Running() {
 		return
 	}
 
+	cs.mu.RLock()
 	now := time.Now().UnixMilli()
 	var dueJobs []*CronJob
 
@@ -390,7 +370,7 @@ func (cs *CronService) Status() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"enabled":      cs.running,
+		"enabled":      cs.runner.Running(),
 		"jobs":         len(cs.store.Jobs),
 		"nextWakeAtMS": cs.getNextWakeMS(),
 	}

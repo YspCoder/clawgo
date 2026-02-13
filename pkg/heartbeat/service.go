@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
+
+	"clawgo/pkg/lifecycle"
 )
 
 type HeartbeatService struct {
@@ -13,10 +14,7 @@ type HeartbeatService struct {
 	onHeartbeat func(string) (string, error)
 	interval    time.Duration
 	enabled     bool
-	mu          sync.RWMutex
-	wg          sync.WaitGroup
-	runningFlag bool
-	stopChan    chan struct{}
+	runner      *lifecycle.LoopRunner
 }
 
 func NewHeartbeatService(workspace string, onHeartbeat func(string) (string, error), intervalS int, enabled bool) *HeartbeatService {
@@ -25,58 +23,33 @@ func NewHeartbeatService(workspace string, onHeartbeat func(string) (string, err
 		onHeartbeat: onHeartbeat,
 		interval:    time.Duration(intervalS) * time.Second,
 		enabled:     enabled,
-		stopChan:    make(chan struct{}),
+		runner:      lifecycle.NewLoopRunner(),
 	}
 }
 
 func (hs *HeartbeatService) Start() error {
-	hs.mu.Lock()
-	defer hs.mu.Unlock()
-
-	if hs.runningFlag {
-		return nil
-	}
-
 	if !hs.enabled {
 		return fmt.Errorf("heartbeat service is disabled")
 	}
-
-	hs.stopChan = make(chan struct{})
-	hs.runningFlag = true
-	hs.wg.Add(1)
-	go hs.runLoop()
-
+	hs.runner.Start(hs.runLoop)
 	return nil
 }
 
 func (hs *HeartbeatService) Stop() {
-	hs.mu.Lock()
-	if !hs.runningFlag {
-		hs.mu.Unlock()
-		return
-	}
-
-	hs.runningFlag = false
-	close(hs.stopChan)
-	hs.mu.Unlock()
-
-	hs.wg.Wait()
+	hs.runner.Stop()
 }
 
 func (hs *HeartbeatService) running() bool {
-	hs.mu.RLock()
-	defer hs.mu.RUnlock()
-	return hs.runningFlag
+	return hs.runner.Running()
 }
 
-func (hs *HeartbeatService) runLoop() {
-	defer hs.wg.Done()
+func (hs *HeartbeatService) runLoop(stopCh <-chan struct{}) {
 	ticker := time.NewTicker(hs.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case <-hs.stopChan:
+		case <-stopCh:
 			return
 		case <-ticker.C:
 			hs.checkHeartbeat()
@@ -85,12 +58,9 @@ func (hs *HeartbeatService) runLoop() {
 }
 
 func (hs *HeartbeatService) checkHeartbeat() {
-	hs.mu.RLock()
 	if !hs.enabled || !hs.running() {
-		hs.mu.RUnlock()
 		return
 	}
-	hs.mu.RUnlock()
 
 	prompt := hs.buildPrompt()
 

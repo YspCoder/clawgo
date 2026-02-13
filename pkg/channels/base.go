@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/logger"
@@ -21,7 +22,7 @@ type Channel interface {
 type BaseChannel struct {
 	config    interface{}
 	bus       *bus.MessageBus
-	running   bool
+	running   atomic.Bool
 	name      string
 	allowList []string
 }
@@ -32,7 +33,6 @@ func NewBaseChannel(name string, config interface{}, bus *bus.MessageBus, allowL
 		bus:       bus,
 		name:      name,
 		allowList: allowList,
-		running:   false,
 	}
 }
 
@@ -41,7 +41,7 @@ func (c *BaseChannel) Name() string {
 }
 
 func (c *BaseChannel) IsRunning() bool {
-	return c.running
+	return c.running.Load()
 }
 
 func (c *BaseChannel) IsAllowed(senderID string) bool {
@@ -67,9 +67,9 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []string, metadata map[string]string) {
 	if !c.IsAllowed(senderID) {
 		logger.WarnCF("channels", "Message rejected by allowlist", map[string]interface{}{
-			"channel":   c.name,
-			"sender_id": senderID,
-			"chat_id":   chatID,
+			logger.FieldChannel:  c.name,
+			logger.FieldSenderID: senderID,
+			logger.FieldChatID:   chatID,
 		})
 		return
 	}
@@ -91,5 +91,5 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 }
 
 func (c *BaseChannel) setRunning(running bool) {
-	c.running = running
+	c.running.Store(running)
 }

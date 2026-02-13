@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"clawgo/pkg/logger"
 )
 
 const (
@@ -265,12 +267,12 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 
 	result := map[string]interface{}{
-		"url":       urlStr,
-		"status":    resp.StatusCode,
-		"extractor": extractor,
-		"truncated": truncated,
-		"length":    len(text),
-		"text":      text,
+		"url":                            urlStr,
+		"status":                         resp.StatusCode,
+		"extractor":                      extractor,
+		"truncated":                      truncated,
+		logger.FieldFetchedContentLength: len(text),
+		"text":                           text,
 	}
 
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")

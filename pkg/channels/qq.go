@@ -23,8 +23,7 @@ type QQChannel struct {
 	config         config.QQConfig
 	api            openapi.OpenAPI
 	tokenSource    oauth2.TokenSource
-	ctx            context.Context
-	cancel         context.CancelFunc
+	runCancel      cancelGuard
 	sessionManager botgo.SessionManager
 	processedIDs   map[string]bool
 	mu             sync.RWMutex
@@ -41,6 +40,9 @@ func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, 
 }
 
 func (c *QQChannel) Start(ctx context.Context) error {
+	if c.IsRunning() {
+		return nil
+	}
 	if c.config.AppID == "" || c.config.AppSecret == "" {
 		return fmt.Errorf("QQ app_id and app_secret not configured")
 	}
@@ -55,10 +57,11 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	c.tokenSource = token.NewQQBotTokenSource(credentials)
 
 	// 创建子 context
-	c.ctx, c.cancel = context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancel(ctx)
+	c.runCancel.set(cancel)
 
 	// 启动自动刷新 token 协程
-	if err := token.StartRefreshAccessToken(c.ctx, c.tokenSource); err != nil {
+	if err := token.StartRefreshAccessToken(runCtx, c.tokenSource); err != nil {
 		return fmt.Errorf("failed to start token refresh: %w", err)
 	}
 
@@ -72,7 +75,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	)
 
 	// 获取 WebSocket 接入点
-	wsInfo, err := c.api.WS(c.ctx, nil, "")
+	wsInfo, err := c.api.WS(runCtx, nil, "")
 	if err != nil {
 		return fmt.Errorf("failed to get websocket info: %w", err)
 	}
@@ -85,14 +88,11 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	c.sessionManager = botgo.NewSessionManager()
 
 	// 在 goroutine 中启动 WebSocket 连接，避免阻塞
-	go func() {
-		if err := c.sessionManager.Start(wsInfo, c.tokenSource, &intent); err != nil {
-			logger.ErrorCF("qq", "WebSocket session error", map[string]interface{}{
-				"error": err.Error(),
-			})
-			c.setRunning(false)
-		}
-	}()
+	runChannelTask("qq", "websocket session", func() error {
+		return c.sessionManager.Start(wsInfo, c.tokenSource, &intent)
+	}, func(_ error) {
+		c.setRunning(false)
+	})
 
 	c.setRunning(true)
 	logger.InfoC("qq", "QQ bot started successfully")
@@ -101,13 +101,13 @@ func (c *QQChannel) Start(ctx context.Context) error {
 }
 
 func (c *QQChannel) Stop(ctx context.Context) error {
+	if !c.IsRunning() {
+		return nil
+	}
 	logger.InfoC("qq", "Stopping QQ bot")
 	c.setRunning(false)
 
-	if c.cancel != nil {
-		c.cancel()
-	}
-
+	c.runCancel.cancelAndClear()
 	return nil
 }
 
@@ -125,7 +125,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
 	if err != nil {
 		logger.ErrorCF("qq", "Failed to send C2C message", map[string]interface{}{
-			"error": err.Error(),
+			logger.FieldError: err.Error(),
 		})
 		return err
 	}
@@ -158,8 +158,9 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		}
 
 		logger.InfoCF("qq", "Received C2C message", map[string]interface{}{
-			"sender": senderID,
-			"length": len(content),
+			logger.FieldSenderID:             senderID,
+			logger.FieldChatID:               senderID,
+			logger.FieldMessageContentLength: len(content),
 		})
 
 		// 转发到消息总线
@@ -198,9 +199,9 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		}
 
 		logger.InfoCF("qq", "Received group AT message", map[string]interface{}{
-			"sender": senderID,
-			"group":  data.GroupID,
-			"length": len(content),
+			logger.FieldSenderID:             senderID,
+			"group_id":                       data.GroupID,
+			logger.FieldMessageContentLength: len(content),
 		})
 
 		// 转发到消息总线（使用 GroupID 作为 ChatID）

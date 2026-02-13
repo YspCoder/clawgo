@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -131,11 +130,15 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 
 					result, err := c.transcriber.Transcribe(ctx, localPath)
 					if err != nil {
-						log.Printf("Voice transcription failed: %v", err)
+						logger.WarnCF("discord", "Voice transcription failed", map[string]interface{}{
+							logger.FieldError: err.Error(),
+						})
 						transcribedText = fmt.Sprintf("[audio: %s (transcription failed)]", localPath)
 					} else {
 						transcribedText = fmt.Sprintf("[audio transcription: %s]", result.Text)
-						log.Printf("Audio transcribed successfully: %s", result.Text)
+						logger.InfoCF("discord", "Audio transcribed successfully", map[string]interface{}{
+							"text_preview": truncateString(result.Text, 120),
+						})
 					}
 				} else {
 					transcribedText = fmt.Sprintf("[audio: %s]", localPath)
@@ -170,9 +173,9 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	logger.DebugCF("discord", "Received message", map[string]interface{}{
-		"sender_name": senderName,
-		"sender_id":   senderID,
-		"preview":     truncateString(content, 50),
+		"sender_name":        senderName,
+		logger.FieldSenderID: senderID,
+		logger.FieldPreview:  truncateString(content, 50),
 	})
 
 	metadata := map[string]string{
@@ -210,7 +213,9 @@ func isAudioFile(filename, contentType string) bool {
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	mediaDir := filepath.Join(os.TempDir(), "clawgo_media")
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
-		log.Printf("Failed to create media directory: %v", err)
+		logger.WarnCF("discord", "Failed to create media directory", map[string]interface{}{
+			logger.FieldError: err.Error(),
+		})
 		return ""
 	}
 
@@ -218,29 +223,39 @@ func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Printf("Failed to download attachment: %v", err)
+		logger.WarnCF("discord", "Failed to download attachment", map[string]interface{}{
+			logger.FieldError: err.Error(),
+		})
 		return ""
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to download attachment, status: %d", resp.StatusCode)
+		logger.WarnCF("discord", "Attachment download returned non-200", map[string]interface{}{
+			"status_code": resp.StatusCode,
+		})
 		return ""
 	}
 
 	out, err := os.Create(localPath)
 	if err != nil {
-		log.Printf("Failed to create file: %v", err)
+		logger.WarnCF("discord", "Failed to create local attachment file", map[string]interface{}{
+			logger.FieldError: err.Error(),
+		})
 		return ""
 	}
 	defer out.Close()
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		log.Printf("Failed to write file: %v", err)
+		logger.WarnCF("discord", "Failed to write local attachment file", map[string]interface{}{
+			logger.FieldError: err.Error(),
+		})
 		return ""
 	}
 
-	log.Printf("Attachment downloaded successfully to: %s", localPath)
+	logger.DebugCF("discord", "Attachment downloaded successfully", map[string]interface{}{
+		"path": localPath,
+	})
 	return localPath
 }

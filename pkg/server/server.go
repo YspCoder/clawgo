@@ -42,7 +42,7 @@ func (s *Server) Start() error {
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.ErrorCF("server", "HTTP server failed", map[string]interface{}{
-				"error": err.Error(),
+				logger.FieldError: err.Error(),
 			})
 		}
 	}()

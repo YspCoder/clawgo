@@ -8,10 +8,12 @@ import (
 )
 
 type MessageBus struct {
-	inbound  chan InboundMessage
-	outbound chan OutboundMessage
-	handlers map[string]MessageHandler
-	mu       sync.RWMutex
+	inbound   chan InboundMessage
+	outbound  chan OutboundMessage
+	handlers  map[string]MessageHandler
+	mu        sync.RWMutex
+	closed    bool
+	closeOnce sync.Once
 }
 
 const queueWriteTimeout = 2 * time.Second
@@ -25,41 +27,76 @@ func NewMessageBus() *MessageBus {
 }
 
 func (mb *MessageBus) PublishInbound(msg InboundMessage) {
+	mb.mu.RLock()
+	if mb.closed {
+		mb.mu.RUnlock()
+		return
+	}
+	ch := mb.inbound
+	mb.mu.RUnlock()
+
+	defer func() {
+		if recover() != nil {
+			logger.WarnCF("bus", "PublishInbound on closed channel recovered", map[string]interface{}{
+				logger.FieldChannel: msg.Channel,
+				logger.FieldChatID:  msg.ChatID,
+				"session_key":       msg.SessionKey,
+			})
+		}
+	}()
+
 	select {
-	case mb.inbound <- msg:
+	case ch <- msg:
 	case <-time.After(queueWriteTimeout):
 		logger.ErrorCF("bus", "PublishInbound timeout (queue full)", map[string]interface{}{
-			"channel":     msg.Channel,
-			"chat_id":     msg.ChatID,
-			"session_key": msg.SessionKey,
+			logger.FieldChannel: msg.Channel,
+			logger.FieldChatID:  msg.ChatID,
+			"session_key":       msg.SessionKey,
 		})
 	}
 }
 
 func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool) {
 	select {
-	case msg := <-mb.inbound:
-		return msg, true
+	case msg, ok := <-mb.inbound:
+		return msg, ok
 	case <-ctx.Done():
 		return InboundMessage{}, false
 	}
 }
 
 func (mb *MessageBus) PublishOutbound(msg OutboundMessage) {
+	mb.mu.RLock()
+	if mb.closed {
+		mb.mu.RUnlock()
+		return
+	}
+	ch := mb.outbound
+	mb.mu.RUnlock()
+
+	defer func() {
+		if recover() != nil {
+			logger.WarnCF("bus", "PublishOutbound on closed channel recovered", map[string]interface{}{
+				logger.FieldChannel: msg.Channel,
+				logger.FieldChatID:  msg.ChatID,
+			})
+		}
+	}()
+
 	select {
-	case mb.outbound <- msg:
+	case ch <- msg:
 	case <-time.After(queueWriteTimeout):
 		logger.ErrorCF("bus", "PublishOutbound timeout (queue full)", map[string]interface{}{
-			"channel": msg.Channel,
-			"chat_id": msg.ChatID,
+			logger.FieldChannel: msg.Channel,
+			logger.FieldChatID:  msg.ChatID,
 		})
 	}
 }
 
 func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, bool) {
 	select {
-	case msg := <-mb.outbound:
-		return msg, true
+	case msg, ok := <-mb.outbound:
+		return msg, ok
 	case <-ctx.Done():
 		return OutboundMessage{}, false
 	}
@@ -79,6 +116,11 @@ func (mb *MessageBus) GetHandler(channel string) (MessageHandler, bool) {
 }
 
 func (mb *MessageBus) Close() {
-	close(mb.inbound)
-	close(mb.outbound)
+	mb.closeOnce.Do(func() {
+		mb.mu.Lock()
+		mb.closed = true
+		close(mb.inbound)
+		close(mb.outbound)
+		mb.mu.Unlock()
+	})
 }

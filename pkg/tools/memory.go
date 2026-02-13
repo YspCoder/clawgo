@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -70,6 +71,15 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	}
 
 	files := t.getMemoryFiles()
+	if len(files) == 0 {
+		return fmt.Sprintf("No memory files found for query: %s", query), nil
+	}
+
+	// Fast path: structured memory index.
+	if idx, err := t.loadOrBuildIndex(files); err == nil && idx != nil {
+		results := t.searchInIndex(idx, keywords)
+		return t.renderSearchResults(query, results, maxResults), nil
+	}
 
 	resultsChan := make(chan []searchResult, len(files))
 	var wg sync.WaitGroup
@@ -97,21 +107,64 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 		allResults = append(allResults, matches...)
 	}
 
-	// Simple ranking: sort by score (number of keyword matches) desc
-	for i := 0; i < len(allResults); i++ {
-		for j := i + 1; j < len(allResults); j++ {
-			if allResults[j].score > allResults[i].score {
-				allResults[i], allResults[j] = allResults[j], allResults[i]
-			}
+	return t.renderSearchResults(query, allResults, maxResults), nil
+}
+
+func (t *MemorySearchTool) searchInIndex(idx *memoryIndex, keywords []string) []searchResult {
+	type scoreItem struct {
+		entry memoryIndexEntry
+		score int
+	}
+	acc := make(map[int]int)
+	for _, kw := range keywords {
+		token := strings.ToLower(strings.TrimSpace(kw))
+		for _, entryID := range idx.Inverted[token] {
+			acc[entryID]++
 		}
 	}
+
+	out := make([]scoreItem, 0, len(acc))
+	for entryID, score := range acc {
+		if entryID < 0 || entryID >= len(idx.Entries) || score <= 0 {
+			continue
+		}
+		out = append(out, scoreItem{
+			entry: idx.Entries[entryID],
+			score: score,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].score == out[j].score {
+			return out[i].entry.LineNum < out[j].entry.LineNum
+		}
+		return out[i].score > out[j].score
+	})
+
+	results := make([]searchResult, 0, len(out))
+	for _, item := range out {
+		results = append(results, searchResult{
+			file:    item.entry.File,
+			lineNum: item.entry.LineNum,
+			content: item.entry.Content,
+			score:   item.score,
+		})
+	}
+	return results
+}
+
+func (t *MemorySearchTool) renderSearchResults(query string, allResults []searchResult, maxResults int) string {
+	sort.Slice(allResults, func(i, j int) bool {
+		if allResults[i].score == allResults[j].score {
+			return allResults[i].lineNum < allResults[j].lineNum
+		}
+		return allResults[i].score > allResults[j].score
+	})
 
 	if len(allResults) > maxResults {
 		allResults = allResults[:maxResults]
 	}
-
 	if len(allResults) == 0 {
-		return fmt.Sprintf("No memory found for query: %s", query), nil
+		return fmt.Sprintf("No memory found for query: %s", query)
 	}
 
 	var sb strings.Builder
@@ -120,8 +173,7 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 		relPath, _ := filepath.Rel(t.workspace, res.file)
 		sb.WriteString(fmt.Sprintf("--- Source: %s:%d ---\n%s\n\n", relPath, res.lineNum, res.content))
 	}
-
-	return sb.String(), nil
+	return sb.String()
 }
 
 func (t *MemorySearchTool) getMemoryFiles() []string {
@@ -201,7 +253,12 @@ func (t *MemorySearchTool) searchFile(path string, keywords []string) ([]searchR
 				}
 			}
 
-			// Only keep if at least one keyword matched
+			// Keep all blocks when keywords are empty (index build).
+			if len(keywords) == 0 {
+				score = 1
+			}
+
+			// Only keep if at least one keyword matched.
 			if score > 0 {
 				results = append(results, searchResult{
 					file:    path,

@@ -65,6 +65,16 @@ export CLAWGO_CONFIG=/path/to/config.json
 
 `config set` 采用原子写入，并在网关运行且热更新失败时自动回滚到备份，避免配置损坏导致服务不可用。
 
+也支持在聊天通道中使用斜杠命令：
+
+```text
+/help
+/status
+/config get channels.telegram.enabled
+/config set channels.telegram.enabled true
+/reload
+```
+
 ## 🧾 日志链路
 
 默认启用文件日志，并支持自动分割和过期清理（默认保留 3 天）：
@@ -78,6 +88,91 @@ export CLAWGO_CONFIG=/path/to/config.json
   "retention_days": 3
 }
 ```
+
+当前通道与网关链路日志已统一为结构化字段，建议告警与检索统一使用：
+- `channel`
+- `chat_id`
+- `sender_id`
+- `preview`
+- `error`
+- `message_content_length`
+- `assistant_content_length`
+- `user_response_content_length`
+- `fetched_content_length`
+- `output_content_length`
+- `transcript_length`
+
+字段常量已集中在 `pkg/logger/fields.go`，新增日志字段建议优先复用常量，避免命名漂移。
+
+## 🛡️ Sentinel 与风险防护
+
+Sentinel 会周期巡检关键运行资源（配置、memory、日志目录），支持自动修复与告警转发：
+
+```json
+"sentinel": {
+  "enabled": true,
+  "interval_sec": 60,
+  "auto_heal": true,
+  "notify_channel": "",
+  "notify_chat_id": ""
+}
+```
+
+Shell 工具默认启用 Risk Gate。检测到破坏性命令时，默认阻断并要求 `force=true`，可先做 dry-run：
+
+```json
+"tools": {
+  "shell": {
+    "risk": {
+      "enabled": true,
+      "allow_destructive": false,
+      "require_dry_run": true,
+      "require_force_flag": true
+    }
+  }
+}
+```
+
+## 🤖 多智能体编排 (Pipeline)
+
+新增标准化任务编排协议：`role + goal + depends_on + shared_state`。
+
+可用工具：
+- `pipeline_create`：创建任务图
+- `pipeline_status`：查看流水线状态
+- `pipeline_state_set`：写入共享状态
+- `pipeline_dispatch`：自动派发当前可执行任务
+- `spawn`：支持 `pipeline_id/task_id/role` 参数
+
+通道内可查看状态：
+
+```text
+/pipeline list
+/pipeline status <pipeline_id>
+/pipeline ready <pipeline_id>
+```
+
+## 🧠 记忆与索引增强
+
+- `memory_search`：增加结构化索引（倒排索引 + 缓存），优先走索引检索。
+- 记忆分层：支持 `profile / project / procedures / recent notes`。
+
+```json
+"memory": {
+  "layered": true,
+  "recent_days": 3,
+  "layers": {
+    "profile": true,
+    "project": true,
+    "procedures": true
+  }
+}
+```
+
+## 🗺️ Repo-Map 与原子技能
+
+- `repo_map`：生成并查询代码全景地图，先定位目标文件再精读。
+- `skill_exec`：执行 `skills/<name>/scripts/*` 原子脚本，保持 Gateway 精简。
 
 ## 📦 迁移与技能
 

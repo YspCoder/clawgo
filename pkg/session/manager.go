@@ -37,8 +37,8 @@ func NewSessionManager(storage string) *SessionManager {
 	if storage != "" {
 		if err := os.MkdirAll(storage, 0755); err != nil {
 			logger.ErrorCF("session", "Failed to create session storage", map[string]interface{}{
-				"storage": storage,
-				"error":   err.Error(),
+				"storage":         storage,
+				logger.FieldError: err.Error(),
 			})
 		}
 		sm.loadSessions()
@@ -93,8 +93,8 @@ func (sm *SessionManager) AddMessageFull(sessionKey string, msg providers.Messag
 	// 立即持久化 (Append-only)
 	if err := sm.appendMessage(sessionKey, msg); err != nil {
 		logger.ErrorCF("session", "Failed to persist session message", map[string]interface{}{
-			"session_key": sessionKey,
-			"error":       err.Error(),
+			"session_key":     sessionKey,
+			logger.FieldError: err.Error(),
 		})
 	}
 }
@@ -237,8 +237,8 @@ func (sm *SessionManager) loadSessions() error {
 			session.mu.Unlock()
 			if err := scanner.Err(); err != nil {
 				logger.WarnCF("session", "Error while scanning session history", map[string]interface{}{
-					"file":  file.Name(),
-					"error": err.Error(),
+					"file":            file.Name(),
+					logger.FieldError: err.Error(),
 				})
 			}
 			_ = f.Close()

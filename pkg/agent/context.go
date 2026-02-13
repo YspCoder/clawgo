@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"clawgo/pkg/config"
 	"clawgo/pkg/logger"
 	"clawgo/pkg/providers"
 	"clawgo/pkg/skills"
@@ -28,7 +29,7 @@ func getGlobalConfigDir() string {
 	return filepath.Join(home, ".clawgo")
 }
 
-func NewContextBuilder(workspace string, toolsSummaryFunc func() []string) *ContextBuilder {
+func NewContextBuilder(workspace string, memCfg config.MemoryConfig, toolsSummaryFunc func() []string) *ContextBuilder {
 	// builtin skills: 当前项目的 skills 目录
 	// 使用当前工作目录下的 skills/ 目录
 	wd, _ := os.Getwd()
@@ -38,7 +39,7 @@ func NewContextBuilder(workspace string, toolsSummaryFunc func() []string) *Cont
 	return &ContextBuilder{
 		workspace:    workspace,
 		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace),
+		memory:       NewMemoryStore(workspace, memCfg),
 		toolsSummary: toolsSummaryFunc,
 	}
 }
@@ -171,7 +172,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	}
 	logger.DebugCF("agent", "System prompt preview",
 		map[string]interface{}{
-			"preview": preview,
+			logger.FieldPreview: preview,
 		})
 
 	if summary != "" {

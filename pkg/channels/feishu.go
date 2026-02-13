@@ -23,8 +23,8 @@ type FeishuChannel struct {
 	client   *lark.Client
 	wsClient *larkws.Client
 
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	mu        sync.Mutex
+	runCancel cancelGuard
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
@@ -38,6 +38,9 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 }
 
 func (c *FeishuChannel) Start(ctx context.Context) error {
+	if c.IsRunning() {
+		return nil
+	}
 	if c.config.AppID == "" || c.config.AppSecret == "" {
 		return fmt.Errorf("feishu app_id or app_secret is empty")
 	}
@@ -46,9 +49,9 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 		OnP2MessageReceiveV1(c.handleMessageReceive)
 
 	runCtx, cancel := context.WithCancel(ctx)
+	c.runCancel.set(cancel)
 
 	c.mu.Lock()
-	c.cancel = cancel
 	c.wsClient = larkws.NewClient(
 		c.config.AppID,
 		c.config.AppSecret,
@@ -60,25 +63,23 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	c.setRunning(true)
 	logger.InfoC("feishu", "Feishu channel started (websocket mode)")
 
-	go func() {
-		if err := wsClient.Start(runCtx); err != nil {
-			logger.ErrorCF("feishu", "Feishu websocket stopped with error", map[string]interface{}{
-				"error": err.Error(),
-			})
-		}
-	}()
+	runChannelTask("feishu", "websocket", func() error {
+		return wsClient.Start(runCtx)
+	}, func(_ error) {
+		c.setRunning(false)
+	})
 
 	return nil
 }
 
 func (c *FeishuChannel) Stop(ctx context.Context) error {
-	c.mu.Lock()
-	if c.cancel != nil {
-		c.cancel()
-		c.cancel = nil
+	if !c.IsRunning() {
+		return nil
 	}
+	c.mu.Lock()
 	c.wsClient = nil
 	c.mu.Unlock()
+	c.runCancel.cancelAndClear()
 
 	c.setRunning(false)
 	logger.InfoC("feishu", "Feishu channel stopped")
@@ -119,7 +120,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	}
 
 	logger.DebugCF("feishu", "Feishu message sent", map[string]interface{}{
-		"chat_id": msg.ChatID,
+		logger.FieldChatID: msg.ChatID,
 	})
 
 	return nil
@@ -163,9 +164,9 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 	}
 
 	logger.InfoCF("feishu", "Feishu message received", map[string]interface{}{
-		"sender_id": senderID,
-		"chat_id":   chatID,
-		"preview":   truncateString(content, 80),
+		logger.FieldSenderID: senderID,
+		logger.FieldChatID:   chatID,
+		logger.FieldPreview:  truncateString(content, 80),
 	})
 
 	c.HandleMessage(senderID, chatID, content, nil, metadata)

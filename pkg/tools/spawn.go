@@ -39,6 +39,18 @@ func (t *SpawnTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
+			"role": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional role for this subagent, e.g. research/coding/testing",
+			},
+			"pipeline_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional pipeline ID for orchestrated multi-agent workflow",
+			},
+			"task_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional task ID under the pipeline",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -56,12 +68,18 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 	}
 
 	label, _ := args["label"].(string)
+	role, _ := args["role"].(string)
+	pipelineID, _ := args["pipeline_id"].(string)
+	taskID, _ := args["task_id"].(string)
+	if label == "" && role != "" {
+		label = role
+	}
 
 	if t.manager == nil {
 		return "Error: Subagent manager not configured", nil
 	}
 
-	result, err := t.manager.Spawn(ctx, task, label, t.originChannel, t.originChatID)
+	result, err := t.manager.Spawn(ctx, task, label, t.originChannel, t.originChatID, pipelineID, taskID)
 	if err != nil {
 		return "", fmt.Errorf("failed to spawn subagent: %w", err)
 	}

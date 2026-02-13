@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"clawgo/pkg/config"
 	"clawgo/pkg/logger"
 )
 
@@ -19,22 +21,27 @@ import (
 // - Long-term memory: memory/MEMORY.md
 // - Daily notes: memory/YYYYMM/YYYYMMDD.md
 type MemoryStore struct {
-	workspace  string
-	memoryDir  string
-	memoryFile string
+	workspace        string
+	memoryDir        string
+	memoryFile       string
+	layered          bool
+	recentDays       int
+	includeProfile   bool
+	includeProject   bool
+	includeProcedure bool
 }
 
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
 // It ensures the memory directory exists.
-func NewMemoryStore(workspace string) *MemoryStore {
+func NewMemoryStore(workspace string, cfg config.MemoryConfig) *MemoryStore {
 	memoryDir := filepath.Join(workspace, "memory")
 	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
 
 	// Ensure memory directory exists
 	if err := os.MkdirAll(memoryDir, 0755); err != nil {
 		logger.ErrorCF("memory", "Failed to create memory directory", map[string]interface{}{
-			"memory_dir": memoryDir,
-			"error":      err.Error(),
+			"memory_dir":      memoryDir,
+			logger.FieldError: err.Error(),
 		})
 	}
 
@@ -58,16 +65,39 @@ This file stores important information that should persist across sessions.
 `
 		if writeErr := os.WriteFile(memoryFile, []byte(initial), 0644); writeErr != nil {
 			logger.ErrorCF("memory", "Failed to initialize MEMORY.md", map[string]interface{}{
-				"memory_file": memoryFile,
-				"error":       writeErr.Error(),
+				"memory_file":     memoryFile,
+				logger.FieldError: writeErr.Error(),
 			})
 		}
 	}
 
+	if cfg.Layered {
+		_ = os.MkdirAll(filepath.Join(memoryDir, "layers"), 0755)
+		ensureLayerFile(filepath.Join(memoryDir, "layers", "profile.md"), "# User Profile\n\nStable user profile, preferences, identity traits.\n")
+		ensureLayerFile(filepath.Join(memoryDir, "layers", "project.md"), "# Project Memory\n\nProject-specific architecture decisions and constraints.\n")
+		ensureLayerFile(filepath.Join(memoryDir, "layers", "procedures.md"), "# Procedures Memory\n\nReusable workflows, command recipes, and runbooks.\n")
+	}
+
+	recentDays := cfg.RecentDays
+	if recentDays <= 0 {
+		recentDays = 3
+	}
+
 	return &MemoryStore{
-		workspace:  workspace,
-		memoryDir:  memoryDir,
-		memoryFile: memoryFile,
+		workspace:        workspace,
+		memoryDir:        memoryDir,
+		memoryFile:       memoryFile,
+		layered:          cfg.Layered,
+		recentDays:       recentDays,
+		includeProfile:   cfg.Layers.Profile,
+		includeProject:   cfg.Layers.Project,
+		includeProcedure: cfg.Layers.Procedures,
+	}
+}
+
+func ensureLayerFile(path, initial string) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		_ = os.WriteFile(path, []byte(initial), 0644)
 	}
 }
 
@@ -171,14 +201,19 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 func (ms *MemoryStore) GetMemoryContext() string {
 	var parts []string
 
+	if ms.layered {
+		layerParts := ms.getLayeredContext()
+		parts = append(parts, layerParts...)
+	}
+
 	// Long-term memory
 	longTerm := ms.ReadLongTerm()
 	if longTerm != "" {
 		parts = append(parts, "## Long-term Memory\n\n"+longTerm)
 	}
 
-	// Recent daily notes (last 3 days)
-	recentNotes := ms.GetRecentDailyNotes(3)
+	// Recent daily notes
+	recentNotes := ms.GetRecentDailyNotes(ms.recentDays)
 	if recentNotes != "" {
 		parts = append(parts, "## Recent Daily Notes\n\n"+recentNotes)
 	}
@@ -196,4 +231,30 @@ func (ms *MemoryStore) GetMemoryContext() string {
 		result += part
 	}
 	return fmt.Sprintf("# Memory\n\n%s", result)
+}
+
+func (ms *MemoryStore) getLayeredContext() []string {
+	parts := []string{}
+	readLayer := func(filename, title string) {
+		data, err := os.ReadFile(filepath.Join(ms.memoryDir, "layers", filename))
+		if err != nil {
+			return
+		}
+		content := string(data)
+		if strings.TrimSpace(content) == "" {
+			return
+		}
+		parts = append(parts, fmt.Sprintf("## %s\n\n%s", title, content))
+	}
+
+	if ms.includeProfile {
+		readLayer("profile.md", "Memory Layer: Profile")
+	}
+	if ms.includeProject {
+		readLayer("project.md", "Memory Layer: Project")
+	}
+	if ms.includeProcedure {
+		readLayer("procedures.md", "Memory Layer: Procedures")
+	}
+	return parts
 }

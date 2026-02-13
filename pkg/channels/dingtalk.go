@@ -6,11 +6,11 @@ package channels
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
+	"clawgo/pkg/logger"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
 )
@@ -23,8 +23,7 @@ type DingTalkChannel struct {
 	clientID     string
 	clientSecret string
 	streamClient *client.StreamClient
-	ctx          context.Context
-	cancel       context.CancelFunc
+	runCancel    cancelGuard
 	// Map to store session webhooks for each chat
 	sessionWebhooks sync.Map // chatID -> sessionWebhook
 }
@@ -47,9 +46,13 @@ func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (
 
 // Start initializes the DingTalk channel with Stream Mode
 func (c *DingTalkChannel) Start(ctx context.Context) error {
-	log.Printf("Starting DingTalk channel (Stream Mode)...")
+	if c.IsRunning() {
+		return nil
+	}
+	logger.InfoC("dingtalk", "Starting DingTalk channel (Stream Mode)")
 
-	c.ctx, c.cancel = context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancel(ctx)
+	c.runCancel.set(cancel)
 
 	// Create credential config
 	cred := client.NewAppCredentialConfig(c.clientID, c.clientSecret)
@@ -64,29 +67,30 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 	c.streamClient.RegisterChatBotCallbackRouter(c.onChatBotMessageReceived)
 
 	// Start the stream client
-	if err := c.streamClient.Start(c.ctx); err != nil {
+	if err := c.streamClient.Start(runCtx); err != nil {
 		return fmt.Errorf("failed to start stream client: %w", err)
 	}
 
 	c.setRunning(true)
-	log.Println("DingTalk channel started (Stream Mode)")
+	logger.InfoC("dingtalk", "DingTalk channel started (Stream Mode)")
 	return nil
 }
 
 // Stop gracefully stops the DingTalk channel
 func (c *DingTalkChannel) Stop(ctx context.Context) error {
-	log.Println("Stopping DingTalk channel...")
-
-	if c.cancel != nil {
-		c.cancel()
+	if !c.IsRunning() {
+		return nil
 	}
+	logger.InfoC("dingtalk", "Stopping DingTalk channel")
+
+	c.runCancel.cancelAndClear()
 
 	if c.streamClient != nil {
 		c.streamClient.Close()
 	}
 
 	c.setRunning(false)
-	log.Println("DingTalk channel stopped")
+	logger.InfoC("dingtalk", "DingTalk channel stopped")
 	return nil
 }
 
@@ -107,7 +111,11 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
 	}
 
-	log.Printf("DingTalk message to %s: %s", msg.ChatID, truncateStringDingTalk(msg.Content, 100))
+	logger.InfoCF("dingtalk", "DingTalk outbound message", map[string]interface{}{
+		logger.FieldChatID:  msg.ChatID,
+		logger.FieldPreview: truncateString(msg.Content, 100),
+		"platform":          "dingtalk",
+	})
 
 	// Use the session webhook to send the reply
 	return c.SendDirectReply(sessionWebhook, msg.Content)
@@ -151,7 +159,12 @@ func (c *DingTalkChannel) onChatBotMessageReceived(ctx context.Context, data *ch
 		"session_webhook":   data.SessionWebhook,
 	}
 
-	log.Printf("DingTalk message from %s (%s): %s", senderNick, senderID, truncateStringDingTalk(content, 50))
+	logger.InfoCF("dingtalk", "DingTalk inbound message", map[string]interface{}{
+		"sender_name":        senderNick,
+		logger.FieldSenderID: senderID,
+		logger.FieldChatID:   chatID,
+		logger.FieldPreview:  truncateString(content, 50),
+	})
 
 	// Handle the message through the base channel
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
@@ -182,12 +195,4 @@ func (c *DingTalkChannel) SendDirectReply(sessionWebhook, content string) error 
 	}
 
 	return nil
-}
-
-// truncateStringDingTalk truncates a string to max length for logging (avoiding name collision with telegram.go)
-func truncateStringDingTalk(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen]
 }

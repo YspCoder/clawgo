@@ -56,16 +56,16 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 	if err != nil {
 		logger.ErrorCF("tool", "Tool execution failed",
 			map[string]interface{}{
-				"tool":     name,
-				"duration": duration.Milliseconds(),
-				"error":    err.Error(),
+				"tool":            name,
+				"duration":        duration.Milliseconds(),
+				logger.FieldError: err.Error(),
 			})
 	} else {
 		logger.InfoCF("tool", "Tool execution completed",
 			map[string]interface{}{
-				"tool":          name,
-				"duration_ms":   duration.Milliseconds(),
-				"result_length": len(result),
+				"tool":                          name,
+				"duration_ms":                   duration.Milliseconds(),
+				logger.FieldOutputContentLength: len(result),
 			})
 	}
 

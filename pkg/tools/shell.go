@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"clawgo/pkg/config"
+	"clawgo/pkg/logger"
 )
 
 type ExecTool struct {
@@ -22,6 +23,7 @@ type ExecTool struct {
 	restrictToWorkspace bool
 	sandboxEnabled      bool
 	sandboxImage        string
+	riskCfg             config.RiskConfig
 }
 
 func NewExecTool(cfg config.ShellConfig, workspace string) *ExecTool {
@@ -37,6 +39,7 @@ func NewExecTool(cfg config.ShellConfig, workspace string) *ExecTool {
 		restrictToWorkspace: cfg.RestrictPath,
 		sandboxEnabled:      cfg.Sandbox.Enabled,
 		sandboxImage:        cfg.Sandbox.Image,
+		riskCfg:             cfg.Risk,
 	}
 }
 
@@ -59,6 +62,10 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 			"working_dir": map[string]interface{}{
 				"type":        "string",
 				"description": "Optional working directory for the command",
+			},
+			"force": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Bypass risk gate for destructive operations (still strongly discouraged).",
 			},
 		},
 		"required": []string{"command"},
@@ -87,45 +94,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 		return fmt.Sprintf("Error: %s", guardError), nil
 	}
 
+	force, _ := args["force"].(bool)
+	if blockMsg, dryRunCmd := t.applyRiskGate(command, force); blockMsg != "" {
+		if dryRunCmd != "" {
+			dryRunResult, _ := t.executeCommand(ctx, dryRunCmd, cwd)
+			return fmt.Sprintf("%s\n\nDry-run command: %s\nDry-run output:\n%s", blockMsg, dryRunCmd, dryRunResult), nil
+		}
+		return blockMsg, nil
+	}
+
 	if t.sandboxEnabled {
 		return t.executeInSandbox(ctx, command, cwd)
 	}
 
-	cmdCtx, cancel := context.WithTimeout(ctx, t.timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(cmdCtx, "sh", "-c", command)
-	if cwd != "" {
-		cmd.Dir = cwd
-	}
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	output := stdout.String()
-	if stderr.Len() > 0 {
-		output += "\nSTDERR:\n" + stderr.String()
-	}
-
-	if err != nil {
-		if cmdCtx.Err() == context.DeadlineExceeded {
-			return fmt.Sprintf("Error: Command timed out after %v", t.timeout), nil
-		}
-		output += fmt.Sprintf("\nExit code: %v", err)
-	}
-
-	if output == "" {
-		output = "(no output)"
-	}
-
-	maxLen := 10000
-	if len(output) > maxLen {
-		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
-	}
-
-	return output, nil
+	return t.executeCommand(ctx, command, cwd)
 }
 
 func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd string) (string, error) {
@@ -234,4 +216,89 @@ func (t *ExecTool) SetAllowPatterns(patterns []string) error {
 		t.allowPatterns = append(t.allowPatterns, re)
 	}
 	return nil
+}
+
+func (t *ExecTool) applyRiskGate(command string, force bool) (string, string) {
+	if !t.riskCfg.Enabled {
+		return "", ""
+	}
+
+	assessment := assessCommandRisk(command)
+	logger.InfoCF("risk", "Command risk assessed", map[string]interface{}{
+		"level":   assessment.Level,
+		"command": truncateCmd(command, 200),
+		"reasons": assessment.Reasons,
+	})
+
+	if assessment.Level != RiskDestructive {
+		return "", ""
+	}
+
+	if t.riskCfg.RequireForceFlag && !force {
+		msg := "Error: destructive command blocked by risk gate. Re-run with force=true if intentional."
+		if t.riskCfg.RequireDryRun {
+			if dryRunCmd, ok := buildDryRunCommand(command); ok {
+				return msg, dryRunCmd
+			}
+		}
+		return msg, ""
+	}
+
+	if !t.riskCfg.AllowDestructive {
+		return "Error: destructive command is disabled by policy (tools.shell.risk.allow_destructive=false).", ""
+	}
+
+	if t.riskCfg.RequireDryRun {
+		if dryRunCmd, ok := buildDryRunCommand(command); ok {
+			return "Risk gate: dry-run required first. Review output, then execute intentionally with force=true.", dryRunCmd
+		}
+	}
+	return "", ""
+}
+
+func (t *ExecTool) executeCommand(ctx context.Context, command, cwd string) (string, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx, t.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(cmdCtx, "sh", "-c", command)
+	if cwd != "" {
+		cmd.Dir = cwd
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	output := stdout.String()
+	if stderr.Len() > 0 {
+		output += "\nSTDERR:\n" + stderr.String()
+	}
+
+	if err != nil {
+		if cmdCtx.Err() == context.DeadlineExceeded {
+			return fmt.Sprintf("Error: Command timed out after %v", t.timeout), nil
+		}
+		output += fmt.Sprintf("\nExit code: %v", err)
+	}
+
+	if output == "" {
+		output = "(no output)"
+	}
+
+	maxLen := 10000
+	if len(output) > maxLen {
+		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
+	}
+	return output, nil
+}
+
+func truncateCmd(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	if max <= 3 {
+		return s[:max]
+	}
+	return s[:max-3] + "..."
 }
