@@ -3,18 +3,23 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os/exec"
+	"path/filepath"
 	"time"
+
+	"clawgo/pkg/browser"
 )
 
 type BrowserTool struct {
-	chromePath string
-	timeout    time.Duration
+	client *browser.Browser
 }
 
 func NewBrowserTool() *BrowserTool {
+	client := browser.New()
+	timeout := 30 * time.Second
+	client.SetTimeout(timeout)
+
 	return &BrowserTool{
-		timeout: 30 * time.Second,
+		client: client,
 	}
 }
 
@@ -57,35 +62,22 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]interface{}) 
 }
 
 func (t *BrowserTool) takeScreenshot(ctx context.Context, url string) (string, error) {
-	// 基于 CLI 的简单实现：使用 chromium-browser --headless
 	outputPath := fmt.Sprintf("/tmp/screenshot_%d.png", time.Now().UnixNano())
-	cmd := exec.CommandContext(ctx, "chromium-browser",
-		"--headless",
-		"--disable-gpu",
-		"--no-sandbox",
-		"--screenshot="+outputPath,
-		url)
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to take screenshot: %w (ensure chromium-browser is installed)", err)
+	if !t.client.Available() {
+		return "", fmt.Errorf("failed to take screenshot: no chromium-compatible browser available")
 	}
 
-	return fmt.Sprintf("Screenshot saved to: %s", outputPath), nil
+	if err := t.client.Screenshot(ctx, url, outputPath); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Screenshot saved to: %s", filepath.Clean(outputPath)), nil
 }
 
 func (t *BrowserTool) fetchDynamicContent(ctx context.Context, url string) (string, error) {
-	// 简单实现：dump-dom
-	cmd := exec.CommandContext(ctx, "chromium-browser",
-		"--headless",
-		"--disable-gpu",
-		"--no-sandbox",
-		"--dump-dom",
-		url)
-
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch content: %w", err)
+	if !t.client.Available() {
+		return "", fmt.Errorf("failed to fetch content: no chromium-compatible browser available")
 	}
 
-	return string(output), nil
+	return t.client.Content(ctx, url)
 }

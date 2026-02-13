@@ -9,11 +9,14 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -23,6 +26,8 @@ import (
 	"clawgo/pkg/session"
 	"clawgo/pkg/tools"
 )
+
+var errGatewayNotRunningSlash = errors.New("gateway not running")
 
 type AgentLoop struct {
 	bus            *bus.MessageBus
@@ -180,6 +185,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
+	// Built-in slash commands (deterministic, no LLM roundtrip)
+	if handled, result, err := al.handleSlashCommand(msg.Content); handled {
+		return result, err
+	}
+
 	// Update tool contexts
 	if tool, ok := al.tools.Get("message"); ok {
 		if mt, ok := tool.(*tools.MessageTool); ok {
@@ -216,17 +226,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				"max":       al.maxIterations,
 			})
 
-		toolDefs := al.tools.GetDefinitions()
-		providerToolDefs := make([]providers.ToolDefinition, 0, len(toolDefs))
-		for _, td := range toolDefs {
-			providerToolDefs = append(providerToolDefs, providers.ToolDefinition{
-				Type: td["type"].(string),
-				Function: providers.ToolFunctionDefinition{
-					Name:        td["function"].(map[string]interface{})["name"].(string),
-					Description: td["function"].(map[string]interface{})["description"].(string),
-					Parameters:  td["function"].(map[string]interface{})["parameters"].(map[string]interface{}),
-				},
-			})
+		providerToolDefs, err := buildProviderToolDefs(al.tools.GetDefinitions())
+		if err != nil {
+			return "", fmt.Errorf("invalid tool definition: %w", err)
 		}
 
 		// Log LLM request details
@@ -356,7 +358,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Content: userContent,
 	})
 
-	al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey))
+	if err := al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey)); err != nil {
+		logger.WarnCF("agent", "Failed to save session metadata", map[string]interface{}{
+			"session_key": msg.SessionKey,
+			"error":       err.Error(),
+		})
+	}
 
 	// Log response preview (original content)
 	responsePreview := truncate(finalContent, 120)
@@ -426,17 +433,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	for iteration < al.maxIterations {
 		iteration++
 
-		toolDefs := al.tools.GetDefinitions()
-		providerToolDefs := make([]providers.ToolDefinition, 0, len(toolDefs))
-		for _, td := range toolDefs {
-			providerToolDefs = append(providerToolDefs, providers.ToolDefinition{
-				Type: td["type"].(string),
-				Function: providers.ToolFunctionDefinition{
-					Name:        td["function"].(map[string]interface{})["name"].(string),
-					Description: td["function"].(map[string]interface{})["description"].(string),
-					Parameters:  td["function"].(map[string]interface{})["parameters"].(map[string]interface{}),
-				},
-			})
+		providerToolDefs, err := buildProviderToolDefs(al.tools.GetDefinitions())
+		if err != nil {
+			return "", fmt.Errorf("invalid tool definition: %w", err)
 		}
 
 		// Log LLM request details
@@ -530,7 +529,12 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		Content: finalContent,
 	})
 
-	al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+	if err := al.sessions.Save(al.sessions.GetOrCreate(sessionKey)); err != nil {
+		logger.WarnCF("agent", "Failed to save session metadata", map[string]interface{}{
+			"session_key": sessionKey,
+			"error":       err.Error(),
+		})
+	}
 
 	logger.InfoCF("agent", "System message processing completed",
 		map[string]interface{}{
@@ -690,6 +694,46 @@ func isQuotaOrRateLimitError(err error) bool {
 	return false
 }
 
+func buildProviderToolDefs(toolDefs []map[string]interface{}) ([]providers.ToolDefinition, error) {
+	providerToolDefs := make([]providers.ToolDefinition, 0, len(toolDefs))
+	for i, td := range toolDefs {
+		toolType, ok := td["type"].(string)
+		if !ok || strings.TrimSpace(toolType) == "" {
+			return nil, fmt.Errorf("tool[%d] missing/invalid type", i)
+		}
+
+		fnRaw, ok := td["function"].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("tool[%d] missing/invalid function object", i)
+		}
+
+		name, ok := fnRaw["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("tool[%d] missing/invalid function.name", i)
+		}
+
+		description, ok := fnRaw["description"].(string)
+		if !ok {
+			return nil, fmt.Errorf("tool[%d] missing/invalid function.description", i)
+		}
+
+		parameters, ok := fnRaw["parameters"].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("tool[%d] missing/invalid function.parameters", i)
+		}
+
+		providerToolDefs = append(providerToolDefs, providers.ToolDefinition{
+			Type: toolType,
+			Function: providers.ToolFunctionDefinition{
+				Name:        name,
+				Description: description,
+				Parameters:  parameters,
+			},
+		})
+	}
+	return providerToolDefs, nil
+}
+
 // formatToolsForLog formats tool definitions for logging
 func formatToolsForLog(tools []providers.ToolDefinition) string {
 	if len(tools) == 0 {
@@ -707,6 +751,290 @@ func formatToolsForLog(tools []providers.ToolDefinition) string {
 	}
 	result += "]"
 	return result
+}
+
+func (al *AgentLoop) handleSlashCommand(content string) (bool, string, error) {
+	text := strings.TrimSpace(content)
+	if !strings.HasPrefix(text, "/") {
+		return false, "", nil
+	}
+
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return true, "", nil
+	}
+
+	switch fields[0] {
+	case "/help":
+		return true, "Slash commands:\n/help\n/status\n/config get <path>\n/config set <path> <value>\n/reload", nil
+	case "/status":
+		cfg, err := config.LoadConfig(al.getConfigPathForCommands())
+		if err != nil {
+			return true, "", fmt.Errorf("status failed: %w", err)
+		}
+		return true, fmt.Sprintf("Model: %s\nAPI Base: %s\nLogging: %v\nConfig: %s",
+			cfg.Agents.Defaults.Model,
+			cfg.Providers.Proxy.APIBase,
+			cfg.Logging.Enabled,
+			al.getConfigPathForCommands(),
+		), nil
+	case "/reload":
+		running, err := al.triggerGatewayReloadFromAgent()
+		if err != nil {
+			if running {
+				return true, "", err
+			}
+			return true, fmt.Sprintf("Hot reload not applied: %v", err), nil
+		}
+		return true, "Gateway hot reload signal sent", nil
+	case "/config":
+		if len(fields) < 2 {
+			return true, "Usage: /config get <path> | /config set <path> <value>", nil
+		}
+
+		switch fields[1] {
+		case "get":
+			if len(fields) < 3 {
+				return true, "Usage: /config get <path>", nil
+			}
+			cfgMap, err := al.loadConfigAsMapForAgent()
+			if err != nil {
+				return true, "", err
+			}
+			path := al.normalizeConfigPathForAgent(fields[2])
+			value, ok := al.getMapValueByPathForAgent(cfgMap, path)
+			if !ok {
+				return true, fmt.Sprintf("Path not found: %s", path), nil
+			}
+			data, err := json.Marshal(value)
+			if err != nil {
+				return true, fmt.Sprintf("%v", value), nil
+			}
+			return true, string(data), nil
+		case "set":
+			if len(fields) < 4 {
+				return true, "Usage: /config set <path> <value>", nil
+			}
+			cfgMap, err := al.loadConfigAsMapForAgent()
+			if err != nil {
+				return true, "", err
+			}
+			path := al.normalizeConfigPathForAgent(fields[2])
+			value := al.parseConfigValueForAgent(strings.Join(fields[3:], " "))
+			if err := al.setMapValueByPathForAgent(cfgMap, path, value); err != nil {
+				return true, "", err
+			}
+
+			data, err := json.MarshalIndent(cfgMap, "", "  ")
+			if err != nil {
+				return true, "", err
+			}
+
+			configPath := al.getConfigPathForCommands()
+			backupPath, err := al.writeConfigAtomicWithBackupForAgent(configPath, data)
+			if err != nil {
+				return true, "", err
+			}
+
+			running, err := al.triggerGatewayReloadFromAgent()
+			if err != nil {
+				if running {
+					if rbErr := al.rollbackConfigFromBackupForAgent(configPath, backupPath); rbErr != nil {
+						return true, "", fmt.Errorf("hot reload failed and rollback failed: %w", rbErr)
+					}
+					return true, "", fmt.Errorf("hot reload failed, config rolled back: %w", err)
+				}
+				return true, fmt.Sprintf("Updated %s = %v\nHot reload not applied: %v", path, value, err), nil
+			}
+			return true, fmt.Sprintf("Updated %s = %v\nGateway hot reload signal sent", path, value), nil
+		default:
+			return true, "Usage: /config get <path> | /config set <path> <value>", nil
+		}
+	default:
+		return false, "", nil
+	}
+}
+
+func (al *AgentLoop) getConfigPathForCommands() string {
+	if fromEnv := strings.TrimSpace(os.Getenv("CLAWGO_CONFIG")); fromEnv != "" {
+		return fromEnv
+	}
+	return filepath.Join(config.GetConfigDir(), "config.json")
+}
+
+func (al *AgentLoop) normalizeConfigPathForAgent(path string) string {
+	p := strings.TrimSpace(path)
+	p = strings.Trim(p, ".")
+	parts := strings.Split(p, ".")
+	for i, part := range parts {
+		if part == "enable" {
+			parts[i] = "enabled"
+		}
+	}
+	return strings.Join(parts, ".")
+}
+
+func (al *AgentLoop) parseConfigValueForAgent(raw string) interface{} {
+	v := strings.TrimSpace(raw)
+	lv := strings.ToLower(v)
+	if lv == "true" {
+		return true
+	}
+	if lv == "false" {
+		return false
+	}
+	if lv == "null" {
+		return nil
+	}
+	if i, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(v, 64); err == nil && strings.Contains(v, ".") {
+		return f
+	}
+	if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+		return v[1 : len(v)-1]
+	}
+	return v
+}
+
+func (al *AgentLoop) loadConfigAsMapForAgent() (map[string]interface{}, error) {
+	configPath := al.getConfigPathForCommands()
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			defaultCfg := config.DefaultConfig()
+			defData, mErr := json.Marshal(defaultCfg)
+			if mErr != nil {
+				return nil, mErr
+			}
+			var cfgMap map[string]interface{}
+			if uErr := json.Unmarshal(defData, &cfgMap); uErr != nil {
+				return nil, uErr
+			}
+			return cfgMap, nil
+		}
+		return nil, err
+	}
+	var cfgMap map[string]interface{}
+	if err := json.Unmarshal(data, &cfgMap); err != nil {
+		return nil, err
+	}
+	return cfgMap, nil
+}
+
+func (al *AgentLoop) setMapValueByPathForAgent(root map[string]interface{}, path string, value interface{}) error {
+	if path == "" {
+		return fmt.Errorf("path is empty")
+	}
+	parts := strings.Split(path, ".")
+	cur := root
+	for i := 0; i < len(parts)-1; i++ {
+		key := parts[i]
+		if key == "" {
+			return fmt.Errorf("invalid path: %s", path)
+		}
+		next, ok := cur[key]
+		if !ok {
+			child := map[string]interface{}{}
+			cur[key] = child
+			cur = child
+			continue
+		}
+		child, ok := next.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("path segment is not object: %s", key)
+		}
+		cur = child
+	}
+	last := parts[len(parts)-1]
+	if last == "" {
+		return fmt.Errorf("invalid path: %s", path)
+	}
+	cur[last] = value
+	return nil
+}
+
+func (al *AgentLoop) getMapValueByPathForAgent(root map[string]interface{}, path string) (interface{}, bool) {
+	if path == "" {
+		return nil, false
+	}
+	parts := strings.Split(path, ".")
+	var cur interface{} = root
+	for _, key := range parts {
+		obj, ok := cur.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		next, ok := obj[key]
+		if !ok {
+			return nil, false
+		}
+		cur = next
+	}
+	return cur, true
+}
+
+func (al *AgentLoop) writeConfigAtomicWithBackupForAgent(configPath string, data []byte) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return "", err
+	}
+
+	backupPath := configPath + ".bak"
+	if oldData, err := os.ReadFile(configPath); err == nil {
+		if err := os.WriteFile(backupPath, oldData, 0644); err != nil {
+			return "", fmt.Errorf("write backup failed: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("read existing config failed: %w", err)
+	}
+
+	tmpPath := configPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return "", fmt.Errorf("write temp config failed: %w", err)
+	}
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("atomic replace config failed: %w", err)
+	}
+	return backupPath, nil
+}
+
+func (al *AgentLoop) rollbackConfigFromBackupForAgent(configPath, backupPath string) error {
+	backupData, err := os.ReadFile(backupPath)
+	if err != nil {
+		return fmt.Errorf("read backup failed: %w", err)
+	}
+	tmpPath := configPath + ".rollback.tmp"
+	if err := os.WriteFile(tmpPath, backupData, 0644); err != nil {
+		return fmt.Errorf("write rollback temp failed: %w", err)
+	}
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rollback replace failed: %w", err)
+	}
+	return nil
+}
+
+func (al *AgentLoop) triggerGatewayReloadFromAgent() (bool, error) {
+	pidPath := filepath.Join(filepath.Dir(al.getConfigPathForCommands()), "gateway.pid")
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		return false, fmt.Errorf("%w (pid file not found: %s)", errGatewayNotRunningSlash, pidPath)
+	}
+	pidStr := strings.TrimSpace(string(data))
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil || pid <= 0 {
+		return true, fmt.Errorf("invalid gateway pid: %q", pidStr)
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return true, fmt.Errorf("find process failed: %w", err)
+	}
+	if err := proc.Signal(syscall.SIGHUP); err != nil {
+		return true, fmt.Errorf("send SIGHUP failed: %w", err)
+	}
+	return true, nil
 }
 
 // truncateString truncates a string to max length

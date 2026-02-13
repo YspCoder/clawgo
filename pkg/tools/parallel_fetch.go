@@ -6,6 +6,8 @@ import (
 	"sync"
 )
 
+const maxParallelFetchCalls = 8
+
 type ParallelFetchTool struct {
 	fetcher *WebFetchTool
 }
@@ -46,6 +48,7 @@ func (t *ParallelFetchTool) Execute(ctx context.Context, args map[string]interfa
 
 	results := make([]string, len(urlsRaw))
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxParallelFetchCalls)
 
 	for i, u := range urlsRaw {
 		urlStr, ok := u.(string)
@@ -56,6 +59,9 @@ func (t *ParallelFetchTool) Execute(ctx context.Context, args map[string]interfa
 		wg.Add(1)
 		go func(index int, url string) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			res, err := t.fetcher.Execute(ctx, map[string]interface{}{"url": url})
 			if err != nil {
 				results[index] = fmt.Sprintf("Error fetching %s: %v", url, err)

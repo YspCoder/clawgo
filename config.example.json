@@ -47,33 +47,10 @@
     }
   },
   "providers": {
-    "anthropic": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "openai": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx",
-      "api_base": ""
-    },
-    "groq": {
-      "api_key": "gsk_xxx",
-      "api_base": ""
-    },
-    "zhipu": {
-      "api_key": "YOUR_ZHIPU_API_KEY",
-      "api_base": ""
-    },
-    "gemini": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "vllm": {
-      "api_key": "",
-      "api_base": ""
+    "proxy": {
+      "api_key": "YOUR_CLIPROXYAPI_KEY",
+      "api_base": "http://localhost:8080/v1",
+      "auth": "bearer"
     }
   },
   "tools": {
@@ -87,5 +64,12 @@
   "gateway": {
     "host": "0.0.0.0",
     "port": 18790
+  },
+  "logging": {
+    "enabled": true,
+    "dir": "~/.clawgo/logs",
+    "filename": "clawgo.log",
+    "max_size_mb": 20,
+    "retention_days": 3
   }
 }

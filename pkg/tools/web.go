@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	userAgent = "Mozilla/5.0 (compatible; clawgo/1.0)"
+	userAgent             = "Mozilla/5.0 (compatible; clawgo/1.0)"
+	maxFetchResponseBytes = 8 * 1024 * 1024
 )
 
 type WebSearchTool struct {
@@ -93,9 +94,13 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	limitedReader := io.LimitReader(resp.Body, maxFetchResponseBytes+1)
+	body, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+	if len(body) > maxFetchResponseBytes {
+		return "", fmt.Errorf("response body too large (>%d bytes)", maxFetchResponseBytes)
 	}
 
 	var searchResp struct {

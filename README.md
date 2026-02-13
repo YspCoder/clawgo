@@ -33,6 +33,52 @@ clawgo agent
 clawgo gateway
 ```
 
+## ⚙️ 配置管理与热更新
+
+ClawGo 支持直接通过命令修改 `config.json`，并向运行中的网关发送热更新信号：
+
+```bash
+# 设置配置（支持 enable -> enabled 自动映射）
+clawgo config set channels.telegram.enable true
+
+# 读取配置
+clawgo config get channels.telegram.enabled
+
+# 校验配置
+clawgo config check
+
+# 手动触发热更新（向 gateway 发送 SIGHUP）
+clawgo config reload
+```
+
+全局支持自定义配置文件：
+
+```bash
+clawgo --config /path/to/config.json status
+```
+
+也可使用环境变量：
+
+```bash
+export CLAWGO_CONFIG=/path/to/config.json
+```
+
+`config set` 采用原子写入，并在网关运行且热更新失败时自动回滚到备份，避免配置损坏导致服务不可用。
+
+## 🧾 日志链路
+
+默认启用文件日志，并支持自动分割和过期清理（默认保留 3 天）：
+
+```json
+"logging": {
+  "enabled": true,
+  "dir": "~/.clawgo/logs",
+  "filename": "clawgo.log",
+  "max_size_mb": 20,
+  "retention_days": 3
+}
+```
+
 ## 📦 迁移与技能
 
 ClawGo 现在集成了原 OpenClaw 的所有核心扩展能力：

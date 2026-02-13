@@ -16,6 +16,7 @@ type Config struct {
 	Providers ProvidersConfig `json:"providers"`
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
+	Logging   LoggingConfig   `json:"logging"`
 	mu        sync.RWMutex
 }
 
@@ -140,6 +141,14 @@ type ToolsConfig struct {
 	Filesystem FilesystemConfig `json:"filesystem"`
 }
 
+type LoggingConfig struct {
+	Enabled       bool   `json:"enabled" env:"CLAWGO_LOGGING_ENABLED"`
+	Dir           string `json:"dir" env:"CLAWGO_LOGGING_DIR"`
+	Filename      string `json:"filename" env:"CLAWGO_LOGGING_FILENAME"`
+	MaxSizeMB     int    `json:"max_size_mb" env:"CLAWGO_LOGGING_MAX_SIZE_MB"`
+	RetentionDays int    `json:"retention_days" env:"CLAWGO_LOGGING_RETENTION_DAYS"`
+}
+
 var (
 	isDebug bool
 	muDebug sync.RWMutex
@@ -253,6 +262,13 @@ func DefaultConfig() *Config {
 				DeniedPaths:  []string{"/etc/shadow", "/etc/passwd"},
 			},
 		},
+		Logging: LoggingConfig{
+			Enabled:       true,
+			Dir:           filepath.Join(configDir, "logs"),
+			Filename:      "clawgo.log",
+			MaxSizeMB:     20,
+			RetentionDays: 3,
+		},
 	}
 }
 
@@ -311,6 +327,18 @@ func (c *Config) GetAPIBase() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.Providers.Proxy.APIBase
+}
+
+func (c *Config) LogFilePath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	dir := expandHome(c.Logging.Dir)
+	filename := c.Logging.Filename
+	if filename == "" {
+		filename = "clawgo.log"
+	}
+	return filepath.Join(dir, filename)
 }
 
 func expandHome(path string) string {

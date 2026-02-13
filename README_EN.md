@@ -31,6 +31,52 @@ clawgo agent
 clawgo gateway
 ```
 
+## ⚙️ Config Management & Hot Reload
+
+ClawGo can update `config.json` from CLI and trigger hot reload for a running gateway:
+
+```bash
+# Set config value (supports enable -> enabled alias)
+clawgo config set channels.telegram.enable true
+
+# Read config value
+clawgo config get channels.telegram.enabled
+
+# Validate config
+clawgo config check
+
+# Trigger hot reload manually (sends SIGHUP to gateway)
+clawgo config reload
+```
+
+Global custom config path:
+
+```bash
+clawgo --config /path/to/config.json status
+```
+
+Or via environment variable:
+
+```bash
+export CLAWGO_CONFIG=/path/to/config.json
+```
+
+`config set` now uses atomic write, and if gateway is running but hot reload fails, it rolls back to backup automatically.
+
+## 🧾 Logging Pipeline
+
+File logging is enabled by default with automatic rotation and retention cleanup (3 days by default):
+
+```json
+"logging": {
+  "enabled": true,
+  "dir": "~/.clawgo/logs",
+  "filename": "clawgo.log",
+  "max_size_mb": 20,
+  "retention_days": 3
+}
+```
+
 ## 📦 Migration & Skills
 
 ClawGo now integrates all core extended capabilities from the original OpenClaw:

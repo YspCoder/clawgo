@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"clawgo/pkg/logger"
 	"clawgo/pkg/providers"
 )
 
@@ -34,7 +35,12 @@ func NewSessionManager(storage string) *SessionManager {
 	}
 
 	if storage != "" {
-		os.MkdirAll(storage, 0755)
+		if err := os.MkdirAll(storage, 0755); err != nil {
+			logger.ErrorCF("session", "Failed to create session storage", map[string]interface{}{
+				"storage": storage,
+				"error":   err.Error(),
+			})
+		}
 		sm.loadSessions()
 	}
 
@@ -85,7 +91,12 @@ func (sm *SessionManager) AddMessageFull(sessionKey string, msg providers.Messag
 	session.mu.Unlock()
 
 	// 立即持久化 (Append-only)
-	sm.appendMessage(sessionKey, msg)
+	if err := sm.appendMessage(sessionKey, msg); err != nil {
+		logger.ErrorCF("session", "Failed to persist session message", map[string]interface{}{
+			"session_key": sessionKey,
+			"error":       err.Error(),
+		})
+	}
 }
 
 func (sm *SessionManager) appendMessage(sessionKey string, msg providers.Message) error {
@@ -188,7 +199,10 @@ func (sm *SessionManager) Save(session *Session) error {
 		"updated": session.Updated,
 		"created": session.Created,
 	}
-	data, _ := json.MarshalIndent(meta, "", "  ")
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(metaPath, data, 0644)
 }
 
@@ -212,7 +226,6 @@ func (sm *SessionManager) loadSessions() error {
 			if err != nil {
 				continue
 			}
-			
 			scanner := bufio.NewScanner(f)
 			session.mu.Lock()
 			for scanner.Scan() {
@@ -222,7 +235,13 @@ func (sm *SessionManager) loadSessions() error {
 				}
 			}
 			session.mu.Unlock()
-			f.Close()
+			if err := scanner.Err(); err != nil {
+				logger.WarnCF("session", "Error while scanning session history", map[string]interface{}{
+					"file":  file.Name(),
+					"error": err.Error(),
+				})
+			}
+			_ = f.Close()
 		}
 
 		// 处理元数据

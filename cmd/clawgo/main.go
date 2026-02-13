@@ -9,13 +9,18 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 
 	"os/signal"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"clawgo/pkg/agent"
@@ -34,6 +39,10 @@ import (
 
 const version = "0.1.0"
 const logo = "🦞"
+
+var globalConfigPathOverride string
+
+var errGatewayNotRunning = errors.New("gateway not running")
 
 func copyDirectory(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
@@ -70,6 +79,8 @@ func copyDirectory(src, dst string) error {
 }
 
 func main() {
+	globalConfigPathOverride = detectConfigPathFromArgs(os.Args)
+
 	// Detect debug mode early
 	for _, arg := range os.Args {
 		if arg == "--debug" || arg == "-d" {
@@ -78,6 +89,9 @@ func main() {
 			break
 		}
 	}
+
+	// Normalize global flags so command can appear after --config/--debug.
+	os.Args = normalizeCLIArgs(os.Args)
 
 	if len(os.Args) < 2 {
 		printHelp()
@@ -98,6 +112,8 @@ func main() {
 		gatewayCmd()
 	case "status":
 		statusCmd()
+	case "config":
+		configCmd()
 	case "cron":
 		cronCmd()
 	case "login":
@@ -162,20 +178,63 @@ func main() {
 	}
 }
 
+func normalizeCLIArgs(args []string) []string {
+	if len(args) == 0 {
+		return args
+	}
+
+	normalized := []string{args[0]}
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--debug" || arg == "-d" {
+			continue
+		}
+		if arg == "--config" {
+			if i+1 < len(args) {
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "--config=") {
+			continue
+		}
+		normalized = append(normalized, arg)
+	}
+	return normalized
+}
+
+func detectConfigPathFromArgs(args []string) string {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--config" && i+1 < len(args) {
+			return strings.TrimSpace(args[i+1])
+		}
+		if strings.HasPrefix(arg, "--config=") {
+			return strings.TrimSpace(strings.TrimPrefix(arg, "--config="))
+		}
+	}
+	return ""
+}
+
 func printHelp() {
 	fmt.Printf("%s clawgo - Personal AI Assistant v%s\n\n", logo, version)
-	fmt.Println("Usage: clawgo <command>")
+	fmt.Println("Usage: clawgo <command> [options]")
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  onboard     Initialize clawgo configuration and workspace")
 	fmt.Println("  agent       Interact with the agent directly")
 	fmt.Println("  gateway     Start clawgo gateway")
 	fmt.Println("  status      Show clawgo status")
+	fmt.Println("  config      Get/set config values")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  login       Configure CLIProxyAPI upstream")
 	fmt.Println("  channel     Test and manage messaging channels")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  version     Show version information")
+	fmt.Println()
+	fmt.Println("Global options:")
+	fmt.Println("  --config <path>         Use custom config file")
+	fmt.Println("  --debug, -d             Enable debug logging")
 }
 
 func onboard() {
@@ -199,11 +258,23 @@ func onboard() {
 	}
 
 	workspace := cfg.WorkspacePath()
-	os.MkdirAll(workspace, 0755)
-	os.MkdirAll(filepath.Join(workspace, "memory"), 0755)
-	os.MkdirAll(filepath.Join(workspace, "skills"), 0755)
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		fmt.Printf("Error creating workspace: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, "memory"), 0755); err != nil {
+		fmt.Printf("Error creating memory directory: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, "skills"), 0755); err != nil {
+		fmt.Printf("Error creating skills directory: %v\n", err)
+		os.Exit(1)
+	}
 
-	createWorkspaceTemplates(workspace)
+	if err := createWorkspaceTemplates(workspace); err != nil {
+		fmt.Printf("Error creating workspace templates: %v\n", err)
+		os.Exit(1)
+	}
 
 	fmt.Printf("%s clawgo is ready!\n", logo)
 	fmt.Println("\nNext steps:")
@@ -212,7 +283,7 @@ func onboard() {
 	fmt.Println("  2. Chat: clawgo agent -m \"Hello!\"")
 }
 
-func createWorkspaceTemplates(workspace string) {
+func createWorkspaceTemplates(workspace string) error {
 	templates := map[string]string{
 		"AGENTS.md": `# Agent Instructions
 
@@ -329,13 +400,17 @@ Discussions: https://github.com/sipeed/clawgo/discussions
 	for filename, content := range templates {
 		filePath := filepath.Join(workspace, filename)
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			os.WriteFile(filePath, []byte(content), 0644)
+			if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+				return fmt.Errorf("failed to write %s: %w", filename, err)
+			}
 			fmt.Printf("  Created %s\n", filename)
 		}
 	}
 
 	memoryDir := filepath.Join(workspace, "memory")
-	os.MkdirAll(memoryDir, 0755)
+	if err := os.MkdirAll(memoryDir, 0755); err != nil {
+		return fmt.Errorf("failed to create memory directory: %w", err)
+	}
 	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
 	if _, err := os.Stat(memoryFile); os.IsNotExist(err) {
 		memoryContent := `# Long-term Memory
@@ -360,23 +435,20 @@ This file stores important information that should persist across sessions.
 - Channel settings
 - Skills enabled
 `
-		os.WriteFile(memoryFile, []byte(memoryContent), 0644)
+		if err := os.WriteFile(memoryFile, []byte(memoryContent), 0644); err != nil {
+			return fmt.Errorf("failed to write memory file: %w", err)
+		}
 		fmt.Println("  Created memory/MEMORY.md")
 
 		skillsDir := filepath.Join(workspace, "skills")
 		if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
-			os.MkdirAll(skillsDir, 0755)
+			if err := os.MkdirAll(skillsDir, 0755); err != nil {
+				return fmt.Errorf("failed to create skills directory: %w", err)
+			}
 			fmt.Println("  Created skills/")
 		}
 	}
-
-	for filename, content := range templates {
-		filePath := filepath.Join(workspace, filename)
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			os.WriteFile(filePath, []byte(content), 0644)
-			fmt.Printf("  Created %s\n", filename)
-		}
-	}
+	return nil
 }
 
 func agentCmd() {
@@ -548,39 +620,9 @@ func gatewayCmd() {
 		os.Exit(1)
 	}
 
-	provider, err := providers.CreateProvider(cfg)
-	if err != nil {
-		fmt.Printf("Error creating provider: %v\n", err)
-		os.Exit(1)
-	}
-
 	msgBus := bus.NewMessageBus()
-
 	cronStorePath := filepath.Join(filepath.Dir(getConfigPath()), "cron", "jobs.json")
 	cronService := cron.NewCronService(cronStorePath, nil)
-
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, cronService)
-
-	// Print agent startup info
-	fmt.Println("\n📦 Agent Status:")
-	startupInfo := agentLoop.GetStartupInfo()
-	toolsInfo := startupInfo["tools"].(map[string]interface{})
-	skillsInfo := startupInfo["skills"].(map[string]interface{})
-	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
-	fmt.Printf("  • Skills: %d/%d available\n",
-		skillsInfo["available"],
-		skillsInfo["total"])
-
-	// Log to file as well
-	logger.InfoCF("agent", "Agent initialized",
-		map[string]interface{}{
-			"tools_count":      toolsInfo["count"],
-			"skills_total":     skillsInfo["total"],
-			"skills_available": skillsInfo["available"],
-		})
-
-	// Cron service initialized earlier
-
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
 		nil,
@@ -588,10 +630,137 @@ func gatewayCmd() {
 		true,
 	)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	agentLoop, channelManager, err := buildGatewayRuntime(ctx, cfg, msgBus, cronService)
+	if err != nil {
+		fmt.Printf("Error initializing gateway runtime: %v\n", err)
+		os.Exit(1)
+	}
+
+	pidFile := filepath.Join(filepath.Dir(getConfigPath()), "gateway.pid")
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644); err != nil {
+		fmt.Printf("Warning: failed to write PID file: %v\n", err)
+	} else {
+		defer os.Remove(pidFile)
+	}
+
+	enabledChannels := channelManager.GetEnabledChannels()
+	if len(enabledChannels) > 0 {
+		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
+	} else {
+		fmt.Println("⚠ Warning: No channels enabled")
+	}
+
+	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Println("Press Ctrl+C to stop. Send SIGHUP to hot-reload config.")
+
+	if err := cronService.Start(); err != nil {
+		fmt.Printf("Error starting cron service: %v\n", err)
+	}
+	fmt.Println("✓ Cron service started")
+
+	if err := heartbeatService.Start(); err != nil {
+		fmt.Printf("Error starting heartbeat service: %v\n", err)
+	}
+	fmt.Println("✓ Heartbeat service started")
+
+	if err := channelManager.StartAll(ctx); err != nil {
+		fmt.Printf("Error starting channels: %v\n", err)
+	}
+
+	go agentLoop.Run(ctx)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	for {
+		sig := <-sigChan
+		switch sig {
+		case syscall.SIGHUP:
+			fmt.Println("\n↻ Reloading config...")
+			newCfg, err := config.LoadConfig(getConfigPath())
+			if err != nil {
+				fmt.Printf("✗ Reload failed (load config): %v\n", err)
+				continue
+			}
+
+			if reflect.DeepEqual(cfg, newCfg) {
+				fmt.Println("✓ Config unchanged, skip reload")
+				continue
+			}
+
+			runtimeSame := reflect.DeepEqual(cfg.Agents, newCfg.Agents) &&
+				reflect.DeepEqual(cfg.Providers, newCfg.Providers) &&
+				reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
+				reflect.DeepEqual(cfg.Channels, newCfg.Channels)
+
+			if runtimeSame {
+				configureLogging(newCfg)
+				cfg = newCfg
+				fmt.Println("✓ Config hot-reload applied (logging/metadata only)")
+				continue
+			}
+
+			newAgentLoop, newChannelManager, err := buildGatewayRuntime(ctx, newCfg, msgBus, cronService)
+			if err != nil {
+				fmt.Printf("✗ Reload failed (init runtime): %v\n", err)
+				continue
+			}
+
+			channelManager.StopAll(ctx)
+			agentLoop.Stop()
+
+			channelManager = newChannelManager
+			agentLoop = newAgentLoop
+			cfg = newCfg
+
+			if err := channelManager.StartAll(ctx); err != nil {
+				fmt.Printf("✗ Reload failed (start channels): %v\n", err)
+				continue
+			}
+			go agentLoop.Run(ctx)
+			fmt.Println("✓ Config hot-reload applied")
+		default:
+			fmt.Println("\nShutting down...")
+			cancel()
+			heartbeatService.Stop()
+			cronService.Stop()
+			agentLoop.Stop()
+			channelManager.StopAll(ctx)
+			fmt.Println("✓ Gateway stopped")
+			return
+		}
+	}
+}
+
+func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBus, cronService *cron.CronService) (*agent.AgentLoop, *channels.Manager, error) {
+	provider, err := providers.CreateProvider(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create provider: %w", err)
+	}
+
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, cronService)
+
+	startupInfo := agentLoop.GetStartupInfo()
+	toolsInfo := startupInfo["tools"].(map[string]interface{})
+	skillsInfo := startupInfo["skills"].(map[string]interface{})
+	fmt.Println("\n📦 Agent Status:")
+	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
+	fmt.Printf("  • Skills: %d/%d available\n",
+		skillsInfo["available"],
+		skillsInfo["total"])
+
+	logger.InfoCF("agent", "Agent initialized",
+		map[string]interface{}{
+			"tools_count":      toolsInfo["count"],
+			"skills_total":     skillsInfo["total"],
+			"skills_available": skillsInfo["available"],
+		})
+
 	channelManager, err := channels.NewManager(cfg, msgBus)
 	if err != nil {
-		fmt.Printf("Error creating channel manager: %v\n", err)
-		os.Exit(1)
+		return nil, nil, fmt.Errorf("create channel manager: %w", err)
 	}
 
 	var transcriber *voice.GroqTranscriber
@@ -615,46 +784,343 @@ func gatewayCmd() {
 		}
 	}
 
-	enabledChannels := channelManager.GetEnabledChannels()
-	if len(enabledChannels) > 0 {
-		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
+	return agentLoop, channelManager, nil
+}
+
+func configCmd() {
+	if len(os.Args) < 3 {
+		configHelp()
+		return
+	}
+
+	switch os.Args[2] {
+	case "set":
+		configSetCmd()
+	case "get":
+		configGetCmd()
+	case "check":
+		configCheckCmd()
+	case "reload":
+		configReloadCmd()
+	default:
+		fmt.Printf("Unknown config command: %s\n", os.Args[2])
+		configHelp()
+	}
+}
+
+func configHelp() {
+	fmt.Println("\nConfig commands:")
+	fmt.Println("  set <path> <value>     Set config value and trigger hot reload")
+	fmt.Println("  get <path>             Get config value")
+	fmt.Println("  check                  Validate current config")
+	fmt.Println("  reload                 Trigger gateway hot reload")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  clawgo config set channels.telegram.enabled true")
+	fmt.Println("  clawgo config set channels.telegram.enable true")
+	fmt.Println("  clawgo config get providers.proxy.api_base")
+	fmt.Println("  clawgo config check")
+	fmt.Println("  clawgo config reload")
+}
+
+func configSetCmd() {
+	if len(os.Args) < 5 {
+		fmt.Println("Usage: clawgo config set <path> <value>")
+		return
+	}
+
+	configPath := getConfigPath()
+	cfgMap, err := loadConfigAsMap(configPath)
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		return
+	}
+
+	path := normalizeConfigPath(os.Args[3])
+	args := os.Args[4:]
+	valueParts := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		part := args[i]
+		if part == "--debug" || part == "-d" {
+			continue
+		}
+		if part == "--config" {
+			i++
+			continue
+		}
+		if strings.HasPrefix(part, "--config=") {
+			continue
+		}
+		valueParts = append(valueParts, part)
+	}
+	if len(valueParts) == 0 {
+		fmt.Println("Error: value is required")
+		return
+	}
+	value := parseConfigValue(strings.Join(valueParts, " "))
+	if err := setMapValueByPath(cfgMap, path, value); err != nil {
+		fmt.Printf("Error setting value: %v\n", err)
+		return
+	}
+
+	data, err := json.MarshalIndent(cfgMap, "", "  ")
+	if err != nil {
+		fmt.Printf("Error serializing config: %v\n", err)
+		return
+	}
+	backupPath, err := writeConfigAtomicWithBackup(configPath, data)
+	if err != nil {
+		fmt.Printf("Error writing config: %v\n", err)
+		return
+	}
+
+	fmt.Printf("✓ Updated %s = %v\n", path, value)
+	running, err := triggerGatewayReload()
+	if err != nil {
+		if running {
+			if rbErr := rollbackConfigFromBackup(configPath, backupPath); rbErr != nil {
+				fmt.Printf("Hot reload failed and rollback failed: %v\n", rbErr)
+			} else {
+				fmt.Printf("Hot reload failed, config rolled back: %v\n", err)
+			}
+			return
+		}
+		fmt.Printf("Updated config file. Hot reload not applied: %v\n", err)
 	} else {
-		fmt.Println("⚠ Warning: No channels enabled")
+		fmt.Println("✓ Gateway hot reload signal sent")
+	}
+}
+
+func configGetCmd() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: clawgo config get <path>")
+		return
 	}
 
-	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
-	fmt.Println("Press Ctrl+C to stop")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := cronService.Start(); err != nil {
-		fmt.Printf("Error starting cron service: %v\n", err)
-	}
-	fmt.Println("✓ Cron service started")
-
-	if err := heartbeatService.Start(); err != nil {
-		fmt.Printf("Error starting heartbeat service: %v\n", err)
-	}
-	fmt.Println("✓ Heartbeat service started")
-
-	if err := channelManager.StartAll(ctx); err != nil {
-		fmt.Printf("Error starting channels: %v\n", err)
+	configPath := getConfigPath()
+	cfgMap, err := loadConfigAsMap(configPath)
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		return
 	}
 
-	go agentLoop.Run(ctx)
+	path := normalizeConfigPath(os.Args[3])
+	value, ok := getMapValueByPath(cfgMap, path)
+	if !ok {
+		fmt.Printf("Path not found: %s\n", path)
+		return
+	}
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt)
-	<-sigChan
+	data, err := json.Marshal(value)
+	if err != nil {
+		fmt.Printf("%v\n", value)
+		return
+	}
+	fmt.Println(string(data))
+}
 
-	fmt.Println("\nShutting down...")
-	cancel()
-	heartbeatService.Stop()
-	cronService.Stop()
-	agentLoop.Stop()
-	channelManager.StopAll(ctx)
-	fmt.Println("✓ Gateway stopped")
+func configReloadCmd() {
+	if _, err := triggerGatewayReload(); err != nil {
+		fmt.Printf("Hot reload not applied: %v\n", err)
+		return
+	}
+	fmt.Println("✓ Gateway hot reload signal sent")
+}
+
+func configCheckCmd() {
+	cfg, err := config.LoadConfig(getConfigPath())
+	if err != nil {
+		fmt.Printf("Config load failed: %v\n", err)
+		return
+	}
+	validationErrors := config.Validate(cfg)
+	if len(validationErrors) == 0 {
+		fmt.Println("✓ Config validation passed")
+		return
+	}
+
+	fmt.Println("✗ Config validation failed:")
+	for _, ve := range validationErrors {
+		fmt.Printf("  - %v\n", ve)
+	}
+}
+
+func loadConfigAsMap(path string) (map[string]interface{}, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			defaultCfg := config.DefaultConfig()
+			defData, mErr := json.Marshal(defaultCfg)
+			if mErr != nil {
+				return nil, mErr
+			}
+			var cfgMap map[string]interface{}
+			if uErr := json.Unmarshal(defData, &cfgMap); uErr != nil {
+				return nil, uErr
+			}
+			return cfgMap, nil
+		}
+		return nil, err
+	}
+
+	var cfgMap map[string]interface{}
+	if err := json.Unmarshal(data, &cfgMap); err != nil {
+		return nil, err
+	}
+	return cfgMap, nil
+}
+
+func normalizeConfigPath(path string) string {
+	p := strings.TrimSpace(path)
+	p = strings.Trim(p, ".")
+	parts := strings.Split(p, ".")
+	for i, part := range parts {
+		if part == "enable" {
+			parts[i] = "enabled"
+		}
+	}
+	return strings.Join(parts, ".")
+}
+
+func parseConfigValue(raw string) interface{} {
+	v := strings.TrimSpace(raw)
+	lv := strings.ToLower(v)
+	if lv == "true" {
+		return true
+	}
+	if lv == "false" {
+		return false
+	}
+	if lv == "null" {
+		return nil
+	}
+	if i, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(v, 64); err == nil && strings.Contains(v, ".") {
+		return f
+	}
+	if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+		return v[1 : len(v)-1]
+	}
+	return v
+}
+
+func setMapValueByPath(root map[string]interface{}, path string, value interface{}) error {
+	if path == "" {
+		return fmt.Errorf("path is empty")
+	}
+	parts := strings.Split(path, ".")
+	cur := root
+	for i := 0; i < len(parts)-1; i++ {
+		key := parts[i]
+		if key == "" {
+			return fmt.Errorf("invalid path: %s", path)
+		}
+		next, ok := cur[key]
+		if !ok {
+			child := map[string]interface{}{}
+			cur[key] = child
+			cur = child
+			continue
+		}
+		child, ok := next.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("path segment is not object: %s", key)
+		}
+		cur = child
+	}
+	last := parts[len(parts)-1]
+	if last == "" {
+		return fmt.Errorf("invalid path: %s", path)
+	}
+	cur[last] = value
+	return nil
+}
+
+func getMapValueByPath(root map[string]interface{}, path string) (interface{}, bool) {
+	if path == "" {
+		return nil, false
+	}
+	parts := strings.Split(path, ".")
+	var cur interface{} = root
+	for _, key := range parts {
+		obj, ok := cur.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		next, ok := obj[key]
+		if !ok {
+			return nil, false
+		}
+		cur = next
+	}
+	return cur, true
+}
+
+func writeConfigAtomicWithBackup(configPath string, data []byte) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return "", err
+	}
+
+	backupPath := configPath + ".bak"
+	if oldData, err := os.ReadFile(configPath); err == nil {
+		if err := os.WriteFile(backupPath, oldData, 0644); err != nil {
+			return "", fmt.Errorf("write backup failed: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("read existing config failed: %w", err)
+	}
+
+	tmpPath := configPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return "", fmt.Errorf("write temp config failed: %w", err)
+	}
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("atomic replace config failed: %w", err)
+	}
+	return backupPath, nil
+}
+
+func rollbackConfigFromBackup(configPath, backupPath string) error {
+	backupData, err := os.ReadFile(backupPath)
+	if err != nil {
+		return fmt.Errorf("read backup failed: %w", err)
+	}
+
+	tmpPath := configPath + ".rollback.tmp"
+	if err := os.WriteFile(tmpPath, backupData, 0644); err != nil {
+		return fmt.Errorf("write rollback temp failed: %w", err)
+	}
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rollback replace failed: %w", err)
+	}
+	return nil
+}
+
+func triggerGatewayReload() (bool, error) {
+	pidPath := filepath.Join(filepath.Dir(getConfigPath()), "gateway.pid")
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		return false, fmt.Errorf("%w (pid file not found: %s)", errGatewayNotRunning, pidPath)
+	}
+
+	pidStr := strings.TrimSpace(string(data))
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil || pid <= 0 {
+		return true, fmt.Errorf("invalid gateway pid: %q", pidStr)
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return true, fmt.Errorf("find process failed: %w", err)
+	}
+	if err := proc.Signal(syscall.SIGHUP); err != nil {
+		return true, fmt.Errorf("send SIGHUP failed: %w", err)
+	}
+	return true, nil
 }
 
 func statusCmd() {
@@ -690,15 +1156,54 @@ func statusCmd() {
 			status = "✓"
 		}
 		fmt.Printf("CLIProxyAPI Key: %s\n", status)
+		fmt.Printf("Logging: %v\n", cfg.Logging.Enabled)
+		if cfg.Logging.Enabled {
+			fmt.Printf("Log File: %s\n", cfg.LogFilePath())
+			fmt.Printf("Log Max Size: %d MB\n", cfg.Logging.MaxSizeMB)
+			fmt.Printf("Log Retention: %d days\n", cfg.Logging.RetentionDays)
+		}
 	}
 }
 
 func getConfigPath() string {
+	if strings.TrimSpace(globalConfigPathOverride) != "" {
+		return globalConfigPathOverride
+	}
+	if fromEnv := strings.TrimSpace(os.Getenv("CLAWGO_CONFIG")); fromEnv != "" {
+		return fromEnv
+	}
+	args := os.Args
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--config" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(arg, "--config=") {
+			return strings.TrimPrefix(arg, "--config=")
+		}
+	}
 	return filepath.Join(config.GetConfigDir(), "config.json")
 }
 
 func loadConfig() (*config.Config, error) {
-	return config.LoadConfig(getConfigPath())
+	cfg, err := config.LoadConfig(getConfigPath())
+	if err != nil {
+		return nil, err
+	}
+	configureLogging(cfg)
+	return cfg, nil
+}
+
+func configureLogging(cfg *config.Config) {
+	if !cfg.Logging.Enabled {
+		logger.DisableFileLogging()
+		return
+	}
+
+	logFile := cfg.LogFilePath()
+	if err := logger.EnableFileLoggingWithRotation(logFile, cfg.Logging.MaxSizeMB, cfg.Logging.RetentionDays); err != nil {
+		fmt.Printf("Warning: failed to enable file logging: %v\n", err)
+	}
 }
 
 func cronCmd() {
@@ -1025,7 +1530,7 @@ func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
 }
 
 func skillsInstallBuiltinCmd(workspace string) {
-	builtinSkillsDir := "./clawgo/skills"
+	builtinSkillsDir := detectBuiltinSkillsDir(workspace)
 	workspaceSkillsDir := filepath.Join(workspace, "skills")
 
 	fmt.Printf("Copying builtin skills to workspace...\n")
@@ -1066,7 +1571,7 @@ func skillsListBuiltinCmd() {
 		fmt.Printf("Error loading config: %v\n", err)
 		return
 	}
-	builtinSkillsDir := filepath.Join(filepath.Dir(cfg.WorkspacePath()), "clawgo", "skills")
+	builtinSkillsDir := detectBuiltinSkillsDir(cfg.WorkspacePath())
 
 	fmt.Println("\nAvailable Builtin Skills:")
 	fmt.Println("-----------------------")
@@ -1110,6 +1615,21 @@ func skillsListBuiltinCmd() {
 			}
 		}
 	}
+}
+
+func detectBuiltinSkillsDir(workspace string) string {
+	candidates := []string{
+		filepath.Join(".", "skills"),
+		filepath.Join(filepath.Dir(workspace), "clawgo", "skills"),
+		filepath.Join(config.GetConfigDir(), "clawgo", "skills"),
+	}
+	for _, dir := range candidates {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+	// Fallback to repository-style path for error output consistency.
+	return filepath.Join(".", "skills")
 }
 
 func skillsSearchCmd(installer *skills.SkillInstaller) {
@@ -1276,4 +1796,3 @@ func channelTestCmd() {
 
 	fmt.Println("✓ Test message sent successfully!")
 }
-

@@ -6,6 +6,8 @@ import (
 	"sync"
 )
 
+const maxParallelToolCalls = 8
+
 type ParallelTool struct {
 	registry *ToolRegistry
 }
@@ -61,6 +63,7 @@ func (t *ParallelTool) Execute(ctx context.Context, args map[string]interface{})
 	results := make(map[string]string)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxParallelToolCalls)
 
 	for i, c := range callsRaw {
 		call, ok := c.(map[string]interface{})
@@ -78,8 +81,11 @@ func (t *ParallelTool) Execute(ctx context.Context, args map[string]interface{})
 		wg.Add(1)
 		go func(id, name string, args map[string]interface{}) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			res, err := t.registry.Execute(ctx, name, args)
-			
+
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
