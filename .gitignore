@@ -15,3 +15,7 @@ build
 
 
 .idea
+# build outputs
+/clawgo
+/clawgo_bin
+/clawgo_test
