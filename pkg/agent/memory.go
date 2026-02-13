@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"clawgo/pkg/logger"
 )
 
 // MemoryStore manages persistent memory for the agent.
@@ -29,7 +31,38 @@ func NewMemoryStore(workspace string) *MemoryStore {
 	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
 
 	// Ensure memory directory exists
-	os.MkdirAll(memoryDir, 0755)
+	if err := os.MkdirAll(memoryDir, 0755); err != nil {
+		logger.ErrorCF("memory", "Failed to create memory directory", map[string]interface{}{
+			"memory_dir": memoryDir,
+			"error":      err.Error(),
+		})
+	}
+
+	// Ensure MEMORY.md exists for first run (even without onboard).
+	if _, err := os.Stat(memoryFile); os.IsNotExist(err) {
+		initial := `# Long-term Memory
+
+This file stores important information that should persist across sessions.
+
+## User Information
+
+(Important facts about user)
+
+## Preferences
+
+(User preferences learned over time)
+
+## Important Notes
+
+(Things to remember)
+`
+		if writeErr := os.WriteFile(memoryFile, []byte(initial), 0644); writeErr != nil {
+			logger.ErrorCF("memory", "Failed to initialize MEMORY.md", map[string]interface{}{
+				"memory_file": memoryFile,
+				"error":       writeErr.Error(),
+			})
+		}
+	}
 
 	return &MemoryStore{
 		workspace:  workspace,
@@ -40,8 +73,8 @@ func NewMemoryStore(workspace string) *MemoryStore {
 
 // getTodayFile returns the path to today's daily note file (memory/YYYYMM/YYYYMMDD.md).
 func (ms *MemoryStore) getTodayFile() string {
-	today := time.Now().Format("20060102")      // YYYYMMDD
-	monthDir := today[:6]                       // YYYYMM
+	today := time.Now().Format("20060102") // YYYYMMDD
+	monthDir := today[:6]                  // YYYYMM
 	filePath := filepath.Join(ms.memoryDir, monthDir, today+".md")
 	return filePath
 }
@@ -57,6 +90,9 @@ func (ms *MemoryStore) ReadLongTerm() string {
 
 // WriteLongTerm writes content to the long-term memory file (MEMORY.md).
 func (ms *MemoryStore) WriteLongTerm(content string) error {
+	if err := os.MkdirAll(ms.memoryDir, 0755); err != nil {
+		return err
+	}
 	return os.WriteFile(ms.memoryFile, []byte(content), 0644)
 }
 
@@ -77,7 +113,9 @@ func (ms *MemoryStore) AppendToday(content string) error {
 
 	// Ensure month directory exists
 	monthDir := filepath.Dir(todayFile)
-	os.MkdirAll(monthDir, 0755)
+	if err := os.MkdirAll(monthDir, 0755); err != nil {
+		return err
+	}
 
 	var existingContent string
 	if data, err := os.ReadFile(todayFile); err == nil {
@@ -104,8 +142,8 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 
 	for i := 0; i < days; i++ {
 		date := time.Now().AddDate(0, 0, -i)
-		dateStr := date.Format("20060102")      // YYYYMMDD
-		monthDir := dateStr[:6]                 // YYYYMM
+		dateStr := date.Format("20060102") // YYYYMMDD
+		monthDir := dateStr[:6]            // YYYYMM
 		filePath := filepath.Join(ms.memoryDir, monthDir, dateStr+".md")
 
 		if data, err := os.ReadFile(filePath); err == nil {

@@ -48,6 +48,9 @@ type AgentLoop struct {
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, cs *cron.CronService) *AgentLoop {
 	workspace := cfg.WorkspacePath()
 	os.MkdirAll(workspace, 0755)
+	logger.InfoCF("agent", "Agent workspace initialized", map[string]interface{}{
+		"workspace": workspace,
+	})
 
 	toolsRegistry := tools.NewToolRegistry()
 	toolsRegistry.Register(&tools.ReadFileTool{})

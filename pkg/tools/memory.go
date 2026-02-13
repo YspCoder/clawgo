@@ -70,7 +70,7 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	}
 
 	files := t.getMemoryFiles()
-	
+
 	resultsChan := make(chan []searchResult, len(files))
 	var wg sync.WaitGroup
 
@@ -126,23 +126,36 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 
 func (t *MemorySearchTool) getMemoryFiles() []string {
 	var files []string
-	
-	// Check main MEMORY.md
-	mainMem := filepath.Join(t.workspace, "MEMORY.md")
-	if _, err := os.Stat(mainMem); err == nil {
-		files = append(files, mainMem)
-	}
+	seen := map[string]struct{}{}
 
-	// Check memory/ directory
-	memDir := filepath.Join(t.workspace, "memory")
-	entries, err := os.ReadDir(memDir)
-	if err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
-				files = append(files, filepath.Join(memDir, entry.Name()))
-			}
+	addIfExists := func(path string) {
+		if _, ok := seen[path]; ok {
+			return
+		}
+		if _, err := os.Stat(path); err == nil {
+			files = append(files, path)
+			seen[path] = struct{}{}
 		}
 	}
+
+	// Check long-term memory in both legacy and current locations.
+	addIfExists(filepath.Join(t.workspace, "MEMORY.md"))
+	addIfExists(filepath.Join(t.workspace, "memory", "MEMORY.md"))
+
+	// Check memory/ directory recursively (e.g., memory/YYYYMM/YYYYMMDD.md).
+	memDir := filepath.Join(t.workspace, "memory")
+	_ = filepath.Walk(memDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+			if _, ok := seen[path]; !ok {
+				files = append(files, path)
+				seen[path] = struct{}{}
+			}
+		}
+		return nil
+	})
 	return files
 }
 
@@ -210,7 +223,7 @@ func (t *MemorySearchTool) searchFile(path string, keywords []string) ([]searchR
 		// 1. Headers start new blocks
 		// 2. Empty lines separate blocks
 		// 3. List items start new blocks (optional, but good for logs)
-		
+
 		isHeader := strings.HasPrefix(trimmed, "#")
 		isEmpty := trimmed == ""
 		isList := strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") || (len(trimmed) > 3 && trimmed[1] == '.' && trimmed[2] == ' ')
