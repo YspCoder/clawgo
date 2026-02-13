@@ -14,10 +14,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -39,6 +41,7 @@ import (
 
 const version = "0.1.0"
 const logo = "🦞"
+const gatewayServiceName = "clawgo-gateway.service"
 
 var globalConfigPathOverride string
 
@@ -171,6 +174,8 @@ func main() {
 		}
 	case "version", "--version", "-v":
 		fmt.Printf("%s clawgo v%s\n", logo, version)
+	case "uninstall":
+		uninstallCmd()
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
 		printHelp()
@@ -223,18 +228,29 @@ func printHelp() {
 	fmt.Println("Commands:")
 	fmt.Println("  onboard     Initialize clawgo configuration and workspace")
 	fmt.Println("  agent       Interact with the agent directly")
-	fmt.Println("  gateway     Start clawgo gateway")
+	fmt.Println("  gateway     Register/manage gateway service")
 	fmt.Println("  status      Show clawgo status")
 	fmt.Println("  config      Get/set config values")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  login       Configure CLIProxyAPI upstream")
 	fmt.Println("  channel     Test and manage messaging channels")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
+	fmt.Println("  uninstall   Uninstall clawgo components")
 	fmt.Println("  version     Show version information")
 	fmt.Println()
 	fmt.Println("Global options:")
 	fmt.Println("  --config <path>         Use custom config file")
 	fmt.Println("  --debug, -d             Enable debug logging")
+	fmt.Println()
+	fmt.Println("Gateway service:")
+	fmt.Println("  clawgo gateway                  # register service")
+	fmt.Println("  clawgo gateway start|stop|restart|status")
+	fmt.Println("  clawgo gateway run              # run foreground")
+	fmt.Println()
+	fmt.Println("Uninstall:")
+	fmt.Println("  clawgo uninstall                # remove gateway service")
+	fmt.Println("  clawgo uninstall --purge        # also remove config/workspace dir")
+	fmt.Println("  clawgo uninstall --remove-bin   # also remove current executable")
 }
 
 func onboard() {
@@ -604,14 +620,28 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 }
 
 func gatewayCmd() {
-	// Check for --debug flag
 	args := os.Args[2:]
-	for _, arg := range args {
-		if arg == "--debug" || arg == "-d" {
-			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
-			break
+	if len(args) == 0 {
+		if err := gatewayInstallServiceCmd(); err != nil {
+			fmt.Printf("Error registering gateway service: %v\n", err)
+			os.Exit(1)
 		}
+		return
+	}
+
+	switch args[0] {
+	case "run":
+		// continue to foreground runtime below
+	case "start", "stop", "restart", "status":
+		if err := gatewayServiceControlCmd(args[0]); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	default:
+		fmt.Printf("Unknown gateway command: %s\n", args[0])
+		fmt.Println("Usage: clawgo gateway [run|start|stop|restart|status]")
+		return
 	}
 
 	cfg, err := loadConfig()
@@ -732,6 +762,141 @@ func gatewayCmd() {
 			return
 		}
 	}
+}
+
+func gatewayInstallServiceCmd() error {
+	scope, unitPath, err := detectGatewayServiceScopeAndPath()
+	if err != nil {
+		return err
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve executable path failed: %w", err)
+	}
+	exePath, _ = filepath.Abs(exePath)
+	configPath := getConfigPath()
+	workDir := filepath.Dir(exePath)
+
+	unitContent := buildGatewayUnitContent(scope, exePath, configPath, workDir)
+	if err := os.MkdirAll(filepath.Dir(unitPath), 0755); err != nil {
+		return fmt.Errorf("create service directory failed: %w", err)
+	}
+	if err := os.WriteFile(unitPath, []byte(unitContent), 0644); err != nil {
+		return fmt.Errorf("write service unit failed: %w", err)
+	}
+
+	if err := runSystemctl(scope, "daemon-reload"); err != nil {
+		return err
+	}
+	if err := runSystemctl(scope, "enable", gatewayServiceName); err != nil {
+		return err
+	}
+
+	fmt.Printf("✓ Gateway service registered: %s (%s)\n", gatewayServiceName, scope)
+	fmt.Printf("  Unit file: %s\n", unitPath)
+	fmt.Println("  Start service:   clawgo gateway start")
+	fmt.Println("  Restart service: clawgo gateway restart")
+	fmt.Println("  Stop service:    clawgo gateway stop")
+	return nil
+}
+
+func gatewayServiceControlCmd(action string) error {
+	scope, _, err := detectInstalledGatewayService()
+	if err != nil {
+		return err
+	}
+	return runSystemctl(scope, action, gatewayServiceName)
+}
+
+func detectGatewayServiceScopeAndPath() (string, string, error) {
+	// Linux-only systemd integration
+	if runtime.GOOS != "linux" {
+		return "", "", fmt.Errorf("gateway service registration currently supports Linux systemd only")
+	}
+	if strings.ToLower(strings.TrimSpace(os.Getenv("CLAWGO_GATEWAY_SCOPE"))) == "user" {
+		return userGatewayUnitPath()
+	}
+	if strings.ToLower(strings.TrimSpace(os.Getenv("CLAWGO_GATEWAY_SCOPE"))) == "system" {
+		return "system", "/etc/systemd/system/" + gatewayServiceName, nil
+	}
+	if os.Geteuid() == 0 {
+		return "system", "/etc/systemd/system/" + gatewayServiceName, nil
+	}
+	return userGatewayUnitPath()
+}
+
+func userGatewayUnitPath() (string, string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("resolve user home failed: %w", err)
+	}
+	return "user", filepath.Join(home, ".config", "systemd", "user", gatewayServiceName), nil
+}
+
+func detectInstalledGatewayService() (string, string, error) {
+	systemPath := "/etc/systemd/system/" + gatewayServiceName
+	if info, err := os.Stat(systemPath); err == nil && !info.IsDir() {
+		return "system", systemPath, nil
+	}
+
+	scope, userPath, err := userGatewayUnitPath()
+	if err != nil {
+		return "", "", err
+	}
+	if info, err := os.Stat(userPath); err == nil && !info.IsDir() {
+		return scope, userPath, nil
+	}
+
+	return "", "", fmt.Errorf("gateway service not registered. Run: clawgo gateway")
+}
+
+func buildGatewayUnitContent(scope, exePath, configPath, workDir string) string {
+	quotedExec := fmt.Sprintf("%q gateway run --config %q", exePath, configPath)
+	installTarget := "default.target"
+	if scope == "system" {
+		installTarget = "multi-user.target"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = filepath.Dir(configPath)
+	}
+
+	return fmt.Sprintf(`[Unit]
+Description=ClawGo Gateway
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%s
+ExecStart=%s
+Restart=always
+RestartSec=3
+Environment=CLAWGO_CONFIG=%s
+Environment=HOME=%s
+
+[Install]
+WantedBy=%s
+`, workDir, quotedExec, configPath, home, installTarget)
+}
+
+func runSystemctl(scope string, args ...string) error {
+	cmdArgs := make([]string, 0, len(args)+1)
+	if scope == "user" {
+		cmdArgs = append(cmdArgs, "--user")
+	}
+	cmdArgs = append(cmdArgs, args...)
+
+	cmd := exec.Command("systemctl", cmdArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if scope == "user" {
+			return fmt.Errorf("systemctl --user %s failed: %w", strings.Join(args, " "), err)
+		}
+		return fmt.Errorf("systemctl %s failed: %w", strings.Join(args, " "), err)
+	}
+	return nil
 }
 
 func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBus, cronService *cron.CronService) (*agent.AgentLoop, *channels.Manager, error) {
@@ -1795,4 +1960,74 @@ func channelTestCmd() {
 	}
 
 	fmt.Println("✓ Test message sent successfully!")
+}
+
+func uninstallCmd() {
+	purge := false
+	removeBin := false
+
+	for _, arg := range os.Args[2:] {
+		switch arg {
+		case "--purge":
+			purge = true
+		case "--remove-bin":
+			removeBin = true
+		}
+	}
+
+	// 1) Remove gateway service if registered.
+	if err := uninstallGatewayService(); err != nil {
+		fmt.Printf("Gateway service uninstall warning: %v\n", err)
+	} else {
+		fmt.Println("✓ Gateway service uninstalled")
+	}
+
+	// 2) Remove runtime pid file.
+	pidPath := filepath.Join(filepath.Dir(getConfigPath()), "gateway.pid")
+	_ = os.Remove(pidPath)
+
+	// 3) Optional purge config/workspace.
+	if purge {
+		configDir := filepath.Dir(getConfigPath())
+		if err := os.RemoveAll(configDir); err != nil {
+			fmt.Printf("Failed to remove config directory %s: %v\n", configDir, err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Removed config/workspace directory: %s\n", configDir)
+	}
+
+	// 4) Optional remove current executable.
+	if removeBin {
+		exePath, err := os.Executable()
+		if err != nil {
+			fmt.Printf("Failed to resolve executable path: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.Remove(exePath); err != nil {
+			fmt.Printf("Failed to remove executable %s: %v\n", exePath, err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Removed executable: %s\n", exePath)
+	}
+}
+
+func uninstallGatewayService() error {
+	scope, unitPath, err := detectInstalledGatewayService()
+	if err != nil {
+		// Service not present is not fatal for uninstall command.
+		return nil
+	}
+
+	// Ignore stop/disable errors to keep uninstall idempotent.
+	_ = runSystemctl(scope, "stop", gatewayServiceName)
+	_ = runSystemctl(scope, "disable", gatewayServiceName)
+
+	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove unit file failed: %w", err)
+	}
+
+	if err := runSystemctl(scope, "daemon-reload"); err != nil {
+		return err
+	}
+	return nil
 }

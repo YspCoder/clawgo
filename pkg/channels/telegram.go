@@ -96,8 +96,8 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	log.Println("Stopping Telegram bot...")
 	c.setRunning(false)
 
-	// In telego v1.x, the long polling is stopped by canceling the context 
-	// passed to UpdatesViaLongPolling. We don't need a separate Stop call 
+	// In telego v1.x, the long polling is stopped by canceling the context
+	// passed to UpdatesViaLongPolling. We don't need a separate Stop call
 	// if we use the parent context correctly.
 
 	return nil
@@ -116,8 +116,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	// Stop thinking animation
 	if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
+		log.Printf("Telegram thinking stop signal: chat_id=%s", msg.ChatID)
 		close(stop.(chan struct{}))
 		c.stopThinking.Delete(msg.ChatID)
+	} else {
+		log.Printf("Telegram thinking stop skipped: no stop channel found for chat_id=%s", msg.ChatID)
 	}
 
 	htmlContent := markdownToTelegramHTML(msg.Content)
@@ -125,6 +128,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	// Try to edit placeholder
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
 		c.placeholders.Delete(msg.ChatID)
+		log.Printf("Telegram editing thinking placeholder: chat_id=%s message_id=%d", msg.ChatID, pID.(int))
 
 		_, err := c.bot.EditMessageText(ctx, &telego.EditMessageTextParams{
 			ChatID:    chatID,
@@ -134,9 +138,13 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		})
 
 		if err == nil {
+			log.Printf("Telegram placeholder updated successfully: chat_id=%s", msg.ChatID)
 			return nil
 		}
+		log.Printf("Telegram placeholder update failed, fallback to new message: chat_id=%s err=%v", msg.ChatID, err)
 		// Fallback to new message if edit fails
+	} else {
+		log.Printf("Telegram placeholder not found, sending new message: chat_id=%s", msg.ChatID)
 	}
 
 	_, err = c.bot.SendMessage(ctx, telegoutil.Message(chatID, htmlContent).WithParseMode(telego.ModeHTML))
@@ -144,6 +152,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	if err != nil {
 		log.Printf("HTML parse failed, falling back to plain text: %v", err)
 		_, err = c.bot.SendMessage(ctx, telegoutil.Message(chatID, msg.Content))
+		if err != nil {
+			log.Printf("Telegram plain-text fallback send failed: chat_id=%s err=%v", msg.ChatID, err)
+		}
 		return err
 	}
 
@@ -259,11 +270,13 @@ func (c *TelegramChannel) handleMessage(message *telego.Message) {
 
 	stopChan := make(chan struct{})
 	c.stopThinking.Store(fmt.Sprintf("%d", chatID), stopChan)
+	log.Printf("Telegram thinking started: chat_id=%d", chatID)
 
 	pMsg, err := c.bot.SendMessage(context.Background(), telegoutil.Message(telegoutil.ID(chatID), "Thinking... 💭"))
 	if err == nil {
 		pID := pMsg.MessageID
 		c.placeholders.Store(fmt.Sprintf("%d", chatID), pID)
+		log.Printf("Telegram thinking placeholder created: chat_id=%d message_id=%d", chatID, pID)
 
 		go func(cid int64, mid int, stop <-chan struct{}) {
 			dots := []string{".", "..", "..."}
@@ -274,18 +287,23 @@ func (c *TelegramChannel) handleMessage(message *telego.Message) {
 			for {
 				select {
 				case <-stop:
+					log.Printf("Telegram thinking animation stopped: chat_id=%d", cid)
 					return
 				case <-ticker.C:
 					i++
 					text := fmt.Sprintf("Thinking%s %s", dots[i%len(dots)], emotes[i%len(emotes)])
-					_, _ = c.bot.EditMessageText(context.Background(), &telego.EditMessageTextParams{
+					if _, err := c.bot.EditMessageText(context.Background(), &telego.EditMessageTextParams{
 						ChatID:    telegoutil.ID(cid),
 						MessageID: mid,
 						Text:      text,
-					})
+					}); err != nil {
+						log.Printf("Telegram thinking animation edit failed: chat_id=%d message_id=%d err=%v", cid, mid, err)
+					}
 				}
 			}
 		}(chatID, pID, stopChan)
+	} else {
+		log.Printf("Telegram thinking placeholder create failed: chat_id=%d err=%v", chatID, err)
 	}
 
 	metadata := map[string]string{

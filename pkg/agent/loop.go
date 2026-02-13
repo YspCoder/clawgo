@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -251,19 +252,28 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
+		llmStart := time.Now()
 		response, err := al.callLLMWithModelFallback(ctx, messages, providerToolDefs, map[string]interface{}{
 			"max_tokens":  8192,
 			"temperature": 0.7,
 		})
+		llmElapsed := time.Since(llmStart)
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",
 				map[string]interface{}{
 					"iteration": iteration,
 					"error":     err.Error(),
+					"elapsed":   llmElapsed.String(),
 				})
 			return "", fmt.Errorf("LLM call failed: %w", err)
 		}
+		logger.InfoCF("agent", "LLM call completed",
+			map[string]interface{}{
+				"iteration": iteration,
+				"elapsed":   llmElapsed.String(),
+				"model":     al.model,
+			})
 
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
@@ -458,19 +468,28 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
+		llmStart := time.Now()
 		response, err := al.callLLMWithModelFallback(ctx, messages, providerToolDefs, map[string]interface{}{
 			"max_tokens":  8192,
 			"temperature": 0.7,
 		})
+		llmElapsed := time.Since(llmStart)
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed in system message",
 				map[string]interface{}{
 					"iteration": iteration,
 					"error":     err.Error(),
+					"elapsed":   llmElapsed.String(),
 				})
 			return "", fmt.Errorf("LLM call failed: %w", err)
 		}
+		logger.InfoCF("agent", "LLM call completed (system message)",
+			map[string]interface{}{
+				"iteration": iteration,
+				"elapsed":   llmElapsed.String(),
+				"model":     al.model,
+			})
 
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
