@@ -17,6 +17,8 @@
 ```bash
 clawgo onboard
 ```
+运行 `clawgo onboard` / `clawgo gateway` 时会弹出 `yes/no`，可选择是否授予 root 权限。
+若选择 `yes`，会以 `sudo` 重新执行命令，并启用高权限策略（仅强制禁止 `rm -rf /`）。
 
 **2. 配置 CLIProxyAPI**
 ClawGo 强制要求使用 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 作为模型接入层。
@@ -74,11 +76,17 @@ export CLAWGO_CONFIG=/path/to/config.json
 
 ```text
 /help
+/stop
 /status
 /config get channels.telegram.enabled
 /config set channels.telegram.enabled true
 /reload
 ```
+
+消息调度策略（按会话 `session_key`）：
+- 同一会话严格 FIFO 串行执行，后续消息进入队列等待。
+- `/stop` 会立即中断当前回复，并继续处理队列中的下一条消息。
+- 不同会话可并发执行，互不影响。
 
 ## 🧾 日志链路
 

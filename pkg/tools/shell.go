@@ -15,6 +15,8 @@ import (
 	"clawgo/pkg/logger"
 )
 
+var blockedRootWipePattern = regexp.MustCompile(`(?i)(^|[;&|\n])\s*rm\s+-rf\s+/\s*($|[;&|\n])`)
+
 type ExecTool struct {
 	workingDir          string
 	timeout             time.Duration
@@ -145,6 +147,10 @@ func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd string) (s
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
+
+	if blockedRootWipePattern.MatchString(lower) {
+		return "Command blocked by safety guard (rm -rf / is forbidden)"
+	}
 
 	for _, pattern := range t.denyPatterns {
 		if pattern.MatchString(lower) {

@@ -88,8 +88,28 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 				return
 			case update, ok := <-updates:
 				if !ok {
-					logger.InfoC("telegram", "Updates channel closed")
-					return
+					logger.WarnC("telegram", "Updates channel closed unexpectedly, attempting to restart polling...")
+					c.setRunning(false)
+
+					select {
+					case <-runCtx.Done():
+						return
+					case <-time.After(5 * time.Second):
+					}
+
+					newUpdates, err := c.bot.UpdatesViaLongPolling(runCtx, nil)
+					if err != nil {
+						logger.ErrorCF("telegram", "Failed to restart updates polling", map[string]interface{}{
+							logger.FieldError: err.Error(),
+						})
+						continue
+					}
+
+					updates = newUpdates
+					c.updates = newUpdates
+					c.setRunning(true)
+					logger.InfoC("telegram", "Updates polling restarted successfully")
+					continue
 				}
 				if update.Message != nil {
 					c.handleMessage(update.Message)

@@ -17,6 +17,8 @@
 ```bash
 clawgo onboard
 ```
+When running `clawgo onboard` or `clawgo gateway`, a `yes/no` prompt asks whether to grant root privileges.
+If `yes`, the command is re-executed via `sudo` and a high-permission shell policy is enabled (with `rm -rf /` still hard-blocked).
 
 **2. Configure CLIProxyAPI**
 ClawGo requires [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) as the model access layer.
@@ -74,11 +76,17 @@ Slash commands are also supported in chat channels:
 
 ```text
 /help
+/stop
 /status
 /config get channels.telegram.enabled
 /config set channels.telegram.enabled true
 /reload
 ```
+
+Message scheduling policy (per `session_key`):
+- Same session runs in strict FIFO order; later messages are queued.
+- `/stop` immediately cancels the current response, then processing continues with the next queued message.
+- Different sessions can run concurrently.
 
 ## 🧾 Logging Pipeline
 

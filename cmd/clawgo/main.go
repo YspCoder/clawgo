@@ -43,6 +43,8 @@ import (
 const version = "0.1.0"
 const logo = "🦞"
 const gatewayServiceName = "clawgo-gateway.service"
+const envRootPrompted = "CLAWGO_ROOT_PROMPTED"
+const envRootGranted = "CLAWGO_ROOT_GRANTED"
 
 var globalConfigPathOverride string
 
@@ -109,10 +111,12 @@ func main() {
 
 	switch command {
 	case "onboard":
+		maybePromptAndEscalateRoot("onboard")
 		onboard()
 	case "agent":
 		agentCmd()
 	case "gateway":
+		maybePromptAndEscalateRoot("gateway")
 		gatewayCmd()
 	case "status":
 		statusCmd()
@@ -269,6 +273,9 @@ func onboard() {
 	}
 
 	cfg := config.DefaultConfig()
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
+		applyMaximumPermissionPolicy(cfg)
+	}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		fmt.Printf("Error saving config: %v\n", err)
 		os.Exit(1)
@@ -669,6 +676,9 @@ func gatewayCmd() {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
 	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
+		applyMaximumPermissionPolicy(cfg)
+	}
 
 	msgBus := bus.NewMessageBus()
 	cronStorePath := filepath.Join(filepath.Dir(getConfigPath()), "cron", "jobs.json")
@@ -752,6 +762,9 @@ func gatewayCmd() {
 			if err != nil {
 				fmt.Printf("✗ Reload failed (load config): %v\n", err)
 				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
+				applyMaximumPermissionPolicy(newCfg)
 			}
 
 			if reflect.DeepEqual(cfg, newCfg) {
@@ -840,6 +853,75 @@ func gatewayCmd() {
 			return
 		}
 	}
+}
+
+func maybePromptAndEscalateRoot(command string) {
+	if os.Getenv(envRootPrompted) == "1" {
+		return
+	}
+	if !isInteractiveStdin() {
+		return
+	}
+
+	fmt.Printf("Grant root permissions for `clawgo %s`? (yes/no): ", command)
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	answer := strings.ToLower(strings.TrimSpace(line))
+	if answer != "yes" && answer != "y" {
+		_ = os.Setenv(envRootPrompted, "1")
+		_ = os.Setenv(envRootGranted, "0")
+		return
+	}
+
+	_ = os.Setenv(envRootPrompted, "1")
+	_ = os.Setenv(envRootGranted, "1")
+
+	if os.Geteuid() == 0 {
+		return
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Error resolving executable for sudo re-run: %v\n", err)
+		os.Exit(1)
+	}
+	exePath, _ = filepath.Abs(exePath)
+
+	cmdArgs := append([]string{"-E", exePath}, os.Args[1:]...)
+	cmd := exec.Command("sudo", cmdArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(),
+		envRootPrompted+"=1",
+		envRootGranted+"=1",
+	)
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		fmt.Printf("Failed to elevate privileges with sudo: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func isInteractiveStdin() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
+}
+
+func applyMaximumPermissionPolicy(cfg *config.Config) {
+	cfg.Tools.Shell.RestrictPath = false
+	cfg.Tools.Shell.DeniedCmds = []string{"rm -rf /"}
+	cfg.Tools.Shell.Risk.Enabled = false
+	cfg.Tools.Shell.Risk.AllowDestructive = true
+	cfg.Tools.Shell.Risk.RequireDryRun = false
+	cfg.Tools.Shell.Risk.RequireForceFlag = false
 }
 
 func gatewayInstallServiceCmd() error {
