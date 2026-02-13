@@ -3,8 +3,10 @@ package channels
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"clawgo/pkg/bus"
+	"clawgo/pkg/logger"
 )
 
 type Channel interface {
@@ -47,8 +49,14 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 		return true
 	}
 
+	// Normalize sender id for channels that include display suffix, e.g. "12345|alice".
+	rawSenderID := senderID
+	if idx := strings.Index(senderID, "|"); idx > 0 {
+		rawSenderID = senderID[:idx]
+	}
+
 	for _, allowed := range c.allowList {
-		if senderID == allowed {
+		if senderID == allowed || rawSenderID == allowed {
 			return true
 		}
 	}
@@ -58,6 +66,11 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 
 func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []string, metadata map[string]string) {
 	if !c.IsAllowed(senderID) {
+		logger.WarnCF("channels", "Message rejected by allowlist", map[string]interface{}{
+			"channel":   c.name,
+			"sender_id": senderID,
+			"chat_id":   chatID,
+		})
 		return
 	}
 

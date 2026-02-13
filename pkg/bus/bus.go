@@ -1,8 +1,10 @@
 package bus
 
 import (
+	"clawgo/pkg/logger"
 	"context"
 	"sync"
+	"time"
 )
 
 type MessageBus struct {
@@ -11,6 +13,8 @@ type MessageBus struct {
 	handlers map[string]MessageHandler
 	mu       sync.RWMutex
 }
+
+const queueWriteTimeout = 2 * time.Second
 
 func NewMessageBus() *MessageBus {
 	return &MessageBus{
@@ -21,7 +25,15 @@ func NewMessageBus() *MessageBus {
 }
 
 func (mb *MessageBus) PublishInbound(msg InboundMessage) {
-	mb.inbound <- msg
+	select {
+	case mb.inbound <- msg:
+	case <-time.After(queueWriteTimeout):
+		logger.ErrorCF("bus", "PublishInbound timeout (queue full)", map[string]interface{}{
+			"channel":     msg.Channel,
+			"chat_id":     msg.ChatID,
+			"session_key": msg.SessionKey,
+		})
+	}
 }
 
 func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool) {
@@ -34,7 +46,14 @@ func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool)
 }
 
 func (mb *MessageBus) PublishOutbound(msg OutboundMessage) {
-	mb.outbound <- msg
+	select {
+	case mb.outbound <- msg:
+	case <-time.After(queueWriteTimeout):
+		logger.ErrorCF("bus", "PublishOutbound timeout (queue full)", map[string]interface{}{
+			"channel": msg.Channel,
+			"chat_id": msg.ChatID,
+		})
+	}
 }
 
 func (mb *MessageBus) SubscribeOutbound(ctx context.Context) (OutboundMessage, bool) {

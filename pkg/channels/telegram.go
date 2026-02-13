@@ -172,9 +172,6 @@ func (c *TelegramChannel) handleMessage(message *telego.Message) {
 	}
 
 	senderID := fmt.Sprintf("%d", user.ID)
-	if user.Username != "" {
-		senderID = fmt.Sprintf("%d|%s", user.ID, user.Username)
-	}
 
 	chatID := message.Chat.ID
 	c.chatIDs[senderID] = chatID
@@ -261,6 +258,11 @@ func (c *TelegramChannel) handleMessage(message *telego.Message) {
 	}
 
 	log.Printf("Telegram message from %s: %s...", senderID, truncateString(content, 50))
+
+	if !c.IsAllowed(senderID) {
+		log.Printf("Telegram message rejected by allowlist: sender=%s chat=%d", senderID, chatID)
+		return
+	}
 
 	// Thinking indicator
 	_ = c.bot.SendChatAction(context.Background(), &telego.SendChatActionParams{
