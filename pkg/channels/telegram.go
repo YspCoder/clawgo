@@ -123,7 +123,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		log.Printf("Telegram thinking stop skipped: no stop channel found for chat_id=%s", msg.ChatID)
 	}
 
-	htmlContent := markdownToTelegramHTML(msg.Content)
+	htmlContent := sanitizeTelegramHTML(markdownToTelegramHTML(msg.Content))
 
 	// Try to edit placeholder
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
@@ -151,7 +151,8 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	if err != nil {
 		log.Printf("HTML parse failed, falling back to plain text: %v", err)
-		_, err = c.bot.SendMessage(ctx, telegoutil.Message(chatID, msg.Content))
+		plain := plainTextFromTelegramHTML(htmlContent)
+		_, err = c.bot.SendMessage(ctx, telegoutil.Message(chatID, plain))
 		if err != nil {
 			log.Printf("Telegram plain-text fallback send failed: chat_id=%s err=%v", msg.ChatID, err)
 		}
@@ -407,11 +408,11 @@ func markdownToTelegramHTML(text string) string {
 	inlineCodes := extractInlineCodes(text)
 	text = inlineCodes.text
 
-	text = regexp.MustCompile(`^#{1,6}\s+(.+)$`).ReplaceAllString(text, "$1")
-
-	text = regexp.MustCompile(`^>\s*(.*)$`).ReplaceAllString(text, "$1")
-
 	text = escapeHTML(text)
+
+	text = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`).ReplaceAllString(text, "<b>$1</b>")
+
+	text = regexp.MustCompile(`(?m)^>\s*(.*)$`).ReplaceAllString(text, "│ $1")
 
 	text = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`).ReplaceAllString(text, `<a href="$2">$1</a>`)
 
@@ -419,18 +420,13 @@ func markdownToTelegramHTML(text string) string {
 
 	text = regexp.MustCompile(`__(.+?)__`).ReplaceAllString(text, "<b>$1</b>")
 
-	reItalic := regexp.MustCompile(`_([^_]+)_`)
-	text = reItalic.ReplaceAllStringFunc(text, func(s string) string {
-		match := reItalic.FindStringSubmatch(s)
-		if len(match) < 2 {
-			return s
-		}
-		return "<i>" + match[1] + "</i>"
-	})
+	text = regexp.MustCompile(`\*([^*\n]+)\*`).ReplaceAllString(text, "<i>$1</i>")
+	text = regexp.MustCompile(`_([^_\n]+)_`).ReplaceAllString(text, "<i>$1</i>")
 
 	text = regexp.MustCompile(`~~(.+?)~~`).ReplaceAllString(text, "<s>$1</s>")
 
-	text = regexp.MustCompile(`^[-*]\s+`).ReplaceAllString(text, "• ")
+	text = regexp.MustCompile(`(?m)^[-*]\s+`).ReplaceAllString(text, "• ")
+	text = regexp.MustCompile(`(?m)^\d+\.\s+`).ReplaceAllString(text, "• ")
 
 	for i, code := range inlineCodes.codes {
 		escaped := escapeHTML(code)
@@ -459,8 +455,11 @@ func extractCodeBlocks(text string) codeBlockMatch {
 		codes = append(codes, match[1])
 	}
 
+	index := 0
 	text = re.ReplaceAllStringFunc(text, func(m string) string {
-		return fmt.Sprintf("\x00CB%d\x00", len(codes)-1)
+		placeholder := fmt.Sprintf("\x00CB%d\x00", index)
+		index++
+		return placeholder
 	})
 
 	return codeBlockMatch{text: text, codes: codes}
@@ -480,8 +479,11 @@ func extractInlineCodes(text string) inlineCodeMatch {
 		codes = append(codes, match[1])
 	}
 
+	index := 0
 	text = re.ReplaceAllStringFunc(text, func(m string) string {
-		return fmt.Sprintf("\x00IC%d\x00", len(codes)-1)
+		placeholder := fmt.Sprintf("\x00IC%d\x00", index)
+		index++
+		return placeholder
 	})
 
 	return inlineCodeMatch{text: text, codes: codes}
@@ -492,4 +494,123 @@ func escapeHTML(text string) string {
 	text = strings.ReplaceAll(text, "<", "&lt;")
 	text = strings.ReplaceAll(text, ">", "&gt;")
 	return text
+}
+
+var telegramAllowedTags = map[string]bool{
+	"b":      true,
+	"strong": true,
+	"i":      true,
+	"em":     true,
+	"u":      true,
+	"s":      true,
+	"strike": true,
+	"del":    true,
+	"code":   true,
+	"pre":    true,
+	"a":      true,
+}
+
+func sanitizeTelegramHTML(input string) string {
+	if input == "" {
+		return ""
+	}
+
+	tagRe := regexp.MustCompile(`(?is)<\s*(/?)\s*([a-z0-9]+)([^>]*)>`)
+	hrefRe := regexp.MustCompile(`(?is)\bhref\s*=\s*"([^"]+)"`)
+
+	var out strings.Builder
+	stack := make([]string, 0, 16)
+	pos := 0
+
+	matches := tagRe.FindAllStringSubmatchIndex(input, -1)
+	for _, m := range matches {
+		start, end := m[0], m[1]
+		out.WriteString(input[pos:start])
+
+		isClose := strings.TrimSpace(input[m[2]:m[3]]) == "/"
+		tagName := strings.ToLower(strings.TrimSpace(input[m[4]:m[5]]))
+		attrRaw := ""
+		if m[6] >= 0 && m[7] >= 0 {
+			attrRaw = input[m[6]:m[7]]
+		}
+
+		if !telegramAllowedTags[tagName] {
+			out.WriteString(escapeHTML(input[start:end]))
+			pos = end
+			continue
+		}
+
+		if isClose {
+			// Ensure tag stack remains balanced; drop unmatched close tags.
+			found := -1
+			for i := len(stack) - 1; i >= 0; i-- {
+				if stack[i] == tagName {
+					found = i
+					break
+				}
+			}
+			if found == -1 {
+				pos = end
+				continue
+			}
+			for i := len(stack) - 1; i >= found; i-- {
+				out.WriteString("</" + stack[i] + ">")
+			}
+			stack = stack[:found]
+			pos = end
+			continue
+		}
+
+		// Normalize opening tags; only <a href="..."> can carry attributes.
+		if tagName == "a" {
+			hrefMatch := hrefRe.FindStringSubmatch(attrRaw)
+			if len(hrefMatch) < 2 {
+				// Invalid anchor tag -> degrade to escaped text to avoid parse errors.
+				out.WriteString("&lt;a&gt;")
+				pos = end
+				continue
+			}
+			href := strings.TrimSpace(hrefMatch[1])
+			if !isSafeTelegramHref(href) {
+				out.WriteString("&lt;a&gt;")
+				pos = end
+				continue
+			}
+			out.WriteString(`<a href="` + escapeHTMLAttr(href) + `">`)
+		} else {
+			out.WriteString("<" + tagName + ">")
+		}
+		stack = append(stack, tagName)
+		pos = end
+	}
+
+	out.WriteString(input[pos:])
+	for i := len(stack) - 1; i >= 0; i-- {
+		out.WriteString("</" + stack[i] + ">")
+	}
+	return out.String()
+}
+
+func isSafeTelegramHref(href string) bool {
+	lower := strings.ToLower(strings.TrimSpace(href))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "tg://")
+}
+
+func escapeHTMLAttr(text string) string {
+	text = strings.ReplaceAll(text, "&", "&amp;")
+	text = strings.ReplaceAll(text, `"`, "&quot;")
+	text = strings.ReplaceAll(text, "<", "&lt;")
+	text = strings.ReplaceAll(text, ">", "&gt;")
+	return text
+}
+
+func plainTextFromTelegramHTML(text string) string {
+	// Best-effort fallback for parse failures: drop tags and keep readable content.
+	tagRe := regexp.MustCompile(`(?is)<[^>]+>`)
+	plain := tagRe.ReplaceAllString(text, "")
+	plain = strings.ReplaceAll(plain, "&lt;", "<")
+	plain = strings.ReplaceAll(plain, "&gt;", ">")
+	plain = strings.ReplaceAll(plain, "&quot;", "\"")
+	plain = strings.ReplaceAll(plain, "&amp;", "&")
+	return plain
 }
