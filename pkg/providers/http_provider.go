@@ -116,7 +116,7 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Content   string `json:"content"`
+				Content   *string `json:"content"`
 				ToolCalls []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
@@ -145,7 +145,7 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 	choice := apiResponse.Choices[0]
 
 	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
-	for _, tc := range choice.Message.ToolCalls {
+	for i, tc := range choice.Message.ToolCalls {
 		arguments := make(map[string]interface{})
 		name := ""
 
@@ -167,15 +167,29 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 			}
 		}
 
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+
+		id := strings.TrimSpace(tc.ID)
+		if id == "" {
+			id = fmt.Sprintf("call_%d", i+1)
+		}
+
 		toolCalls = append(toolCalls, ToolCall{
-			ID:        tc.ID,
+			ID:        id,
 			Name:      name,
 			Arguments: arguments,
 		})
 	}
 
+	content := ""
+	if choice.Message.Content != nil {
+		content = *choice.Message.Content
+	}
+
 	return &LLMResponse{
-		Content:      choice.Message.Content,
+		Content:      content,
 		ToolCalls:    toolCalls,
 		FinishReason: choice.FinishReason,
 		Usage:        apiResponse.Usage,

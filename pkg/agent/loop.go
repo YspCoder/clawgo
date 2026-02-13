@@ -372,6 +372,8 @@ func (al *AgentLoop) runLLMToolLoop(
 	sessionKey string,
 	systemMode bool,
 ) (string, int, error) {
+	messages = sanitizeMessagesForToolCalling(messages)
+
 	iteration := 0
 	var finalContent string
 	var lastToolResult string
@@ -392,6 +394,12 @@ func (al *AgentLoop) runLLMToolLoop(
 			return "", iteration, fmt.Errorf("invalid tool definition: %w", err)
 		}
 
+		messages = sanitizeMessagesForToolCalling(messages)
+
+		systemPromptLen := 0
+		if len(messages) > 0 {
+			systemPromptLen = len(messages[0].Content)
+		}
 		logger.DebugCF("agent", "LLM request",
 			map[string]interface{}{
 				"iteration":         iteration,
@@ -400,7 +408,7 @@ func (al *AgentLoop) runLLMToolLoop(
 				"tools_count":       len(providerToolDefs),
 				"max_tokens":        8192,
 				"temperature":       0.7,
-				"system_prompt_len": len(messages[0].Content),
+				"system_prompt_len": systemPromptLen,
 			})
 		logger.DebugCF("agent", "Full LLM request",
 			map[string]interface{}{
@@ -527,6 +535,7 @@ func (al *AgentLoop) runLLMToolLoop(
 			Role:    "user",
 			Content: "Now provide your final response to the user based on the completed tool results. Do not call any tools.",
 		})
+		finalizeMessages = sanitizeMessagesForToolCalling(finalizeMessages)
 
 		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
 		finalResp, err := al.callLLMWithModelFallback(llmCtx, finalizeMessages, nil, map[string]interface{}{
@@ -550,6 +559,103 @@ func (al *AgentLoop) runLLMToolLoop(
 	}
 
 	return finalContent, iteration, nil
+}
+
+// sanitizeMessagesForToolCalling removes orphan tool-calling turns so provider-side
+// validation won't fail when history was truncated in the middle of a tool chain.
+func sanitizeMessagesForToolCalling(messages []providers.Message) []providers.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	out := make([]providers.Message, 0, len(messages))
+	pendingToolIDs := map[string]struct{}{}
+	lastToolCallIdx := -1
+
+	resetPending := func() {
+		pendingToolIDs = map[string]struct{}{}
+		lastToolCallIdx = -1
+	}
+
+	rollbackToolCall := func() {
+		if lastToolCallIdx >= 0 && lastToolCallIdx <= len(out) {
+			// Drop the entire partial tool-call segment: assistant(tool_calls)
+			// and any collected tool results that followed it.
+			out = out[:lastToolCallIdx]
+		}
+		resetPending()
+	}
+
+	for _, msg := range messages {
+		role := strings.TrimSpace(msg.Role)
+		if role == "" {
+			continue
+		}
+
+		switch role {
+		case "system":
+			if len(out) == 0 {
+				out = append(out, msg)
+			}
+		case "tool":
+			if len(pendingToolIDs) == 0 || strings.TrimSpace(msg.ToolCallID) == "" {
+				continue
+			}
+			if _, ok := pendingToolIDs[msg.ToolCallID]; !ok {
+				continue
+			}
+			out = append(out, msg)
+			delete(pendingToolIDs, msg.ToolCallID)
+			if len(pendingToolIDs) == 0 {
+				lastToolCallIdx = -1
+			}
+		case "assistant":
+			if len(pendingToolIDs) > 0 {
+				rollbackToolCall()
+			}
+
+			if len(msg.ToolCalls) == 0 {
+				out = append(out, msg)
+				continue
+			}
+
+			prevRole := ""
+			for i := len(out) - 1; i >= 0; i-- {
+				r := strings.TrimSpace(out[i].Role)
+				if r != "" {
+					prevRole = r
+					break
+				}
+			}
+			if prevRole != "user" && prevRole != "tool" {
+				continue
+			}
+
+			out = append(out, msg)
+			lastToolCallIdx = len(out) - 1
+			pendingToolIDs = map[string]struct{}{}
+			for _, tc := range msg.ToolCalls {
+				id := strings.TrimSpace(tc.ID)
+				if id != "" {
+					pendingToolIDs[id] = struct{}{}
+				}
+			}
+			if len(pendingToolIDs) == 0 {
+				lastToolCallIdx = -1
+			}
+		default:
+			if len(pendingToolIDs) > 0 {
+				rollbackToolCall()
+			}
+			out = append(out, msg)
+		}
+	}
+
+	if len(pendingToolIDs) > 0 {
+		rollbackToolCall()
+	}
+
+	return out
 }
 
 // truncate returns a truncated version of s with at most maxLen characters.
