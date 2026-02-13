@@ -156,6 +156,7 @@ Shell 工具默认启用 Risk Gate。检测到破坏性命令时，默认阻断�
 
 - `memory_search`：增加结构化索引（倒排索引 + 缓存），优先走索引检索。
 - 记忆分层：支持 `profile / project / procedures / recent notes`。
+- 自动上下文压缩（Automatically Compacted Context）：会话过长时自动生成摘要并裁剪历史，降低 token 开销与卡顿风险。
 
 ```json
 "memory": {
@@ -167,6 +168,30 @@ Shell 工具默认启用 Risk Gate。检测到破坏性命令时，默认阻断�
     "procedures": true
   }
 }
+```
+
+上下文自动压缩配置：
+
+```json
+"agents": {
+  "defaults": {
+    "context_compaction": {
+      "enabled": true,
+      "trigger_messages": 60,
+      "keep_recent_messages": 20,
+      "max_summary_chars": 6000,
+      "max_transcript_chars": 20000
+    }
+  }
+}
+```
+
+也可以热更新：
+
+```bash
+clawgo config set agents.defaults.context_compaction.enabled true
+clawgo config set agents.defaults.context_compaction.trigger_messages 80
+clawgo config set agents.defaults.context_compaction.keep_recent_messages 24
 ```
 
 ## 🗺️ Repo-Map 与原子技能

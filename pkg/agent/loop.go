@@ -44,6 +44,7 @@ type AgentLoop struct {
 	tools          *tools.ToolRegistry
 	orchestrator   *tools.Orchestrator
 	running        atomic.Bool
+	compactionCfg  config.ContextCompactionConfig
 }
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, cs *cron.CronService) *AgentLoop {
@@ -125,6 +126,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		contextBuilder: NewContextBuilder(workspace, cfg.Memory, func() []string { return toolsRegistry.GetSummaries() }),
 		tools:          toolsRegistry,
 		orchestrator:   orchestrator,
+		compactionCfg:  cfg.Agents.Defaults.ContextCompaction,
 	}
 
 	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
@@ -259,7 +261,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Content: userContent,
 	})
 
-	if err := al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey)); err != nil {
+	if err := al.persistSessionWithCompaction(ctx, msg.SessionKey); err != nil {
 		logger.WarnCF("agent", "Failed to save session metadata", map[string]interface{}{
 			"session_key":     msg.SessionKey,
 			logger.FieldError: err.Error(),
@@ -348,7 +350,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		Content: finalContent,
 	})
 
-	if err := al.sessions.Save(al.sessions.GetOrCreate(sessionKey)); err != nil {
+	if err := al.persistSessionWithCompaction(ctx, sessionKey); err != nil {
 		logger.WarnCF("agent", "Failed to save session metadata", map[string]interface{}{
 			"session_key":     sessionKey,
 			logger.FieldError: err.Error(),
@@ -716,6 +718,124 @@ func formatToolsForLog(tools []providers.ToolDefinition) string {
 	}
 	result += "]"
 	return result
+}
+
+func (al *AgentLoop) persistSessionWithCompaction(ctx context.Context, sessionKey string) error {
+	if err := al.maybeCompactContext(ctx, sessionKey); err != nil {
+		logger.WarnCF("agent", "Context compaction skipped due to error", map[string]interface{}{
+			"session_key":     sessionKey,
+			logger.FieldError: err.Error(),
+		})
+	}
+	return al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+}
+
+func (al *AgentLoop) maybeCompactContext(ctx context.Context, sessionKey string) error {
+	cfg := al.compactionCfg
+	if !cfg.Enabled {
+		return nil
+	}
+
+	messageCount := al.sessions.MessageCount(sessionKey)
+	if messageCount < cfg.TriggerMessages {
+		return nil
+	}
+
+	history := al.sessions.GetHistory(sessionKey)
+	if len(history) < cfg.TriggerMessages {
+		return nil
+	}
+	if cfg.KeepRecentMessages >= len(history) {
+		return nil
+	}
+
+	summary := al.sessions.GetSummary(sessionKey)
+	compactUntil := len(history) - cfg.KeepRecentMessages
+	compactCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	newSummary, err := al.buildCompactedSummary(compactCtx, summary, history[:compactUntil], cfg.MaxTranscriptChars)
+	if err != nil {
+		return err
+	}
+	newSummary = strings.TrimSpace(newSummary)
+	if newSummary == "" {
+		return nil
+	}
+	if len(newSummary) > cfg.MaxSummaryChars {
+		newSummary = truncateString(newSummary, cfg.MaxSummaryChars)
+	}
+
+	before, after, err := al.sessions.CompactHistory(sessionKey, newSummary, cfg.KeepRecentMessages)
+	if err != nil {
+		return err
+	}
+
+	logger.InfoCF("agent", "Context compacted automatically", map[string]interface{}{
+		"session_key":      sessionKey,
+		"before_messages":  before,
+		"after_messages":   after,
+		"kept_recent":      cfg.KeepRecentMessages,
+		"summary_chars":    len(newSummary),
+		"trigger_messages": cfg.TriggerMessages,
+	})
+	return nil
+}
+
+func (al *AgentLoop) buildCompactedSummary(
+	ctx context.Context,
+	existingSummary string,
+	messages []providers.Message,
+	maxTranscriptChars int,
+) (string, error) {
+	transcript := formatCompactionTranscript(messages, maxTranscriptChars)
+	if strings.TrimSpace(transcript) == "" {
+		return strings.TrimSpace(existingSummary), nil
+	}
+
+	systemPrompt := "You are a conversation compactor. Merge prior summary and transcript into a concise, factual memory for future turns. Keep user preferences, constraints, decisions, unresolved tasks, and key technical context. Do not include speculative content."
+	userPrompt := fmt.Sprintf("Existing summary:\n%s\n\nTranscript to compact:\n%s\n\nReturn a compact markdown summary with sections: Key Facts, Decisions, Open Items, Next Steps.",
+		strings.TrimSpace(existingSummary), transcript)
+
+	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}, nil, map[string]interface{}{
+		"max_tokens":  1200,
+		"temperature": 0.2,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}
+
+func formatCompactionTranscript(messages []providers.Message, maxChars int) string {
+	if maxChars <= 0 || len(messages) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	used := 0
+	for _, m := range messages {
+		role := strings.TrimSpace(m.Role)
+		if role == "" {
+			role = "unknown"
+		}
+		line := fmt.Sprintf("[%s] %s\n", role, strings.TrimSpace(m.Content))
+		if len(line) > 1200 {
+			line = truncateString(line, 1200) + "\n"
+		}
+		if used+len(line) > maxChars {
+			remain := maxChars - used
+			if remain > 16 {
+				sb.WriteString(truncateString(line, remain))
+			}
+			break
+		}
+		sb.WriteString(line)
+		used += len(line)
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func (al *AgentLoop) handleSlashCommand(content string) (bool, string, error) {

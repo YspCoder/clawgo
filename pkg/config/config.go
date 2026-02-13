@@ -27,12 +27,21 @@ type AgentsConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace         string   `json:"workspace" env:"CLAWGO_AGENTS_DEFAULTS_WORKSPACE"`
-	Model             string   `json:"model" env:"CLAWGO_AGENTS_DEFAULTS_MODEL"`
-	ModelFallbacks    []string `json:"model_fallbacks" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_FALLBACKS"`
-	MaxTokens         int      `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature       float64  `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations int      `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Workspace         string                  `json:"workspace" env:"CLAWGO_AGENTS_DEFAULTS_WORKSPACE"`
+	Model             string                  `json:"model" env:"CLAWGO_AGENTS_DEFAULTS_MODEL"`
+	ModelFallbacks    []string                `json:"model_fallbacks" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_FALLBACKS"`
+	MaxTokens         int                     `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature       float64                 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	ContextCompaction ContextCompactionConfig `json:"context_compaction"`
+}
+
+type ContextCompactionConfig struct {
+	Enabled            bool `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_ENABLED"`
+	TriggerMessages    int  `json:"trigger_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_TRIGGER_MESSAGES"`
+	KeepRecentMessages int  `json:"keep_recent_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_KEEP_RECENT_MESSAGES"`
+	MaxSummaryChars    int  `json:"max_summary_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_SUMMARY_CHARS"`
+	MaxTranscriptChars int  `json:"max_transcript_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_TRANSCRIPT_CHARS"`
 }
 
 type ChannelsConfig struct {
@@ -213,6 +222,13 @@ func DefaultConfig() *Config {
 				MaxTokens:         8192,
 				Temperature:       0.7,
 				MaxToolIterations: 20,
+				ContextCompaction: ContextCompactionConfig{
+					Enabled:            true,
+					TriggerMessages:    60,
+					KeepRecentMessages: 20,
+					MaxSummaryChars:    6000,
+					MaxTranscriptChars: 20000,
+				},
 			},
 		},
 		Channels: ChannelsConfig{

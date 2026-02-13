@@ -17,6 +17,24 @@ func Validate(cfg *Config) []error {
 	if cfg.Agents.Defaults.MaxToolIterations <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.max_tool_iterations must be > 0"))
 	}
+	if cfg.Agents.Defaults.ContextCompaction.Enabled {
+		cc := cfg.Agents.Defaults.ContextCompaction
+		if cc.TriggerMessages <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.trigger_messages must be > 0 when enabled=true"))
+		}
+		if cc.KeepRecentMessages <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.keep_recent_messages must be > 0 when enabled=true"))
+		}
+		if cc.TriggerMessages > 0 && cc.KeepRecentMessages >= cc.TriggerMessages {
+			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.keep_recent_messages must be < trigger_messages"))
+		}
+		if cc.MaxSummaryChars <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.max_summary_chars must be > 0 when enabled=true"))
+		}
+		if cc.MaxTranscriptChars <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.max_transcript_chars must be > 0 when enabled=true"))
+		}
+	}
 
 	if cfg.Providers.Proxy.APIBase == "" {
 		errs = append(errs, fmt.Errorf("providers.proxy.api_base is required"))

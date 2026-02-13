@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,6 +121,35 @@ func (sm *SessionManager) appendMessage(sessionKey string, msg providers.Message
 	return err
 }
 
+func (sm *SessionManager) rewriteHistory(sessionKey string, messages []providers.Message) error {
+	if sm.storage == "" {
+		return nil
+	}
+
+	sessionPath := filepath.Join(sm.storage, sessionKey+".jsonl")
+	tmpPath := sessionPath + ".tmp"
+
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	enc := json.NewEncoder(f)
+	for _, msg := range messages {
+		if err := enc.Encode(msg); err != nil {
+			_ = f.Close()
+			_ = os.Remove(tmpPath)
+			return err
+		}
+	}
+
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return os.Rename(tmpPath, sessionPath)
+}
+
 func (sm *SessionManager) GetHistory(key string) []providers.Message {
 	sm.mu.RLock()
 	session, ok := sm.sessions[key]
@@ -184,6 +214,49 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 
 	session.Messages = session.Messages[len(session.Messages)-keepLast:]
 	session.Updated = time.Now()
+}
+
+func (sm *SessionManager) MessageCount(key string) int {
+	sm.mu.RLock()
+	session, ok := sm.sessions[key]
+	sm.mu.RUnlock()
+	if !ok {
+		return 0
+	}
+
+	session.mu.RLock()
+	defer session.mu.RUnlock()
+	return len(session.Messages)
+}
+
+func (sm *SessionManager) CompactHistory(key, summary string, keepLast int) (int, int, error) {
+	sm.mu.RLock()
+	session, ok := sm.sessions[key]
+	sm.mu.RUnlock()
+	if !ok {
+		return 0, 0, fmt.Errorf("session not found: %s", key)
+	}
+
+	if keepLast < 0 {
+		keepLast = 0
+	}
+
+	session.mu.Lock()
+	before := len(session.Messages)
+	if keepLast < before {
+		session.Messages = session.Messages[before-keepLast:]
+	}
+	session.Summary = summary
+	session.Updated = time.Now()
+	after := len(session.Messages)
+	msgs := make([]providers.Message, after)
+	copy(msgs, session.Messages)
+	session.mu.Unlock()
+
+	if err := sm.rewriteHistory(key, msgs); err != nil {
+		return before, after, err
+	}
+	return before, after, nil
 }
 
 func (sm *SessionManager) Save(session *Session) error {
