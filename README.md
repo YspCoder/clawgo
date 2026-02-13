@@ -17,7 +17,7 @@
 ```bash
 clawgo onboard
 ```
-运行 `clawgo onboard` / `clawgo gateway` 时会弹出 `yes/no`，可选择是否授予 root 权限。
+运行 `clawgo gateway` 时会弹出 `yes/no`，可选择是否授予 root 权限。
 若选择 `yes`，会以 `sudo` 重新执行命令，并启用高权限策略（仅强制禁止 `rm -rf /`）。
 
 **2. 配置 CLIProxyAPI**

@@ -247,29 +247,39 @@ func (al *AgentLoop) runSessionWorker(ctx context.Context, sessionKey string, wo
 			al.removeWorker(sessionKey, worker)
 			return
 		case msg := <-worker.queue:
-			taskCtx, cancel := context.WithCancel(ctx)
-			worker.cancelMu.Lock()
-			worker.cancel = cancel
-			worker.cancelMu.Unlock()
+			func() {
+				taskCtx, cancel := context.WithCancel(ctx)
+				worker.cancelMu.Lock()
+				worker.cancel = cancel
+				worker.cancelMu.Unlock()
 
-			response, err := al.processMessage(taskCtx, msg)
-			cancel()
-			al.clearWorkerCancel(worker)
+				defer func() {
+					cancel()
+					al.clearWorkerCancel(worker)
+					if r := recover(); r != nil {
+						logger.ErrorCF("agent", "Session worker recovered from panic", map[string]interface{}{
+							"session_key": sessionKey,
+							"panic":       fmt.Sprintf("%v", r),
+						})
+					}
+				}()
 
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					continue
+				response, err := al.processMessage(taskCtx, msg)
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					response = fmt.Sprintf("Error processing message: %v", err)
 				}
-				response = fmt.Sprintf("Error processing message: %v", err)
-			}
 
-			if response != "" {
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: msg.Channel,
-					ChatID:  msg.ChatID,
-					Content: response,
-				})
-			}
+				if response != "" {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel: msg.Channel,
+						ChatID:  msg.ChatID,
+						Content: response,
+					})
+				}
+			}()
 		}
 	}
 }

@@ -17,7 +17,7 @@
 ```bash
 clawgo onboard
 ```
-When running `clawgo onboard` or `clawgo gateway`, a `yes/no` prompt asks whether to grant root privileges.
+When running `clawgo gateway`, a `yes/no` prompt asks whether to grant root privileges.
 If `yes`, the command is re-executed via `sudo` and a high-permission shell policy is enabled (with `rm -rf /` still hard-blocked).
 
 **2. Configure CLIProxyAPI**

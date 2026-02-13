@@ -111,7 +111,6 @@ func main() {
 
 	switch command {
 	case "onboard":
-		maybePromptAndEscalateRoot("onboard")
 		onboard()
 	case "agent":
 		agentCmd()
