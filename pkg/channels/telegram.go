@@ -133,6 +133,8 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 				}
 				if update.Message != nil {
 					c.dispatchHandleMessage(runCtx, update.Message)
+				} else if update.CallbackQuery != nil {
+					c.handleCallbackQuery(runCtx, update.CallbackQuery)
 				}
 			}
 		}
@@ -170,10 +172,6 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 		return true
 	})
 
-	// In telego v1.x, the long polling is stopped by canceling the context
-	// passed to UpdatesViaLongPolling. We don't need a separate Stop call
-	// if we use the parent context correctly.
-
 	return nil
 }
 
@@ -203,6 +201,35 @@ func (c *TelegramChannel) dispatchHandleMessage(runCtx context.Context, message 
 	}(message)
 }
 
+func (c *TelegramChannel) handleCallbackQuery(ctx context.Context, query *telego.CallbackQuery) {
+	if query == nil || query.Message == nil {
+		return
+	}
+
+	senderID := fmt.Sprintf("%d", query.From.ID)
+	chatID := fmt.Sprintf("%d", query.Message.GetChat().ID)
+
+	answerCtx, cancel := withTelegramAPITimeout(ctx)
+	_ = c.bot.AnswerCallbackQuery(answerCtx, &telego.AnswerCallbackQueryParams{
+		CallbackQueryID: query.ID,
+	})
+	cancel()
+
+	logger.InfoCF("telegram", "Callback query received", map[string]interface{}{
+		"sender_id": senderID,
+		"data":      query.Data,
+	})
+
+	if !c.IsAllowed(senderID) {
+		return
+	}
+
+	c.HandleMessage(senderID, chatID, query.Data, nil, map[string]string{
+		"is_callback": "true",
+		"callback_id": query.ID,
+	})
+}
+
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	if !c.IsRunning() {
 		return fmt.Errorf("telegram bot not running")
@@ -214,57 +241,54 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 	chatID := telegoutil.ID(chatIDInt)
 
-	// Stop thinking animation first to avoid animation/update races.
 	if stop, ok := c.stopThinking.LoadAndDelete(msg.ChatID); ok {
-		logger.DebugCF("telegram", "Telegram thinking stop signal", map[string]interface{}{
-			logger.FieldChatID: msg.ChatID,
-		})
 		safeCloseSignal(stop)
-	} else {
-		logger.DebugCF("telegram", "Telegram thinking stop skipped (not found)", map[string]interface{}{
-			logger.FieldChatID: msg.ChatID,
-		})
 	}
 
 	htmlContent := sanitizeTelegramHTML(markdownToTelegramHTML(msg.Content))
 
-	// Try to edit placeholder
-	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		// Always reset placeholder state even when edit/send fails.
-		defer c.placeholders.Delete(msg.ChatID)
-		logger.DebugCF("telegram", "Telegram editing thinking placeholder", map[string]interface{}{
-			logger.FieldChatID: msg.ChatID,
-			"message_id":       pID.(int),
-		})
+	var markup *telego.InlineKeyboardMarkup
+	if len(msg.Buttons) > 0 {
+		var rows [][]telego.InlineKeyboardButton
+		for _, row := range msg.Buttons {
+			var buttons []telego.InlineKeyboardButton
+			for _, btn := range row {
+				buttons = append(buttons, telegoutil.InlineKeyboardButton(btn.Text).WithCallbackData(btn.Data))
+			}
+			rows = append(rows, buttons)
+		}
+		markup = telegoutil.InlineKeyboard(rows...)
+	}
 
+	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+		defer c.placeholders.Delete(msg.ChatID)
 		editCtx, cancelEdit := withTelegramAPITimeout(ctx)
-		_, err := c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{
-			ChatID:    chatID,
-			MessageID: pID.(int),
-			Text:      htmlContent,
-			ParseMode: telego.ModeHTML,
-		})
+		params := &telego.EditMessageTextParams{
+			ChatID:      chatID,
+			MessageID:   pID.(int),
+			Text:        htmlContent,
+			ParseMode:   telego.ModeHTML,
+			ReplyMarkup: markup,
+		}
+		_, err := c.bot.EditMessageText(editCtx, params)
 		cancelEdit()
 
 		if err == nil {
-			logger.DebugCF("telegram", "Telegram placeholder updated", map[string]interface{}{
-				logger.FieldChatID: msg.ChatID,
-			})
 			return nil
 		}
-		logger.WarnCF("telegram", "Telegram placeholder update failed; fallback to new message", map[string]interface{}{
+		logger.WarnCF("telegram", "Placeholder update failed; fallback to new message", map[string]interface{}{
 			logger.FieldChatID: msg.ChatID,
 			logger.FieldError:  err.Error(),
 		})
-		// Fallback to new message if edit fails
-	} else {
-		logger.DebugCF("telegram", "Telegram placeholder not found, sending new message", map[string]interface{}{
-			logger.FieldChatID: msg.ChatID,
-		})
+	}
+
+	sendParams := telegoutil.Message(chatID, htmlContent).WithParseMode(telego.ModeHTML)
+	if markup != nil {
+		sendParams.WithReplyMarkup(markup)
 	}
 
 	sendCtx, cancelSend := withTelegramAPITimeout(ctx)
-	_, err = c.bot.SendMessage(sendCtx, telegoutil.Message(chatID, htmlContent).WithParseMode(telego.ModeHTML))
+	_, err = c.bot.SendMessage(sendCtx, sendParams)
 	cancelSend()
 
 	if err != nil {
@@ -272,15 +296,13 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			logger.FieldError: err.Error(),
 		})
 		plain := plainTextFromTelegramHTML(htmlContent)
-		sendPlainCtx, cancelSendPlain := withTelegramAPITimeout(ctx)
-		_, err = c.bot.SendMessage(sendPlainCtx, telegoutil.Message(chatID, plain))
-		cancelSendPlain()
-		if err != nil {
-			logger.ErrorCF("telegram", "Telegram plain-text fallback send failed", map[string]interface{}{
-				logger.FieldChatID: msg.ChatID,
-				logger.FieldError:  err.Error(),
-			})
+		sendPlainParams := telegoutil.Message(chatID, plain)
+		if markup != nil {
+			sendPlainParams.WithReplyMarkup(markup)
 		}
+		sendPlainCtx, cancelSendPlain := withTelegramAPITimeout(ctx)
+		_, err = c.bot.SendMessage(sendPlainCtx, sendPlainParams)
+		cancelSendPlain()
 		return err
 	}
 
@@ -402,7 +424,6 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 		return
 	}
 
-	// Thinking indicator
 	apiCtx, cancelAPI := context.WithTimeout(runCtx, telegramAPICallTimeout)
 	_ = c.bot.SendChatAction(apiCtx, &telego.SendChatActionParams{
 		ChatID: telegoutil.ID(chatID),
@@ -412,13 +433,9 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 
 	stopChan := make(chan struct{})
 	if prev, ok := c.stopThinking.LoadAndDelete(fmt.Sprintf("%d", chatID)); ok {
-		// Ensure previous animation loop exits before replacing channel.
 		safeCloseSignal(prev)
 	}
 	c.stopThinking.Store(fmt.Sprintf("%d", chatID), stopChan)
-	logger.DebugCF("telegram", "Telegram thinking started", map[string]interface{}{
-		logger.FieldChatID: chatID,
-	})
 
 	sendCtx, cancelSend := context.WithTimeout(runCtx, telegramAPICallTimeout)
 	pMsg, err := c.bot.SendMessage(sendCtx, telegoutil.Message(telegoutil.ID(chatID), "Thinking... 💭"))
@@ -426,10 +443,6 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	if err == nil {
 		pID := pMsg.MessageID
 		c.placeholders.Store(fmt.Sprintf("%d", chatID), pID)
-		logger.DebugCF("telegram", "Telegram thinking placeholder created", map[string]interface{}{
-			logger.FieldChatID: chatID,
-			"message_id":       pID,
-		})
 
 		go func(cid int64, mid int, stop <-chan struct{}, parentCtx context.Context) {
 			dots := []string{".", "..", "..."}
@@ -442,9 +455,6 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 				case <-parentCtx.Done():
 					return
 				case <-stop:
-					logger.DebugCF("telegram", "Telegram thinking animation stopped", map[string]interface{}{
-						logger.FieldChatID: cid,
-					})
 					return
 				case <-ticker.C:
 					i++
@@ -457,20 +467,11 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 					})
 					cancelEdit()
 					if err != nil {
-						logger.DebugCF("telegram", "Telegram thinking animation edit failed", map[string]interface{}{
-							logger.FieldChatID: cid,
-							"message_id":       mid,
-							logger.FieldError:  err.Error(),
-						})
+						return
 					}
 				}
 			}
 		}(chatID, pID, stopChan, runCtx)
-	} else {
-		logger.WarnCF("telegram", "Telegram thinking placeholder create failed", map[string]interface{}{
-			logger.FieldChatID: chatID,
-			logger.FieldError:  err.Error(),
-		})
 	}
 
 	metadata := map[string]string{
@@ -489,9 +490,6 @@ func (c *TelegramChannel) downloadFile(runCtx context.Context, fileID, ext strin
 	file, err := c.bot.GetFile(getFileCtx, &telego.GetFileParams{FileID: fileID})
 	cancelGetFile()
 	if err != nil {
-		logger.WarnCF("telegram", "Failed to get file", map[string]interface{}{
-			logger.FieldError: err.Error(),
-		})
 		return ""
 	}
 
@@ -499,26 +497,12 @@ func (c *TelegramChannel) downloadFile(runCtx context.Context, fileID, ext strin
 		return ""
 	}
 
-	// In telego, we can use Link() or just build the URL
 	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", c.config.Token, file.FilePath)
-	logger.DebugCF("telegram", "Telegram file URL resolved", map[string]interface{}{
-		"url": url,
-	})
-
 	mediaDir := filepath.Join(os.TempDir(), "clawgo_media")
-	if err := os.MkdirAll(mediaDir, 0755); err != nil {
-		logger.WarnCF("telegram", "Failed to create media directory", map[string]interface{}{
-			logger.FieldError: err.Error(),
-		})
-		return ""
-	}
-
+	_ = os.MkdirAll(mediaDir, 0755)
 	localPath := filepath.Join(mediaDir, fileID[:min(16, len(fileID))]+ext)
 
 	if err := c.downloadFromURL(runCtx, url, localPath); err != nil {
-		logger.WarnCF("telegram", "Failed to download file", map[string]interface{}{
-			logger.FieldError: err.Error(),
-		})
 		return ""
 	}
 
@@ -538,35 +522,28 @@ func (c *TelegramChannel) downloadFromURL(runCtx context.Context, url, localPath
 
 	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
 
 	client := &http.Client{Timeout: telegramDownloadTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to download: %w", err)
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed with status: %d", resp.StatusCode)
+		return fmt.Errorf("status: %d", resp.StatusCode)
 	}
 
 	out, err := os.Create(localPath)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return err
 	}
 	defer out.Close()
 
 	_, err = io.Copy(out, resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
-	}
-
-	logger.DebugCF("telegram", "File downloaded successfully", map[string]interface{}{
-		"path": localPath,
-	})
-	return nil
+	return err
 }
 
 func parseChatID(chatIDStr string) (int64, error) {
@@ -588,23 +565,16 @@ func markdownToTelegramHTML(text string) string {
 
 	text = escapeHTML(text)
 
-	text = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`).ReplaceAllString(text, "<b>$1</b>")
-
-	text = regexp.MustCompile(`(?m)^>\s*(.*)$`).ReplaceAllString(text, "│ $1")
-
-	text = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`).ReplaceAllString(text, `<a href="$2">$1</a>`)
-
-	text = regexp.MustCompile(`\*\*(.+?)\*\*`).ReplaceAllString(text, "<b>$1</b>")
-
-	text = regexp.MustCompile(`__(.+?)__`).ReplaceAllString(text, "<b>$1</b>")
-
-	text = regexp.MustCompile(`\*([^*\n]+)\*`).ReplaceAllString(text, "<i>$1</i>")
-	text = regexp.MustCompile(`_([^_\n]+)_`).ReplaceAllString(text, "<i>$1</i>")
-
-	text = regexp.MustCompile(`~~(.+?)~~`).ReplaceAllString(text, "<s>$1</s>")
-
-	text = regexp.MustCompile(`(?m)^[-*]\s+`).ReplaceAllString(text, "• ")
-	text = regexp.MustCompile(`(?m)^\d+\.\s+`).ReplaceAllString(text, "• ")
+	text = regexp.MustCompile("(?m)^#{1,6}\\s+(.+)$").ReplaceAllString(text, "<b>$1</b>")
+	text = regexp.MustCompile("(?m)^>\\s*(.*)$").ReplaceAllString(text, "│ $1")
+	text = regexp.MustCompile("\\[([^\\]]+)\\]\\(([^)]+)\\)").ReplaceAllString(text, `<a href="$2">$1</a>`)
+	text = regexp.MustCompile("\\*\\*(.+?)\\*\\*").ReplaceAllString(text, "<b>$1</b>")
+	text = regexp.MustCompile("__(.+?)__").ReplaceAllString(text, "<b>$1</b>")
+	text = regexp.MustCompile("\\*([^*\\n]+)\\*").ReplaceAllString(text, "<i>$1</i>")
+	text = regexp.MustCompile("_([^_\\n]+)_").ReplaceAllString(text, "<i>$1</i>")
+	text = regexp.MustCompile("~~(.+?)~~").ReplaceAllString(text, "<s>$1</s>")
+	text = regexp.MustCompile("(?m)^[-*]\\s+").ReplaceAllString(text, "• ")
+	text = regexp.MustCompile("(?m)^\\d+\\.\\s+").ReplaceAllString(text, "• ")
 
 	for i, code := range inlineCodes.codes {
 		escaped := escapeHTML(code)
@@ -693,8 +663,8 @@ func sanitizeTelegramHTML(input string) string {
 		return ""
 	}
 
-	tagRe := regexp.MustCompile(`(?is)<\s*(/?)\s*([a-z0-9]+)([^>]*)>`)
-	hrefRe := regexp.MustCompile(`(?is)\bhref\s*=\s*"([^"]+)"`)
+	tagRe := regexp.MustCompile("(?is)<\\s*(/?)\\s*([a-z0-9]+)([^>]*)>")
+	hrefRe := regexp.MustCompile("(?is)\\bhref\\s*=\\s*\"([^\"]+)\"")
 
 	var out strings.Builder
 	stack := make([]string, 0, 16)
@@ -719,7 +689,6 @@ func sanitizeTelegramHTML(input string) string {
 		}
 
 		if isClose {
-			// Ensure tag stack remains balanced; drop unmatched close tags.
 			found := -1
 			for i := len(stack) - 1; i >= 0; i-- {
 				if stack[i] == tagName {
@@ -739,11 +708,9 @@ func sanitizeTelegramHTML(input string) string {
 			continue
 		}
 
-		// Normalize opening tags; only <a href="..."> can carry attributes.
 		if tagName == "a" {
 			hrefMatch := hrefRe.FindStringSubmatch(attrRaw)
 			if len(hrefMatch) < 2 {
-				// Invalid anchor tag -> degrade to escaped text to avoid parse errors.
 				out.WriteString("&lt;a&gt;")
 				pos = end
 				continue
@@ -783,8 +750,7 @@ func escapeHTMLAttr(text string) string {
 }
 
 func plainTextFromTelegramHTML(text string) string {
-	// Best-effort fallback for parse failures: drop tags and keep readable content.
-	tagRe := regexp.MustCompile(`(?is)<[^>]+>`)
+	tagRe := regexp.MustCompile("(?is)<[^>]+>")
 	plain := tagRe.ReplaceAllString(text, "")
 	plain = strings.ReplaceAll(plain, "&lt;", "<")
 	plain = strings.ReplaceAll(plain, "&gt;", ">")
