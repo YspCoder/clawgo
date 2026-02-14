@@ -295,7 +295,7 @@ func (m *Manager) GetStatus() map[string]interface{} {
 	defer m.mu.RUnlock()
 
 	status := make(map[string]interface{})
-	for name, channel := range m.channels {
+	for name := range m.channels {
 		status[name] = map[string]interface{}{}
 	}
 	return status

@@ -45,6 +45,13 @@ func (c *BaseChannel) IsRunning() bool {
 	return c.running.Load()
 }
 
+func (c *BaseChannel) HealthCheck(ctx context.Context) error {
+	if !c.IsRunning() {
+		return fmt.Errorf("%s channel not running", c.name)
+	}
+	return nil
+}
+
 func (c *BaseChannel) IsAllowed(senderID string) bool {
 	if len(c.allowList) == 0 {
 		return true
