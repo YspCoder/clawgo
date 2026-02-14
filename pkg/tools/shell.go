@@ -29,15 +29,21 @@ type ExecTool struct {
 }
 
 func NewExecTool(cfg config.ShellConfig, workspace string) *ExecTool {
-	denyPatterns := make([]*regexp.Regexp, 0)
+	denyPatterns := make([]*regexp.Regexp, 0, len(cfg.DeniedCmds))
 	for _, p := range cfg.DeniedCmds {
-		denyPatterns = append(denyPatterns, regexp.MustCompile(`\b`+regexp.QuoteMeta(p)+`\b`))
+		denyPatterns = append(denyPatterns, regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(p)+`\b`))
+	}
+
+	allowPatterns := make([]*regexp.Regexp, 0, len(cfg.AllowedCmds))
+	for _, p := range cfg.AllowedCmds {
+		allowPatterns = append(allowPatterns, regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(p)+`\b`))
 	}
 
 	return &ExecTool{
 		workingDir:          workspace,
 		timeout:             cfg.Timeout,
 		denyPatterns:        denyPatterns,
+		allowPatterns:       allowPatterns,
 		restrictToWorkspace: cfg.RestrictPath,
 		sandboxEnabled:      cfg.Sandbox.Enabled,
 		sandboxImage:        cfg.Sandbox.Image,
@@ -153,7 +159,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	for _, pattern := range t.denyPatterns {
-		if pattern.MatchString(lower) {
+		if pattern.MatchString(cmd) {
 			return "Command blocked by safety guard (dangerous pattern detected)"
 		}
 	}
@@ -161,7 +167,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	if len(t.allowPatterns) > 0 {
 		allowed := false
 		for _, pattern := range t.allowPatterns {
-			if pattern.MatchString(lower) {
+			if pattern.MatchString(cmd) {
 				allowed = true
 				break
 			}
@@ -215,7 +221,7 @@ func (t *ExecTool) SetRestrictToWorkspace(restrict bool) {
 func (t *ExecTool) SetAllowPatterns(patterns []string) error {
 	t.allowPatterns = make([]*regexp.Regexp, 0, len(patterns))
 	for _, p := range patterns {
-		re, err := regexp.Compile(p)
+		re, err := regexp.Compile("(?i)" + p)
 		if err != nil {
 			return fmt.Errorf("invalid allow pattern %q: %w", p, err)
 		}
@@ -254,10 +260,11 @@ func (t *ExecTool) applyRiskGate(command string, force bool) (string, string) {
 		return "Error: destructive command is disabled by policy (tools.shell.risk.allow_destructive=false).", ""
 	}
 
-	if t.riskCfg.RequireDryRun {
+	if t.riskCfg.RequireDryRun && !force {
 		if dryRunCmd, ok := buildDryRunCommand(command); ok {
 			return "Risk gate: dry-run required first. Review output, then execute intentionally with force=true.", dryRunCmd
 		}
+		return "Error: destructive command requires explicit force=true because no dry-run strategy is available.", ""
 	}
 	return "", ""
 }

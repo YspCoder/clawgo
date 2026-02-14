@@ -28,11 +28,11 @@ var destructivePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bchown\b.+\s+/`),
 	regexp.MustCompile(`\bclawgo\s+uninstall\b`),
 	regexp.MustCompile(`\bdbt\s+drop\b`),
+	regexp.MustCompile(`\bgit\s+clean\b`),
 }
 
 var moderatePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\bgit\s+reset\s+--hard\b`),
-	regexp.MustCompile(`\bgit\s+clean\b`),
 	regexp.MustCompile(`\bdocker\s+system\s+prune\b`),
 	regexp.MustCompile(`\bapt(-get)?\s+install\b`),
 	regexp.MustCompile(`\byum\s+install\b`),
