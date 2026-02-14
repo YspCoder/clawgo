@@ -211,7 +211,7 @@ func (al *AgentLoop) enqueueMessage(ctx context.Context, msg bus.InboundMessage)
 	case <-ctx.Done():
 	case <-time.After(2 * time.Second):
 		al.bus.PublishOutbound(bus.OutboundMessage{
-			Buttons: buttons,
+			Buttons: nil,
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
 			Content: "Message queue is busy. Please try again shortly.",
@@ -277,7 +277,7 @@ func (al *AgentLoop) runSessionWorker(ctx context.Context, sessionKey string, wo
 
 				if response != "" {
 					al.bus.PublishOutbound(bus.OutboundMessage{
-			Buttons: buttons,
+			Buttons: nil,
 						Channel: msg.Channel,
 						ChatID:  msg.ChatID,
 						Content: response,
