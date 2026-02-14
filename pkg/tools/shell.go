@@ -15,7 +15,7 @@ import (
 	"clawgo/pkg/logger"
 )
 
-var blockedRootWipePattern = regexp.MustCompile(`(?i)(^|[;&|\n])\s*rm\s+-rf\s+/\s*($|[;&|\n])`)
+var blockedRootWipePattern = regexp.MustCompile(`(?i)(^|[;&|\n])\s*rm\b[^\n;&|]*\s(?:'/'|"/"|/)(?:\s|$)`)
 
 type ExecTool struct {
 	workingDir          string
@@ -160,7 +160,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	lower := strings.ToLower(cmd)
 
 	if blockedRootWipePattern.MatchString(lower) {
-		return "Command blocked by safety guard (rm -rf / is forbidden)"
+		return "Command blocked by safety guard (removing root path / is forbidden)"
 	}
 
 	for _, pattern := range t.denyPatterns {

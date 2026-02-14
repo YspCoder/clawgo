@@ -103,3 +103,17 @@ func TestSetAllowPatterns_IsCaseInsensitive(t *testing.T) {
 		t.Fatalf("expected case-insensitive allow pattern to match, got %q", msg)
 	}
 }
+
+func TestGuardCommand_BlocksRootWipeVariants(t *testing.T) {
+	tool := &ExecTool{}
+	cases := []string{
+		"rm -rf /",
+		"rm -fr /",
+		"rm --no-preserve-root -rf /",
+	}
+	for _, c := range cases {
+		if msg := tool.guardCommand(c, "."); msg == "" {
+			t.Fatalf("expected root wipe variant to be blocked: %s", c)
+		}
+	}
+}
