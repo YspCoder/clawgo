@@ -714,6 +714,7 @@ func gatewayCmd() {
 		fmt.Printf("Error initializing gateway runtime: %v\n", err)
 		os.Exit(1)
 	}
+	sentinelService.SetManager(channelManager)
 
 	pidFile := filepath.Join(filepath.Dir(getConfigPath()), "gateway.pid")
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644); err != nil {
@@ -797,6 +798,7 @@ func gatewayCmd() {
 					},
 				)
 				if newCfg.Sentinel.Enabled {
+					sentinelService.SetManager(channelManager)
 					sentinelService.Start()
 				}
 				cfg = newCfg
@@ -835,6 +837,7 @@ func gatewayCmd() {
 			if newCfg.Sentinel.Enabled {
 				sentinelService.Start()
 			}
+			sentinelService.SetManager(channelManager)
 
 			if err := channelManager.StartAll(ctx); err != nil {
 				fmt.Printf("✗ Reload failed (start channels): %v\n", err)

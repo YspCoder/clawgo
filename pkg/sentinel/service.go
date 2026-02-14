@@ -25,7 +25,8 @@ type Service struct {
 	runner     *lifecycle.LoopRunner
 	mu         sync.RWMutex
 	lastAlerts map[string]time.Time
-	mgr        *channels.Manager
+	mgr             *channels.Manager
+	healingChannels map[string]bool
 }
 
 func NewService(cfgPath, workspace string, intervalSec int, autoHeal bool, onAlert AlertFunc) *Service {
@@ -40,6 +41,7 @@ func NewService(cfgPath, workspace string, intervalSec int, autoHeal bool, onAle
 		onAlert:    onAlert,
 		runner:     lifecycle.NewLoopRunner(),
 		lastAlerts: map[string]time.Time{},
+		healingChannels: map[string]bool{},
 	}
 }
 
@@ -108,8 +110,22 @@ func (s *Service) checkChannels() []string {
 			msg := fmt.Sprintf("sentinel: channel %s health check failed: %v", name, err)
 			issues = append(issues, msg)
 			if s.autoHeal {
+				s.mu.Lock()
+				if s.healingChannels[name] {
+					s.mu.Unlock()
+					continue
+				}
+				s.healingChannels[name] = true
+				s.mu.Unlock()
+
 				go func(n string) {
+					defer func() {
+						s.mu.Lock()
+						delete(s.healingChannels, n)
+						s.mu.Unlock()
+					}()
 					logger.InfoCF("sentinel", "Attempting auto-heal for channel", map[string]interface{}{"channel": n})
+					// Use a fresh context for restart to avoid being canceled by sentinel loop
 					if rErr := s.mgr.RestartChannel(context.Background(), n); rErr != nil {
 						logger.ErrorCF("sentinel", "Auto-heal restart failed", map[string]interface{}{"channel": n, "error": rErr.Error()})
 					} else {

@@ -82,8 +82,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	// Register message tool
 	messageTool := tools.NewMessageTool()
-	messageTool.SetSendCallback(func(channel, chatID, content string) error {
+	messageTool.SetSendCallback(func(channel, chatID, content string, buttons [][]bus.Button) error {
 		msgBus.PublishOutbound(bus.OutboundMessage{
+			Buttons: buttons,
 			Channel: channel,
 			ChatID:  chatID,
 			Content: content,
@@ -210,6 +211,7 @@ func (al *AgentLoop) enqueueMessage(ctx context.Context, msg bus.InboundMessage)
 	case <-ctx.Done():
 	case <-time.After(2 * time.Second):
 		al.bus.PublishOutbound(bus.OutboundMessage{
+			Buttons: buttons,
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
 			Content: "Message queue is busy. Please try again shortly.",
@@ -275,6 +277,7 @@ func (al *AgentLoop) runSessionWorker(ctx context.Context, sessionKey string, wo
 
 				if response != "" {
 					al.bus.PublishOutbound(bus.OutboundMessage{
+			Buttons: buttons,
 						Channel: msg.Channel,
 						ChatID:  msg.ChatID,
 						Content: response,
