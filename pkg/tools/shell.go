@@ -39,11 +39,6 @@ func NewExecTool(cfg config.ShellConfig, workspace string) *ExecTool {
 		allowPatterns = append(allowPatterns, regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(p)+`\b`))
 	}
 
-	allowPatterns := make([]*regexp.Regexp, 0, len(cfg.AllowedCmds))
-	for _, p := range cfg.AllowedCmds {
-		allowPatterns = append(allowPatterns, regexp.MustCompile(`\b`+regexp.QuoteMeta(p)+`\b`))
-	}
-
 	return &ExecTool{
 		workingDir:          workspace,
 		timeout:             cfg.Timeout,
