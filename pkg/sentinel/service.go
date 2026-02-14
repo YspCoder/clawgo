@@ -1,12 +1,14 @@
 package sentinel
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"clawgo/pkg/channels"
 	"clawgo/pkg/config"
 	"clawgo/pkg/lifecycle"
 	"clawgo/pkg/logger"
@@ -23,6 +25,7 @@ type Service struct {
 	runner     *lifecycle.LoopRunner
 	mu         sync.RWMutex
 	lastAlerts map[string]time.Time
+	mgr        *channels.Manager
 }
 
 func NewService(cfgPath, workspace string, intervalSec int, autoHeal bool, onAlert AlertFunc) *Service {
@@ -38,6 +41,10 @@ func NewService(cfgPath, workspace string, intervalSec int, autoHeal bool, onAle
 		runner:     lifecycle.NewLoopRunner(),
 		lastAlerts: map[string]time.Time{},
 	}
+}
+
+func (s *Service) SetManager(mgr *channels.Manager) {
+	s.mgr = mgr
 }
 
 func (s *Service) Start() {
@@ -76,6 +83,7 @@ func (s *Service) runChecks() {
 	issues := s.checkConfig()
 	issues = append(issues, s.checkMemory()...)
 	issues = append(issues, s.checkLogs()...)
+	issues = append(issues, s.checkChannels()...)
 
 	if len(issues) == 0 {
 		return
@@ -84,6 +92,34 @@ func (s *Service) runChecks() {
 	for _, issue := range issues {
 		s.alert(issue)
 	}
+}
+
+func (s *Service) checkChannels() []string {
+	if s.mgr == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	health := s.mgr.CheckHealth(ctx)
+	var issues []string
+	for name, err := range health {
+		if err != nil {
+			msg := fmt.Sprintf("sentinel: channel %s health check failed: %v", name, err)
+			issues = append(issues, msg)
+			if s.autoHeal {
+				go func(n string) {
+					logger.InfoCF("sentinel", "Attempting auto-heal for channel", map[string]interface{}{"channel": n})
+					if rErr := s.mgr.RestartChannel(context.Background(), n); rErr != nil {
+						logger.ErrorCF("sentinel", "Auto-heal restart failed", map[string]interface{}{"channel": n, "error": rErr.Error()})
+					} else {
+						logger.InfoCF("sentinel", "Auto-heal successful", map[string]interface{}{"channel": n})
+					}
+				}(name)
+			}
+		}
+	}
+	return issues
 }
 
 func (s *Service) checkConfig() []string {

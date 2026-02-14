@@ -17,6 +17,7 @@ type Channel interface {
 	Send(ctx context.Context, msg bus.OutboundMessage) error
 	IsRunning() bool
 	IsAllowed(senderID string) bool
+	HealthCheck(ctx context.Context) error
 }
 
 type BaseChannel struct {

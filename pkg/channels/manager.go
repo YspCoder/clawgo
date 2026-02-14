@@ -217,6 +217,31 @@ func (m *Manager) StopAll(ctx context.Context) error {
 	return nil
 }
 
+func (m *Manager) CheckHealth(ctx context.Context) map[string]error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	results := make(map[string]error)
+	for name, channel := range m.channels {
+		results[name] = channel.HealthCheck(ctx)
+	}
+	return results
+}
+
+func (m *Manager) RestartChannel(ctx context.Context, name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	channel, ok := m.channels[name]
+	if !ok {
+		return fmt.Errorf("channel %s not found", name)
+	}
+
+	logger.InfoCF("channels", "Restarting channel", map[string]interface{}{"channel": name})
+	_ = channel.Stop(ctx)
+	return channel.Start(ctx)
+}
+
 func (m *Manager) dispatchOutbound(ctx context.Context) {
 	logger.InfoC("channels", "Outbound dispatcher started")
 
@@ -271,10 +296,7 @@ func (m *Manager) GetStatus() map[string]interface{} {
 
 	status := make(map[string]interface{})
 	for name, channel := range m.channels {
-		status[name] = map[string]interface{}{
-			"enabled": true,
-			"running": channel.IsRunning(),
-		}
+		status[name] = map[string]interface{}{}
 	}
 	return status
 }

@@ -74,6 +74,16 @@ func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 	c.transcriber = transcriber
 }
 
+func (c *TelegramChannel) HealthCheck(ctx context.Context) error {
+	if !c.IsRunning() {
+		return fmt.Errorf("telegram bot not running")
+	}
+	hCtx, cancel := withTelegramAPITimeout(ctx)
+	defer cancel()
+	_, err := c.bot.GetMe(hCtx)
+	return err
+}
+
 func (c *TelegramChannel) Start(ctx context.Context) error {
 	if c.IsRunning() {
 		return nil
