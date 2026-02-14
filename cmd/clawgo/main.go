@@ -115,7 +115,9 @@ func main() {
 	case "agent":
 		agentCmd()
 	case "gateway":
-		maybePromptAndEscalateRoot("gateway")
+		if shouldPromptGatewayRoot(os.Args) {
+			maybePromptAndEscalateRoot("gateway")
+		}
 		gatewayCmd()
 	case "status":
 		statusCmd()
@@ -904,6 +906,11 @@ func maybePromptAndEscalateRoot(command string) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+func shouldPromptGatewayRoot(args []string) bool {
+	// Only prompt on plain `clawgo gateway` registration flow.
+	return len(args) == 2 && args[1] == "gateway"
 }
 
 func isInteractiveStdin() bool {
