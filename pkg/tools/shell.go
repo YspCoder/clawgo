@@ -29,15 +29,21 @@ type ExecTool struct {
 }
 
 func NewExecTool(cfg config.ShellConfig, workspace string) *ExecTool {
-	denyPatterns := make([]*regexp.Regexp, 0)
+	denyPatterns := make([]*regexp.Regexp, 0, len(cfg.DeniedCmds))
 	for _, p := range cfg.DeniedCmds {
 		denyPatterns = append(denyPatterns, regexp.MustCompile(`\b`+regexp.QuoteMeta(p)+`\b`))
+	}
+
+	allowPatterns := make([]*regexp.Regexp, 0, len(cfg.AllowedCmds))
+	for _, p := range cfg.AllowedCmds {
+		allowPatterns = append(allowPatterns, regexp.MustCompile(`\b`+regexp.QuoteMeta(p)+`\b`))
 	}
 
 	return &ExecTool{
 		workingDir:          workspace,
 		timeout:             cfg.Timeout,
 		denyPatterns:        denyPatterns,
+		allowPatterns:       allowPatterns,
 		restrictToWorkspace: cfg.RestrictPath,
 		sandboxEnabled:      cfg.Sandbox.Enabled,
 		sandboxImage:        cfg.Sandbox.Image,

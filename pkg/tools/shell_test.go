@@ -43,3 +43,21 @@ func TestAssessCommandRisk_GitCleanIsDestructive(t *testing.T) {
 		t.Fatalf("expected git clean to be destructive, got %s", assessment.Level)
 	}
 }
+
+func TestNewExecTool_LoadsAllowedCmdsIntoAllowPatterns(t *testing.T) {
+	tool := NewExecTool(config.ShellConfig{AllowedCmds: []string{"echo"}}, ".")
+	if len(tool.allowPatterns) != 1 {
+		t.Fatalf("expected one allow pattern, got %d", len(tool.allowPatterns))
+	}
+}
+
+func TestGuardCommand_BlocksCommandNotInAllowlist(t *testing.T) {
+	tool := NewExecTool(config.ShellConfig{AllowedCmds: []string{"echo"}}, ".")
+	if msg := tool.guardCommand("ls -la", "."); msg == "" {
+		t.Fatal("expected allowlist to block command not in allowed_cmds")
+	}
+
+	if msg := tool.guardCommand("echo hi", "."); msg != "" {
+		t.Fatalf("expected allowed command to pass guard, got %q", msg)
+	}
+}
