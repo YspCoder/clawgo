@@ -115,7 +115,9 @@ func main() {
 	case "agent":
 		agentCmd()
 	case "gateway":
-		maybePromptAndEscalateRoot("gateway")
+		if shouldPromptGatewayRoot(os.Args) {
+			maybePromptAndEscalateRoot("gateway")
+		}
 		gatewayCmd()
 	case "status":
 		statusCmd()
@@ -426,11 +428,11 @@ Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
 MIT License - Free and open source
 
 ## Repository
-https://github.com/sipeed/clawgo
+https://github.com/YspCoder/clawgo
 
 ## Contact
-Issues: https://github.com/sipeed/clawgo/issues
-Discussions: https://github.com/sipeed/clawgo/discussions
+Issues: https://github.com/YspCoder/clawgo/issues
+Discussions: https://github.com/YspCoder/clawgo/discussions
 
 ---
 
@@ -904,6 +906,11 @@ func maybePromptAndEscalateRoot(command string) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+func shouldPromptGatewayRoot(args []string) bool {
+	// Only prompt on plain `clawgo gateway` registration flow.
+	return len(args) == 2 && args[1] == "gateway"
 }
 
 func isInteractiveStdin() bool {
@@ -1651,7 +1658,7 @@ func skillsHelp() {
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  clawgo skills list")
-	fmt.Println("  clawgo skills install sipeed/clawgo-skills/weather")
+	fmt.Println("  clawgo skills install YspCoder/clawgo-skills/weather")
 	fmt.Println("  clawgo skills install-builtin")
 	fmt.Println("  clawgo skills list-builtin")
 	fmt.Println("  clawgo skills remove weather")
@@ -1678,7 +1685,7 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 func skillsInstallCmd(installer *skills.SkillInstaller) {
 	if len(os.Args) < 4 {
 		fmt.Println("Usage: clawgo skills install <github-repo>")
-		fmt.Println("Example: clawgo skills install sipeed/clawgo-skills/weather")
+		fmt.Println("Example: clawgo skills install YspCoder/clawgo-skills/weather")
 		return
 	}
 

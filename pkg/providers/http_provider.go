@@ -24,18 +24,18 @@ type HTTPProvider struct {
 	apiKey     string
 	apiBase    string
 	authMode   string
+	timeout    time.Duration
 	httpClient *http.Client
 }
 
-const defaultChatTimeout = 90 * time.Second
-
-func NewHTTPProvider(apiKey, apiBase, authMode string) *HTTPProvider {
+func NewHTTPProvider(apiKey, apiBase, authMode string, timeout time.Duration) *HTTPProvider {
 	return &HTTPProvider{
 		apiKey:   apiKey,
 		apiBase:  apiBase,
 		authMode: authMode,
+		timeout:  timeout,
 		httpClient: &http.Client{
-			Timeout: defaultChatTimeout,
+			Timeout: timeout,
 		},
 	}
 }
@@ -50,7 +50,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		"model":          model,
 		"messages_count": len(messages),
 		"tools_count":    len(tools),
-		"timeout":        defaultChatTimeout.String(),
+		"timeout":        p.timeout.String(),
 	})
 
 	requestBody := map[string]interface{}{
@@ -208,6 +208,9 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	if apiBase == "" {
 		return nil, fmt.Errorf("no API base (CLIProxyAPI) configured")
 	}
+	if cfg.Providers.Proxy.TimeoutSec <= 0 {
+		return nil, fmt.Errorf("invalid providers.proxy.timeout_sec: %d", cfg.Providers.Proxy.TimeoutSec)
+	}
 
-	return NewHTTPProvider(apiKey, apiBase, authMode), nil
+	return NewHTTPProvider(apiKey, apiBase, authMode, time.Duration(cfg.Providers.Proxy.TimeoutSec)*time.Second), nil
 }

@@ -50,7 +50,8 @@
     "proxy": {
       "api_key": "YOUR_CLIPROXYAPI_KEY",
       "api_base": "http://localhost:8080/v1",
-      "auth": "bearer"
+      "auth": "bearer",
+      "timeout_sec": 90
     }
   },
   "tools": {
