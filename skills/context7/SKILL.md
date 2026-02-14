@@ -15,5 +15,5 @@ npx tsx /root/.clawgo/skills/context7/query.ts context <owner/repo> <query>
 
 Example:
 ```bash
-npx tsx /root/.clawgo/skills/context7/query.ts context sipeed/clawgo "How does the skill system work?"
+npx tsx /root/.clawgo/skills/context7/query.ts context YspCoder/clawgo "How does the skill system work?"
 ```

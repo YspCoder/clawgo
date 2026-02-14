@@ -63,6 +63,13 @@ func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*Telegr
 	}, nil
 }
 
+func withTelegramAPITimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, telegramAPICallTimeout)
+}
+
 func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 	c.transcriber = transcriber
 }
@@ -84,7 +91,9 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	c.setRunning(true)
 
-	botInfo, err := c.bot.GetMe(context.Background())
+	getMeCtx, cancelGetMe := withTelegramAPITimeout(ctx)
+	botInfo, err := c.bot.GetMe(getMeCtx)
+	cancelGetMe()
 	if err != nil {
 		return fmt.Errorf("failed to get bot info: %w", err)
 	}
@@ -205,13 +214,12 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 	chatID := telegoutil.ID(chatIDInt)
 
-	// Stop thinking animation
-	if stop, ok := c.stopThinking.Load(msg.ChatID); ok {
+	// Stop thinking animation first to avoid animation/update races.
+	if stop, ok := c.stopThinking.LoadAndDelete(msg.ChatID); ok {
 		logger.DebugCF("telegram", "Telegram thinking stop signal", map[string]interface{}{
 			logger.FieldChatID: msg.ChatID,
 		})
 		safeCloseSignal(stop)
-		c.stopThinking.Delete(msg.ChatID)
 	} else {
 		logger.DebugCF("telegram", "Telegram thinking stop skipped (not found)", map[string]interface{}{
 			logger.FieldChatID: msg.ChatID,
@@ -222,18 +230,21 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	// Try to edit placeholder
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		c.placeholders.Delete(msg.ChatID)
+		// Always reset placeholder state even when edit/send fails.
+		defer c.placeholders.Delete(msg.ChatID)
 		logger.DebugCF("telegram", "Telegram editing thinking placeholder", map[string]interface{}{
 			logger.FieldChatID: msg.ChatID,
 			"message_id":       pID.(int),
 		})
 
-		_, err := c.bot.EditMessageText(ctx, &telego.EditMessageTextParams{
+		editCtx, cancelEdit := withTelegramAPITimeout(ctx)
+		_, err := c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{
 			ChatID:    chatID,
 			MessageID: pID.(int),
 			Text:      htmlContent,
 			ParseMode: telego.ModeHTML,
 		})
+		cancelEdit()
 
 		if err == nil {
 			logger.DebugCF("telegram", "Telegram placeholder updated", map[string]interface{}{
@@ -252,14 +263,18 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		})
 	}
 
-	_, err = c.bot.SendMessage(ctx, telegoutil.Message(chatID, htmlContent).WithParseMode(telego.ModeHTML))
+	sendCtx, cancelSend := withTelegramAPITimeout(ctx)
+	_, err = c.bot.SendMessage(sendCtx, telegoutil.Message(chatID, htmlContent).WithParseMode(telego.ModeHTML))
+	cancelSend()
 
 	if err != nil {
 		logger.WarnCF("telegram", "HTML parse failed, fallback to plain text", map[string]interface{}{
 			logger.FieldError: err.Error(),
 		})
 		plain := plainTextFromTelegramHTML(htmlContent)
-		_, err = c.bot.SendMessage(ctx, telegoutil.Message(chatID, plain))
+		sendPlainCtx, cancelSendPlain := withTelegramAPITimeout(ctx)
+		_, err = c.bot.SendMessage(sendPlainCtx, telegoutil.Message(chatID, plain))
+		cancelSendPlain()
 		if err != nil {
 			logger.ErrorCF("telegram", "Telegram plain-text fallback send failed", map[string]interface{}{
 				logger.FieldChatID: msg.ChatID,

@@ -107,9 +107,10 @@ type ProvidersConfig struct {
 }
 
 type ProviderConfig struct {
-	APIKey  string `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase string `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
-	Auth    string `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
+	APIKey     string `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
+	APIBase    string `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
+	Auth       string `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
+	TimeoutSec int    `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`
 }
 
 type GatewayConfig struct {
@@ -276,7 +277,8 @@ func DefaultConfig() *Config {
 		},
 		Providers: ProvidersConfig{
 			Proxy: ProviderConfig{
-				APIBase: "http://localhost:8080/v1",
+				APIBase:    "http://localhost:8080/v1",
+				TimeoutSec: 90,
 			},
 		},
 		Gateway: GatewayConfig{

@@ -39,6 +39,9 @@ func Validate(cfg *Config) []error {
 	if cfg.Providers.Proxy.APIBase == "" {
 		errs = append(errs, fmt.Errorf("providers.proxy.api_base is required"))
 	}
+	if cfg.Providers.Proxy.TimeoutSec <= 0 {
+		errs = append(errs, fmt.Errorf("providers.proxy.timeout_sec must be > 0"))
+	}
 
 	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
 		errs = append(errs, fmt.Errorf("gateway.port must be in 1..65535"))

@@ -31,7 +31,6 @@ import (
 
 var errGatewayNotRunningSlash = errors.New("gateway not running")
 
-const llmCallTimeout = 90 * time.Second
 const perSessionQueueSize = 64
 
 type sessionWorker struct {
@@ -53,6 +52,7 @@ type AgentLoop struct {
 	orchestrator   *tools.Orchestrator
 	running        atomic.Bool
 	compactionCfg  config.ContextCompactionConfig
+	llmCallTimeout time.Duration
 	workersMu      sync.Mutex
 	workers        map[string]*sessionWorker
 }
@@ -137,6 +137,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		tools:          toolsRegistry,
 		orchestrator:   orchestrator,
 		compactionCfg:  cfg.Agents.Defaults.ContextCompaction,
+		llmCallTimeout: time.Duration(cfg.Providers.Proxy.TimeoutSec) * time.Second,
 		workers:        make(map[string]*sessionWorker),
 	}
 
@@ -561,7 +562,7 @@ func (al *AgentLoop) runLLMToolLoop(
 			})
 
 		llmStart := time.Now()
-		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
+		llmCtx, cancelLLM := context.WithTimeout(ctx, al.llmCallTimeout)
 		response, err := al.callLLMWithModelFallback(llmCtx, messages, providerToolDefs, map[string]interface{}{
 			"max_tokens":  8192,
 			"temperature": 0.7,
@@ -680,7 +681,7 @@ func (al *AgentLoop) runLLMToolLoop(
 		})
 		finalizeMessages = sanitizeMessagesForToolCalling(finalizeMessages)
 
-		llmCtx, cancelLLM := context.WithTimeout(ctx, llmCallTimeout)
+		llmCtx, cancelLLM := context.WithTimeout(ctx, al.llmCallTimeout)
 		finalResp, err := al.callLLMWithModelFallback(llmCtx, finalizeMessages, nil, map[string]interface{}{
 			"max_tokens":  1024,
 			"temperature": 0.3,
