@@ -46,6 +46,30 @@ func Validate(cfg *Config) []error {
 	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
 		errs = append(errs, fmt.Errorf("gateway.port must be in 1..65535"))
 	}
+	if cfg.Cron.MinSleepSec <= 0 {
+		errs = append(errs, fmt.Errorf("cron.min_sleep_sec must be > 0"))
+	}
+	if cfg.Cron.MaxSleepSec <= 0 {
+		errs = append(errs, fmt.Errorf("cron.max_sleep_sec must be > 0"))
+	}
+	if cfg.Cron.MinSleepSec > cfg.Cron.MaxSleepSec {
+		errs = append(errs, fmt.Errorf("cron.min_sleep_sec must be <= cron.max_sleep_sec"))
+	}
+	if cfg.Cron.RetryBackoffBaseSec <= 0 {
+		errs = append(errs, fmt.Errorf("cron.retry_backoff_base_sec must be > 0"))
+	}
+	if cfg.Cron.RetryBackoffMaxSec <= 0 {
+		errs = append(errs, fmt.Errorf("cron.retry_backoff_max_sec must be > 0"))
+	}
+	if cfg.Cron.RetryBackoffBaseSec > cfg.Cron.RetryBackoffMaxSec {
+		errs = append(errs, fmt.Errorf("cron.retry_backoff_base_sec must be <= cron.retry_backoff_max_sec"))
+	}
+	if cfg.Cron.MaxConsecutiveFailureRetries < 0 {
+		errs = append(errs, fmt.Errorf("cron.max_consecutive_failure_retries must be >= 0"))
+	}
+	if cfg.Cron.MaxWorkers <= 0 {
+		errs = append(errs, fmt.Errorf("cron.max_workers must be > 0"))
+	}
 
 	if cfg.Logging.Enabled {
 		if cfg.Logging.Dir == "" {

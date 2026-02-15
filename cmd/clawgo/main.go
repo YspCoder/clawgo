@@ -535,6 +535,7 @@ func agentCmd() {
 	// Initialize CronService for tools (shared storage with gateway)
 	cronStorePath := filepath.Join(filepath.Dir(getConfigPath()), "cron", "jobs.json")
 	cronService := cron.NewCronService(cronStorePath, nil)
+	configureCronServiceRuntime(cronService, cfg)
 
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, cronService)
 
@@ -684,6 +685,7 @@ func gatewayCmd() {
 	msgBus := bus.NewMessageBus()
 	cronStorePath := filepath.Join(filepath.Dir(getConfigPath()), "cron", "jobs.json")
 	cronService := cron.NewCronService(cronStorePath, nil)
+	configureCronServiceRuntime(cronService, cfg)
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
 		nil,
@@ -768,6 +770,7 @@ func gatewayCmd() {
 			if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
 				applyMaximumPermissionPolicy(newCfg)
 			}
+			configureCronServiceRuntime(cronService, newCfg)
 
 			if reflect.DeepEqual(cfg, newCfg) {
 				fmt.Println("✓ Config unchanged, skip reload")
@@ -1119,6 +1122,20 @@ func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.Me
 	}
 
 	return agentLoop, channelManager, nil
+}
+
+func configureCronServiceRuntime(cs *cron.CronService, cfg *config.Config) {
+	if cs == nil || cfg == nil {
+		return
+	}
+	cs.SetRuntimeOptions(cron.RuntimeOptions{
+		RunLoopMinSleep:              time.Duration(cfg.Cron.MinSleepSec) * time.Second,
+		RunLoopMaxSleep:              time.Duration(cfg.Cron.MaxSleepSec) * time.Second,
+		RetryBackoffBase:             time.Duration(cfg.Cron.RetryBackoffBaseSec) * time.Second,
+		RetryBackoffMax:              time.Duration(cfg.Cron.RetryBackoffMaxSec) * time.Second,
+		MaxConsecutiveFailureRetries: int64(cfg.Cron.MaxConsecutiveFailureRetries),
+		MaxWorkers:                   cfg.Cron.MaxWorkers,
+	})
 }
 
 func configCmd() {

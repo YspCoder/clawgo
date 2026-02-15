@@ -66,6 +66,14 @@
     "host": "0.0.0.0",
     "port": 18790
   },
+  "cron": {
+    "min_sleep_sec": 1,
+    "max_sleep_sec": 30,
+    "retry_backoff_base_sec": 30,
+    "retry_backoff_max_sec": 1800,
+    "max_consecutive_failure_retries": 5,
+    "max_workers": 4
+  },
   "logging": {
     "enabled": true,
     "dir": "~/.clawgo/logs",

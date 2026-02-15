@@ -15,6 +15,7 @@ type Config struct {
 	Channels  ChannelsConfig  `json:"channels"`
 	Providers ProvidersConfig `json:"providers"`
 	Gateway   GatewayConfig   `json:"gateway"`
+	Cron      CronConfig      `json:"cron"`
 	Tools     ToolsConfig     `json:"tools"`
 	Logging   LoggingConfig   `json:"logging"`
 	Sentinel  SentinelConfig  `json:"sentinel"`
@@ -116,6 +117,15 @@ type ProviderConfig struct {
 type GatewayConfig struct {
 	Host string `json:"host" env:"CLAWGO_GATEWAY_HOST"`
 	Port int    `json:"port" env:"CLAWGO_GATEWAY_PORT"`
+}
+
+type CronConfig struct {
+	MinSleepSec                  int `json:"min_sleep_sec" env:"CLAWGO_CRON_MIN_SLEEP_SEC"`
+	MaxSleepSec                  int `json:"max_sleep_sec" env:"CLAWGO_CRON_MAX_SLEEP_SEC"`
+	RetryBackoffBaseSec          int `json:"retry_backoff_base_sec" env:"CLAWGO_CRON_RETRY_BACKOFF_BASE_SEC"`
+	RetryBackoffMaxSec           int `json:"retry_backoff_max_sec" env:"CLAWGO_CRON_RETRY_BACKOFF_MAX_SEC"`
+	MaxConsecutiveFailureRetries int `json:"max_consecutive_failure_retries" env:"CLAWGO_CRON_MAX_CONSECUTIVE_FAILURE_RETRIES"`
+	MaxWorkers                   int `json:"max_workers" env:"CLAWGO_CRON_MAX_WORKERS"`
 }
 
 type WebSearchConfig struct {
@@ -284,6 +294,14 @@ func DefaultConfig() *Config {
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
 			Port: 18790,
+		},
+		Cron: CronConfig{
+			MinSleepSec:                  1,
+			MaxSleepSec:                  30,
+			RetryBackoffBaseSec:          30,
+			RetryBackoffMaxSec:           1800,
+			MaxConsecutiveFailureRetries: 5,
+			MaxWorkers:                   4,
 		},
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
