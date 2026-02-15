@@ -3,14 +3,19 @@ package tools
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
-type ReadFileTool struct{}
+// ReadFileTool reads the contents of a file.
+type ReadFileTool struct {
+	allowedDir string
+}
+
+func NewReadFileTool(allowedDir string) *ReadFileTool {
+	return &ReadFileTool{allowedDir: allowedDir}
+}
 
 func (t *ReadFileTool) Name() string {
 	return "read_file"
@@ -28,13 +33,13 @@ func (t *ReadFileTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Path to the file to read",
 			},
-			"limit": map[string]interface{}{
-				"type":        "integer",
-				"description": "Maximum number of bytes to read",
-			},
 			"offset": map[string]interface{}{
 				"type":        "integer",
 				"description": "Byte offset to start reading from",
+			},
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of bytes to read",
 			},
 		},
 		"required": []string{"path"},
@@ -47,68 +52,66 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return "", fmt.Errorf("path is required")
 	}
 
-	limit := int64(0)
-	if val, ok := args["limit"].(float64); ok {
-		limit = int64(val)
+	resolvedPath := path
+	if filepath.IsAbs(path) {
+		resolvedPath = filepath.Clean(path)
+	} else {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
+		resolvedPath = abs
 	}
 
-	offset := int64(0)
-	if val, ok := args["offset"].(float64); ok {
-		offset = int64(val)
+	if t.allowedDir != "" {
+		allowedAbs, _ := filepath.Abs(t.allowedDir)
+		if !strings.HasPrefix(resolvedPath, allowedAbs) {
+			return "", fmt.Errorf("path %s is outside allowed directory", path)
+		}
 	}
 
-	f, err := os.Open(path)
+	f, err := os.Open(resolvedPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open file: %w", err)
+		return "", err
 	}
 	defer f.Close()
 
-	info, err := f.Stat()
+	stat, err := f.Stat()
 	if err != nil {
-		return "", fmt.Errorf("failed to stat file: %w", err)
+		return "", err
 	}
 
-	if offset >= info.Size() {
-		return "", nil // Offset beyond file size
+	offset := int64(0)
+	if o, ok := args["offset"].(float64); ok {
+		offset = int64(o)
 	}
 
-	if _, err := f.Seek(offset, 0); err != nil {
-		return "", fmt.Errorf("failed to seek: %w", err)
+	limit := int64(stat.Size())
+	if l, ok := args["limit"].(float64); ok {
+		limit = int64(l)
 	}
 
-	// Default read all if limit is not set or 0
-	readLimit := info.Size() - offset
-	if limit > 0 && limit < readLimit {
-		readLimit = limit
+	if offset >= stat.Size() {
+		return "", fmt.Errorf("offset %d is beyond file size %d", offset, stat.Size())
 	}
 
-	// Safety cap: don't read insanely large files into memory unless requested
-	// But tool says "read file", so we respect limit.
-	// If limit is 0 (unspecified), maybe we should default to a reasonable max?
-	// The original code used os.ReadFile which reads ALL. So I should probably keep that behavior if limit is 0.
-	// However, if limit is explicitly passed as 0, it might mean "read 0 bytes". But usually in JSON APIs 0 means default or none.
-	// Let's assume limit > 0 means limit. If limit <= 0, read until EOF.
-
-	var content []byte
-	if limit > 0 {
-		content = make([]byte, readLimit)
-		n, err := io.ReadFull(f, content)
-		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-			return "", fmt.Errorf("failed to read file: %w", err)
-		}
-		content = content[:n]
-	} else {
-		// Read until EOF
-		content, err = io.ReadAll(f)
-		if err != nil {
-			return "", fmt.Errorf("failed to read file: %w", err)
-		}
+	data := make([]byte, limit)
+	n, err := f.ReadAt(data, offset)
+	if err != nil && err.Error() != "EOF" {
+		return "", err
 	}
 
-	return string(content), nil
+	return string(data[:n]), nil
 }
 
-type WriteFileTool struct{}
+// WriteFileTool writes content to a file.
+type WriteFileTool struct {
+	allowedDir string
+}
+
+func NewWriteFileTool(allowedDir string) *WriteFileTool {
+	return &WriteFileTool{allowedDir: allowedDir}
+}
 
 func (t *WriteFileTool) Name() string {
 	return "write_file"
@@ -146,19 +149,39 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 		return "", fmt.Errorf("content is required")
 	}
 
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create directory: %w", err)
+	resolvedPath := path
+	if filepath.IsAbs(path) {
+		resolvedPath = filepath.Clean(path)
+	} else {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
+		resolvedPath = abs
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("failed to write file: %w", err)
+	if t.allowedDir != "" {
+		allowedAbs, _ := filepath.Abs(t.allowedDir)
+		if !strings.HasPrefix(resolvedPath, allowedAbs) {
+			return "", fmt.Errorf("path %s is outside allowed directory", path)
+		}
 	}
 
-	return "File written successfully", nil
+	if err := os.WriteFile(resolvedPath, []byte(content), 0644); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("File written successfully: %s", path), nil
 }
 
-type ListDirTool struct{}
+// ListDirTool lists files and directories in a path.
+type ListDirTool struct {
+	allowedDir string
+}
+
+func NewListDirTool(allowedDir string) *ListDirTool {
+	return &ListDirTool{allowedDir: allowedDir}
+}
 
 func (t *ListDirTool) Name() string {
 	return "list_dir"
@@ -188,60 +211,162 @@ func (t *ListDirTool) Parameters() map[string]interface{} {
 func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	path, ok := args["path"].(string)
 	if !ok {
-		path = "."
+		return "", fmt.Errorf("path is required")
 	}
 
 	recursive, _ := args["recursive"].(bool)
 
-	var result strings.Builder
-
-	if recursive {
-		err := filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			relPath, err := filepath.Rel(path, p)
-			if err != nil {
-				relPath = p
-			}
-			if relPath == "." {
-				return nil
-			}
-			if info.IsDir() {
-				result.WriteString(fmt.Sprintf("DIR:  %s\n", relPath))
-			} else {
-				result.WriteString(fmt.Sprintf("FILE: %s\n", relPath))
-			}
-			return nil
-		})
-		if err != nil {
-			return "", fmt.Errorf("failed to walk directory: %w", err)
-		}
+	resolvedPath := path
+	if filepath.IsAbs(path) {
+		resolvedPath = filepath.Clean(path)
 	} else {
-		entries, err := os.ReadDir(path)
+		abs, err := filepath.Abs(path)
 		if err != nil {
-			return "", fmt.Errorf("failed to read directory: %w", err)
+			return "", fmt.Errorf("failed to resolve path: %w", err)
 		}
+		resolvedPath = abs
+	}
 
-		// Sort entries: directories first, then files
-		sort.Slice(entries, func(i, j int) bool {
-			if entries[i].IsDir() && !entries[j].IsDir() {
-				return true
-			}
-			if !entries[i].IsDir() && entries[j].IsDir() {
-				return false
-			}
-			return entries[i].Name() < entries[j].Name()
-		})
-
-		for _, entry := range entries {
-			if entry.IsDir() {
-				result.WriteString(fmt.Sprintf("DIR:  %s\n", entry.Name()))
-			} else {
-				result.WriteString(fmt.Sprintf("FILE: %s\n", entry.Name()))
-			}
+	if t.allowedDir != "" {
+		allowedAbs, _ := filepath.Abs(t.allowedDir)
+		if !strings.HasPrefix(resolvedPath, allowedAbs) {
+			return "", fmt.Errorf("path %s is outside allowed directory", path)
 		}
 	}
 
-	return result.String(), nil
+	var results []string
+	if recursive {
+		err := filepath.Walk(resolvedPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(resolvedPath, path)
+			if rel == "." {
+				return nil
+			}
+			prefix := "FILE: "
+			if info.IsDir() {
+				prefix = "DIR:  "
+			}
+			results = append(results, prefix+rel)
+			return nil
+		})
+		if err != nil {
+			return "", err
+		}
+	} else {
+		entries, err := os.ReadDir(resolvedPath)
+		if err != nil {
+			return "", err
+		}
+		for _, entry := range entries {
+			prefix := "FILE: "
+			if entry.IsDir() {
+				prefix = "DIR:  "
+			}
+			results = append(results, prefix+entry.Name())
+		}
+	}
+
+	if len(results) == 0 {
+		return "(empty)", nil
+	}
+
+	return strings.Join(results, "\n"), nil
+}
+
+// EditFileTool edits a file by replacing old_text with new_text.
+// The old_text must exist exactly in the file.
+type EditFileTool struct {
+	allowedDir string
+}
+
+func NewEditFileTool(allowedDir string) *EditFileTool {
+	return &EditFileTool{allowedDir: allowedDir}
+}
+
+func (t *EditFileTool) Name() string {
+	return "edit_file"
+}
+
+func (t *EditFileTool) Description() string {
+	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly in the file."
+}
+
+func (t *EditFileTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "The file path to edit",
+			},
+			"old_text": map[string]interface{}{
+				"type":        "string",
+				"description": "The exact text to find and replace",
+			},
+			"new_text": map[string]interface{}{
+				"type":        "string",
+				"description": "The text to replace with",
+			},
+		},
+		"required": []string{"path", "old_text", "new_text"},
+	}
+}
+
+func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	path, ok := args["path"].(string)
+	if !ok {
+		return "", fmt.Errorf("path is required")
+	}
+
+	oldText, ok := args["old_text"].(string)
+	if !ok {
+		return "", fmt.Errorf("old_text is required")
+	}
+
+	newText, ok := args["new_text"].(string)
+	if !ok {
+		return "", fmt.Errorf("new_text is required")
+	}
+
+	resolvedPath := path
+	if filepath.IsAbs(path) {
+		resolvedPath = filepath.Clean(path)
+	} else {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
+		resolvedPath = abs
+	}
+
+	if t.allowedDir != "" {
+		allowedAbs, _ := filepath.Abs(t.allowedDir)
+		if !strings.HasPrefix(resolvedPath, allowedAbs) {
+			return "", fmt.Errorf("path %s is outside allowed directory", path)
+		}
+	}
+
+	content, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return "", err
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, oldText) {
+		return "", fmt.Errorf("old_text not found in file")
+	}
+
+	count := strings.Count(contentStr, oldText)
+	if count > 1 {
+		return "", fmt.Errorf("old_text appears %d times, please make it unique", count)
+	}
+
+	newContent := strings.Replace(contentStr, oldText, newText, 1)
+	if err := os.WriteFile(resolvedPath, []byte(newContent), 0644); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Successfully edited %s", path), nil
 }

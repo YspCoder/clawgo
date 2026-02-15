@@ -247,23 +247,49 @@ func extractSymbols(path, lang string) []string {
 
 	switch lang {
 	case "go":
-		re := regexp.MustCompile(`(?m)^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
-		for _, m := range re.FindAllStringSubmatch(content, 12) {
+		// Top-level functions
+		reFunc := regexp.MustCompile(`(?m)^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+		for _, m := range reFunc.FindAllStringSubmatch(content, 20) {
 			if len(m) > 1 {
 				out = append(out, m[1])
 			}
 		}
-		typeRe := regexp.MustCompile(`(?m)^type\s+([A-Za-z_][A-Za-z0-9_]*)\s+`)
-		for _, m := range typeRe.FindAllStringSubmatch(content, 12) {
+		// Methods: func (r *Receiver) MethodName(...)
+		reMethod := regexp.MustCompile(`(?m)^func\s+\([^)]+\)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+		for _, m := range reMethod.FindAllStringSubmatch(content, 20) {
+			if len(m) > 1 {
+				out = append(out, m[1])
+			}
+		}
+		// Types
+		reType := regexp.MustCompile(`(?m)^type\s+([A-Za-z_][A-Za-z0-9_]*)\s+`)
+		for _, m := range reType.FindAllStringSubmatch(content, 20) {
 			if len(m) > 1 {
 				out = append(out, m[1])
 			}
 		}
 	case "python":
-		re := regexp.MustCompile(`(?m)^def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
-		for _, m := range re.FindAllStringSubmatch(content, 12) {
+		// Functions and Classes
+		re := regexp.MustCompile(`(?m)^(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)`)
+		for _, m := range re.FindAllStringSubmatch(content, 30) {
 			if len(m) > 1 {
 				out = append(out, m[1])
+			}
+		}
+	case "javascript", "typescript":
+		// function Name(...) or class Name ... or const Name = (...) =>
+		re := regexp.MustCompile(`(?m)^(?:export\s+)?(?:function|class|const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)`)
+		for _, m := range re.FindAllStringSubmatch(content, 30) {
+			if len(m) > 1 {
+				out = append(out, m[1])
+			}
+		}
+	case "markdown":
+		// Headers as symbols
+		re := regexp.MustCompile(`(?m)^#+\s+(.+)$`)
+		for _, m := range re.FindAllStringSubmatch(content, 20) {
+			if len(m) > 1 {
+				out = append(out, strings.TrimSpace(m[1]))
 			}
 		}
 	}
@@ -272,10 +298,12 @@ func extractSymbols(path, lang string) []string {
 		return nil
 	}
 	sort.Strings(out)
-	uniq := out[:1]
-	for i := 1; i < len(out); i++ {
-		if out[i] != out[i-1] {
-			uniq = append(uniq, out[i])
+	uniq := []string{}
+	seen := make(map[string]bool)
+	for _, s := range out {
+		if !seen[s] {
+			uniq = append(uniq, s)
+			seen[s] = true
 		}
 	}
 	return uniq

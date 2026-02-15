@@ -125,9 +125,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	})
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(&tools.ReadFileTool{})
-	toolsRegistry.Register(&tools.WriteFileTool{})
-	toolsRegistry.Register(&tools.ListDirTool{})
+	toolsRegistry.Register(tools.NewReadFileTool(""))
+	toolsRegistry.Register(tools.NewWriteFileTool(""))
+	toolsRegistry.Register(tools.NewListDirTool(""))
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace))
 
 	if cs != nil {
@@ -164,7 +164,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewPipelineDispatchTool(orchestrator, subagentManager))
 
 	// Register edit file tool
-	editFileTool := tools.NewEditFileTool(workspace)
+	editFileTool := tools.NewEditFileTool("")
 	toolsRegistry.Register(editFileTool)
 
 	// Register memory search tool
@@ -277,7 +277,7 @@ func (al *AgentLoop) enqueueMessage(ctx context.Context, msg bus.InboundMessage)
 	select {
 	case worker.queue <- msg:
 	case <-ctx.Done():
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Buttons: nil,
 			Channel: msg.Channel,
@@ -443,7 +443,7 @@ func (al *AgentLoop) startAutonomy(msg bus.InboundMessage, idleInterval time.Dur
 	al.autonomyMu.Unlock()
 
 	go al.runAutonomyLoop(sessionCtx, msg)
-	return fmt.Sprintf("自主模式已开启：自动拆解执行 + 阶段回报；空闲超过 %s 会主动推进并汇报。", idleInterval.Truncate(time.Second))
+	return fmt.Sprintf("自主模式已开启：自动拆解执行 + 阶段汇报；空闲超过 %s 会主动推进并汇报。", idleInterval.Truncate(time.Second))
 }
 
 func (al *AgentLoop) stopAutonomy(sessionKey string) bool {
@@ -984,7 +984,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
 
 	// 如果 finalContent 中没有包含 tool calls (即最后一次 LLM 返回的结果)
-	// 我们已经通过循环内部的 AddMessageFull 存储了前面的步骤
+	// 我们已经通过循环内部의 AddMessageFull 存储了前面的步骤
 	// 这里的 AddMessageFull 会存储最终回复
 	al.sessions.AddMessageFull(sessionKey, providers.Message{
 		Role:    "assistant",
