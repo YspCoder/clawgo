@@ -72,6 +72,31 @@ func TestNextSleepDuration(t *testing.T) {
 	}
 }
 
+func TestNextSleepDuration_UsesProvidedNow(t *testing.T) {
+	cs := &CronService{
+		opts: RuntimeOptions{
+			RunLoopMinSleep: 1 * time.Second,
+			RunLoopMaxSleep: 30 * time.Second,
+		},
+		running: map[string]struct{}{},
+		store:   &CronStore{Jobs: []CronJob{}},
+	}
+
+	now := time.UnixMilli(10_000)
+	next := int64(15_000)
+	cs.store.Jobs = []CronJob{{
+		ID:      "1",
+		Enabled: true,
+		State: CronJobState{
+			NextRunAtMS: &next,
+		},
+	}}
+
+	if got := cs.nextSleepDuration(now); got != 5*time.Second {
+		t.Fatalf("expected 5s sleep from provided now, got %s", got)
+	}
+}
+
 func TestCheckJobs_NoConcurrentRunForSameJob(t *testing.T) {
 	var running int32
 	var maxRunning int32

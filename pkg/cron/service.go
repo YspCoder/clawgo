@@ -118,13 +118,14 @@ type CronStore struct {
 type JobHandler func(job *CronJob) (string, error)
 
 type CronService struct {
-	storePath string
-	store     *CronStore
-	onJob     JobHandler
-	opts      RuntimeOptions
-	running   map[string]struct{}
-	mu        sync.RWMutex
-	runner    *lifecycle.LoopRunner
+	storePath     string
+	store         *CronStore
+	onJob         JobHandler
+	opts          RuntimeOptions
+	running       map[string]struct{}
+	lastSaveError string
+	mu            sync.RWMutex
+	runner        *lifecycle.LoopRunner
 }
 
 func NewCronService(storePath string, onJob JobHandler) *CronService {
@@ -244,7 +245,11 @@ func (cs *CronService) checkJobs() {
 
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
-	_ = cs.saveStore()
+	if err := cs.saveStore(); err != nil {
+		cs.lastSaveError = err.Error()
+	} else {
+		cs.lastSaveError = ""
+	}
 }
 
 func (cs *CronService) executeJobByID(jobID string) bool {
@@ -503,7 +508,11 @@ func (cs *CronService) RemoveJob(jobID string) bool {
 func (cs *CronService) removeJobUnsafe(jobID string) bool {
 	removed := cs.removeJobByIDUnsafe(jobID)
 	if removed {
-		_ = cs.saveStore()
+		if err := cs.saveStore(); err != nil {
+			cs.lastSaveError = err.Error()
+		} else {
+			cs.lastSaveError = ""
+		}
 	}
 	return removed
 }
@@ -537,7 +546,7 @@ func (cs *CronService) nextSleepDuration(now time.Time) time.Duration {
 		return cs.opts.RunLoopMaxSleep
 	}
 
-	sleep := time.Until(time.UnixMilli(*nextWake))
+	sleep := time.UnixMilli(*nextWake).Sub(now)
 	if sleep < cs.opts.RunLoopMinSleep {
 		return cs.opts.RunLoopMinSleep
 	}
@@ -630,7 +639,11 @@ func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 				job.State.NextRunAtMS = nil
 			}
 
-			cs.saveStore()
+			if err := cs.saveStore(); err != nil {
+				cs.lastSaveError = err.Error()
+			} else {
+				cs.lastSaveError = ""
+			}
 			return job
 		}
 	}
@@ -688,6 +701,7 @@ func (cs *CronService) Status() map[string]interface{} {
 		"totalFailures":    totalFailures,
 		"latestDelayMs":    latestDelayMS,
 		"latestDurationMs": latestDurationMS,
+		"lastSaveError":    cs.lastSaveError,
 	}
 }
 
