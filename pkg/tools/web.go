@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"clawgo/pkg/logger"
+	
 )
 
 const (
@@ -275,7 +276,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		"text":                           text,
 	}
 
-	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	resultJSON, _ := json.Marshal(result)
 	return string(resultJSON), nil
 }
 
