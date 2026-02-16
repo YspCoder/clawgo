@@ -1666,7 +1666,7 @@ func (al *AgentLoop) buildCompactedSummary(
 		return strings.TrimSpace(existingSummary), nil
 	}
 
-	systemPrompt := "You are a conversation compactor. Merge prior summary and transcript into a concise, factual memory for future turns. Keep user preferences, constraints, decisions, unresolved tasks, and key technical context. Do not include speculative content."
+	systemPrompt := al.withBootstrapPolicy(`You are a conversation compactor. Merge prior summary and transcript into a concise, factual memory for future turns. Keep user preferences, constraints, decisions, unresolved tasks, and key technical context. Do not include speculative content.`)
 	userPrompt := fmt.Sprintf("Existing summary:\n%s\n\nTranscript to compact:\n%s\n\nReturn a compact markdown summary with sections: Key Facts, Decisions, Open Items, Next Steps.",
 		strings.TrimSpace(existingSummary), transcript)
 
@@ -1813,7 +1813,7 @@ func (al *AgentLoop) inferAutonomyIntent(ctx context.Context, content string) (a
 		return autonomyIntent{}, false
 	}
 
-	systemPrompt := `You classify autonomy-control intent for an AI assistant.
+	systemPrompt := al.withBootstrapPolicy(`You classify autonomy-control intent for an AI assistant.
 Return JSON only, no markdown.
 Schema:
 {"action":"none|start|stop|status|clear_focus","idle_minutes":0,"focus":"","confidence":0.0}
@@ -1823,7 +1823,7 @@ Rules:
 - "status": user asks autonomy mode status.
 - "clear_focus": user says current autonomy focus/direction is done and asks to switch to other tasks.
 - "none": anything else.
-- confidence: 0..1`
+- confidence: 0..1`)
 
 	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
@@ -1895,7 +1895,7 @@ func (al *AgentLoop) inferAutoLearnIntent(ctx context.Context, content string) (
 		return autoLearnIntent{}, false
 	}
 
-	systemPrompt := `You classify auto-learning-control intent for an AI assistant.
+	systemPrompt := al.withBootstrapPolicy(`You classify auto-learning-control intent for an AI assistant.
 Return JSON only.
 Schema:
 {"action":"none|start|stop|status","interval_minutes":0,"confidence":0.0}
@@ -1904,7 +1904,7 @@ Rules:
 - "stop": user asks assistant to stop autonomous learning loop.
 - "status": user asks learning loop status.
 - "none": anything else.
-- confidence: 0..1`
+- confidence: 0..1`)
 
 	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
@@ -1951,14 +1951,14 @@ func (al *AgentLoop) inferTaskExecutionDirectives(ctx context.Context, content s
 		return taskExecutionDirectives{}, false
 	}
 
-	systemPrompt := `Extract execution directives from user message.
+	systemPrompt := al.withBootstrapPolicy(`Extract execution directives from user message.
 Return JSON only.
 Schema:
 {"task":"","stage_report":false,"confidence":0.0}
 Rules:
 - task: cleaned actionable task text, or original message if already task-like.
 - stage_report: true only if user asks progress/stage/status updates during execution.
-- confidence: 0..1`
+- confidence: 0..1`)
 
 	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
@@ -2260,6 +2260,52 @@ func (al *AgentLoop) normalizeConfigPathForAgent(path string) string {
 
 func (al *AgentLoop) parseConfigValueForAgent(raw string) interface{} {
 	return configops.ParseConfigValue(raw)
+}
+
+func (al *AgentLoop) withBootstrapPolicy(taskPrompt string) string {
+	taskPrompt = strings.TrimSpace(taskPrompt)
+	bootstrapPolicy := strings.TrimSpace(al.loadBootstrapPolicyContext())
+	if bootstrapPolicy == "" {
+		return taskPrompt
+	}
+
+	return fmt.Sprintf(`Follow the workspace bootstrap policy while interpreting user language and intent.
+Prioritize semantic understanding over fixed command words.
+
+%s
+
+%s`, bootstrapPolicy, taskPrompt)
+}
+
+func (al *AgentLoop) loadBootstrapPolicyContext() string {
+	files := []string{"AGENTS.md", "SOUL.md", "USER.md"}
+	sections := make([]string, 0, len(files))
+
+	for _, filename := range files {
+		filePath := filepath.Join(al.workspace, filename)
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		content := strings.TrimSpace(string(data))
+		if content == "" {
+			continue
+		}
+
+		sections = append(sections, fmt.Sprintf("## %s\n%s", filename, content))
+	}
+
+	joined := strings.TrimSpace(strings.Join(sections, "\n\n"))
+	if joined == "" {
+		return ""
+	}
+
+	const maxPolicyChars = 6000
+	if len(joined) > maxPolicyChars {
+		return truncateString(joined, maxPolicyChars)
+	}
+	return joined
 }
 
 func (al *AgentLoop) loadConfigAsMapForAgent() (map[string]interface{}, error) {
