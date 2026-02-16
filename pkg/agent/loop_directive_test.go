@@ -3,6 +3,8 @@ package agent
 import (
 	"testing"
 	"time"
+
+	"clawgo/pkg/bus"
 )
 
 func TestParseTaskExecutionDirectives_RunCommand(t *testing.T) {
@@ -150,5 +152,38 @@ func TestExtractJSONObject_FromCodeFence(t *testing.T) {
 func TestExtractJSONObject_Invalid(t *testing.T) {
 	if raw := extractJSONObject("no json here"); raw != "" {
 		t.Fatalf("expected empty json, got: %q", raw)
+	}
+}
+
+func TestShouldHandleControlIntents_UserMessage(t *testing.T) {
+	msg := bus.InboundMessage{
+		SenderID: "user",
+		Content:  "请进入自主模式",
+	}
+	if !shouldHandleControlIntents(msg) {
+		t.Fatalf("expected user message to be control-eligible")
+	}
+}
+
+func TestShouldHandleControlIntents_AutonomySyntheticSender(t *testing.T) {
+	msg := bus.InboundMessage{
+		SenderID: "autonomy",
+		Content:  "自主模式第 1 轮推进",
+	}
+	if shouldHandleControlIntents(msg) {
+		t.Fatalf("expected autonomy synthetic message to be ignored for control intents")
+	}
+}
+
+func TestShouldHandleControlIntents_AutoLearnSyntheticMetadata(t *testing.T) {
+	msg := bus.InboundMessage{
+		SenderID: "gateway",
+		Content:  "自动学习第 1 轮",
+		Metadata: map[string]string{
+			"source": "autolearn",
+		},
+	}
+	if shouldHandleControlIntents(msg) {
+		t.Fatalf("expected autolearn synthetic metadata message to be ignored for control intents")
 	}
 }

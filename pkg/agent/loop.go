@@ -800,6 +800,10 @@ func isAutonomySyntheticMessage(msg bus.InboundMessage) bool {
 	return strings.EqualFold(strings.TrimSpace(msg.Metadata["source"]), "autonomy")
 }
 
+func shouldHandleControlIntents(msg bus.InboundMessage) bool {
+	return !isSyntheticMessage(msg)
+}
+
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
 	msg := bus.InboundMessage{
 		Channel:    "cli",
@@ -827,56 +831,64 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		defer al.finishAutonomyRound(msg.SessionKey)
 	}
 
+	controlEligible := shouldHandleControlIntents(msg)
+
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
 	}
 
 	// Built-in slash commands (deterministic, no LLM roundtrip)
-	if handled, result, err := al.handleSlashCommand(msg); handled {
-		return result, err
-	}
-
-	al.noteAutonomyUserActivity(msg)
-
-	if intent, ok := al.detectAutonomyIntent(ctx, msg.Content); ok {
-		switch intent.action {
-		case "start":
-			idle := autonomyDefaultIdleInterval
-			if intent.idleInterval != nil {
-				idle = *intent.idleInterval
-			}
-			return al.startAutonomy(msg, idle, intent.focus), nil
-		case "clear_focus":
-			if al.clearAutonomyFocus(msg.SessionKey) {
-				return "已确认：当前研究方向已完成，后续自主推进将转向其他高价值任务。", nil
-			}
-			return "自主模式当前未运行，无法清空研究方向。", nil
-		case "stop":
-			if al.stopAutonomy(msg.SessionKey) {
-				return "自主模式已关闭。", nil
-			}
-			return "自主模式当前未运行。", nil
-		case "status":
-			return al.autonomyStatus(msg.SessionKey), nil
+	if controlEligible {
+		if handled, result, err := al.handleSlashCommand(msg); handled {
+			return result, err
 		}
 	}
 
-	if intent, ok := al.detectAutoLearnIntent(ctx, msg.Content); ok {
-		switch intent.action {
-		case "start":
-			interval := autoLearnDefaultInterval
-			if intent.interval != nil {
-				interval = *intent.interval
+	if controlEligible {
+		al.noteAutonomyUserActivity(msg)
+	}
+
+	if controlEligible {
+		if intent, ok := al.detectAutonomyIntent(ctx, msg.Content); ok {
+			switch intent.action {
+			case "start":
+				idle := autonomyDefaultIdleInterval
+				if intent.idleInterval != nil {
+					idle = *intent.idleInterval
+				}
+				return al.startAutonomy(msg, idle, intent.focus), nil
+			case "clear_focus":
+				if al.clearAutonomyFocus(msg.SessionKey) {
+					return "已确认：当前研究方向已完成，后续自主推进将转向其他高价值任务。", nil
+				}
+				return "自主模式当前未运行，无法清空研究方向。", nil
+			case "stop":
+				if al.stopAutonomy(msg.SessionKey) {
+					return "自主模式已关闭。", nil
+				}
+				return "自主模式当前未运行。", nil
+			case "status":
+				return al.autonomyStatus(msg.SessionKey), nil
 			}
-			return al.startAutoLearner(msg, interval), nil
-		case "stop":
-			if al.stopAutoLearner(msg.SessionKey) {
-				return "自动学习已停止。", nil
+		}
+
+		if intent, ok := al.detectAutoLearnIntent(ctx, msg.Content); ok {
+			switch intent.action {
+			case "start":
+				interval := autoLearnDefaultInterval
+				if intent.interval != nil {
+					interval = *intent.interval
+				}
+				return al.startAutoLearner(msg, interval), nil
+			case "stop":
+				if al.stopAutoLearner(msg.SessionKey) {
+					return "自动学习已停止。", nil
+				}
+				return "自动学习当前未运行。", nil
+			case "status":
+				return al.autoLearnerStatus(msg.SessionKey), nil
 			}
-			return "自动学习当前未运行。", nil
-		case "status":
-			return al.autoLearnerStatus(msg.SessionKey), nil
 		}
 	}
 
@@ -891,7 +903,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if strings.TrimSpace(userPrompt) == "" {
 		userPrompt = msg.Content
 	}
-	if al.isAutonomyEnabled(msg.SessionKey) && !isSyntheticMessage(msg) {
+	if al.isAutonomyEnabled(msg.SessionKey) && controlEligible {
 		directives.stageReport = true
 		userPrompt = buildAutonomyTaskPrompt(userPrompt)
 	}

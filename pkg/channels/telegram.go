@@ -328,6 +328,12 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	if user == nil {
 		return
 	}
+	if user.IsBot {
+		logger.DebugCF("telegram", "Ignoring bot-originated message", map[string]interface{}{
+			"user_id": user.ID,
+		})
+		return
+	}
 
 	senderID := fmt.Sprintf("%d", user.ID)
 
