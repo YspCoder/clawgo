@@ -481,6 +481,18 @@ func (al *AgentLoop) stopAutonomy(sessionKey string) bool {
 	return true
 }
 
+func (al *AgentLoop) clearAutonomyFocus(sessionKey string) bool {
+	al.autonomyMu.Lock()
+	defer al.autonomyMu.Unlock()
+
+	s, ok := al.autonomyBySess[sessionKey]
+	if !ok || s == nil {
+		return false
+	}
+	s.focus = ""
+	return true
+}
+
 func (al *AgentLoop) isAutonomyEnabled(sessionKey string) bool {
 	al.autonomyMu.Lock()
 	defer al.autonomyMu.Unlock()
@@ -597,7 +609,7 @@ func buildAutonomyFollowUpPrompt(round int, focus string) string {
 	if focus == "" {
 		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请基于当前会话上下文和已完成工作，自主完成一个高价值下一步，并给出简短进展汇报。", round)
 	}
-	return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请围绕研究方向“%s”继续推进高价值下一步，并给出简短进展汇报。", round, focus)
+	return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请优先围绕研究方向“%s”推进；如果该方向已完成，请明确说明已完成并转向其他高价值下一步，再给出简短进展汇报。", round, focus)
 }
 
 func buildAutonomyFocusPrompt(focus string) string {
@@ -816,6 +828,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				idle = *intent.idleInterval
 			}
 			return al.startAutonomy(msg, idle, intent.focus), nil
+		case "clear_focus":
+			if al.clearAutonomyFocus(msg.SessionKey) {
+				return "已确认：当前研究方向已完成，后续自主推进将转向其他高价值任务。", nil
+			}
+			return "自主模式当前未运行，无法清空研究方向。", nil
 		case "stop":
 			if al.stopAutonomy(msg.SessionKey) {
 				return "自主模式已关闭。", nil
@@ -1795,6 +1812,14 @@ func parseAutonomyIntent(content string) (autonomyIntent, bool) {
 		strings.Contains(text, "你现在是自主模式") {
 		return autonomyIntent{action: "status"}, true
 	}
+	if strings.Contains(text, "方向执行完成") ||
+		strings.Contains(text, "方向完成了") ||
+		strings.Contains(text, "研究方向完成了") ||
+		strings.Contains(text, "可以去执行别的") ||
+		strings.Contains(text, "改做别的") ||
+		strings.Contains(text, "先做其他") {
+		return autonomyIntent{action: "clear_focus"}, true
+	}
 
 	hasAutoAction := strings.Contains(text, "自动拆解") ||
 		strings.Contains(text, "自动执行") ||
@@ -1848,7 +1873,7 @@ func extractAutonomyFocus(text string) string {
 		if idx := strings.Index(text, marker); idx >= 0 {
 			focus := strings.TrimSpace(text[idx+len(marker):])
 			focus = strings.Trim(focus, "，,。;； ")
-			if cut := findFirstIndex(focus, "并", "然后", "每", "空闲", "主动", "汇报", "。"); cut > 0 {
+			if cut := findFirstIndex(focus, "并且每", "然后", "每", "空闲", "主动", "汇报", "。"); cut > 0 {
 				focus = strings.TrimSpace(focus[:cut])
 			}
 			return strings.Trim(focus, "，,。;； ")

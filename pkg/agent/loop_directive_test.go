@@ -150,3 +150,20 @@ func TestExtractAutonomyFocus_EmptyWhenNotProvided(t *testing.T) {
 		t.Fatalf("expected empty focus, got: %q", focus)
 	}
 }
+
+func TestExtractAutonomyFocus_KeepInnerBing(t *testing.T) {
+	focus := extractAutonomyFocus("开启自主模式，研究方向是日志聚类并关联异常根因，并且每30分钟主动汇报")
+	if focus != "日志聚类并关联异常根因" {
+		t.Fatalf("unexpected focus: %q", focus)
+	}
+}
+
+func TestParseAutonomyIntent_ClearFocusNaturalLanguage(t *testing.T) {
+	intent, ok := parseAutonomyIntent("自主附带的方向执行完成了，可以去执行别的")
+	if !ok {
+		t.Fatalf("expected intent")
+	}
+	if intent.action != "clear_focus" {
+		t.Fatalf("unexpected action: %s", intent.action)
+	}
+}
