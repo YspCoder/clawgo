@@ -9,7 +9,13 @@ MAIN_GO=$(CMD_DIR)/main.go
 # Version
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date +%FT%T%z)
-LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
+STRIP_SYMBOLS?=1
+BASE_LDFLAGS=-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)
+EXTRA_LDFLAGS=
+ifeq ($(STRIP_SYMBOLS),1)
+	EXTRA_LDFLAGS+= -s -w
+endif
+LDFLAGS=-ldflags "$(BASE_LDFLAGS)$(EXTRA_LDFLAGS)"
 
 # Go variables
 GO?=go
@@ -219,6 +225,7 @@ help:
 	@echo "  INSTALL_PREFIX          # Installation prefix (default: /usr/local)"
 	@echo "  WORKSPACE_DIR           # Workspace directory (default: ~/.clawgo/workspace)"
 	@echo "  VERSION                 # Version string (default: git describe)"
+	@echo "  STRIP_SYMBOLS           # 1=strip debug/symbol info (default: 1)"
 	@echo ""
 	@echo "Current Configuration:"
 	@echo "  Platform: $(PLATFORM)/$(ARCH)"
