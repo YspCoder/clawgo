@@ -187,3 +187,29 @@ func TestShouldHandleControlIntents_AutoLearnSyntheticMetadata(t *testing.T) {
 		t.Fatalf("expected autolearn synthetic metadata message to be ignored for control intents")
 	}
 }
+
+func TestShouldPublishSyntheticResponse_AutonomyReportDue(t *testing.T) {
+	msg := bus.InboundMessage{
+		SenderID: "autonomy",
+		Metadata: map[string]string{
+			"source":     "autonomy",
+			"report_due": "true",
+		},
+	}
+	if !shouldPublishSyntheticResponse(msg) {
+		t.Fatalf("expected autonomy report_due message to be published")
+	}
+}
+
+func TestShouldPublishSyntheticResponse_AutonomySilentRound(t *testing.T) {
+	msg := bus.InboundMessage{
+		SenderID: "autonomy",
+		Metadata: map[string]string{
+			"source":     "autonomy",
+			"report_due": "false",
+		},
+	}
+	if shouldPublishSyntheticResponse(msg) {
+		t.Fatalf("expected autonomy non-report round to be silent")
+	}
+}

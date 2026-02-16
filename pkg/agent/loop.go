@@ -37,6 +37,8 @@ const autoLearnDefaultInterval = 10 * time.Minute
 const autoLearnMinInterval = 30 * time.Second
 const autonomyDefaultIdleInterval = 30 * time.Minute
 const autonomyMinIdleInterval = 1 * time.Minute
+const autonomyContinuousRunInterval = 20 * time.Second
+const autonomyContinuousIdleThreshold = 20 * time.Second
 
 type sessionWorker struct {
 	queue    chan bus.InboundMessage
@@ -58,6 +60,7 @@ type autonomySession struct {
 	rounds       int
 	lastUserAt   time.Time
 	lastNudgeAt  time.Time
+	lastReportAt time.Time
 	pending      bool
 	focus        string
 }
@@ -303,7 +306,7 @@ func (al *AgentLoop) enqueueMessage(ctx context.Context, msg bus.InboundMessage)
 			Buttons: nil,
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: "Message queue is busy. Please try again shortly.",
+			Content: al.naturalizeUserFacingText(ctx, "消息队列当前较忙，请稍后再试。"),
 		})
 	}
 }
@@ -361,10 +364,10 @@ func (al *AgentLoop) runSessionWorker(ctx context.Context, sessionKey string, wo
 					if errors.Is(err, context.Canceled) {
 						return
 					}
-					response = fmt.Sprintf("Error processing message: %v", err)
+					response = al.naturalizeUserFacingText(taskCtx, fmt.Sprintf("处理消息时发生错误：%v", err))
 				}
 
-				if response != "" {
+				if response != "" && shouldPublishSyntheticResponse(msg) {
 					al.bus.PublishOutbound(bus.OutboundMessage{
 						Buttons: nil,
 						Channel: msg.Channel,
@@ -433,9 +436,9 @@ func (al *AgentLoop) stopAllAutonomySessions() {
 	}
 }
 
-func (al *AgentLoop) startAutonomy(msg bus.InboundMessage, idleInterval time.Duration, focus string) string {
+func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, idleInterval time.Duration, focus string) string {
 	if msg.Channel == "cli" {
-		return "自主模式需要在 gateway 运行模式下使用（持续消息循环）。"
+		return al.naturalizeUserFacingText(ctx, "自主模式需要在 gateway 运行模式下使用（持续消息循环）。")
 	}
 
 	if idleInterval <= 0 {
@@ -459,6 +462,7 @@ func (al *AgentLoop) startAutonomy(msg bus.InboundMessage, idleInterval time.Dur
 		started:      time.Now(),
 		idleInterval: idleInterval,
 		lastUserAt:   time.Now(),
+		lastReportAt: time.Now(),
 		focus:        strings.TrimSpace(focus),
 	}
 	al.autonomyBySess[msg.SessionKey] = s
@@ -480,9 +484,9 @@ func (al *AgentLoop) startAutonomy(msg bus.InboundMessage, idleInterval time.Dur
 		})
 	}
 	if s.focus != "" {
-		return fmt.Sprintf("自主模式已开启，当前研究方向：%s。空闲超过 %s 会继续按该方向主动推进并汇报。", s.focus, idleInterval.Truncate(time.Second))
+		return al.naturalizeUserFacingText(ctx, fmt.Sprintf("自主模式已开启，当前研究方向：%s。系统会持续静默推进，并每 %s 汇报一次进度或结果。", s.focus, idleInterval.Truncate(time.Second)))
 	}
-	return fmt.Sprintf("自主模式已开启：自动拆解执行 + 阶段回报；空闲超过 %s 会主动推进并汇报。", idleInterval.Truncate(time.Second))
+	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("自主模式已开启：自动拆解执行 + 静默推进；每 %s 汇报一次进度或结果。", idleInterval.Truncate(time.Second)))
 }
 
 func (al *AgentLoop) stopAutonomy(sessionKey string) bool {
@@ -533,13 +537,13 @@ func (al *AgentLoop) noteAutonomyUserActivity(msg bus.InboundMessage) {
 	s.lastUserAt = time.Now()
 }
 
-func (al *AgentLoop) autonomyStatus(sessionKey string) string {
+func (al *AgentLoop) autonomyStatus(ctx context.Context, sessionKey string) string {
 	al.autonomyMu.Lock()
 	defer al.autonomyMu.Unlock()
 
 	s, ok := al.autonomyBySess[sessionKey]
 	if !ok || s == nil {
-		return "自主模式未开启。"
+		return al.naturalizeUserFacingText(ctx, "自主模式未开启。")
 	}
 
 	uptime := time.Since(s.started).Truncate(time.Second)
@@ -548,12 +552,13 @@ func (al *AgentLoop) autonomyStatus(sessionKey string) string {
 	if focus == "" {
 		focus = "未设置"
 	}
-	return fmt.Sprintf("自主模式运行中：空闲阈值 %s，已运行 %s，最近用户活跃距今 %s，自动推进 %d 轮。",
+	fallback := fmt.Sprintf("自主模式运行中：汇报周期 %s，已运行 %s，最近用户活跃距今 %s，自动推进 %d 轮。",
 		s.idleInterval.Truncate(time.Second),
 		uptime,
 		idle,
 		s.rounds,
 	) + fmt.Sprintf(" 当前研究方向：%s。", focus)
+	return al.naturalizeUserFacingText(ctx, fallback)
 }
 
 func (al *AgentLoop) runAutonomyLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -581,7 +586,9 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 	}
 
 	now := time.Now()
-	if s.pending || now.Sub(s.lastUserAt) < s.idleInterval || now.Sub(s.lastNudgeAt) < s.idleInterval {
+	if s.pending ||
+		now.Sub(s.lastUserAt) < autonomyContinuousIdleThreshold ||
+		now.Sub(s.lastNudgeAt) < autonomyContinuousRunInterval {
 		al.autonomyMu.Unlock()
 		return true
 	}
@@ -590,6 +597,10 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 	round := s.rounds
 	s.lastNudgeAt = now
 	s.pending = true
+	reportDue := now.Sub(s.lastReportAt) >= s.idleInterval
+	if reportDue {
+		s.lastReportAt = now
+	}
 	focus := strings.TrimSpace(s.focus)
 	al.autonomyMu.Unlock()
 
@@ -598,10 +609,11 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 		SenderID:   "autonomy",
 		ChatID:     msg.ChatID,
 		SessionKey: msg.SessionKey,
-		Content:    buildAutonomyFollowUpPrompt(round, focus),
+		Content:    buildAutonomyFollowUpPrompt(round, focus, reportDue),
 		Metadata: map[string]string{
-			"source": "autonomy",
-			"round":  strconv.Itoa(round),
+			"source":     "autonomy",
+			"round":      strconv.Itoa(round),
+			"report_due": strconv.FormatBool(reportDue),
 		},
 	})
 
@@ -616,12 +628,18 @@ func (al *AgentLoop) finishAutonomyRound(sessionKey string) {
 	}
 }
 
-func buildAutonomyFollowUpPrompt(round int, focus string) string {
+func buildAutonomyFollowUpPrompt(round int, focus string, reportDue bool) string {
 	focus = strings.TrimSpace(focus)
-	if focus == "" {
-		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请基于当前会话上下文和已完成工作，自主完成一个高价值下一步，并给出简短进展汇报。", round)
+	if focus == "" && reportDue {
+		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请基于当前会话上下文和已完成工作，自主完成一个高价值下一步，并用自然语言给出进度或结果。", round)
 	}
-	return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请优先围绕研究方向“%s”推进；如果该方向已完成，请明确说明已完成并转向其他高价值下一步，再给出简短进展汇报。", round, focus)
+	if focus == "" && !reportDue {
+		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请基于当前会话上下文和已完成工作，自主完成一个高价值下一步。本轮仅执行，不对外回复。", round)
+	}
+	if reportDue {
+		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请优先围绕研究方向“%s”推进；如果该方向已完成，请说明并转向其他高价值下一步。完成后用自然语言给出进度或结果。", round, focus)
+	}
+	return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请优先围绕研究方向“%s”推进；如果该方向已完成，请说明并转向其他高价值下一步。本轮仅执行，不对外回复。", round, focus)
 }
 
 func buildAutonomyFocusPrompt(focus string) string {
@@ -629,9 +647,9 @@ func buildAutonomyFocusPrompt(focus string) string {
 	return fmt.Sprintf("自主模式已启动，本轮请优先围绕研究方向“%s”展开：先明确本轮目标，再执行并汇报阶段性进展与结果。", focus)
 }
 
-func (al *AgentLoop) startAutoLearner(msg bus.InboundMessage, interval time.Duration) string {
+func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessage, interval time.Duration) string {
 	if msg.Channel == "cli" {
-		return "自动学习需要在 gateway 运行模式下使用（持续消息循环）。"
+		return al.naturalizeUserFacingText(ctx, "自动学习需要在 gateway 运行模式下使用（持续消息循环）。")
 	}
 
 	if interval <= 0 {
@@ -660,7 +678,7 @@ func (al *AgentLoop) startAutoLearner(msg bus.InboundMessage, interval time.Dura
 
 	go al.runAutoLearnerLoop(learnerCtx, msg)
 
-	return fmt.Sprintf("自动学习已开启：每 %s 执行 1 轮。使用 /autolearn stop 可停止。", interval.Truncate(time.Second))
+	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("自动学习已开启：每 %s 执行 1 轮。使用 /autolearn stop 可停止。", interval.Truncate(time.Second)))
 }
 
 func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -673,7 +691,7 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: fmt.Sprintf("[自动学习] 第 %d 轮开始。", round),
+			Content: al.naturalizeUserFacingText(ctx, fmt.Sprintf("自动学习第 %d 轮开始。", round)),
 		})
 
 		al.bus.PublishInbound(bus.InboundMessage{
@@ -747,21 +765,22 @@ func (al *AgentLoop) stopAutoLearner(sessionKey string) bool {
 	return true
 }
 
-func (al *AgentLoop) autoLearnerStatus(sessionKey string) string {
+func (al *AgentLoop) autoLearnerStatus(ctx context.Context, sessionKey string) string {
 	al.autoLearnMu.Lock()
 	defer al.autoLearnMu.Unlock()
 
 	learner, ok := al.autoLearners[sessionKey]
 	if !ok || learner == nil {
-		return "自动学习未开启。使用 /autolearn start 可开启。"
+		return al.naturalizeUserFacingText(ctx, "自动学习未开启。使用 /autolearn start 可开启。")
 	}
 
 	uptime := time.Since(learner.started).Truncate(time.Second)
-	return fmt.Sprintf("自动学习运行中：每 %s 一轮，已运行 %s，累计 %d 轮。",
+	fallback := fmt.Sprintf("自动学习运行中：每 %s 一轮，已运行 %s，累计 %d 轮。",
 		learner.interval.Truncate(time.Second),
 		uptime,
 		learner.rounds,
 	)
+	return al.naturalizeUserFacingText(ctx, fallback)
 }
 
 func buildAutoLearnPrompt(round int) string {
@@ -795,6 +814,53 @@ func isAutonomySyntheticMessage(msg bus.InboundMessage) bool {
 
 func shouldHandleControlIntents(msg bus.InboundMessage) bool {
 	return !isSyntheticMessage(msg)
+}
+
+func (al *AgentLoop) naturalizeUserFacingText(ctx context.Context, fallback string) string {
+	text := strings.TrimSpace(fallback)
+	if text == "" || ctx == nil {
+		return fallback
+	}
+
+	llmCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+
+	systemPrompt := al.withBootstrapPolicy(`You rewrite assistant control/status replies in natural conversational Chinese.
+Rules:
+- Keep factual meaning unchanged.
+- Use concise natural wording, no rigid templates.
+- No markdown, no code block, no extra explanation.
+- Return plain text only.`)
+
+	resp, err := al.callLLMWithModelFallback(llmCtx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: text},
+	}, nil, map[string]interface{}{
+		"max_tokens":  180,
+		"temperature": 0.4,
+	})
+	if err != nil || resp == nil {
+		return fallback
+	}
+
+	out := strings.TrimSpace(resp.Content)
+	if out == "" {
+		return fallback
+	}
+	return out
+}
+
+func shouldPublishSyntheticResponse(msg bus.InboundMessage) bool {
+	if !isSyntheticMessage(msg) {
+		return true
+	}
+	if !isAutonomySyntheticMessage(msg) {
+		return true
+	}
+	if msg.Metadata == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(msg.Metadata["report_due"]), "true")
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
@@ -833,7 +899,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Built-in slash commands (deterministic, no LLM roundtrip)
 	if controlEligible {
-		if handled, result, err := al.handleSlashCommand(msg); handled {
+		if handled, result, err := al.handleSlashCommand(ctx, msg); handled {
 			return result, err
 		}
 	}
@@ -850,19 +916,19 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				if intent.idleInterval != nil {
 					idle = *intent.idleInterval
 				}
-				return al.startAutonomy(msg, idle, intent.focus), nil
+				return al.startAutonomy(ctx, msg, idle, intent.focus), nil
 			case "clear_focus":
 				if al.clearAutonomyFocus(msg.SessionKey) {
-					return "已确认：当前研究方向已完成，后续自主推进将转向其他高价值任务。", nil
+					return al.naturalizeUserFacingText(ctx, "已确认：当前研究方向已完成，后续自主推进将转向其他高价值任务。"), nil
 				}
-				return "自主模式当前未运行，无法清空研究方向。", nil
+				return al.naturalizeUserFacingText(ctx, "自主模式当前未运行，无法清空研究方向。"), nil
 			case "stop":
 				if al.stopAutonomy(msg.SessionKey) {
-					return "自主模式已关闭。", nil
+					return al.naturalizeUserFacingText(ctx, "自主模式已关闭。"), nil
 				}
-				return "自主模式当前未运行。", nil
+				return al.naturalizeUserFacingText(ctx, "自主模式当前未运行。"), nil
 			case "status":
-				return al.autonomyStatus(msg.SessionKey), nil
+				return al.autonomyStatus(ctx, msg.SessionKey), nil
 			}
 		}
 
@@ -873,14 +939,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				if intent.interval != nil {
 					interval = *intent.interval
 				}
-				return al.startAutoLearner(msg, interval), nil
+				return al.startAutoLearner(ctx, msg, interval), nil
 			case "stop":
 				if al.stopAutoLearner(msg.SessionKey) {
-					return "自动学习已停止。", nil
+					return al.naturalizeUserFacingText(ctx, "自动学习已停止。"), nil
 				}
-				return "自动学习当前未运行。", nil
+				return al.naturalizeUserFacingText(ctx, "自动学习当前未运行。"), nil
 			case "status":
-				return al.autoLearnerStatus(msg.SessionKey), nil
+				return al.autoLearnerStatus(ctx, msg.SessionKey), nil
 			}
 		}
 	}
@@ -2052,7 +2118,7 @@ func parseAutoLearnIntent(content string) (autoLearnIntent, bool) {
 	}
 }
 
-func (al *AgentLoop) handleSlashCommand(msg bus.InboundMessage) (bool, string, error) {
+func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMessage) (bool, string, error) {
 	text := strings.TrimSpace(msg.Content)
 	if !strings.HasPrefix(text, "/") {
 		return false, "", nil
@@ -2081,7 +2147,7 @@ func (al *AgentLoop) handleSlashCommand(msg bus.InboundMessage) (bool, string, e
 		), nil
 	case "/autolearn":
 		if len(fields) < 2 {
-			return true, "Usage: /autolearn start [interval] | /autolearn stop | /autolearn status", nil
+			return true, al.naturalizeUserFacingText(ctx, "用法：/autolearn start [interval] | /autolearn stop | /autolearn status"), nil
 		}
 		switch strings.ToLower(fields[1]) {
 		case "start":
@@ -2093,20 +2159,20 @@ func (al *AgentLoop) handleSlashCommand(msg bus.InboundMessage) (bool, string, e
 				}
 				interval = d
 			}
-			return true, al.startAutoLearner(msg, interval), nil
+			return true, al.startAutoLearner(ctx, msg, interval), nil
 		case "stop":
 			if al.stopAutoLearner(msg.SessionKey) {
-				return true, "自动学习已停止。", nil
+				return true, al.naturalizeUserFacingText(ctx, "自动学习已停止。"), nil
 			}
-			return true, "自动学习当前未运行。", nil
+			return true, al.naturalizeUserFacingText(ctx, "自动学习当前未运行。"), nil
 		case "status":
-			return true, al.autoLearnerStatus(msg.SessionKey), nil
+			return true, al.autoLearnerStatus(ctx, msg.SessionKey), nil
 		default:
-			return true, "Usage: /autolearn start [interval] | /autolearn stop | /autolearn status", nil
+			return true, al.naturalizeUserFacingText(ctx, "用法：/autolearn start [interval] | /autolearn stop | /autolearn status"), nil
 		}
 	case "/autonomy":
 		if len(fields) < 2 {
-			return true, "Usage: /autonomy start [idle] | /autonomy stop | /autonomy status", nil
+			return true, al.naturalizeUserFacingText(ctx, "用法：/autonomy start [idle] | /autonomy stop | /autonomy status"), nil
 		}
 		switch strings.ToLower(fields[1]) {
 		case "start":
@@ -2123,16 +2189,16 @@ func (al *AgentLoop) handleSlashCommand(msg bus.InboundMessage) (bool, string, e
 			if focus == "" && len(fields) >= 4 {
 				focus = strings.Join(fields[3:], " ")
 			}
-			return true, al.startAutonomy(msg, idle, focus), nil
+			return true, al.startAutonomy(ctx, msg, idle, focus), nil
 		case "stop":
 			if al.stopAutonomy(msg.SessionKey) {
-				return true, "自主模式已关闭。", nil
+				return true, al.naturalizeUserFacingText(ctx, "自主模式已关闭。"), nil
 			}
-			return true, "自主模式当前未运行。", nil
+			return true, al.naturalizeUserFacingText(ctx, "自主模式当前未运行。"), nil
 		case "status":
-			return true, al.autonomyStatus(msg.SessionKey), nil
+			return true, al.autonomyStatus(ctx, msg.SessionKey), nil
 		default:
-			return true, "Usage: /autonomy start [idle] | /autonomy stop | /autonomy status", nil
+			return true, al.naturalizeUserFacingText(ctx, "用法：/autonomy start [idle] | /autonomy stop | /autonomy status"), nil
 		}
 	case "/reload":
 		running, err := al.triggerGatewayReloadFromAgent()
