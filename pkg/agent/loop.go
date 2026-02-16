@@ -591,14 +591,7 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 	s.lastNudgeAt = now
 	s.pending = true
 	focus := strings.TrimSpace(s.focus)
-	idleFor := now.Sub(s.lastUserAt).Truncate(time.Second)
 	al.autonomyMu.Unlock()
-
-	al.bus.PublishOutbound(bus.OutboundMessage{
-		Channel: msg.Channel,
-		ChatID:  msg.ChatID,
-		Content: fmt.Sprintf("[自主模式] 你已空闲 %s，我已启动第 %d 轮自主推进。", idleFor, round),
-	})
 
 	al.bus.PublishInbound(bus.InboundMessage{
 		Channel:    msg.Channel,
@@ -893,18 +886,22 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	directives := parseTaskExecutionDirectives(msg.Content)
-	if inferred, ok := al.inferTaskExecutionDirectives(ctx, msg.Content); ok {
-		// Explicit /run/@run command always has higher priority than inferred directives.
-		if !isExplicitRunCommand(msg.Content) {
-			directives = inferred
+	if controlEligible {
+		if inferred, ok := al.inferTaskExecutionDirectives(ctx, msg.Content); ok {
+			// Explicit /run/@run command always has higher priority than inferred directives.
+			if !isExplicitRunCommand(msg.Content) {
+				directives = inferred
+			}
 		}
+	} else {
+		// Synthetic messages should run quietly and only report final outcomes.
+		directives.stageReport = false
 	}
 	userPrompt := directives.task
 	if strings.TrimSpace(userPrompt) == "" {
 		userPrompt = msg.Content
 	}
 	if al.isAutonomyEnabled(msg.SessionKey) && controlEligible {
-		directives.stageReport = true
 		userPrompt = buildAutonomyTaskPrompt(userPrompt)
 	}
 
