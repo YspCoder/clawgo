@@ -83,10 +83,36 @@ export CLAWGO_CONFIG=/path/to/config.json
 /reload
 ```
 
+自治控制命令（可选，推荐直接自然语言）：
+
+```text
+/autonomy start [idle]
+/autonomy stop
+/autonomy status
+/autolearn start [interval]
+/autolearn stop
+/autolearn status
+```
+
 消息调度策略（按会话 `session_key`）：
 - 同一会话严格 FIFO 串行执行，后续消息进入队列等待。
 - `/stop` 会立即中断当前回复，并继续处理队列中的下一条消息。
 - 不同会话可并发执行，互不影响。
+
+## 🧭 自主模式与自然语言控制
+
+- 自主模式/自动学习控制采用 **LLM 语义解析优先**（多语言），不依赖固定中文关键词。
+- 规则解析仅作为兜底（如显式命令：`/autonomy ...`、`/autolearn ...`）。
+- 开启自主模式时若附带研究方向，系统会优先按该方向执行；当用户表示方向完成后，会自动切换到其他高价值任务继续推进。
+- 进度回报使用自然语言，不使用固定阶段编号模板。
+
+系统会在启动时读取 `AGENTS.md`、`SOUL.md`、`USER.md` 作为行为约束与语义解析上下文。
+
+## 🧩 Onboard/Install 文档同步
+
+- `clawgo onboard` 与 `make install` 都会同步 `AGENTS.md`、`SOUL.md`、`USER.md` 到工作区。
+- 若文件不存在：创建。
+- 若文件已存在：仅更新 `CLAWGO MANAGED BLOCK` 受管区块，保留用户自定义内容（增量更新，不整文件覆盖）。
 
 ## 🧾 日志链路
 
@@ -128,6 +154,19 @@ Sentinel 会周期巡检关键运行资源（配置、memory、日志目录）�
   "auto_heal": true,
   "notify_channel": "",
   "notify_chat_id": ""
+}
+```
+
+Cron 调度策略支持配置化（支持热更新）：
+
+```json
+"cron": {
+  "min_sleep_sec": 1,
+  "max_sleep_sec": 30,
+  "retry_backoff_base_sec": 30,
+  "retry_backoff_max_sec": 1800,
+  "max_consecutive_failure_retries": 5,
+  "max_workers": 4
 }
 ```
 

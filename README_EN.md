@@ -83,10 +83,36 @@ Slash commands are also supported in chat channels:
 /reload
 ```
 
+Autonomy control commands (optional; natural language is recommended):
+
+```text
+/autonomy start [idle]
+/autonomy stop
+/autonomy status
+/autolearn start [interval]
+/autolearn stop
+/autolearn status
+```
+
 Message scheduling policy (per `session_key`):
 - Same session runs in strict FIFO order; later messages are queued.
 - `/stop` immediately cancels the current response, then processing continues with the next queued message.
 - Different sessions can run concurrently.
+
+## 🧭 Autonomy Mode & Natural-Language Control
+
+- Autonomy/auto-learning controls are interpreted with **LLM semantic parsing first** (multi-language), instead of fixed keyword matching.
+- Rule-based parsing is used only as a fallback (for explicit forms such as `/autonomy ...` and `/autolearn ...`).
+- If a focus direction is provided when starting autonomy mode, execution prioritizes that focus; when user says it is complete, the agent switches to other high-value tasks automatically.
+- Progress updates are natural-language messages, not rigid stage-number templates.
+
+At startup, `AGENTS.md`, `SOUL.md`, and `USER.md` are loaded as behavior constraints and semantic context.
+
+## 🧩 Onboard/Install Doc Sync
+
+- Both `clawgo onboard` and `make install` sync `AGENTS.md`, `SOUL.md`, `USER.md` into workspace.
+- If a file does not exist: it is created.
+- If a file already exists: only the `CLAWGO MANAGED BLOCK` section is updated; user custom content is preserved (incremental update, no whole-file overwrite).
 
 ## 🧾 Logging Pipeline
 
@@ -128,6 +154,19 @@ Sentinel periodically checks critical runtime resources (config, memory, log dir
   "auto_heal": true,
   "notify_channel": "",
   "notify_chat_id": ""
+}
+```
+
+Cron scheduling runtime strategy is configurable (and hot-reloadable):
+
+```json
+"cron": {
+  "min_sleep_sec": 1,
+  "max_sleep_sec": 30,
+  "retry_backoff_base_sec": 30,
+  "retry_backoff_max_sec": 1800,
+  "max_consecutive_failure_retries": 5,
+  "max_workers": 4
 }
 ```
 

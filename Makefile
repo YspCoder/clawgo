@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build install uninstall clean help test install-bootstrap-docs
 
 # Build variables
 BINARY_NAME=clawgo
@@ -100,7 +100,49 @@ install: build
 			fi; \
 		fi; \
 	done
+	@$(MAKE) install-bootstrap-docs
 	@echo "Installation complete!"
+
+## install-bootstrap-docs: Incrementally sync AGENTS.md/SOUL.md/USER.md into workspace
+install-bootstrap-docs:
+	@echo "Incrementally syncing bootstrap docs to $(WORKSPACE_DIR)..."
+	@mkdir -p $(WORKSPACE_DIR)
+	@for f in AGENTS.md SOUL.md USER.md; do \
+		src="$(CURDIR)/$$f"; \
+		dst="$(WORKSPACE_DIR)/$$f"; \
+		if [ ! -f "$$src" ]; then \
+			continue; \
+		fi; \
+		if [ ! -f "$$dst" ]; then \
+			cp "$$src" "$$dst"; \
+			echo "  ✓ Added $$f"; \
+			continue; \
+		fi; \
+		begin="# >>> CLAWGO MANAGED BLOCK: $$f >>>"; \
+		end="# <<< CLAWGO MANAGED BLOCK: $$f <<<"; \
+		tmp="$$(mktemp)"; \
+		if grep -Fq "$$begin" "$$dst"; then \
+			awk -v b="$$begin" -v e="$$end" -v src="$$src" '\
+				BEGIN { in_block = 0 } \
+				$$0 == b { \
+					print; \
+					while ((getline line < src) > 0) print line; \
+					close(src); \
+					in_block = 1; \
+					next; \
+				} \
+				$$0 == e { in_block = 0; print; next } \
+				!in_block { print } \
+			' "$$dst" > "$$tmp"; \
+		else \
+			cat "$$dst" > "$$tmp"; \
+			printf "\n%s\n" "$$begin" >> "$$tmp"; \
+			cat "$$src" >> "$$tmp"; \
+			printf "\n%s\n" "$$end" >> "$$tmp"; \
+		fi; \
+		mv "$$tmp" "$$dst"; \
+		echo "  ✓ Updated $$f (incremental)"; \
+	done
 
 ## install-user: Install clawgo to ~/.local and copy builtin skills
 install-user:

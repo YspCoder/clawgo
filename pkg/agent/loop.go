@@ -100,6 +100,25 @@ type autonomyIntent struct {
 	focus        string
 }
 
+type autonomyIntentLLMResponse struct {
+	Action      string  `json:"action"`
+	IdleMinutes int     `json:"idle_minutes"`
+	Focus       string  `json:"focus"`
+	Confidence  float64 `json:"confidence"`
+}
+
+type autoLearnIntentLLMResponse struct {
+	Action          string  `json:"action"`
+	IntervalMinutes int     `json:"interval_minutes"`
+	Confidence      float64 `json:"confidence"`
+}
+
+type taskExecutionDirectivesLLMResponse struct {
+	Task        string  `json:"task"`
+	StageReport bool    `json:"stage_report"`
+	Confidence  float64 `json:"confidence"`
+}
+
 type stageReporter struct {
 	onUpdate func(content string)
 }
@@ -820,7 +839,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	al.noteAutonomyUserActivity(msg)
 
-	if intent, ok := parseAutonomyIntent(msg.Content); ok {
+	if intent, ok := al.detectAutonomyIntent(ctx, msg.Content); ok {
 		switch intent.action {
 		case "start":
 			idle := autonomyDefaultIdleInterval
@@ -843,7 +862,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	if intent, ok := parseAutoLearnIntent(msg.Content); ok {
+	if intent, ok := al.detectAutoLearnIntent(ctx, msg.Content); ok {
 		switch intent.action {
 		case "start":
 			interval := autoLearnDefaultInterval
@@ -862,6 +881,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	directives := parseTaskExecutionDirectives(msg.Content)
+	if inferred, ok := al.inferTaskExecutionDirectives(ctx, msg.Content); ok {
+		// Explicit /run/@run command always has higher priority than inferred directives.
+		if !isExplicitRunCommand(msg.Content) {
+			directives = inferred
+		}
+	}
 	userPrompt := directives.task
 	if strings.TrimSpace(userPrompt) == "" {
 		userPrompt = msg.Content
@@ -1721,46 +1746,16 @@ func parseTaskExecutionDirectives(content string) taskExecutionDirectives {
 		}
 	}
 
-	if strings.Contains(text, "自动运行任务") {
-		directive.stageReport = directive.stageReport || hasStageReportHint(text)
-		start := strings.Index(text, "自动运行任务")
-		task := strings.TrimSpace(text[start+len("自动运行任务"):])
-		task = strings.TrimLeft(task, "：:，,。;； ")
-		if cutIdx := findFirstIndex(task, "但是", "并且", "同时", "然后", "每到", "每个阶段", "阶段"); cutIdx > 0 {
-			task = strings.TrimSpace(task[:cutIdx])
-		}
-		task = strings.Trim(task, "：:，,。;； ")
-		if task != "" {
-			directive.task = task
-		}
-	}
-
-	if directive.stageReport || hasStageReportHint(text) {
-		directive.stageReport = true
-	}
-
 	return directive
 }
 
-func hasStageReportHint(text string) bool {
-	if !strings.Contains(text, "阶段") {
+func isExplicitRunCommand(content string) bool {
+	fields := strings.Fields(strings.TrimSpace(content))
+	if len(fields) == 0 {
 		return false
 	}
-	return strings.Contains(text, "报告") || strings.Contains(text, "汇报") || strings.Contains(strings.ToLower(text), "report")
-}
-
-func findFirstIndex(text string, markers ...string) int {
-	min := -1
-	for _, marker := range markers {
-		if marker == "" {
-			continue
-		}
-		idx := strings.Index(text, marker)
-		if idx >= 0 && (min == -1 || idx < min) {
-			min = idx
-		}
-	}
-	return min
+	head := strings.ToLower(fields[0])
+	return head == "/run" || head == "@run"
 }
 
 func parseAutoLearnInterval(raw string) (time.Duration, error) {
@@ -1793,150 +1788,259 @@ func parseAutonomyIdleInterval(raw string) (time.Duration, error) {
 	return 0, fmt.Errorf("invalid idle interval: %s (examples: 30m, 1h)", raw)
 }
 
+func (al *AgentLoop) detectAutonomyIntent(ctx context.Context, content string) (autonomyIntent, bool) {
+	if intent, ok := al.inferAutonomyIntent(ctx, content); ok {
+		return intent, true
+	}
+	return parseAutonomyIntent(content)
+}
+
+func (al *AgentLoop) detectAutoLearnIntent(ctx context.Context, content string) (autoLearnIntent, bool) {
+	if intent, ok := al.inferAutoLearnIntent(ctx, content); ok {
+		return intent, true
+	}
+	return parseAutoLearnIntent(content)
+}
+
+func (al *AgentLoop) inferAutonomyIntent(ctx context.Context, content string) (autonomyIntent, bool) {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return autonomyIntent{}, false
+	}
+
+	// Avoid adding noticeable latency for very long task messages.
+	if len(text) > 800 {
+		return autonomyIntent{}, false
+	}
+
+	systemPrompt := `You classify autonomy-control intent for an AI assistant.
+Return JSON only, no markdown.
+Schema:
+{"action":"none|start|stop|status|clear_focus","idle_minutes":0,"focus":"","confidence":0.0}
+Rules:
+- "start": user asks assistant to enter autonomous/self-driven mode.
+- "stop": user asks assistant to disable autonomous mode.
+- "status": user asks autonomy mode status.
+- "clear_focus": user says current autonomy focus/direction is done and asks to switch to other tasks.
+- "none": anything else.
+- confidence: 0..1`
+
+	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: text},
+	}, nil, map[string]interface{}{
+		"max_tokens":  220,
+		"temperature": 0.0,
+	})
+	if err != nil || resp == nil {
+		return autonomyIntent{}, false
+	}
+
+	raw := extractJSONObject(resp.Content)
+	if raw == "" {
+		return autonomyIntent{}, false
+	}
+
+	var parsed autonomyIntentLLMResponse
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return autonomyIntent{}, false
+	}
+
+	action := strings.ToLower(strings.TrimSpace(parsed.Action))
+	switch action {
+	case "start", "stop", "status", "clear_focus":
+	default:
+		return autonomyIntent{}, false
+	}
+
+	if parsed.Confidence < 0.75 {
+		return autonomyIntent{}, false
+	}
+
+	intent := autonomyIntent{
+		action: action,
+		focus:  strings.TrimSpace(parsed.Focus),
+	}
+	if parsed.IdleMinutes > 0 {
+		d := time.Duration(parsed.IdleMinutes) * time.Minute
+		intent.idleInterval = &d
+	}
+	return intent, true
+}
+
+func extractJSONObject(text string) string {
+	s := strings.TrimSpace(text)
+	if s == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(s, "```") {
+		s = strings.TrimPrefix(s, "```json")
+		s = strings.TrimPrefix(s, "```")
+		s = strings.TrimSuffix(s, "```")
+		s = strings.TrimSpace(s)
+	}
+
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start < 0 || end <= start {
+		return ""
+	}
+	return strings.TrimSpace(s[start : end+1])
+}
+
+func (al *AgentLoop) inferAutoLearnIntent(ctx context.Context, content string) (autoLearnIntent, bool) {
+	text := strings.TrimSpace(content)
+	if text == "" || len(text) > 800 {
+		return autoLearnIntent{}, false
+	}
+
+	systemPrompt := `You classify auto-learning-control intent for an AI assistant.
+Return JSON only.
+Schema:
+{"action":"none|start|stop|status","interval_minutes":0,"confidence":0.0}
+Rules:
+- "start": user asks assistant to start autonomous learning loop.
+- "stop": user asks assistant to stop autonomous learning loop.
+- "status": user asks learning loop status.
+- "none": anything else.
+- confidence: 0..1`
+
+	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: text},
+	}, nil, map[string]interface{}{
+		"max_tokens":  180,
+		"temperature": 0.0,
+	})
+	if err != nil || resp == nil {
+		return autoLearnIntent{}, false
+	}
+
+	raw := extractJSONObject(resp.Content)
+	if raw == "" {
+		return autoLearnIntent{}, false
+	}
+
+	var parsed autoLearnIntentLLMResponse
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return autoLearnIntent{}, false
+	}
+
+	action := strings.ToLower(strings.TrimSpace(parsed.Action))
+	switch action {
+	case "start", "stop", "status":
+	default:
+		return autoLearnIntent{}, false
+	}
+	if parsed.Confidence < 0.75 {
+		return autoLearnIntent{}, false
+	}
+
+	intent := autoLearnIntent{action: action}
+	if parsed.IntervalMinutes > 0 {
+		d := time.Duration(parsed.IntervalMinutes) * time.Minute
+		intent.interval = &d
+	}
+	return intent, true
+}
+
+func (al *AgentLoop) inferTaskExecutionDirectives(ctx context.Context, content string) (taskExecutionDirectives, bool) {
+	text := strings.TrimSpace(content)
+	if text == "" || len(text) > 1200 {
+		return taskExecutionDirectives{}, false
+	}
+
+	systemPrompt := `Extract execution directives from user message.
+Return JSON only.
+Schema:
+{"task":"","stage_report":false,"confidence":0.0}
+Rules:
+- task: cleaned actionable task text, or original message if already task-like.
+- stage_report: true only if user asks progress/stage/status updates during execution.
+- confidence: 0..1`
+
+	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: text},
+	}, nil, map[string]interface{}{
+		"max_tokens":  220,
+		"temperature": 0.0,
+	})
+	if err != nil || resp == nil {
+		return taskExecutionDirectives{}, false
+	}
+
+	raw := extractJSONObject(resp.Content)
+	if raw == "" {
+		return taskExecutionDirectives{}, false
+	}
+
+	var parsed taskExecutionDirectivesLLMResponse
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return taskExecutionDirectives{}, false
+	}
+	if parsed.Confidence < 0.7 {
+		return taskExecutionDirectives{}, false
+	}
+
+	task := strings.TrimSpace(parsed.Task)
+	if task == "" {
+		task = text
+	}
+	return taskExecutionDirectives{
+		task:        task,
+		stageReport: parsed.StageReport,
+	}, true
+}
+
 func parseAutonomyIntent(content string) (autonomyIntent, bool) {
 	text := strings.TrimSpace(content)
 	if text == "" {
 		return autonomyIntent{}, false
 	}
 
-	if strings.Contains(text, "停止自主模式") ||
-		strings.Contains(text, "关闭自主模式") ||
-		strings.Contains(text, "退出自主模式") ||
-		strings.Contains(text, "别主动找我") ||
-		strings.Contains(text, "不要主动找我") {
-		return autonomyIntent{action: "stop"}, true
-	}
-
-	if strings.Contains(text, "自主模式状态") ||
-		strings.Contains(text, "查看自主模式") ||
-		strings.Contains(text, "你现在是自主模式") {
-		return autonomyIntent{action: "status"}, true
-	}
-	if strings.Contains(text, "方向执行完成") ||
-		strings.Contains(text, "方向完成了") ||
-		strings.Contains(text, "研究方向完成了") ||
-		strings.Contains(text, "可以去执行别的") ||
-		strings.Contains(text, "改做别的") ||
-		strings.Contains(text, "先做其他") {
-		return autonomyIntent{action: "clear_focus"}, true
-	}
-
-	hasAutoAction := strings.Contains(text, "自动拆解") ||
-		strings.Contains(text, "自动执行") ||
-		strings.Contains(text, "主动找我") ||
-		strings.Contains(text, "不用我一直问") ||
-		strings.Contains(text, "你自己推进")
-	hasPersistentHint := strings.Contains(text, "从现在开始") ||
-		strings.Contains(text, "以后") ||
-		strings.Contains(text, "长期") ||
-		strings.Contains(text, "持续") ||
-		strings.Contains(text, "一直") ||
-		strings.Contains(text, "我不理你") ||
-		strings.Contains(text, "我不说话") ||
-		strings.Contains(text, "空闲时")
-
-	startHint := strings.Contains(text, "开启自主模式") ||
-		strings.Contains(text, "开始自主模式") ||
-		strings.Contains(text, "进入自主模式") ||
-		strings.Contains(text, "启用自主模式") ||
-		strings.Contains(text, "切到自主模式") ||
-		(hasAutoAction && hasPersistentHint)
-
-	if !startHint {
+	fields := strings.Fields(strings.ToLower(text))
+	if len(fields) < 2 || fields[0] != "autonomy" {
 		return autonomyIntent{}, false
 	}
-
-	focus := extractAutonomyFocus(text)
-	if d, ok := extractChineseAutoLearnInterval(text); ok {
-		return autonomyIntent{action: "start", idleInterval: &d, focus: focus}, true
-	}
-	return autonomyIntent{action: "start", focus: focus}, true
-}
-
-func extractAutonomyFocus(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-
-	patterns := []string{
-		"研究方向是",
-		"研究方向:",
-		"研究方向：",
-		"方向是",
-		"方向:",
-		"方向：",
-		"聚焦在",
-		"重点研究",
-	}
-	for _, marker := range patterns {
-		if idx := strings.Index(text, marker); idx >= 0 {
-			focus := strings.TrimSpace(text[idx+len(marker):])
-			focus = strings.Trim(focus, "，,。;； ")
-			if cut := findFirstIndex(focus, "并且每", "然后", "每", "空闲", "主动", "汇报", "。"); cut > 0 {
-				focus = strings.TrimSpace(focus[:cut])
+	intent := autonomyIntent{action: fields[1]}
+	if intent.action == "start" && len(fields) >= 3 {
+		if d, err := parseAutonomyIdleInterval(fields[2]); err == nil {
+			intent.idleInterval = &d
+			if len(fields) >= 4 {
+				intent.focus = strings.TrimSpace(strings.Join(strings.Fields(text)[3:], " "))
 			}
-			return strings.Trim(focus, "，,。;； ")
+		} else {
+			intent.focus = strings.TrimSpace(strings.Join(strings.Fields(text)[2:], " "))
 		}
 	}
-	return ""
+	switch intent.action {
+	case "start", "stop", "status", "clear_focus":
+		return intent, true
+	default:
+		return autonomyIntent{}, false
+	}
 }
 
 func parseAutoLearnIntent(content string) (autoLearnIntent, bool) {
 	text := strings.TrimSpace(content)
-	if text == "" || !strings.Contains(text, "自动学习") {
+	fields := strings.Fields(strings.ToLower(text))
+	if len(fields) < 2 || fields[0] != "autolearn" {
 		return autoLearnIntent{}, false
 	}
-
-	if strings.Contains(text, "停止自动学习") ||
-		strings.Contains(text, "关闭自动学习") ||
-		strings.Contains(text, "暂停自动学习") {
-		return autoLearnIntent{action: "stop"}, true
-	}
-
-	if strings.Contains(text, "自动学习状态") ||
-		strings.Contains(text, "查看自动学习") ||
-		strings.Contains(text, "自动学习还在") ||
-		strings.Contains(text, "自动学习进度") {
-		return autoLearnIntent{action: "status"}, true
-	}
-
-	if strings.Contains(text, "开始自动学习") ||
-		strings.Contains(text, "开启自动学习") ||
-		strings.Contains(text, "启动自动学习") ||
-		strings.Contains(text, "打开自动学习") {
-		if d, ok := extractChineseAutoLearnInterval(text); ok {
-			return autoLearnIntent{action: "start", interval: &d}, true
+	intent := autoLearnIntent{action: fields[1]}
+	if intent.action == "start" && len(fields) >= 3 {
+		if d, err := parseAutoLearnInterval(fields[2]); err == nil {
+			intent.interval = &d
 		}
-		return autoLearnIntent{action: "start"}, true
 	}
-
-	return autoLearnIntent{}, false
-}
-
-func extractChineseAutoLearnInterval(text string) (time.Duration, bool) {
-	patterns := []struct {
-		re   *regexp.Regexp
-		unit time.Duration
-	}{
-		{re: regexp.MustCompile(`每\s*(\d+)\s*秒`), unit: time.Second},
-		{re: regexp.MustCompile(`每\s*(\d+)\s*分钟`), unit: time.Minute},
-		{re: regexp.MustCompile(`每\s*(\d+)\s*小时`), unit: time.Hour},
+	switch intent.action {
+	case "start", "stop", "status":
+		return intent, true
+	default:
+		return autoLearnIntent{}, false
 	}
-
-	for _, p := range patterns {
-		m := p.re.FindStringSubmatch(text)
-		if len(m) != 2 {
-			continue
-		}
-		n, err := strconv.Atoi(m[1])
-		if err != nil || n <= 0 {
-			continue
-		}
-		return time.Duration(n) * p.unit, true
-	}
-
-	return 0, false
 }
 
 func (al *AgentLoop) handleSlashCommand(msg bus.InboundMessage) (bool, string, error) {
