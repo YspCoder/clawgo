@@ -59,6 +59,7 @@ type autonomySession struct {
 	lastUserAt   time.Time
 	lastNudgeAt  time.Time
 	pending      bool
+	focus        string
 }
 
 type AgentLoop struct {
@@ -96,6 +97,7 @@ type autoLearnIntent struct {
 type autonomyIntent struct {
 	action       string
 	idleInterval *time.Duration
+	focus        string
 }
 
 type stageReporter struct {
@@ -412,7 +414,7 @@ func (al *AgentLoop) stopAllAutonomySessions() {
 	}
 }
 
-func (al *AgentLoop) startAutonomy(msg bus.InboundMessage, idleInterval time.Duration) string {
+func (al *AgentLoop) startAutonomy(msg bus.InboundMessage, idleInterval time.Duration, focus string) string {
 	if msg.Channel == "cli" {
 		return "自主模式需要在 gateway 运行模式下使用（持续消息循环）。"
 	}
@@ -438,12 +440,30 @@ func (al *AgentLoop) startAutonomy(msg bus.InboundMessage, idleInterval time.Dur
 		started:      time.Now(),
 		idleInterval: idleInterval,
 		lastUserAt:   time.Now(),
+		focus:        strings.TrimSpace(focus),
 	}
 	al.autonomyBySess[msg.SessionKey] = s
 	al.autonomyMu.Unlock()
 
 	go al.runAutonomyLoop(sessionCtx, msg)
-	return fmt.Sprintf("自主模式已开启：自动拆解执行 + 阶段汇报；空闲超过 %s 会主动推进并汇报。", idleInterval.Truncate(time.Second))
+	if s.focus != "" {
+		al.bus.PublishInbound(bus.InboundMessage{
+			Channel:    msg.Channel,
+			SenderID:   "autonomy",
+			ChatID:     msg.ChatID,
+			SessionKey: msg.SessionKey,
+			Content:    buildAutonomyFocusPrompt(s.focus),
+			Metadata: map[string]string{
+				"source": "autonomy",
+				"round":  "0",
+				"mode":   "focus_bootstrap",
+			},
+		})
+	}
+	if s.focus != "" {
+		return fmt.Sprintf("自主模式已开启，当前研究方向：%s。空闲超过 %s 会继续按该方向主动推进并汇报。", s.focus, idleInterval.Truncate(time.Second))
+	}
+	return fmt.Sprintf("自主模式已开启：自动拆解执行 + 阶段回报；空闲超过 %s 会主动推进并汇报。", idleInterval.Truncate(time.Second))
 }
 
 func (al *AgentLoop) stopAutonomy(sessionKey string) bool {
@@ -493,12 +513,16 @@ func (al *AgentLoop) autonomyStatus(sessionKey string) string {
 
 	uptime := time.Since(s.started).Truncate(time.Second)
 	idle := time.Since(s.lastUserAt).Truncate(time.Second)
+	focus := strings.TrimSpace(s.focus)
+	if focus == "" {
+		focus = "未设置"
+	}
 	return fmt.Sprintf("自主模式运行中：空闲阈值 %s，已运行 %s，最近用户活跃距今 %s，自动推进 %d 轮。",
 		s.idleInterval.Truncate(time.Second),
 		uptime,
 		idle,
 		s.rounds,
-	)
+	) + fmt.Sprintf(" 当前研究方向：%s。", focus)
 }
 
 func (al *AgentLoop) runAutonomyLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -535,6 +559,7 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 	round := s.rounds
 	s.lastNudgeAt = now
 	s.pending = true
+	focus := strings.TrimSpace(s.focus)
 	idleFor := now.Sub(s.lastUserAt).Truncate(time.Second)
 	al.autonomyMu.Unlock()
 
@@ -549,7 +574,7 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 		SenderID:   "autonomy",
 		ChatID:     msg.ChatID,
 		SessionKey: msg.SessionKey,
-		Content:    buildAutonomyFollowUpPrompt(round),
+		Content:    buildAutonomyFollowUpPrompt(round, focus),
 		Metadata: map[string]string{
 			"source": "autonomy",
 			"round":  strconv.Itoa(round),
@@ -567,8 +592,17 @@ func (al *AgentLoop) finishAutonomyRound(sessionKey string) {
 	}
 }
 
-func buildAutonomyFollowUpPrompt(round int) string {
-	return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请基于当前会话上下文和已完成工作，自主完成一个高价值下一步，并给出简短进展汇报。", round)
+func buildAutonomyFollowUpPrompt(round int, focus string) string {
+	focus = strings.TrimSpace(focus)
+	if focus == "" {
+		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请基于当前会话上下文和已完成工作，自主完成一个高价值下一步，并给出简短进展汇报。", round)
+	}
+	return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请围绕研究方向“%s”继续推进高价值下一步，并给出简短进展汇报。", round, focus)
+}
+
+func buildAutonomyFocusPrompt(focus string) string {
+	focus = strings.TrimSpace(focus)
+	return fmt.Sprintf("自主模式已启动，本轮请优先围绕研究方向“%s”展开：先明确本轮目标，再执行并汇报阶段性进展与结果。", focus)
 }
 
 func (al *AgentLoop) startAutoLearner(msg bus.InboundMessage, interval time.Duration) string {
@@ -781,7 +815,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			if intent.idleInterval != nil {
 				idle = *intent.idleInterval
 			}
-			return al.startAutonomy(msg, idle), nil
+			return al.startAutonomy(msg, idle, intent.focus), nil
 		case "stop":
 			if al.stopAutonomy(msg.SessionKey) {
 				return "自主模式已关闭。", nil
@@ -984,7 +1018,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
 
 	// 如果 finalContent 中没有包含 tool calls (即最后一次 LLM 返回的结果)
-	// 我们已经通过循环内部의 AddMessageFull 存储了前面的步骤
+	// 我们已经通过循环内部的 AddMessageFull 存储了前面的步骤
 	// 这里的 AddMessageFull 会存储最终回复
 	al.sessions.AddMessageFull(sessionKey, providers.Message{
 		Role:    "assistant",
@@ -1787,10 +1821,40 @@ func parseAutonomyIntent(content string) (autonomyIntent, bool) {
 		return autonomyIntent{}, false
 	}
 
+	focus := extractAutonomyFocus(text)
 	if d, ok := extractChineseAutoLearnInterval(text); ok {
-		return autonomyIntent{action: "start", idleInterval: &d}, true
+		return autonomyIntent{action: "start", idleInterval: &d, focus: focus}, true
 	}
-	return autonomyIntent{action: "start"}, true
+	return autonomyIntent{action: "start", focus: focus}, true
+}
+
+func extractAutonomyFocus(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+
+	patterns := []string{
+		"研究方向是",
+		"研究方向:",
+		"研究方向：",
+		"方向是",
+		"方向:",
+		"方向：",
+		"聚焦在",
+		"重点研究",
+	}
+	for _, marker := range patterns {
+		if idx := strings.Index(text, marker); idx >= 0 {
+			focus := strings.TrimSpace(text[idx+len(marker):])
+			focus = strings.Trim(focus, "，,。;； ")
+			if cut := findFirstIndex(focus, "并", "然后", "每", "空闲", "主动", "汇报", "。"); cut > 0 {
+				focus = strings.TrimSpace(focus[:cut])
+			}
+			return strings.Trim(focus, "，,。;； ")
+		}
+	}
+	return ""
 }
 
 func parseAutoLearnIntent(content string) (autoLearnIntent, bool) {
@@ -1909,14 +1973,19 @@ func (al *AgentLoop) handleSlashCommand(msg bus.InboundMessage) (bool, string, e
 		switch strings.ToLower(fields[1]) {
 		case "start":
 			idle := autonomyDefaultIdleInterval
+			focus := ""
 			if len(fields) >= 3 {
 				d, err := parseAutonomyIdleInterval(fields[2])
 				if err != nil {
-					return true, "", err
+					focus = strings.Join(fields[2:], " ")
+				} else {
+					idle = d
 				}
-				idle = d
 			}
-			return true, al.startAutonomy(msg, idle), nil
+			if focus == "" && len(fields) >= 4 {
+				focus = strings.Join(fields[3:], " ")
+			}
+			return true, al.startAutonomy(msg, idle, focus), nil
 		case "stop":
 			if al.stopAutonomy(msg.SessionKey) {
 				return true, "自主模式已关闭。", nil

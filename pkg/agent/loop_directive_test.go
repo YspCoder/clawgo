@@ -93,7 +93,7 @@ func TestParseAutoLearnIntent_StatusNaturalLanguage(t *testing.T) {
 }
 
 func TestParseAutonomyIntent_StartNaturalLanguage(t *testing.T) {
-	intent, ok := parseAutonomyIntent("以后你自动拆解并自动执行任务，每15分钟主动找我汇报一次")
+	intent, ok := parseAutonomyIntent("以后你自动拆解并自动执行任务，每15分钟主动找我汇报一次，研究方向是日志异常聚类")
 	if !ok {
 		t.Fatalf("expected intent")
 	}
@@ -102,6 +102,9 @@ func TestParseAutonomyIntent_StartNaturalLanguage(t *testing.T) {
 	}
 	if intent.idleInterval == nil || *intent.idleInterval != 15*time.Minute {
 		t.Fatalf("unexpected interval: %v", intent.idleInterval)
+	}
+	if intent.focus != "日志异常聚类" {
+		t.Fatalf("unexpected focus: %q", intent.focus)
 	}
 }
 
@@ -138,5 +141,12 @@ func TestParseAutonomyIdleInterval(t *testing.T) {
 func TestParseAutonomyIntent_NoFalsePositiveOnSingleTask(t *testing.T) {
 	if intent, ok := parseAutonomyIntent("请自动执行这个任务"); ok {
 		t.Fatalf("expected no intent, got: %+v", intent)
+	}
+}
+
+func TestExtractAutonomyFocus_EmptyWhenNotProvided(t *testing.T) {
+	focus := extractAutonomyFocus("开启自主模式，每30分钟主动汇报")
+	if focus != "" {
+		t.Fatalf("expected empty focus, got: %q", focus)
 	}
 }
