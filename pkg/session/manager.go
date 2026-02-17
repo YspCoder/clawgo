@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -227,6 +228,22 @@ func (sm *SessionManager) MessageCount(key string) int {
 	session.mu.RLock()
 	defer session.mu.RUnlock()
 	return len(session.Messages)
+}
+
+func (sm *SessionManager) ListSessionKeys() []string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	keys := make([]string, 0, len(sm.sessions))
+	for k := range sm.sessions {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (sm *SessionManager) CompactHistory(key, summary string, keepLast int) (int, int, error) {

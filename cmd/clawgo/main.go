@@ -857,6 +857,7 @@ func gatewayCmd() {
 	}
 
 	go agentLoop.Run(ctx)
+	go runGatewayStartupSelfCheck(ctx, agentLoop, cfg.WorkspacePath())
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -963,6 +964,50 @@ func gatewayCmd() {
 			return
 		}
 	}
+}
+
+func runGatewayStartupSelfCheck(parent context.Context, agentLoop *agent.AgentLoop, workspace string) {
+	if agentLoop == nil {
+		return
+	}
+
+	checkCtx, cancel := context.WithTimeout(parent, 10*time.Minute)
+	defer cancel()
+
+	prompt := buildGatewayStartupSelfCheckPrompt(workspace)
+	report := agentLoop.RunStartupSelfCheckAllSessions(checkCtx, prompt, "gateway:startup-self-check")
+	logger.InfoCF("gateway", "Startup self-check completed", map[string]interface{}{
+		"sessions_total":     report.TotalSessions,
+		"sessions_compacted": report.CompactedSessions,
+		"sessions_checked":   report.CheckedSessions,
+		"sessions_failed":    report.FailedSessions,
+	})
+}
+
+func buildGatewayStartupSelfCheckPrompt(workspace string) string {
+	now := time.Now().Format(time.RFC3339)
+	notesPath := filepath.Join(workspace, "memory", "HEARTBEAT.md")
+	notes := ""
+	if data, err := os.ReadFile(notesPath); err == nil {
+		notes = strings.TrimSpace(string(data))
+	}
+
+	var sb strings.Builder
+	sb.WriteString("网关刚刚启动，请立即执行一次自检。\n")
+	sb.WriteString("目标：基于你自己的历史记录与记忆，判断是否有未完成任务需要继续执行，或是否需要立即采取其他行动。\n")
+	sb.WriteString("要求：\n")
+	sb.WriteString("1) 先给出结论（继续执行 / 暂无待续任务 / 其他行动）。\n")
+	sb.WriteString("2) 如果需要继续，请直接开始推进，并在关键节点自然汇报。\n")
+	sb.WriteString("3) 如果无需继续，也请给出下一步建议。\n")
+	sb.WriteString("4) 将本次结论简要写入 memory/MEMORY.md 便于下次启动继承。\n")
+	sb.WriteString("\n")
+	sb.WriteString("当前时间: ")
+	sb.WriteString(now)
+	if notes != "" {
+		sb.WriteString("\n\n参考 HEARTBEAT.md:\n")
+		sb.WriteString(notes)
+	}
+	return sb.String()
 }
 
 func maybePromptAndEscalateRoot(command string) {

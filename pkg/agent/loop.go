@@ -127,6 +127,13 @@ type stageReporter struct {
 	onUpdate func(content string)
 }
 
+type StartupSelfCheckReport struct {
+	TotalSessions     int
+	CompactedSessions int
+	CheckedSessions   int
+	FailedSessions    int
+}
+
 func (sr *stageReporter) Publish(stage int, total int, status string, detail string) {
 	if sr == nil || sr.onUpdate == nil {
 		return
@@ -1534,6 +1541,72 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	info["skills"] = al.contextBuilder.GetSkillsInfo()
 
 	return info
+}
+
+func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context, prompt, fallbackSessionKey string) StartupSelfCheckReport {
+	report := StartupSelfCheckReport{}
+	if al == nil || al.sessions == nil {
+		return report
+	}
+
+	fallbackSessionKey = strings.TrimSpace(fallbackSessionKey)
+	if fallbackSessionKey == "" {
+		fallbackSessionKey = "gateway:startup-self-check"
+	}
+
+	keys := al.sessions.ListSessionKeys()
+	seen := make(map[string]struct{}, len(keys)+1)
+	sessions := make([]string, 0, len(keys)+1)
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		sessions = append(sessions, key)
+	}
+	if _, ok := seen[fallbackSessionKey]; !ok {
+		sessions = append(sessions, fallbackSessionKey)
+	}
+	report.TotalSessions = len(sessions)
+
+	for _, sessionKey := range sessions {
+		select {
+		case <-ctx.Done():
+			return report
+		default:
+		}
+
+		before := al.sessions.MessageCount(sessionKey)
+		if err := al.persistSessionWithCompaction(ctx, sessionKey); err != nil {
+			logger.WarnCF("agent", "Startup self-check pre-compaction failed", map[string]interface{}{
+				"session_key":     sessionKey,
+				logger.FieldError: err.Error(),
+			})
+		}
+		after := al.sessions.MessageCount(sessionKey)
+		if after < before {
+			report.CompactedSessions++
+		}
+
+		runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		_, err := al.ProcessDirect(runCtx, prompt, sessionKey)
+		cancel()
+		if err != nil {
+			report.FailedSessions++
+			logger.WarnCF("agent", "Startup self-check task failed", map[string]interface{}{
+				"session_key":     sessionKey,
+				logger.FieldError: err.Error(),
+			})
+			continue
+		}
+		report.CheckedSessions++
+	}
+
+	return report
 }
 
 // formatMessagesForLog formats messages for logging
