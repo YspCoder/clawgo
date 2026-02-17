@@ -19,6 +19,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -364,7 +365,7 @@ func (al *AgentLoop) runSessionWorker(ctx context.Context, sessionKey string, wo
 					if errors.Is(err, context.Canceled) {
 						return
 					}
-					response = al.naturalizeUserFacingText(taskCtx, fmt.Sprintf("处理消息时发生错误：%v", err))
+					response = al.formatProcessingErrorMessage(msg, err)
 				}
 
 				if response != "" && shouldPublishSyntheticResponse(msg) {
@@ -384,6 +385,49 @@ func (al *AgentLoop) clearWorkerCancel(worker *sessionWorker) {
 	worker.cancelMu.Lock()
 	worker.cancel = nil
 	worker.cancelMu.Unlock()
+}
+
+func (al *AgentLoop) formatProcessingErrorMessage(msg bus.InboundMessage, err error) string {
+	if al.preferChineseUserFacingText(msg.SessionKey, msg.Content) {
+		return err.Error()
+	}
+	return err.Error()
+}
+
+func (al *AgentLoop) preferChineseUserFacingText(sessionKey, currentContent string) bool {
+	zhCount, enCount := countLanguageSignals(currentContent)
+
+	if al != nil && al.sessions != nil && strings.TrimSpace(sessionKey) != "" {
+		history := al.sessions.GetHistory(sessionKey)
+		seenUserTurns := 0
+		for i := len(history) - 1; i >= 0 && seenUserTurns < 6; i-- {
+			if history[i].Role != "user" {
+				continue
+			}
+			seenUserTurns++
+			z, e := countLanguageSignals(history[i].Content)
+			zhCount += z
+			enCount += e
+		}
+	}
+
+	if zhCount == 0 && enCount == 0 {
+		return false
+	}
+	return zhCount >= enCount
+}
+
+func countLanguageSignals(text string) (zhCount int, enCount int) {
+	for _, r := range text {
+		if unicode.In(r, unicode.Han) {
+			zhCount++
+			continue
+		}
+		if r <= unicode.MaxASCII && unicode.IsLetter(r) {
+			enCount++
+		}
+	}
+	return zhCount, enCount
 }
 
 func (al *AgentLoop) removeWorker(sessionKey string, worker *sessionWorker) {
@@ -1547,12 +1591,12 @@ func (al *AgentLoop) callLLMWithModelFallback(
 		}
 
 		lastErr = err
-		if !isQuotaOrRateLimitError(err) {
+		if !shouldRetryWithFallbackModel(err) {
 			return nil, err
 		}
 
 		if idx < len(candidates)-1 {
-			logger.WarnCF("agent", "Model quota/rate-limit reached, trying fallback model", map[string]interface{}{
+			logger.WarnCF("agent", "Model request failed, trying fallback model", map[string]interface{}{
 				"failed_model":    model,
 				"next_model":      candidates[idx+1],
 				logger.FieldError: err.Error(),
@@ -1608,6 +1652,35 @@ func isQuotaOrRateLimitError(err error) bool {
 		}
 	}
 	return false
+}
+
+func isModelProviderSelectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	keywords := []string{
+		"unknown provider",
+		"unknown model",
+		"unsupported model",
+		"model not found",
+		"no such model",
+		"invalid model",
+		"does not exist",
+		"not available for model",
+	}
+
+	for _, keyword := range keywords {
+		if strings.Contains(msg, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldRetryWithFallbackModel(err error) bool {
+	return isQuotaOrRateLimitError(err) || isModelProviderSelectionError(err)
 }
 
 func buildProviderToolDefs(toolDefs []map[string]interface{}) ([]providers.ToolDefinition, error) {
@@ -2242,10 +2315,26 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 				return true, "", err
 			}
 			path := al.normalizeConfigPathForAgent(fields[2])
+			oldValue, oldExists := al.getMapValueByPathForAgent(cfgMap, path)
 			value := al.parseConfigValueForAgent(strings.Join(fields[3:], " "))
 			if err := al.setMapValueByPathForAgent(cfgMap, path, value); err != nil {
 				return true, "", err
 			}
+
+			modelSwitched := path == "agents.defaults.model" && (!oldExists || strings.TrimSpace(fmt.Sprintf("%v", oldValue)) != strings.TrimSpace(fmt.Sprintf("%v", value)))
+			compactedOnSwitch := false
+			if modelSwitched {
+				if err := al.compactContextBeforeModelSwitch(ctx, msg.SessionKey); err != nil {
+					logger.WarnCF("agent", "Pre-switch context compaction failed", map[string]interface{}{
+						"session_key":     msg.SessionKey,
+						logger.FieldError: err.Error(),
+					})
+				} else {
+					compactedOnSwitch = true
+				}
+			}
+
+			al.applyRuntimeModelConfig(path, value)
 
 			data, err := json.MarshalIndent(cfgMap, "", "  ")
 			if err != nil {
@@ -2266,7 +2355,13 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					}
 					return true, "", fmt.Errorf("hot reload failed, config rolled back: %w", err)
 				}
+				if modelSwitched && compactedOnSwitch {
+					return true, fmt.Sprintf("Updated %s = %v\nContext compacted before model switch\nHot reload not applied: %v", path, value, err), nil
+				}
 				return true, fmt.Sprintf("Updated %s = %v\nHot reload not applied: %v", path, value, err), nil
+			}
+			if modelSwitched && compactedOnSwitch {
+				return true, fmt.Sprintf("Updated %s = %v\nContext compacted before model switch\nGateway hot reload signal sent", path, value), nil
 			}
 			return true, fmt.Sprintf("Updated %s = %v\nGateway hot reload signal sent", path, value), nil
 		default:
@@ -2325,6 +2420,16 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 func (al *AgentLoop) getConfigPathForCommands() string {
 	if fromEnv := strings.TrimSpace(os.Getenv("CLAWGO_CONFIG")); fromEnv != "" {
 		return fromEnv
+	}
+	args := os.Args
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--config" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(arg, "--config=") {
+			return strings.TrimPrefix(arg, "--config=")
+		}
 	}
 	return filepath.Join(config.GetConfigDir(), "config.json")
 }
@@ -2405,6 +2510,113 @@ func (al *AgentLoop) rollbackConfigFromBackupForAgent(configPath, backupPath str
 
 func (al *AgentLoop) triggerGatewayReloadFromAgent() (bool, error) {
 	return configops.TriggerGatewayReload(al.getConfigPathForCommands(), errGatewayNotRunningSlash)
+}
+
+func (al *AgentLoop) compactContextBeforeModelSwitch(ctx context.Context, sessionKey string) error {
+	if strings.TrimSpace(sessionKey) == "" {
+		return nil
+	}
+
+	history := al.sessions.GetHistory(sessionKey)
+	if len(history) <= 1 {
+		return nil
+	}
+
+	keepRecent := al.compactionCfg.KeepRecentMessages
+	if keepRecent <= 0 {
+		keepRecent = 20
+	}
+	if keepRecent >= len(history) {
+		keepRecent = len(history) / 2
+	}
+	if keepRecent <= 0 || keepRecent >= len(history) {
+		return nil
+	}
+
+	maxSummaryChars := al.compactionCfg.MaxSummaryChars
+	if maxSummaryChars <= 0 {
+		maxSummaryChars = 6000
+	}
+	maxTranscriptChars := al.compactionCfg.MaxTranscriptChars
+	if maxTranscriptChars <= 0 {
+		maxTranscriptChars = 24000
+	}
+
+	compactUntil := len(history) - keepRecent
+	if compactUntil <= 0 {
+		return nil
+	}
+
+	currentSummary := al.sessions.GetSummary(sessionKey)
+	compactCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	newSummary, err := al.buildCompactedSummary(compactCtx, currentSummary, history[:compactUntil], maxTranscriptChars)
+	if err != nil {
+		return err
+	}
+	newSummary = strings.TrimSpace(newSummary)
+	if newSummary == "" {
+		return nil
+	}
+	if len(newSummary) > maxSummaryChars {
+		newSummary = truncateString(newSummary, maxSummaryChars)
+	}
+
+	before, after, err := al.sessions.CompactHistory(sessionKey, newSummary, keepRecent)
+	if err != nil {
+		return err
+	}
+	logger.InfoCF("agent", "Context compacted before model switch", map[string]interface{}{
+		"session_key":     sessionKey,
+		"before_messages": before,
+		"after_messages":  after,
+		"kept_recent":     keepRecent,
+		"summary_chars":   len(newSummary),
+		"model_after":     al.model,
+	})
+	return nil
+}
+
+func (al *AgentLoop) applyRuntimeModelConfig(path string, value interface{}) {
+	switch path {
+	case "agents.defaults.model":
+		newModel := strings.TrimSpace(fmt.Sprintf("%v", value))
+		if newModel == "" {
+			return
+		}
+		al.model = newModel
+	case "agents.defaults.model_fallbacks":
+		al.modelFallbacks = parseModelFallbacks(value)
+	}
+}
+
+func parseModelFallbacks(value interface{}) []string {
+	switch v := value.(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			s := strings.TrimSpace(item)
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			s := strings.TrimSpace(fmt.Sprintf("%v", item))
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		s := strings.TrimSpace(fmt.Sprintf("%v", value))
+		if s == "" {
+			return nil
+		}
+		return []string{s}
+	}
 }
 
 // truncateString truncates a string to max length
