@@ -1680,7 +1680,33 @@ func isModelProviderSelectionError(err error) bool {
 }
 
 func shouldRetryWithFallbackModel(err error) bool {
-	return isQuotaOrRateLimitError(err) || isModelProviderSelectionError(err)
+	return isQuotaOrRateLimitError(err) || isModelProviderSelectionError(err) || isGatewayTransientError(err)
+}
+
+func isGatewayTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	keywords := []string{
+		"status 502",
+		"status 503",
+		"status 504",
+		"bad gateway",
+		"service unavailable",
+		"gateway timeout",
+		"non-json response",
+		"unexpected end of json input",
+		"invalid character '<'",
+	}
+
+	for _, keyword := range keywords {
+		if strings.Contains(msg, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildProviderToolDefs(toolDefs []map[string]interface{}) ([]providers.ToolDefinition, error) {

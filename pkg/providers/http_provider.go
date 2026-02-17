@@ -105,8 +105,13 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API error (status %d, content-type %q): %s", resp.StatusCode, contentType, previewResponseBody(body))
+	}
+
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", resp.StatusCode, contentType, previewResponseBody(body))
 	}
 
 	return p.parseResponse(body)
@@ -194,6 +199,20 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 		FinishReason: choice.FinishReason,
 		Usage:        apiResponse.Usage,
 	}, nil
+}
+
+func previewResponseBody(body []byte) string {
+	preview := strings.TrimSpace(string(body))
+	preview = strings.ReplaceAll(preview, "\n", " ")
+	preview = strings.ReplaceAll(preview, "\r", " ")
+	if preview == "" {
+		return "<empty body>"
+	}
+	const maxLen = 240
+	if len(preview) > maxLen {
+		return preview[:maxLen] + "..."
+	}
+	return preview
 }
 
 func (p *HTTPProvider) GetDefaultModel() string {
