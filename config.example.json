@@ -6,7 +6,14 @@
       "model_fallbacks": ["gpt-4o-mini", "deepseek-chat"],
       "max_tokens": 8192,
       "temperature": 0.7,
-      "max_tool_iterations": 20
+      "max_tool_iterations": 20,
+      "context_compaction": {
+        "enabled": true,
+        "trigger_messages": 60,
+        "keep_recent_messages": 20,
+        "max_summary_chars": 6000,
+        "max_transcript_chars": 20000
+      }
     }
   },
   "channels": {

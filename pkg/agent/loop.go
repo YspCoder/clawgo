@@ -1680,7 +1680,7 @@ func isModelProviderSelectionError(err error) bool {
 }
 
 func shouldRetryWithFallbackModel(err error) bool {
-	return isQuotaOrRateLimitError(err) || isModelProviderSelectionError(err) || isGatewayTransientError(err)
+	return isQuotaOrRateLimitError(err) || isModelProviderSelectionError(err) || isGatewayTransientError(err) || isUpstreamAuthRoutingError(err)
 }
 
 func isGatewayTransientError(err error) bool {
@@ -1702,6 +1702,26 @@ func isGatewayTransientError(err error) bool {
 		"non-json response",
 		"unexpected end of json input",
 		"invalid character '<'",
+	}
+
+	for _, keyword := range keywords {
+		if strings.Contains(msg, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func isUpstreamAuthRoutingError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	keywords := []string{
+		"auth_unavailable",
+		"no auth available",
+		"upstream auth unavailable",
 	}
 
 	for _, keyword := range keywords {
@@ -1788,19 +1808,17 @@ func (al *AgentLoop) maybeCompactContext(ctx context.Context, sessionKey string)
 	}
 
 	messageCount := al.sessions.MessageCount(sessionKey)
-	if messageCount < cfg.TriggerMessages {
-		return nil
-	}
-
 	history := al.sessions.GetHistory(sessionKey)
-	if len(history) < cfg.TriggerMessages {
+	summary := al.sessions.GetSummary(sessionKey)
+	triggerByCount := messageCount >= cfg.TriggerMessages && len(history) >= cfg.TriggerMessages
+	triggerBySize := shouldCompactBySize(summary, history, cfg.MaxTranscriptChars)
+	if !triggerByCount && !triggerBySize {
 		return nil
 	}
 	if cfg.KeepRecentMessages >= len(history) {
 		return nil
 	}
 
-	summary := al.sessions.GetSummary(sessionKey)
 	compactUntil := len(history) - cfg.KeepRecentMessages
 	compactCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
@@ -1822,12 +1840,9 @@ func (al *AgentLoop) maybeCompactContext(ctx context.Context, sessionKey string)
 	}
 
 	logger.InfoCF("agent", "Context compacted automatically", map[string]interface{}{
-		"session_key":      sessionKey,
-		"before_messages":  before,
-		"after_messages":   after,
-		"kept_recent":      cfg.KeepRecentMessages,
-		"summary_chars":    len(newSummary),
-		"trigger_messages": cfg.TriggerMessages,
+		"before":         before,
+		"after":          after,
+		"trigger_reason": compactionTriggerReason(triggerByCount, triggerBySize),
 	})
 	return nil
 }
@@ -1865,28 +1880,114 @@ func formatCompactionTranscript(messages []providers.Message, maxChars int) stri
 		return ""
 	}
 
-	var sb strings.Builder
-	used := 0
+	lines := make([]string, 0, len(messages))
+	totalChars := 0
 	for _, m := range messages {
 		role := strings.TrimSpace(m.Role)
 		if role == "" {
 			role = "unknown"
 		}
 		line := fmt.Sprintf("[%s] %s\n", role, strings.TrimSpace(m.Content))
-		if len(line) > 1200 {
-			line = truncateString(line, 1200) + "\n"
+		maxLineLen := 1200
+		if role == "tool" {
+			maxLineLen = 420
 		}
-		if used+len(line) > maxChars {
-			remain := maxChars - used
-			if remain > 16 {
-				sb.WriteString(truncateString(line, remain))
-			}
+		if len(line) > maxLineLen {
+			line = truncateString(line, maxLineLen-1) + "\n"
+		}
+		lines = append(lines, line)
+		totalChars += len(line)
+	}
+
+	if totalChars <= maxChars {
+		return strings.TrimSpace(strings.Join(lines, ""))
+	}
+
+	// Keep both early context and recent context when transcript is oversized.
+	headBudget := maxChars / 3
+	if headBudget < 256 {
+		headBudget = maxChars / 2
+	}
+	tailBudget := maxChars - headBudget - 72
+	if tailBudget < 128 {
+		tailBudget = maxChars / 2
+	}
+
+	headEnd := 0
+	usedHead := 0
+	for i, line := range lines {
+		if usedHead+len(line) > headBudget {
 			break
 		}
-		sb.WriteString(line)
-		used += len(line)
+		usedHead += len(line)
+		headEnd = i + 1
 	}
-	return strings.TrimSpace(sb.String())
+
+	tailStart := len(lines)
+	usedTail := 0
+	for i := len(lines) - 1; i >= headEnd; i-- {
+		line := lines[i]
+		if usedTail+len(line) > tailBudget {
+			break
+		}
+		usedTail += len(line)
+		tailStart = i
+	}
+
+	var sb strings.Builder
+	for i := 0; i < headEnd; i++ {
+		sb.WriteString(lines[i])
+	}
+	omitted := tailStart - headEnd
+	if omitted > 0 {
+		sb.WriteString(fmt.Sprintf("...[%d messages omitted for compaction]...\n", omitted))
+	}
+	for i := tailStart; i < len(lines); i++ {
+		sb.WriteString(lines[i])
+	}
+
+	out := strings.TrimSpace(sb.String())
+	if len(out) > maxChars {
+		out = truncateString(out, maxChars)
+	}
+	return out
+}
+
+func shouldCompactBySize(summary string, history []providers.Message, maxTranscriptChars int) bool {
+	if maxTranscriptChars <= 0 || len(history) == 0 {
+		return false
+	}
+	return estimateCompactionChars(summary, history) >= maxTranscriptChars
+}
+
+func estimateCompactionChars(summary string, history []providers.Message) int {
+	total := len(strings.TrimSpace(summary))
+	for _, msg := range history {
+		total += len(strings.TrimSpace(msg.Role)) + len(strings.TrimSpace(msg.Content)) + 6
+		if msg.ToolCallID != "" {
+			total += len(msg.ToolCallID) + 8
+		}
+		for _, tc := range msg.ToolCalls {
+			total += len(tc.ID) + len(tc.Type) + len(tc.Name)
+			if tc.Function != nil {
+				total += len(tc.Function.Name) + len(tc.Function.Arguments)
+			}
+		}
+	}
+	return total
+}
+
+func compactionTriggerReason(byCount, bySize bool) string {
+	if byCount && bySize {
+		return "count+size"
+	}
+	if byCount {
+		return "count"
+	}
+	if bySize {
+		return "size"
+	}
+	return "none"
 }
 
 func parseTaskExecutionDirectives(content string) taskExecutionDirectives {
@@ -2344,23 +2445,9 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 				return true, "", err
 			}
 			path := al.normalizeConfigPathForAgent(fields[2])
-			oldValue, oldExists := al.getMapValueByPathForAgent(cfgMap, path)
 			value := al.parseConfigValueForAgent(strings.Join(fields[3:], " "))
 			if err := al.setMapValueByPathForAgent(cfgMap, path, value); err != nil {
 				return true, "", err
-			}
-
-			modelSwitched := path == "agents.defaults.model" && (!oldExists || strings.TrimSpace(fmt.Sprintf("%v", oldValue)) != strings.TrimSpace(fmt.Sprintf("%v", value)))
-			compactedOnSwitch := false
-			if modelSwitched {
-				if err := al.compactContextBeforeModelSwitch(ctx, msg.SessionKey); err != nil {
-					logger.WarnCF("agent", "Pre-switch context compaction failed", map[string]interface{}{
-						"session_key":     msg.SessionKey,
-						logger.FieldError: err.Error(),
-					})
-				} else {
-					compactedOnSwitch = true
-				}
 			}
 
 			al.applyRuntimeModelConfig(path, value)
@@ -2384,13 +2471,7 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					}
 					return true, "", fmt.Errorf("hot reload failed, config rolled back: %w", err)
 				}
-				if modelSwitched && compactedOnSwitch {
-					return true, fmt.Sprintf("Updated %s = %v\nContext compacted before model switch\nHot reload not applied: %v", path, value, err), nil
-				}
 				return true, fmt.Sprintf("Updated %s = %v\nHot reload not applied: %v", path, value, err), nil
-			}
-			if modelSwitched && compactedOnSwitch {
-				return true, fmt.Sprintf("Updated %s = %v\nContext compacted before model switch\nGateway hot reload signal sent", path, value), nil
 			}
 			return true, fmt.Sprintf("Updated %s = %v\nGateway hot reload signal sent", path, value), nil
 		default:
@@ -2539,71 +2620,6 @@ func (al *AgentLoop) rollbackConfigFromBackupForAgent(configPath, backupPath str
 
 func (al *AgentLoop) triggerGatewayReloadFromAgent() (bool, error) {
 	return configops.TriggerGatewayReload(al.getConfigPathForCommands(), errGatewayNotRunningSlash)
-}
-
-func (al *AgentLoop) compactContextBeforeModelSwitch(ctx context.Context, sessionKey string) error {
-	if strings.TrimSpace(sessionKey) == "" {
-		return nil
-	}
-
-	history := al.sessions.GetHistory(sessionKey)
-	if len(history) <= 1 {
-		return nil
-	}
-
-	keepRecent := al.compactionCfg.KeepRecentMessages
-	if keepRecent <= 0 {
-		keepRecent = 20
-	}
-	if keepRecent >= len(history) {
-		keepRecent = len(history) / 2
-	}
-	if keepRecent <= 0 || keepRecent >= len(history) {
-		return nil
-	}
-
-	maxSummaryChars := al.compactionCfg.MaxSummaryChars
-	if maxSummaryChars <= 0 {
-		maxSummaryChars = 6000
-	}
-	maxTranscriptChars := al.compactionCfg.MaxTranscriptChars
-	if maxTranscriptChars <= 0 {
-		maxTranscriptChars = 24000
-	}
-
-	compactUntil := len(history) - keepRecent
-	if compactUntil <= 0 {
-		return nil
-	}
-
-	currentSummary := al.sessions.GetSummary(sessionKey)
-	compactCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
-	newSummary, err := al.buildCompactedSummary(compactCtx, currentSummary, history[:compactUntil], maxTranscriptChars)
-	if err != nil {
-		return err
-	}
-	newSummary = strings.TrimSpace(newSummary)
-	if newSummary == "" {
-		return nil
-	}
-	if len(newSummary) > maxSummaryChars {
-		newSummary = truncateString(newSummary, maxSummaryChars)
-	}
-
-	before, after, err := al.sessions.CompactHistory(sessionKey, newSummary, keepRecent)
-	if err != nil {
-		return err
-	}
-	logger.InfoCF("agent", "Context compacted before model switch", map[string]interface{}{
-		"session_key":     sessionKey,
-		"before_messages": before,
-		"after_messages":  after,
-		"kept_recent":     keepRecent,
-		"summary_chars":   len(newSummary),
-		"model_after":     al.model,
-	})
-	return nil
 }
 
 func (al *AgentLoop) applyRuntimeModelConfig(path string, value interface{}) {
