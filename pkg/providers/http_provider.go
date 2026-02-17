@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -193,6 +194,16 @@ func (p *HTTPProvider) parseResponse(body []byte) (*LLMResponse, error) {
 		content = *choice.Message.Content
 	}
 
+	// Compatibility fallback: some models emit tool calls as XML-like text blocks
+	// instead of native `tool_calls` JSON.
+	if len(toolCalls) == 0 {
+		compatCalls, cleanedContent := parseCompatFunctionCalls(content)
+		if len(compatCalls) > 0 {
+			toolCalls = compatCalls
+			content = cleanedContent
+		}
+	}
+
 	return &LLMResponse{
 		Content:      content,
 		ToolCalls:    toolCalls,
@@ -213,6 +224,77 @@ func previewResponseBody(body []byte) string {
 		return preview[:maxLen] + "..."
 	}
 	return preview
+}
+
+func parseCompatFunctionCalls(content string) ([]ToolCall, string) {
+	if strings.TrimSpace(content) == "" || !strings.Contains(content, "<function_call>") {
+		return nil, content
+	}
+
+	blockRe := regexp.MustCompile(`(?is)<function_call>\s*(.*?)\s*</function_call>`)
+	blocks := blockRe.FindAllStringSubmatch(content, -1)
+	if len(blocks) == 0 {
+		return nil, content
+	}
+
+	toolCalls := make([]ToolCall, 0, len(blocks))
+	for i, block := range blocks {
+		raw := block[1]
+		invoke := extractTag(raw, "invoke")
+		if invoke != "" {
+			raw = invoke
+		}
+
+		name := extractTag(raw, "toolname")
+		if strings.TrimSpace(name) == "" {
+			name = extractTag(raw, "tool_name")
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+
+		args := map[string]interface{}{}
+		paramsRaw := strings.TrimSpace(extractTag(raw, "parameters"))
+		if paramsRaw != "" {
+			if strings.HasPrefix(paramsRaw, "{") && strings.HasSuffix(paramsRaw, "}") {
+				_ = json.Unmarshal([]byte(paramsRaw), &args)
+			}
+			if len(args) == 0 {
+				paramTagRe := regexp.MustCompile(`(?is)<([a-zA-Z0-9_:-]+)>\s*(.*?)\s*</([a-zA-Z0-9_:-]+)>`)
+				matches := paramTagRe.FindAllStringSubmatch(paramsRaw, -1)
+				for _, m := range matches {
+					if len(m) < 4 || !strings.EqualFold(strings.TrimSpace(m[1]), strings.TrimSpace(m[3])) {
+						continue
+					}
+					k := strings.TrimSpace(m[1])
+					v := strings.TrimSpace(m[2])
+					if k == "" || v == "" {
+						continue
+					}
+					args[k] = v
+				}
+			}
+		}
+
+		toolCalls = append(toolCalls, ToolCall{
+			ID:        fmt.Sprintf("compat_call_%d", i+1),
+			Name:      name,
+			Arguments: args,
+		})
+	}
+
+	cleaned := strings.TrimSpace(blockRe.ReplaceAllString(content, ""))
+	return toolCalls, cleaned
+}
+
+func extractTag(src string, tag string) string {
+	re := regexp.MustCompile(fmt.Sprintf(`(?is)<%s>\s*(.*?)\s*</%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag)))
+	m := re.FindStringSubmatch(src)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
 }
 
 func (p *HTTPProvider) GetDefaultModel() string {

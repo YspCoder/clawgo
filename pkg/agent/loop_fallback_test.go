@@ -91,6 +91,35 @@ func TestCallLLMWithModelFallback_RetriesOnGateway502(t *testing.T) {
 	}
 }
 
+func TestCallLLMWithModelFallback_RetriesOnGateway524(t *testing.T) {
+	p := &fallbackTestProvider{
+		byModel: map[string]fallbackResult{
+			"gemini-3-flash": {err: fmt.Errorf("API error (status 524, content-type \"text/plain; charset=UTF-8\"): error code: 524")},
+			"gpt-4o-mini":    {resp: &providers.LLMResponse{Content: "ok"}},
+		},
+	}
+
+	al := &AgentLoop{
+		provider:       p,
+		model:          "gemini-3-flash",
+		modelFallbacks: []string{"gpt-4o-mini"},
+	}
+
+	resp, err := al.callLLMWithModelFallback(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || resp.Content != "ok" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if len(p.called) != 2 {
+		t.Fatalf("expected 2 model attempts, got %d (%v)", len(p.called), p.called)
+	}
+	if p.called[0] != "gemini-3-flash" || p.called[1] != "gpt-4o-mini" {
+		t.Fatalf("unexpected model order: %v", p.called)
+	}
+}
+
 func TestCallLLMWithModelFallback_NoRetryOnNonRetryableError(t *testing.T) {
 	p := &fallbackTestProvider{
 		byModel: map[string]fallbackResult{
@@ -124,5 +153,12 @@ func TestShouldRetryWithFallbackModel_HTMLUnmarshalError(t *testing.T) {
 	err := fmt.Errorf("failed to unmarshal response: invalid character '<' looking for beginning of value")
 	if !shouldRetryWithFallbackModel(err) {
 		t.Fatalf("expected HTML parse error to trigger fallback retry")
+	}
+}
+
+func TestShouldRetryWithFallbackModel_Gateway524Error(t *testing.T) {
+	err := fmt.Errorf("API error (status 524, content-type \"text/plain; charset=UTF-8\"): error code: 524")
+	if !shouldRetryWithFallbackModel(err) {
+		t.Fatalf("expected 524 gateway timeout to trigger fallback retry")
 	}
 }

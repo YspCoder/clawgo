@@ -1596,7 +1596,7 @@ func (al *AgentLoop) callLLMWithModelFallback(
 		}
 
 		if idx < len(candidates)-1 {
-			logger.WarnCF("agent", "Model request failed, trying fallback model", map[string]interface{}{
+			logger.DebugCF("agent", "Model request failed, trying fallback model", map[string]interface{}{
 				"failed_model":    model,
 				"next_model":      candidates[idx+1],
 				logger.FieldError: err.Error(),
@@ -1693,9 +1693,12 @@ func isGatewayTransientError(err error) bool {
 		"status 502",
 		"status 503",
 		"status 504",
+		"status 524",
 		"bad gateway",
 		"service unavailable",
 		"gateway timeout",
+		"a timeout occurred",
+		"error code: 524",
 		"non-json response",
 		"unexpected end of json input",
 		"invalid character '<'",
