@@ -2,227 +2,143 @@
 
 [English](./README_EN.md)
 
-**ClawGo** 是一个为 Linux 服务器量身定制的高性能 AI 助手。通过 Go 语言的并发优势与二进制分发特性，它能以极低的资源占用提供完整的 Agent 能力。
+**ClawGo** 是一个面向 Linux 服务器的 Go 原生 AI Agent。它提供单二进制部署、多通道接入、可热更新配置与可控风险执行，适合长期在线自动化任务。
 
-## 🚀 核心优势
+## 🚀 功能总览
 
-- **⚡ 纯净运行**：专为 Linux 服务器环境优化，不依赖 Node.js 或 Python。
-- **🏗️ 生产级稳定**：单二进制文件部署，完美集成到 systemd 等服务管理工具。
-- **🔌 强制上游代理**：通过 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 统一管理模型配额与鉴权。
-- **🧩 强力技能扩展**：内置 `coding-agent`、`github`、`context7` 等生产力工具。
+- **双运行模式**：支持本地交互模式（`agent`）与服务化网关模式（`gateway`）。
+- **多通道接入**：支持 Telegram、Discord、Feishu、WhatsApp、QQ、DingTalk、MaixCam。
+- **自主协作能力**：支持自然语言驱动的自主执行、自动学习与启动自检。
+- **多智能体编排**：支持 Pipeline 协议（`role + goal + depends_on + shared_state`）。
+- **记忆与上下文治理**：支持分层记忆、`memory_search` 与自动上下文压缩。
+- **可靠性增强**：模型请求支持 fallback，覆盖配额、路由、网关瞬时错误等场景。
+- **安全防护**：Shell Risk Gate、Sentinel 巡检与自动修复能力。
+- **技能扩展**：支持内置技能与 GitHub 技能安装，支持原子脚本执行。
 
 ## 🏁 快速开始
 
-**1. 初始化**
+1. 初始化配置与工作区
+
 ```bash
 clawgo onboard
 ```
-运行 `clawgo gateway` 时会弹出 `yes/no`，可选择是否授予 root 权限。
-若选择 `yes`，会以 `sudo` 重新执行命令，并启用高权限策略（仅强制禁止 `rm -rf /`）。
 
-**2. 配置 CLIProxyAPI**
-ClawGo 强制要求使用 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 作为模型接入层。
+2. 配置上游代理（必需）
+
 ```bash
 clawgo login
 ```
 
-**3. 开始运行**
-```bash
-# 交互模式
-clawgo agent
+3. 检查当前状态
 
-# 后台网关模式 (支持 Telegram/Discord 等)
+```bash
+clawgo status
+```
+
+4. 交互式使用（本地）
+
+```bash
+clawgo agent
+# 或单轮消息
+clawgo agent -m "Hello"
+```
+
+5. 启动网关服务（用于 Telegram/Discord 等）
+
+```bash
+# 注册服务（systemd）
 clawgo gateway
 
-# 网关服务管理
+# 服务管理
 clawgo gateway start
 clawgo gateway restart
 clawgo gateway stop
+clawgo gateway status
+
+# 前台运行
+clawgo gateway run
+```
+
+## 📌 命令总览
+
+```text
+clawgo onboard                     初始化配置和工作区
+clawgo login                       配置 CLIProxyAPI 上游
+clawgo status                      查看配置、工作区、模型和日志状态
+clawgo agent [-m "..."]           本地交互模式
+clawgo gateway [...]               注册/运行/管理网关服务
+clawgo config set|get|check|reload 配置读写、校验与热更新
+clawgo channel test ...            通道连通性测试
+clawgo cron ...                    定时任务管理
+clawgo skills ...                  技能安装/查看/卸载
+clawgo uninstall [--purge] [--remove-bin]
+```
+
+全局参数：
+
+```bash
+clawgo --config /path/to/config.json <command>
+clawgo --debug <command>
 ```
 
 ## ⚙️ 配置管理与热更新
 
-ClawGo 支持直接通过命令修改 `config.json`，并向运行中的网关发送热更新信号：
+支持命令行直接修改配置，并向运行中的网关发送热更新信号：
 
 ```bash
-# 设置配置（支持 enable -> enabled 自动映射）
 clawgo config set channels.telegram.enable true
-
-# 读取配置
 clawgo config get channels.telegram.enabled
-
-# 校验配置
 clawgo config check
-
-# 手动触发热更新（向 gateway 发送 SIGHUP）
 clawgo config reload
 ```
 
-全局支持自定义配置文件：
+说明：
+- `enable` 会自动映射到 `enabled`。
+- `config set` 使用原子写入。
+- 网关运行时若热更新失败，会自动回滚备份，避免损坏配置。
+- `--config` 指定的自定义配置路径会被 `config` 命令与通道内 `/config` 指令一致使用。
 
-```bash
-clawgo --config /path/to/config.json status
-```
+## 🌐 通道与消息控制
 
-也可使用环境变量：
-
-```bash
-export CLAWGO_CONFIG=/path/to/config.json
-```
-
-`config set` 采用原子写入，并在网关运行且热更新失败时自动回滚到备份，避免配置损坏导致服务不可用。
-
-也支持在聊天通道中使用斜杠命令：
+通道中支持以下斜杠命令：
 
 ```text
 /help
 /stop
 /status
-/config get channels.telegram.enabled
-/config set channels.telegram.enabled true
+/config get <path>
+/config set <path> <value>
 /reload
-```
-
-自治控制命令（可选，推荐直接自然语言）：
-
-```text
 /autonomy start [idle]
 /autonomy stop
 /autonomy status
 /autolearn start [interval]
 /autolearn stop
 /autolearn status
-```
-
-消息调度策略（按会话 `session_key`）：
-- 同一会话严格 FIFO 串行执行，后续消息进入队列等待。
-- `/stop` 会立即中断当前回复，并继续处理队列中的下一条消息。
-- 不同会话可并发执行，互不影响。
-
-## 🧭 自主模式与自然语言控制
-
-- 自主模式/自动学习控制采用 **LLM 语义解析优先**（多语言），不依赖固定中文关键词。
-- 规则解析仅作为兜底（如显式命令：`/autonomy ...`、`/autolearn ...`）。
-- 开启自主模式时若附带研究方向，系统会优先按该方向执行；当用户表示方向完成后，会自动切换到其他高价值任务继续推进。
-- 进度回报使用自然语言，不使用固定阶段编号模板。
-
-系统会在启动时读取 `AGENTS.md`、`SOUL.md`、`USER.md` 作为行为约束与语义解析上下文。
-
-## 🧩 Onboard/Install 文档同步
-
-- `clawgo onboard` 与 `make install` 都会同步 `AGENTS.md`、`SOUL.md`、`USER.md` 到工作区。
-- 若文件不存在：创建。
-- 若文件已存在：仅更新 `CLAWGO MANAGED BLOCK` 受管区块，保留用户自定义内容（增量更新，不整文件覆盖）。
-
-## 🧾 日志链路
-
-默认启用文件日志，并支持自动分割和过期清理（默认保留 3 天）：
-
-```json
-"logging": {
-  "enabled": true,
-  "dir": "~/.clawgo/logs",
-  "filename": "clawgo.log",
-  "max_size_mb": 20,
-  "retention_days": 3
-}
-```
-
-当前通道与网关链路日志已统一为结构化字段，建议告警与检索统一使用：
-- `channel`
-- `chat_id`
-- `sender_id`
-- `preview`
-- `error`
-- `message_content_length`
-- `assistant_content_length`
-- `user_response_content_length`
-- `fetched_content_length`
-- `output_content_length`
-- `transcript_length`
-
-字段常量已集中在 `pkg/logger/fields.go`，新增日志字段建议优先复用常量，避免命名漂移。
-
-## 🛡️ Sentinel 与风险防护
-
-Sentinel 会周期巡检关键运行资源（配置、memory、日志目录），支持自动修复与告警转发：
-
-```json
-"sentinel": {
-  "enabled": true,
-  "interval_sec": 60,
-  "auto_heal": true,
-  "notify_channel": "",
-  "notify_chat_id": ""
-}
-```
-
-Cron 调度策略支持配置化（支持热更新）：
-
-```json
-"cron": {
-  "min_sleep_sec": 1,
-  "max_sleep_sec": 30,
-  "retry_backoff_base_sec": 30,
-  "retry_backoff_max_sec": 1800,
-  "max_consecutive_failure_retries": 5,
-  "max_workers": 4
-}
-```
-
-Shell 工具默认启用 Risk Gate。检测到破坏性命令时，默认阻断并要求 `force=true`，可先做 dry-run：
-
-```json
-"tools": {
-  "shell": {
-    "risk": {
-      "enabled": true,
-      "allow_destructive": false,
-      "require_dry_run": true,
-      "require_force_flag": true
-    }
-  }
-}
-```
-
-## 🤖 多智能体编排 (Pipeline)
-
-新增标准化任务编排协议：`role + goal + depends_on + shared_state`。
-
-可用工具：
-- `pipeline_create`：创建任务图
-- `pipeline_status`：查看流水线状态
-- `pipeline_state_set`：写入共享状态
-- `pipeline_dispatch`：自动派发当前可执行任务
-- `spawn`：支持 `pipeline_id/task_id/role` 参数
-
-通道内可查看状态：
-
-```text
 /pipeline list
 /pipeline status <pipeline_id>
 /pipeline ready <pipeline_id>
 ```
 
-## 🧠 记忆与索引增强
+调度语义（按 `session_key`）：
+- 同会话严格 FIFO 串行处理。
+- `/stop` 会中断当前回复并继续队列后续消息。
+- 不同会话并发执行，互不阻塞。
 
-- `memory_search`：增加结构化索引（倒排索引 + 缓存），优先走索引检索。
-- 记忆分层：支持 `profile / project / procedures / recent notes`。
-- 自动上下文压缩（Automatically Compacted Context）：会话过长时自动生成摘要并裁剪历史，降低 token 开销与卡顿风险。
+通道连通测试：
 
-```json
-"memory": {
-  "layered": true,
-  "recent_days": 3,
-  "layers": {
-    "profile": true,
-    "project": true,
-    "procedures": true
-  }
-}
+```bash
+clawgo channel test --channel telegram --to <chat_id> -m "ping"
 ```
 
-上下文自动压缩配置：
+## 🧠 记忆、自主与上下文压缩
+
+- 启动会读取 `AGENTS.md`、`SOUL.md`、`USER.md` 作为行为约束与语义上下文。
+- 网关启动后会执行一次自检任务，结合历史会话与 `memory/HEARTBEAT.md` 判断是否继续未完成任务。
+- 上下文压缩同时按消息数量阈值和上下文体积阈值触发，控制 token 成本与长会话稳定性。
+- 分层记忆支持 `profile / project / procedures / recent notes`。
+
+上下文压缩配置示例：
 
 ```json
 "agents": {
@@ -238,35 +154,135 @@ Shell 工具默认启用 Risk Gate。检测到破坏性命令时，默认阻断�
 }
 ```
 
-也可以热更新：
+## 🤖 多智能体编排 (Pipeline)
 
-```bash
-clawgo config set agents.defaults.context_compaction.enabled true
-clawgo config set agents.defaults.context_compaction.trigger_messages 80
-clawgo config set agents.defaults.context_compaction.keep_recent_messages 24
+内置标准化编排工具：
+- `pipeline_create`
+- `pipeline_status`
+- `pipeline_state_set`
+- `pipeline_dispatch`
+- `spawn`（支持 `pipeline_id/task_id/role`）
+
+适用于拆解复杂任务、跨角色协作和共享状态推进。
+
+## 🛡️ 风险防护与稳定性
+
+- **Model fallback**：主模型失败时可回退到候选模型，覆盖限流、配额、网关瞬时异常、上游路由异常。
+- **HTTP 兼容处理**：可识别非 JSON 错页并给出响应预览；兼容从 `<function_call>` 文本块提取工具调用。
+- **Shell Risk Gate**：高风险命令默认阻断，支持 dry-run 与 force 策略。
+- **Sentinel**：周期巡检配置/内存/日志目录，支持自动修复与告警转发。
+
+Sentinel 配置示例：
+
+```json
+"sentinel": {
+  "enabled": true,
+  "interval_sec": 60,
+  "auto_heal": true,
+  "notify_channel": "",
+  "notify_chat_id": ""
+}
 ```
 
-## 🗺️ Repo-Map 与原子技能
+## ⏱️ 定时任务 (Cron)
 
-- `repo_map`：生成并查询代码全景地图，先定位目标文件再精读。
-- `skill_exec`：执行 `skills/<name>/scripts/*` 原子脚本，保持 Gateway 精简。
+```bash
+clawgo cron list
+clawgo cron add -n "daily-check" -m "检查待办" -c "0 9 * * *"
+clawgo cron add -n "heartbeat" -m "汇报状态" -e 300
+clawgo cron enable <job_id>
+clawgo cron disable <job_id>
+clawgo cron remove <job_id>
+```
 
-## 📦 迁移与技能
+`cron add` 支持：
+- `-n, --name` 任务名
+- `-m, --message` 发给 agent 的消息
+- `-e, --every` 每 N 秒执行
+- `-c, --cron` cron 表达式
+- `-d, --deliver --channel <name> --to <id>` 投递到消息通道
 
-ClawGo 现在集成了原 OpenClaw 的所有核心扩展能力：
-- **coding-agent**: 结合 Codex/Claude Code 实现自主编程。
-- **github**: 深度集成 `gh` CLI，管理 Issue、PR 及 CI 状态。
-- **context7**: 针对代码库与文档的智能上下文搜索。
+## 🧩 技能系统
 
-## 🛠️ 安装 (仅限 Linux)
+技能管理命令：
 
-### 从源码编译
+```bash
+clawgo skills list
+clawgo skills search
+clawgo skills show <name>
+clawgo skills install <github-repo>
+clawgo skills remove <name>
+clawgo skills install-builtin
+clawgo skills list-builtin
+```
+
+说明：
+- 支持从 GitHub 仓库安装技能（例如 `owner/repo/skill`）。
+- 支持安装内置技能到工作区。
+- 支持 `skill_exec` 原子执行 `skills/<name>/scripts/*`。
+
+## 🗂️ 工作区与文档同步
+
+默认工作区通常为 `~/.clawgo/workspace`，关键目录：
+
+```text
+workspace/
+  memory/
+    MEMORY.md
+    HEARTBEAT.md
+  skills/
+  AGENTS.md
+  SOUL.md
+  USER.md
+```
+
+`clawgo onboard` 与 `make install` 会同步 `AGENTS.md`、`SOUL.md`、`USER.md`：
+- 文件不存在则创建。
+- 文件存在则仅更新 `CLAWGO MANAGED BLOCK` 区块，保留用户自定义内容。
+
+## 🧾 日志
+
+默认启用文件日志，支持轮转和保留：
+
+```json
+"logging": {
+  "enabled": true,
+  "dir": "~/.clawgo/logs",
+  "filename": "clawgo.log",
+  "max_size_mb": 20,
+  "retention_days": 3
+}
+```
+
+推荐统一检索的结构化字段：
+`channel`、`chat_id`、`sender_id`、`preview`、`error`、`message_content_length`、`assistant_content_length`、`output_content_length`、`transcript_length`。
+
+## 🛠️ 安装与构建（Linux）
+
 ```bash
 cd clawgo
 make build
 make install
 ```
 
+可选构建参数：
+
+```bash
+# 默认 1：剥离符号，减小体积
+make build STRIP_SYMBOLS=1
+
+# 保留调试符号
+make build STRIP_SYMBOLS=0
+```
+
+## 🧹 卸载
+
+```bash
+clawgo uninstall
+clawgo uninstall --purge
+clawgo uninstall --remove-bin
+```
+
 ## 📜 许可证
 
-MIT 许可证。 🦐
+MIT License.

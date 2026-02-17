@@ -1555,8 +1555,8 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context, prompt,
 	}
 
 	keys := al.sessions.ListSessionKeys()
-	seen := make(map[string]struct{}, len(keys)+1)
-	sessions := make([]string, 0, len(keys)+1)
+	seen := make(map[string]struct{}, len(keys))
+	sessions := make([]string, 0, len(keys))
 	for _, key := range keys {
 		key = strings.TrimSpace(key)
 		if key == "" {
@@ -1568,11 +1568,9 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context, prompt,
 		seen[key] = struct{}{}
 		sessions = append(sessions, key)
 	}
-	if _, ok := seen[fallbackSessionKey]; !ok {
-		sessions = append(sessions, fallbackSessionKey)
-	}
 	report.TotalSessions = len(sessions)
 
+	// 仅对历史会话做压缩，避免启动时在每个历史会话重复执行自检任务。
 	for _, sessionKey := range sessions {
 		select {
 		case <-ctx.Done():
@@ -1591,20 +1589,27 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context, prompt,
 		if after < before {
 			report.CompactedSessions++
 		}
-
-		runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-		_, err := al.ProcessDirect(runCtx, prompt, sessionKey)
-		cancel()
-		if err != nil {
-			report.FailedSessions++
-			logger.WarnCF("agent", "Startup self-check task failed", map[string]interface{}{
-				"session_key":     sessionKey,
-				logger.FieldError: err.Error(),
-			})
-			continue
-		}
-		report.CheckedSessions++
 	}
+
+	select {
+	case <-ctx.Done():
+		return report
+	default:
+	}
+
+	// 自检任务始终只执行一次，默认写入 gateway 启动专用会话。
+	runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	_, err := al.ProcessDirect(runCtx, prompt, fallbackSessionKey)
+	cancel()
+	if err != nil {
+		report.FailedSessions++
+		logger.WarnCF("agent", "Startup self-check task failed", map[string]interface{}{
+			"session_key":     fallbackSessionKey,
+			logger.FieldError: err.Error(),
+		})
+		return report
+	}
+	report.CheckedSessions = 1
 
 	return report
 }

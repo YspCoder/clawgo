@@ -2,227 +2,143 @@
 
 [中文](./README.md)
 
-**ClawGo** is a high-performance AI assistant tailored for Linux servers. Leveraging the concurrency advantages and binary distribution of the Go language, it provides full agent capabilities with minimal resource overhead.
+**ClawGo** is a Go-native AI agent for Linux servers. It provides single-binary deployment, multi-channel integration, hot-reloadable config, and controllable execution risk for long-running autonomous workflows.
 
-## 🚀 Key Advantages
+## 🚀 Feature Overview
 
-- **⚡ Native Performance**: Optimized specifically for Linux server environments, with no dependency on Node.js or Python.
-- **🏗️ Production-Ready**: Single binary deployment, perfectly integrates with service management tools like systemd.
-- **🔌 Mandatory Upstream Proxy**: Centralized management of model quotas and authentication via [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
-- **🧩 Powerful Skill Extension**: Built-in productivity tools like `coding-agent`, `github`, and `context7`.
+- **Dual runtime modes**: local interactive mode (`agent`) and service-oriented gateway mode (`gateway`).
+- **Multi-channel integration**: Telegram, Discord, Feishu, WhatsApp, QQ, DingTalk, MaixCam.
+- **Autonomous collaboration**: natural-language autonomy, auto-learning, and startup self-check.
+- **Multi-agent orchestration**: built-in Pipeline protocol (`role + goal + depends_on + shared_state`).
+- **Memory and context governance**: layered memory, `memory_search`, and automatic context compaction.
+- **Reliability enhancements**: model fallback for quota, routing, and transient gateway failures.
+- **Safety controls**: Shell Risk Gate, Sentinel inspection, and auto-heal support.
+- **Skill extensibility**: built-in skills plus GitHub skill installation and atomic script execution.
 
 ## 🏁 Quick Start
 
-**1. Initialize**
+1. Initialize config and workspace
+
 ```bash
 clawgo onboard
 ```
-When running `clawgo gateway`, a `yes/no` prompt asks whether to grant root privileges.
-If `yes`, the command is re-executed via `sudo` and a high-permission shell policy is enabled (with `rm -rf /` still hard-blocked).
 
-**2. Configure CLIProxyAPI**
-ClawGo requires [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) as the model access layer.
+2. Configure upstream proxy (required)
+
 ```bash
 clawgo login
 ```
 
-**3. Start Running**
-```bash
-# Interactive mode
-clawgo agent
+3. Check runtime status
 
-# Gateway mode (supports Telegram, Discord, etc.)
+```bash
+clawgo status
+```
+
+4. Run local interactive mode
+
+```bash
+clawgo agent
+# or one-shot message
+clawgo agent -m "Hello"
+```
+
+5. Start gateway service (for Telegram/Discord/etc.)
+
+```bash
+# register systemd service
 clawgo gateway
 
-# Gateway service management
+# service control
 clawgo gateway start
 clawgo gateway restart
 clawgo gateway stop
+clawgo gateway status
+
+# foreground run
+clawgo gateway run
 ```
 
-## ⚙️ Config Management & Hot Reload
+## 📌 Command Reference
 
-ClawGo can update `config.json` from CLI and trigger hot reload for a running gateway:
+```text
+clawgo onboard                     Initialize config and workspace
+clawgo login                       Configure CLIProxyAPI upstream
+clawgo status                      Show config/workspace/model/logging status
+clawgo agent [-m "..."]           Local interactive mode
+clawgo gateway [...]               Register/run/manage gateway service
+clawgo config set|get|check|reload Config CRUD, validation, hot reload
+clawgo channel test ...            Channel connectivity test
+clawgo cron ...                    Scheduled job management
+clawgo skills ...                  Skill install/list/remove/show
+clawgo uninstall [--purge] [--remove-bin]
+```
+
+Global flags:
 
 ```bash
-# Set config value (supports enable -> enabled alias)
+clawgo --config /path/to/config.json <command>
+clawgo --debug <command>
+```
+
+## ⚙️ Config Management and Hot Reload
+
+Update config values directly from CLI and trigger gateway hot reload:
+
+```bash
 clawgo config set channels.telegram.enable true
-
-# Read config value
 clawgo config get channels.telegram.enabled
-
-# Validate config
 clawgo config check
-
-# Trigger hot reload manually (sends SIGHUP to gateway)
 clawgo config reload
 ```
 
-Global custom config path:
+Notes:
+- `enable` is normalized to `enabled`.
+- `config set` uses atomic write.
+- If gateway reload fails while running, config auto-rolls back from backup.
+- Custom `--config` path is consistently used by CLI config commands and in-channel `/config` commands.
 
-```bash
-clawgo --config /path/to/config.json status
-```
+## 🌐 Channels and Message Control
 
-Or via environment variable:
-
-```bash
-export CLAWGO_CONFIG=/path/to/config.json
-```
-
-`config set` now uses atomic write, and if gateway is running but hot reload fails, it rolls back to backup automatically.
-
-Slash commands are also supported in chat channels:
+Supported in-channel slash commands:
 
 ```text
 /help
 /stop
 /status
-/config get channels.telegram.enabled
-/config set channels.telegram.enabled true
+/config get <path>
+/config set <path> <value>
 /reload
-```
-
-Autonomy control commands (optional; natural language is recommended):
-
-```text
 /autonomy start [idle]
 /autonomy stop
 /autonomy status
 /autolearn start [interval]
 /autolearn stop
 /autolearn status
-```
-
-Message scheduling policy (per `session_key`):
-- Same session runs in strict FIFO order; later messages are queued.
-- `/stop` immediately cancels the current response, then processing continues with the next queued message.
-- Different sessions can run concurrently.
-
-## 🧭 Autonomy Mode & Natural-Language Control
-
-- Autonomy/auto-learning controls are interpreted with **LLM semantic parsing first** (multi-language), instead of fixed keyword matching.
-- Rule-based parsing is used only as a fallback (for explicit forms such as `/autonomy ...` and `/autolearn ...`).
-- If a focus direction is provided when starting autonomy mode, execution prioritizes that focus; when user says it is complete, the agent switches to other high-value tasks automatically.
-- Progress updates are natural-language messages, not rigid stage-number templates.
-
-At startup, `AGENTS.md`, `SOUL.md`, and `USER.md` are loaded as behavior constraints and semantic context.
-
-## 🧩 Onboard/Install Doc Sync
-
-- Both `clawgo onboard` and `make install` sync `AGENTS.md`, `SOUL.md`, `USER.md` into workspace.
-- If a file does not exist: it is created.
-- If a file already exists: only the `CLAWGO MANAGED BLOCK` section is updated; user custom content is preserved (incremental update, no whole-file overwrite).
-
-## 🧾 Logging Pipeline
-
-File logging is enabled by default with automatic rotation and retention cleanup (3 days by default):
-
-```json
-"logging": {
-  "enabled": true,
-  "dir": "~/.clawgo/logs",
-  "filename": "clawgo.log",
-  "max_size_mb": 20,
-  "retention_days": 3
-}
-```
-
-Structured logging keys are now unified across channels and gateway:
-- `channel`
-- `chat_id`
-- `sender_id`
-- `preview`
-- `error`
-- `message_content_length`
-- `assistant_content_length`
-- `user_response_content_length`
-- `fetched_content_length`
-- `output_content_length`
-- `transcript_length`
-
-Constants are centralized in `pkg/logger/fields.go`.
-
-## 🛡️ Sentinel & Risk Protection
-
-Sentinel periodically checks critical runtime resources (config, memory, log directories), with optional auto-heal and notify:
-
-```json
-"sentinel": {
-  "enabled": true,
-  "interval_sec": 60,
-  "auto_heal": true,
-  "notify_channel": "",
-  "notify_chat_id": ""
-}
-```
-
-Cron scheduling runtime strategy is configurable (and hot-reloadable):
-
-```json
-"cron": {
-  "min_sleep_sec": 1,
-  "max_sleep_sec": 30,
-  "retry_backoff_base_sec": 30,
-  "retry_backoff_max_sec": 1800,
-  "max_consecutive_failure_retries": 5,
-  "max_workers": 4
-}
-```
-
-Shell risk gate is enabled by default. Destructive commands are blocked unless explicitly forced:
-
-```json
-"tools": {
-  "shell": {
-    "risk": {
-      "enabled": true,
-      "allow_destructive": false,
-      "require_dry_run": true,
-      "require_force_flag": true
-    }
-  }
-}
-```
-
-## 🤖 Multi-Agent Orchestration (Pipeline)
-
-Task protocol is standardized with: `role + goal + depends_on + shared_state`.
-
-Available tools:
-- `pipeline_create`: create a task graph
-- `pipeline_status`: inspect pipeline status
-- `pipeline_state_set`: write shared state
-- `pipeline_dispatch`: dispatch currently runnable tasks
-- `spawn`: supports `pipeline_id/task_id/role`
-
-Channel commands:
-
-```text
 /pipeline list
 /pipeline status <pipeline_id>
 /pipeline ready <pipeline_id>
 ```
 
-## 🧠 Memory & Context Indexing
+Scheduling semantics (`session_key` based):
+- Strict FIFO processing per session.
+- `/stop` interrupts current response and continues queued messages.
+- Different sessions are processed concurrently.
 
-- `memory_search`: structured indexing (inverted index + cache)
-- Memory layers: `profile / project / procedures / recent notes`
-- Automatically Compacted Context: when a session gets long, it auto-summarizes and trims history
+Channel test example:
 
-```json
-"memory": {
-  "layered": true,
-  "recent_days": 3,
-  "layers": {
-    "profile": true,
-    "project": true,
-    "procedures": true
-  }
-}
+```bash
+clawgo channel test --channel telegram --to <chat_id> -m "ping"
 ```
 
-Automatic context compaction config:
+## 🧠 Memory, Autonomy, and Context Compaction
+
+- On startup, the agent loads `AGENTS.md`, `SOUL.md`, and `USER.md` as behavior and semantic constraints.
+- Gateway startup triggers a self-check task using history and `memory/HEARTBEAT.md` to decide whether unfinished tasks should continue.
+- Context compaction is triggered by both message-count and transcript-size thresholds.
+- Layered memory supports `profile / project / procedures / recent notes`.
+
+Context compaction config example:
 
 ```json
 "agents": {
@@ -238,35 +154,135 @@ Automatic context compaction config:
 }
 ```
 
-Hot-update examples:
+## 🤖 Multi-Agent Orchestration (Pipeline)
 
-```bash
-clawgo config set agents.defaults.context_compaction.enabled true
-clawgo config set agents.defaults.context_compaction.trigger_messages 80
-clawgo config set agents.defaults.context_compaction.keep_recent_messages 24
+Built-in orchestration tools:
+- `pipeline_create`
+- `pipeline_status`
+- `pipeline_state_set`
+- `pipeline_dispatch`
+- `spawn` (supports `pipeline_id/task_id/role`)
+
+Useful for complex task decomposition, role-based execution, and shared state workflows.
+
+## 🛡️ Safety and Reliability
+
+- **Model fallback**: retries with fallback models on quota/rate limits, transient gateway failures, and upstream auth-routing errors.
+- **HTTP compatibility handling**: detects non-JSON error pages with body preview; parses tool calls from `<function_call>` blocks.
+- **Shell Risk Gate**: blocks destructive operations by default; supports dry-run and force policies.
+- **Sentinel**: periodic checks for config/memory/log resources with optional auto-heal and notifications.
+
+Sentinel config example:
+
+```json
+"sentinel": {
+  "enabled": true,
+  "interval_sec": 60,
+  "auto_heal": true,
+  "notify_channel": "",
+  "notify_chat_id": ""
+}
 ```
 
-## 🗺️ Repo-Map & Atomic Skills
+## ⏱️ Scheduled Jobs (Cron)
 
-- `repo_map`: build/query repository map before deep file reads
-- `skill_exec`: execute `skills/<name>/scripts/*` atomically to keep gateway slim
+```bash
+clawgo cron list
+clawgo cron add -n "daily-check" -m "check todo" -c "0 9 * * *"
+clawgo cron add -n "heartbeat" -m "report status" -e 300
+clawgo cron enable <job_id>
+clawgo cron disable <job_id>
+clawgo cron remove <job_id>
+```
 
-## 📦 Migration & Skills
+`cron add` options:
+- `-n, --name` job name
+- `-m, --message` agent input message
+- `-e, --every` run every N seconds
+- `-c, --cron` cron expression
+- `-d, --deliver --channel <name> --to <id>` deliver response to a channel
 
-ClawGo now integrates all core extended capabilities from the original OpenClaw:
-- **coding-agent**: Autonomous programming using Codex/Claude Code.
-- **github**: Deep integration with `gh` CLI for managing issues, PRs, and CI status.
-- **context7**: Intelligent context search for codebases and documentation.
+## 🧩 Skills
 
-## 🛠️ Installation (Linux Only)
+Skill management commands:
 
-### Build from Source
+```bash
+clawgo skills list
+clawgo skills search
+clawgo skills show <name>
+clawgo skills install <github-repo>
+clawgo skills remove <name>
+clawgo skills install-builtin
+clawgo skills list-builtin
+```
+
+Notes:
+- Install skills from GitHub (for example `owner/repo/skill`).
+- Install built-in skills into workspace.
+- Execute atomic scripts through `skill_exec` from `skills/<name>/scripts/*`.
+
+## 🗂️ Workspace and Managed Docs
+
+Default workspace is typically `~/.clawgo/workspace`:
+
+```text
+workspace/
+  memory/
+    MEMORY.md
+    HEARTBEAT.md
+  skills/
+  AGENTS.md
+  SOUL.md
+  USER.md
+```
+
+`clawgo onboard` and `make install` sync `AGENTS.md`, `SOUL.md`, `USER.md`:
+- Create file if missing.
+- Update only `CLAWGO MANAGED BLOCK` if file exists, preserving user custom sections.
+
+## 🧾 Logging
+
+File logging is enabled by default with rotation and retention:
+
+```json
+"logging": {
+  "enabled": true,
+  "dir": "~/.clawgo/logs",
+  "filename": "clawgo.log",
+  "max_size_mb": 20,
+  "retention_days": 3
+}
+```
+
+Recommended structured fields for querying/alerting:
+`channel`, `chat_id`, `sender_id`, `preview`, `error`, `message_content_length`, `assistant_content_length`, `output_content_length`, `transcript_length`.
+
+## 🛠️ Build and Install (Linux)
+
 ```bash
 cd clawgo
 make build
 make install
 ```
 
+Optional build flag:
+
+```bash
+# default: strip symbols for smaller binary
+make build STRIP_SYMBOLS=1
+
+# keep debug symbols
+make build STRIP_SYMBOLS=0
+```
+
+## 🧹 Uninstall
+
+```bash
+clawgo uninstall
+clawgo uninstall --purge
+clawgo uninstall --remove-bin
+```
+
 ## 📜 License
 
-MIT License. 🦐
+MIT License.
