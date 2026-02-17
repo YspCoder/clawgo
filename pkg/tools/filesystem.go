@@ -8,6 +8,20 @@ import (
 	"strings"
 )
 
+func resolveToolPath(baseDir, path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	if baseDir != "" {
+		return filepath.Clean(filepath.Join(baseDir, path)), nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve path: %w", err)
+	}
+	return abs, nil
+}
+
 // ReadFileTool reads the contents of a file.
 type ReadFileTool struct {
 	allowedDir string
@@ -52,22 +66,9 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return "", fmt.Errorf("path is required")
 	}
 
-	resolvedPath := path
-	if filepath.IsAbs(path) {
-		resolvedPath = filepath.Clean(path)
-	} else {
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve path: %w", err)
-		}
-		resolvedPath = abs
-	}
-
-	if t.allowedDir != "" {
-		allowedAbs, _ := filepath.Abs(t.allowedDir)
-		if !strings.HasPrefix(resolvedPath, allowedAbs) {
-			return "", fmt.Errorf("path %s is outside allowed directory", path)
-		}
+	resolvedPath, err := resolveToolPath(t.allowedDir, path)
+	if err != nil {
+		return "", err
 	}
 
 	f, err := os.Open(resolvedPath)
@@ -149,22 +150,9 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 		return "", fmt.Errorf("content is required")
 	}
 
-	resolvedPath := path
-	if filepath.IsAbs(path) {
-		resolvedPath = filepath.Clean(path)
-	} else {
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve path: %w", err)
-		}
-		resolvedPath = abs
-	}
-
-	if t.allowedDir != "" {
-		allowedAbs, _ := filepath.Abs(t.allowedDir)
-		if !strings.HasPrefix(resolvedPath, allowedAbs) {
-			return "", fmt.Errorf("path %s is outside allowed directory", path)
-		}
+	resolvedPath, err := resolveToolPath(t.allowedDir, path)
+	if err != nil {
+		return "", err
 	}
 
 	if err := os.WriteFile(resolvedPath, []byte(content), 0644); err != nil {
@@ -216,22 +204,9 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) 
 
 	recursive, _ := args["recursive"].(bool)
 
-	resolvedPath := path
-	if filepath.IsAbs(path) {
-		resolvedPath = filepath.Clean(path)
-	} else {
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve path: %w", err)
-		}
-		resolvedPath = abs
-	}
-
-	if t.allowedDir != "" {
-		allowedAbs, _ := filepath.Abs(t.allowedDir)
-		if !strings.HasPrefix(resolvedPath, allowedAbs) {
-			return "", fmt.Errorf("path %s is outside allowed directory", path)
-		}
+	resolvedPath, err := resolveToolPath(t.allowedDir, path)
+	if err != nil {
+		return "", err
 	}
 
 	var results []string
@@ -330,22 +305,9 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return "", fmt.Errorf("new_text is required")
 	}
 
-	resolvedPath := path
-	if filepath.IsAbs(path) {
-		resolvedPath = filepath.Clean(path)
-	} else {
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve path: %w", err)
-		}
-		resolvedPath = abs
-	}
-
-	if t.allowedDir != "" {
-		allowedAbs, _ := filepath.Abs(t.allowedDir)
-		if !strings.HasPrefix(resolvedPath, allowedAbs) {
-			return "", fmt.Errorf("path %s is outside allowed directory", path)
-		}
+	resolvedPath, err := resolveToolPath(t.allowedDir, path)
+	if err != nil {
+		return "", err
 	}
 
 	content, err := os.ReadFile(resolvedPath)

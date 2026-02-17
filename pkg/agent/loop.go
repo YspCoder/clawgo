@@ -157,9 +157,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	})
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(tools.NewReadFileTool(""))
-	toolsRegistry.Register(tools.NewWriteFileTool(""))
-	toolsRegistry.Register(tools.NewListDirTool(""))
+	toolsRegistry.Register(tools.NewReadFileTool(workspace))
+	toolsRegistry.Register(tools.NewWriteFileTool(workspace))
+	toolsRegistry.Register(tools.NewListDirTool(workspace))
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace))
 
 	if cs != nil {
@@ -196,7 +196,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewPipelineDispatchTool(orchestrator, subagentManager))
 
 	// Register edit file tool
-	editFileTool := tools.NewEditFileTool("")
+	editFileTool := tools.NewEditFileTool(workspace)
 	toolsRegistry.Register(editFileTool)
 
 	// Register memory search tool
