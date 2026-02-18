@@ -3,21 +3,23 @@ package providers
 import (
 	"strings"
 	"testing"
-
-	"github.com/openai/openai-go/v3"
 )
 
 func TestMapChatCompletionResponse_CompatFunctionCallXML(t *testing.T) {
-	resp := mapChatCompletionResponse(&openai.ChatCompletion{
-		Choices: []openai.ChatCompletionChoice{
+	raw := []byte(`{
+		"choices":[
 			{
-				FinishReason: "stop",
-				Message: openai.ChatCompletionMessage{
-					Content: "I need to check the current state and understand what was last worked on before proceeding.\n\n<function_call><invoke><toolname>exec</toolname><parameters><command>cd /root/clawgo && git status</command></parameters></invoke></function_call>\n\n<function_call><invoke><tool_name>read_file</tool_name><parameters><path>/root/.clawgo/workspace/memory/MEMORY.md</path></parameters></invoke></function_call>",
-				},
-			},
-		},
-	})
+				"finish_reason":"stop",
+				"message":{
+					"content":"I need to check the current state and understand what was last worked on before proceeding.\n\n<function_call><invoke><toolname>exec</toolname><parameters><command>cd /root/clawgo && git status</command></parameters></invoke></function_call>\n\n<function_call><invoke><tool_name>read_file</tool_name><parameters><path>/root/.clawgo/workspace/memory/MEMORY.md</path></parameters></invoke></function_call>"
+				}
+			}
+		]
+	}`)
+	resp, err := parseChatCompletionsResponse(raw)
+	if err != nil {
+		t.Fatalf("parseChatCompletionsResponse error: %v", err)
+	}
 
 	if resp == nil {
 		t.Fatalf("expected response")
@@ -93,6 +95,25 @@ func TestParseCompatFunctionCalls_NoMarkup(t *testing.T) {
 	}
 	if cleaned != "hello" {
 		t.Fatalf("expected content unchanged, got %q", cleaned)
+	}
+}
+
+func TestEndpointForResponsesCompact(t *testing.T) {
+	tests := []struct {
+		base     string
+		relative string
+		want     string
+	}{
+		{"http://localhost:8080/v1", "/responses/compact", "http://localhost:8080/v1/responses/compact"},
+		{"http://localhost:8080/v1/responses", "/responses/compact", "http://localhost:8080/v1/responses/compact"},
+		{"http://localhost:8080/v1/responses/compact", "/responses", "http://localhost:8080/v1/responses"},
+		{"http://localhost:8080/v1/responses/compact", "/responses/compact", "http://localhost:8080/v1/responses/compact"},
+	}
+	for _, tt := range tests {
+		got := endpointFor(tt.base, tt.relative)
+		if got != tt.want {
+			t.Fatalf("endpointFor(%q, %q) = %q, want %q", tt.base, tt.relative, got, tt.want)
+		}
 	}
 }
 
