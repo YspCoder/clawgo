@@ -1898,6 +1898,10 @@ func isModelProviderSelectionError(err error) bool {
 		"invalid model",
 		"does not exist",
 		"not available for model",
+		"not allowed to use this model",
+		"model is not available to your account",
+		"access to this model is denied",
+		"you do not have permission to use this model",
 	}
 
 	for _, keyword := range keywords {
@@ -1908,8 +1912,32 @@ func isModelProviderSelectionError(err error) bool {
 	return false
 }
 
+func isForbiddenModelPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "status 403") && !strings.Contains(msg, "403 forbidden") {
+		return false
+	}
+	keywords := []string{
+		"model",
+		"permission",
+		"forbidden",
+		"access denied",
+		"not allowed",
+		"insufficient permissions",
+	}
+	for _, keyword := range keywords {
+		if strings.Contains(msg, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
 func shouldRetryWithFallbackModel(err error) bool {
-	return isQuotaOrRateLimitError(err) || isModelProviderSelectionError(err) || isGatewayTransientError(err) || isUpstreamAuthRoutingError(err)
+	return isQuotaOrRateLimitError(err) || isModelProviderSelectionError(err) || isForbiddenModelPermissionError(err) || isGatewayTransientError(err) || isUpstreamAuthRoutingError(err)
 }
 
 func isGatewayTransientError(err error) bool {
