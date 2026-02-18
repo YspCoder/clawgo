@@ -53,16 +53,35 @@ func TestNormalizeAPIBase_CompatibilityPaths(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"http://localhost:8080/v1/chat/completions", "http://localhost:8080/v1"},
-		{"http://localhost:8080/v1/chat", "http://localhost:8080/v1"},
-		{"http://localhost:8080/v1/responses", "http://localhost:8080/v1"},
+		{"http://localhost:8080/v1/chat/completions", "http://localhost:8080/v1/chat/completions"},
+		{"http://localhost:8080/v1/responses", "http://localhost:8080/v1/responses"},
 		{"http://localhost:8080/v1", "http://localhost:8080/v1"},
+		{"http://localhost:8080/v1/", "http://localhost:8080/v1"},
 	}
 
 	for _, tt := range tests {
 		got := normalizeAPIBase(tt.in)
 		if got != tt.want {
 			t.Fatalf("normalizeAPIBase(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeProtocol(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", ProtocolChatCompletions},
+		{"chat_completions", ProtocolChatCompletions},
+		{"responses", ProtocolResponses},
+		{"invalid", ProtocolChatCompletions},
+	}
+
+	for _, tt := range tests {
+		got := normalizeProtocol(tt.in)
+		if got != tt.want {
+			t.Fatalf("normalizeProtocol(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }

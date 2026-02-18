@@ -11,9 +11,6 @@ func Validate(cfg *Config) []error {
 
 	var errs []error
 
-	if cfg.Agents.Defaults.Model == "" {
-		errs = append(errs, fmt.Errorf("agents.defaults.model is required"))
-	}
 	if cfg.Agents.Defaults.MaxToolIterations <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.max_tool_iterations must be > 0"))
 	}
@@ -36,11 +33,22 @@ func Validate(cfg *Config) []error {
 		}
 	}
 
-	if cfg.Providers.Proxy.APIBase == "" {
-		errs = append(errs, fmt.Errorf("providers.proxy.api_base is required"))
+	if len(cfg.Providers.Proxies) == 0 {
+		errs = append(errs, validateProviderConfig("providers.proxy", cfg.Providers.Proxy)...)
+	} else {
+		for name, p := range cfg.Providers.Proxies {
+			errs = append(errs, validateProviderConfig("providers.proxies."+name, p)...)
+		}
 	}
-	if cfg.Providers.Proxy.TimeoutSec <= 0 {
-		errs = append(errs, fmt.Errorf("providers.proxy.timeout_sec must be > 0"))
+	if cfg.Agents.Defaults.Proxy != "" {
+		if !providerExists(cfg, cfg.Agents.Defaults.Proxy) {
+			errs = append(errs, fmt.Errorf("agents.defaults.proxy %q not found in providers", cfg.Agents.Defaults.Proxy))
+		}
+	}
+	for _, name := range cfg.Agents.Defaults.ProxyFallbacks {
+		if !providerExists(cfg, name) {
+			errs = append(errs, fmt.Errorf("agents.defaults.proxy_fallbacks contains unknown proxy %q", name))
+		}
 	}
 
 	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
@@ -128,4 +136,36 @@ func Validate(cfg *Config) []error {
 	}
 
 	return errs
+}
+
+func validateProviderConfig(path string, p ProviderConfig) []error {
+	var errs []error
+	if p.APIBase == "" {
+		errs = append(errs, fmt.Errorf("%s.api_base is required", path))
+	}
+	if p.Protocol != "" {
+		switch p.Protocol {
+		case "chat_completions", "responses":
+		default:
+			errs = append(errs, fmt.Errorf("%s.protocol must be one of: chat_completions, responses", path))
+		}
+	}
+	if p.TimeoutSec <= 0 {
+		errs = append(errs, fmt.Errorf("%s.timeout_sec must be > 0", path))
+	}
+	if len(p.Models) == 0 {
+		errs = append(errs, fmt.Errorf("%s.models must contain at least one model", path))
+	}
+	return errs
+}
+
+func providerExists(cfg *Config, name string) bool {
+	if name == "proxy" && cfg.Providers.Proxy.APIBase != "" {
+		return true
+	}
+	if cfg.Providers.Proxies == nil {
+		return false
+	}
+	_, ok := cfg.Providers.Proxies[name]
+	return ok
 }

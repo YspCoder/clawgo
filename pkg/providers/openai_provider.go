@@ -21,21 +21,31 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"github.com/openai/openai-go/v3/shared/constant"
 )
 
+const (
+	ProtocolChatCompletions = "chat_completions"
+	ProtocolResponses       = "responses"
+)
+
 type HTTPProvider struct {
-	apiKey     string
-	apiBase    string
-	authMode   string
-	timeout    time.Duration
-	httpClient *http.Client
-	client     openai.Client
+	apiKey       string
+	apiBase      string
+	protocol     string
+	defaultModel string
+	authMode     string
+	timeout      time.Duration
+	httpClient   *http.Client
+	client       openai.Client
 }
 
-func NewHTTPProvider(apiKey, apiBase, authMode string, timeout time.Duration) *HTTPProvider {
+func NewHTTPProvider(apiKey, apiBase, protocol, defaultModel, authMode string, timeout time.Duration) *HTTPProvider {
 	normalizedBase := normalizeAPIBase(apiBase)
+	resolvedProtocol := normalizeProtocol(protocol)
+	resolvedDefaultModel := strings.TrimSpace(defaultModel)
 	httpClient := &http.Client{Timeout: timeout}
 	clientOpts := []option.RequestOption{
 		option.WithBaseURL(normalizedBase),
@@ -54,12 +64,14 @@ func NewHTTPProvider(apiKey, apiBase, authMode string, timeout time.Duration) *H
 	}
 
 	return &HTTPProvider{
-		apiKey:     apiKey,
-		apiBase:    normalizedBase,
-		authMode:   authMode,
-		timeout:    timeout,
-		httpClient: httpClient,
-		client:     openai.NewClient(clientOpts...),
+		apiKey:       apiKey,
+		apiBase:      normalizedBase,
+		protocol:     resolvedProtocol,
+		defaultModel: resolvedDefaultModel,
+		authMode:     authMode,
+		timeout:      timeout,
+		httpClient:   httpClient,
+		client:       openai.NewClient(clientOpts...),
 	}
 }
 
@@ -70,22 +82,112 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 
 	logger.DebugCF("provider", "OpenAI SDK chat request", map[string]interface{}{
 		"api_base":       p.apiBase,
+		"protocol":       p.protocol,
 		"model":          model,
 		"messages_count": len(messages),
 		"tools_count":    len(tools),
 		"timeout":        p.timeout.String(),
 	})
 
+	if p.protocol == ProtocolResponses {
+		params, err := buildResponsesParams(messages, tools, model, options)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := p.client.Responses.New(ctx, params)
+		if err != nil {
+			return nil, fmt.Errorf("API error: %w", err)
+		}
+		return mapResponsesAPIResponse(resp), nil
+	}
+
 	params, err := buildChatParams(messages, tools, model, options)
 	if err != nil {
 		return nil, err
 	}
-
 	resp, err := p.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("API error: %w", err)
 	}
 	return mapChatCompletionResponse(resp), nil
+}
+
+func buildResponsesParams(messages []Message, tools []ToolDefinition, model string, opts map[string]interface{}) (responses.ResponseNewParams, error) {
+	params := responses.ResponseNewParams{
+		Model: model,
+		Input: responses.ResponseNewParamsInputUnion{
+			OfInputItemList: make(responses.ResponseInputParam, 0, len(messages)),
+		},
+	}
+
+	for _, msg := range messages {
+		inputItems := toResponsesInputItems(msg)
+		params.Input.OfInputItemList = append(params.Input.OfInputItemList, inputItems...)
+	}
+
+	if len(tools) > 0 {
+		params.Tools = make([]responses.ToolUnionParam, 0, len(tools))
+		for _, t := range tools {
+			tool := responses.ToolParamOfFunction(t.Function.Name, t.Function.Parameters, false)
+			if t.Function.Description != "" && tool.OfFunction != nil {
+				tool.OfFunction.Description = param.NewOpt(t.Function.Description)
+			}
+			params.Tools = append(params.Tools, tool)
+		}
+		params.ToolChoice.OfToolChoiceMode = param.NewOpt(responses.ToolChoiceOptionsAuto)
+	}
+
+	if maxTokens, ok := int64FromOption(opts, "max_tokens"); ok {
+		params.MaxOutputTokens = param.NewOpt(maxTokens)
+	}
+	if temperature, ok := float64FromOption(opts, "temperature"); ok {
+		params.Temperature = param.NewOpt(temperature)
+	}
+
+	return params, nil
+}
+
+func toResponsesInputItems(msg Message) []responses.ResponseInputItemUnionParam {
+	role := strings.ToLower(strings.TrimSpace(msg.Role))
+	switch role {
+	case "system":
+		return []responses.ResponseInputItemUnionParam{
+			responses.ResponseInputItemParamOfMessage(msg.Content, responses.EasyInputMessageRoleSystem),
+		}
+	case "developer":
+		return []responses.ResponseInputItemUnionParam{
+			responses.ResponseInputItemParamOfMessage(msg.Content, responses.EasyInputMessageRoleDeveloper),
+		}
+	case "assistant":
+		items := []responses.ResponseInputItemUnionParam{
+			responses.ResponseInputItemParamOfMessage(msg.Content, responses.EasyInputMessageRoleAssistant),
+		}
+		for _, tc := range msg.ToolCalls {
+			name, arguments := normalizeOutboundToolCall(tc)
+			if name == "" {
+				continue
+			}
+			callID := strings.TrimSpace(tc.ID)
+			if callID == "" {
+				callID = fmt.Sprintf("call_%d", len(items))
+			}
+			items = append(items, responses.ResponseInputItemParamOfFunctionCall(arguments, callID, name))
+		}
+		return items
+	case "tool":
+		if strings.TrimSpace(msg.ToolCallID) == "" {
+			return []responses.ResponseInputItemUnionParam{
+				responses.ResponseInputItemParamOfMessage(msg.Content, responses.EasyInputMessageRoleUser),
+			}
+		}
+		return []responses.ResponseInputItemUnionParam{
+			responses.ResponseInputItemParamOfFunctionCallOutput(msg.ToolCallID, msg.Content),
+		}
+	default:
+		return []responses.ResponseInputItemUnionParam{
+			responses.ResponseInputItemParamOfMessage(msg.Content, responses.EasyInputMessageRoleUser),
+		}
+	}
 }
 
 func buildChatParams(messages []Message, tools []ToolDefinition, model string, opts map[string]interface{}) (openai.ChatCompletionNewParams, error) {
@@ -264,6 +366,74 @@ func mapChatCompletionResponse(resp *openai.ChatCompletion) *LLMResponse {
 	}
 }
 
+func mapResponsesAPIResponse(resp *responses.Response) *LLMResponse {
+	if resp == nil {
+		return &LLMResponse{
+			Content:      "",
+			FinishReason: "stop",
+		}
+	}
+
+	content := resp.OutputText()
+	toolCalls := make([]ToolCall, 0)
+	for _, item := range resp.Output {
+		if item.Type != "function_call" {
+			continue
+		}
+		call := item.AsFunctionCall()
+		if strings.TrimSpace(call.Name) == "" {
+			continue
+		}
+		args := map[string]interface{}{}
+		if call.Arguments != "" {
+			if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+				args["raw"] = call.Arguments
+			}
+		}
+		id := strings.TrimSpace(call.CallID)
+		if id == "" {
+			id = strings.TrimSpace(call.ID)
+		}
+		if id == "" {
+			id = fmt.Sprintf("call_%d", len(toolCalls)+1)
+		}
+		toolCalls = append(toolCalls, ToolCall{
+			ID:        id,
+			Name:      call.Name,
+			Arguments: args,
+		})
+	}
+
+	if len(toolCalls) == 0 {
+		compatCalls, cleanedContent := parseCompatFunctionCalls(content)
+		if len(compatCalls) > 0 {
+			toolCalls = compatCalls
+			content = cleanedContent
+		}
+	}
+
+	finishReason := strings.TrimSpace(string(resp.Status))
+	if finishReason == "" || finishReason == "completed" {
+		finishReason = "stop"
+	}
+
+	var usage *UsageInfo
+	if resp.Usage.TotalTokens > 0 || resp.Usage.InputTokens > 0 || resp.Usage.OutputTokens > 0 {
+		usage = &UsageInfo{
+			PromptTokens:     int(resp.Usage.InputTokens),
+			CompletionTokens: int(resp.Usage.OutputTokens),
+			TotalTokens:      int(resp.Usage.TotalTokens),
+		}
+	}
+
+	return &LLMResponse{
+		Content:      content,
+		ToolCalls:    toolCalls,
+		FinishReason: finishReason,
+		Usage:        usage,
+	}
+}
+
 func int64FromOption(options map[string]interface{}, key string) (int64, bool) {
 	if options == nil {
 		return 0, false
@@ -315,23 +485,19 @@ func normalizeAPIBase(raw string) string {
 		return strings.TrimRight(trimmed, "/")
 	}
 
-	path := strings.TrimRight(u.Path, "/")
-	for _, suffix := range []string{
-		"/chat/completions",
-		"/chat",
-		"/responses",
-	} {
-		if strings.HasSuffix(path, suffix) {
-			path = strings.TrimSuffix(path, suffix)
-			break
-		}
-	}
-
-	if path == "" {
-		path = "/"
-	}
-	u.Path = path
+	u.Path = strings.TrimRight(u.Path, "/")
 	return strings.TrimRight(u.String(), "/")
+}
+
+func normalizeProtocol(raw string) string {
+	switch strings.TrimSpace(raw) {
+	case "", ProtocolChatCompletions:
+		return ProtocolChatCompletions
+	case ProtocolResponses:
+		return ProtocolResponses
+	default:
+		return ProtocolChatCompletions
+	}
 }
 
 func parseCompatFunctionCalls(content string) ([]ToolCall, string) {
@@ -406,20 +572,124 @@ func extractTag(src string, tag string) string {
 }
 
 func (p *HTTPProvider) GetDefaultModel() string {
-	return ""
+	return p.defaultModel
 }
 
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {
-	apiKey := cfg.Providers.Proxy.APIKey
-	apiBase := cfg.Providers.Proxy.APIBase
-	authMode := cfg.Providers.Proxy.Auth
-
-	if apiBase == "" {
-		return nil, fmt.Errorf("no API base (CLIProxyAPI) configured")
+	name := strings.TrimSpace(cfg.Agents.Defaults.Proxy)
+	if name == "" {
+		name = "proxy"
 	}
-	if cfg.Providers.Proxy.TimeoutSec <= 0 {
-		return nil, fmt.Errorf("invalid providers.proxy.timeout_sec: %d", cfg.Providers.Proxy.TimeoutSec)
-	}
+	return CreateProviderByName(cfg, name)
+}
 
-	return NewHTTPProvider(apiKey, apiBase, authMode, time.Duration(cfg.Providers.Proxy.TimeoutSec)*time.Second), nil
+func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) {
+	pc, err := getProviderConfigByName(cfg, name)
+	if err != nil {
+		return nil, err
+	}
+	if pc.APIBase == "" {
+		return nil, fmt.Errorf("no API base configured for provider %q", name)
+	}
+	if pc.TimeoutSec <= 0 {
+		return nil, fmt.Errorf("invalid timeout_sec for provider %q: %d", name, pc.TimeoutSec)
+	}
+	defaultModel := ""
+	if len(pc.Models) > 0 {
+		defaultModel = pc.Models[0]
+	}
+	return NewHTTPProvider(pc.APIKey, pc.APIBase, pc.Protocol, defaultModel, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second), nil
+}
+
+func CreateProviders(cfg *config.Config) (map[string]LLMProvider, error) {
+	configs := getAllProviderConfigs(cfg)
+	if len(configs) == 0 {
+		return nil, fmt.Errorf("no providers configured")
+	}
+	out := make(map[string]LLMProvider, len(configs))
+	for name := range configs {
+		p, err := CreateProviderByName(cfg, name)
+		if err != nil {
+			return nil, err
+		}
+		out[name] = p
+	}
+	return out, nil
+}
+
+func GetProviderModels(cfg *config.Config, name string) []string {
+	pc, err := getProviderConfigByName(cfg, name)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(pc.Models))
+	seen := map[string]bool{}
+	for _, m := range pc.Models {
+		model := strings.TrimSpace(m)
+		if model == "" || seen[model] {
+			continue
+		}
+		seen[model] = true
+		out = append(out, model)
+	}
+	return out
+}
+
+func ListProviderNames(cfg *config.Config) []string {
+	configs := getAllProviderConfigs(cfg)
+	if len(configs) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(configs))
+	for name := range configs {
+		names = append(names, name)
+	}
+	return names
+}
+
+func getAllProviderConfigs(cfg *config.Config) map[string]config.ProviderConfig {
+	out := map[string]config.ProviderConfig{}
+	if cfg == nil {
+		return out
+	}
+	includeLegacyProxy := len(cfg.Providers.Proxies) == 0 || strings.TrimSpace(cfg.Agents.Defaults.Proxy) == "proxy" || containsStringTrimmed(cfg.Agents.Defaults.ProxyFallbacks, "proxy")
+	if includeLegacyProxy && (cfg.Providers.Proxy.APIBase != "" || cfg.Providers.Proxy.APIKey != "" || cfg.Providers.Proxy.TimeoutSec > 0) {
+		out["proxy"] = cfg.Providers.Proxy
+	}
+	for name, pc := range cfg.Providers.Proxies {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		out[trimmed] = pc
+	}
+	return out
+}
+
+func containsStringTrimmed(values []string, target string) bool {
+	t := strings.TrimSpace(target)
+	for _, v := range values {
+		if strings.TrimSpace(v) == t {
+			return true
+		}
+	}
+	return false
+}
+
+func getProviderConfigByName(cfg *config.Config, name string) (config.ProviderConfig, error) {
+	if cfg == nil {
+		return config.ProviderConfig{}, fmt.Errorf("nil config")
+	}
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return config.ProviderConfig{}, fmt.Errorf("empty provider name")
+	}
+	if trimmed == "proxy" {
+		return cfg.Providers.Proxy, nil
+	}
+	pc, ok := cfg.Providers.Proxies[trimmed]
+	if !ok {
+		return config.ProviderConfig{}, fmt.Errorf("provider %q not found", trimmed)
+	}
+	return pc, nil
 }

@@ -29,8 +29,8 @@ type AgentsConfig struct {
 
 type AgentDefaults struct {
 	Workspace         string                  `json:"workspace" env:"CLAWGO_AGENTS_DEFAULTS_WORKSPACE"`
-	Model             string                  `json:"model" env:"CLAWGO_AGENTS_DEFAULTS_MODEL"`
-	ModelFallbacks    []string                `json:"model_fallbacks" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_FALLBACKS"`
+	Proxy             string                  `json:"proxy" env:"CLAWGO_AGENTS_DEFAULTS_PROXY"`
+	ProxyFallbacks    []string                `json:"proxy_fallbacks" env:"CLAWGO_AGENTS_DEFAULTS_PROXY_FALLBACKS"`
 	MaxTokens         int                     `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature       float64                 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
@@ -104,14 +104,17 @@ type DingTalkConfig struct {
 }
 
 type ProvidersConfig struct {
-	Proxy ProviderConfig `json:"proxy"`
+	Proxy   ProviderConfig            `json:"proxy"`
+	Proxies map[string]ProviderConfig `json:"proxies"`
 }
 
 type ProviderConfig struct {
-	APIKey     string `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase    string `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
-	Auth       string `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
-	TimeoutSec int    `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`
+	APIKey     string   `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
+	APIBase    string   `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
+	Protocol   string   `json:"protocol" env:"CLAWGO_PROVIDERS_{{.Name}}_PROTOCOL"`
+	Models     []string `json:"models" env:"CLAWGO_PROVIDERS_{{.Name}}_MODELS"`
+	Auth       string   `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
+	TimeoutSec int      `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`
 }
 
 type GatewayConfig struct {
@@ -228,8 +231,8 @@ func DefaultConfig() *Config {
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:         filepath.Join(configDir, "workspace"),
-				Model:             "glm-4.7",
-				ModelFallbacks:    []string{},
+				Proxy:             "proxy",
+				ProxyFallbacks:    []string{},
 				MaxTokens:         8192,
 				Temperature:       0.7,
 				MaxToolIterations: 20,
@@ -288,8 +291,11 @@ func DefaultConfig() *Config {
 		Providers: ProvidersConfig{
 			Proxy: ProviderConfig{
 				APIBase:    "http://localhost:8080/v1",
+				Protocol:   "chat_completions",
+				Models:     []string{"glm-4.7"},
 				TimeoutSec: 90,
 			},
+			Proxies: map[string]ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",

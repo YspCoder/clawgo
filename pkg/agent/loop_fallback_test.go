@@ -39,9 +39,15 @@ func TestCallLLMWithModelFallback_RetriesOnUnknownProvider(t *testing.T) {
 	}
 
 	al := &AgentLoop{
-		provider:       p,
-		model:          "gemini-3-flash",
-		modelFallbacks: []string{"gpt-4o-mini"},
+		provider: p,
+		proxy:    "proxy",
+		model:    "gemini-3-flash",
+		providersByProxy: map[string]providers.LLMProvider{
+			"proxy": p,
+		},
+		modelsByProxy: map[string][]string{
+			"proxy": []string{"gemini-3-flash", "gpt-4o-mini"},
+		},
 	}
 
 	resp, err := al.callLLMWithModelFallback(context.Background(), nil, nil, nil)
@@ -71,9 +77,15 @@ func TestCallLLMWithModelFallback_RetriesOnGateway502(t *testing.T) {
 	}
 
 	al := &AgentLoop{
-		provider:       p,
-		model:          "gemini-3-flash",
-		modelFallbacks: []string{"gpt-4o-mini"},
+		provider: p,
+		proxy:    "proxy",
+		model:    "gemini-3-flash",
+		providersByProxy: map[string]providers.LLMProvider{
+			"proxy": p,
+		},
+		modelsByProxy: map[string][]string{
+			"proxy": []string{"gemini-3-flash", "gpt-4o-mini"},
+		},
 	}
 
 	resp, err := al.callLLMWithModelFallback(context.Background(), nil, nil, nil)
@@ -100,9 +112,15 @@ func TestCallLLMWithModelFallback_RetriesOnGateway524(t *testing.T) {
 	}
 
 	al := &AgentLoop{
-		provider:       p,
-		model:          "gemini-3-flash",
-		modelFallbacks: []string{"gpt-4o-mini"},
+		provider: p,
+		proxy:    "proxy",
+		model:    "gemini-3-flash",
+		providersByProxy: map[string]providers.LLMProvider{
+			"proxy": p,
+		},
+		modelsByProxy: map[string][]string{
+			"proxy": []string{"gemini-3-flash", "gpt-4o-mini"},
+		},
 	}
 
 	resp, err := al.callLLMWithModelFallback(context.Background(), nil, nil, nil)
@@ -129,9 +147,15 @@ func TestCallLLMWithModelFallback_RetriesOnAuthUnavailable500(t *testing.T) {
 	}
 
 	al := &AgentLoop{
-		provider:       p,
-		model:          "gemini-3-flash",
-		modelFallbacks: []string{"gpt-4o-mini"},
+		provider: p,
+		proxy:    "proxy",
+		model:    "gemini-3-flash",
+		providersByProxy: map[string]providers.LLMProvider{
+			"proxy": p,
+		},
+		modelsByProxy: map[string][]string{
+			"proxy": []string{"gemini-3-flash", "gpt-4o-mini"},
+		},
 	}
 
 	resp, err := al.callLLMWithModelFallback(context.Background(), nil, nil, nil)
@@ -157,9 +181,15 @@ func TestCallLLMWithModelFallback_NoRetryOnNonRetryableError(t *testing.T) {
 	}
 
 	al := &AgentLoop{
-		provider:       p,
-		model:          "gemini-3-flash",
-		modelFallbacks: []string{"gpt-4o-mini"},
+		provider: p,
+		proxy:    "proxy",
+		model:    "gemini-3-flash",
+		providersByProxy: map[string]providers.LLMProvider{
+			"proxy": p,
+		},
+		modelsByProxy: map[string][]string{
+			"proxy": []string{"gemini-3-flash", "gpt-4o-mini"},
+		},
 	}
 
 	_, err := al.callLLMWithModelFallback(context.Background(), nil, nil, nil)
@@ -168,6 +198,55 @@ func TestCallLLMWithModelFallback_NoRetryOnNonRetryableError(t *testing.T) {
 	}
 	if len(p.called) != 1 {
 		t.Fatalf("expected single model attempt, got %d (%v)", len(p.called), p.called)
+	}
+}
+
+func TestCallLLMWithModelFallback_SwitchesProxyAfterProxyModelsExhausted(t *testing.T) {
+	primary := &fallbackTestProvider{
+		byModel: map[string]fallbackResult{
+			"gemini-3-flash": {err: fmt.Errorf(`API error (status 502): {"error":{"message":"unknown provider for model gemini-3-flash"}}`)},
+			"gpt-4o-mini":    {err: fmt.Errorf(`API error (status 400): {"error":{"message":"model not found"}}`)},
+		},
+	}
+	backup := &fallbackTestProvider{
+		byModel: map[string]fallbackResult{
+			"gemini-3-flash": {err: fmt.Errorf(`API error (status 400): {"error":{"message":"model not found"}}`)},
+			"deepseek-chat":  {resp: &providers.LLMResponse{Content: "ok"}},
+		},
+	}
+
+	al := &AgentLoop{
+		proxy:          "primary",
+		proxyFallbacks: []string{"backup"},
+		model:          "gemini-3-flash",
+		providersByProxy: map[string]providers.LLMProvider{
+			"primary": primary,
+			"backup":  backup,
+		},
+		modelsByProxy: map[string][]string{
+			"primary": []string{"gemini-3-flash", "gpt-4o-mini"},
+			"backup":  []string{"deepseek-chat"},
+		},
+	}
+
+	resp, err := al.callLLMWithModelFallback(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || resp.Content != "ok" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if al.proxy != "backup" {
+		t.Fatalf("expected proxy switch to backup, got %q", al.proxy)
+	}
+	if al.model != "deepseek-chat" {
+		t.Fatalf("expected model switch to deepseek-chat, got %q", al.model)
+	}
+	if len(primary.called) != 2 {
+		t.Fatalf("expected 2 model attempts in primary, got %d (%v)", len(primary.called), primary.called)
+	}
+	if len(backup.called) != 2 || backup.called[1] != "deepseek-chat" {
+		t.Fatalf("unexpected backup attempts: %v", backup.called)
 	}
 }
 

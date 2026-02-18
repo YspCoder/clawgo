@@ -1248,9 +1248,16 @@ func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.Me
 		return nil, nil, fmt.Errorf("create channel manager: %w", err)
 	}
 
+	activeProvider := cfg.Providers.Proxy
+	if name := strings.TrimSpace(cfg.Agents.Defaults.Proxy); name != "" && name != "proxy" {
+		if p, ok := cfg.Providers.Proxies[name]; ok {
+			activeProvider = p
+		}
+	}
+
 	var transcriber *voice.GroqTranscriber
-	if cfg.Providers.Proxy.APIKey != "" && strings.Contains(cfg.Providers.Proxy.APIBase, "groq.com") {
-		transcriber = voice.NewGroqTranscriber(cfg.Providers.Proxy.APIKey)
+	if activeProvider.APIKey != "" && strings.Contains(activeProvider.APIBase, "groq.com") {
+		transcriber = voice.NewGroqTranscriber(activeProvider.APIKey)
 		logger.InfoC("voice", "Groq voice transcription enabled via Proxy config")
 	}
 
@@ -1501,7 +1508,20 @@ func statusCmd() {
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("Model: %s\n", cfg.Agents.Defaults.Model)
+		activeProvider := cfg.Providers.Proxy
+		if name := strings.TrimSpace(cfg.Agents.Defaults.Proxy); name != "" && name != "proxy" {
+			if p, ok := cfg.Providers.Proxies[name]; ok {
+				activeProvider = p
+			}
+		}
+		activeModel := ""
+		for _, m := range activeProvider.Models {
+			if s := strings.TrimSpace(m); s != "" {
+				activeModel = s
+				break
+			}
+		}
+		fmt.Printf("Model: %s\n", activeModel)
 		fmt.Printf("CLIProxyAPI Base: %s\n", cfg.Providers.Proxy.APIBase)
 		hasKey := cfg.Providers.Proxy.APIKey != ""
 		status := "not set"

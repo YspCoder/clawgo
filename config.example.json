@@ -2,8 +2,8 @@
   "agents": {
     "defaults": {
       "workspace": "~/.clawgo/workspace",
-      "model": "glm-4.7",
-      "model_fallbacks": ["gpt-4o-mini", "deepseek-chat"],
+      "proxy": "proxy",
+      "proxy_fallbacks": ["backup"],
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20,
@@ -57,8 +57,20 @@
     "proxy": {
       "api_key": "YOUR_CLIPROXYAPI_KEY",
       "api_base": "http://localhost:8080/v1",
+      "protocol": "chat_completions",
+      "models": ["glm-4.7", "gpt-4o-mini"],
       "auth": "bearer",
       "timeout_sec": 90
+    },
+    "proxies": {
+      "backup": {
+        "api_key": "YOUR_BACKUP_PROXY_KEY",
+        "api_base": "http://localhost:8081/v1",
+        "protocol": "responses",
+        "models": ["gpt-4o-mini", "deepseek-chat"],
+        "auth": "bearer",
+        "timeout_sec": 90
+      }
     }
   },
   "tools": {
