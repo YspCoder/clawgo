@@ -3,23 +3,22 @@ package providers
 import (
 	"strings"
 	"testing"
+
+	"github.com/openai/openai-go/v3"
 )
 
-func TestParseResponse_CompatFunctionCallXML(t *testing.T) {
-	p := &HTTPProvider{}
-	body := []byte(`{
-		"choices": [{
-			"message": {
-				"content": "I need to check the current state and understand what was last worked on before proceeding.\n\n<function_call><invoke><toolname>exec</toolname><parameters><command>cd /root/clawgo && git status</command></parameters></invoke></function_call>\n\n<function_call><invoke><tool_name>read_file</tool_name><parameters><path>/root/.clawgo/workspace/memory/MEMORY.md</path></parameters></invoke></function_call>"
+func TestMapChatCompletionResponse_CompatFunctionCallXML(t *testing.T) {
+	resp := mapChatCompletionResponse(&openai.ChatCompletion{
+		Choices: []openai.ChatCompletionChoice{
+			{
+				FinishReason: "stop",
+				Message: openai.ChatCompletionMessage{
+					Content: "I need to check the current state and understand what was last worked on before proceeding.\n\n<function_call><invoke><toolname>exec</toolname><parameters><command>cd /root/clawgo && git status</command></parameters></invoke></function_call>\n\n<function_call><invoke><tool_name>read_file</tool_name><parameters><path>/root/.clawgo/workspace/memory/MEMORY.md</path></parameters></invoke></function_call>",
+				},
 			},
-			"finish_reason": "stop"
-		}]
-	}`)
+		},
+	})
 
-	resp, err := p.parseResponse(body)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 	if resp == nil {
 		t.Fatalf("expected response")
 	}
@@ -46,6 +45,25 @@ func TestParseResponse_CompatFunctionCallXML(t *testing.T) {
 	}
 	if containsFunctionCallMarkup(resp.Content) {
 		t.Fatalf("expected function call markup removed from content, got %q", resp.Content)
+	}
+}
+
+func TestNormalizeAPIBase_CompatibilityPaths(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"http://localhost:8080/v1/chat/completions", "http://localhost:8080/v1"},
+		{"http://localhost:8080/v1/chat", "http://localhost:8080/v1"},
+		{"http://localhost:8080/v1/responses", "http://localhost:8080/v1"},
+		{"http://localhost:8080/v1", "http://localhost:8080/v1"},
+	}
+
+	for _, tt := range tests {
+		got := normalizeAPIBase(tt.in)
+		if got != tt.want {
+			t.Fatalf("normalizeAPIBase(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 
