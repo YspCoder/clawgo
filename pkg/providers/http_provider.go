@@ -141,11 +141,13 @@ func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, to
 func toResponsesInputItems(msg Message) []map[string]interface{} {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
-	case "system", "developer", "assistant", "user":
-		return []map[string]interface{}{responsesMessageItem(role, msg.Content)}
+	case "system", "developer", "user":
+		return []map[string]interface{}{responsesMessageItem(role, msg.Content, "input_text")}
+	case "assistant":
+		return []map[string]interface{}{responsesMessageItem(role, msg.Content, "output_text")}
 	case "tool":
 		if strings.TrimSpace(msg.ToolCallID) == "" {
-			return []map[string]interface{}{responsesMessageItem("user", msg.Content)}
+			return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
 		}
 		return []map[string]interface{}{map[string]interface{}{
 			"type":    "function_call_output",
@@ -153,17 +155,21 @@ func toResponsesInputItems(msg Message) []map[string]interface{} {
 			"output":  msg.Content,
 		}}
 	default:
-		return []map[string]interface{}{responsesMessageItem("user", msg.Content)}
+		return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
 	}
 }
 
-func responsesMessageItem(role, text string) map[string]interface{} {
+func responsesMessageItem(role, text, contentType string) map[string]interface{} {
+	ct := strings.TrimSpace(contentType)
+	if ct == "" {
+		ct = "input_text"
+	}
 	return map[string]interface{}{
 		"type": "message",
 		"role": role,
 		"content": []map[string]interface{}{
 			{
-				"type": "input_text",
+				"type": ct,
 				"text": text,
 			},
 		},
@@ -523,7 +529,7 @@ func (p *HTTPProvider) BuildSummaryViaResponsesCompact(ctx context.Context, mode
 	}
 	input := make([]map[string]interface{}, 0, len(messages)+1)
 	if strings.TrimSpace(existingSummary) != "" {
-		input = append(input, responsesMessageItem("system", "Existing summary:\n"+strings.TrimSpace(existingSummary)))
+		input = append(input, responsesMessageItem("system", "Existing summary:\n"+strings.TrimSpace(existingSummary), "input_text"))
 	}
 	for _, msg := range messages {
 		input = append(input, toResponsesInputItems(msg)...)

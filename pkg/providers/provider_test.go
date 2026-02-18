@@ -117,6 +117,24 @@ func TestEndpointForResponsesCompact(t *testing.T) {
 	}
 }
 
+func TestToResponsesInputItems_AssistantUsesOutputText(t *testing.T) {
+	items := toResponsesInputItems(Message{
+		Role:    "assistant",
+		Content: "hello",
+	})
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	content, ok := items[0]["content"].([]map[string]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatalf("unexpected content shape: %#v", items[0]["content"])
+	}
+	gotType, _ := content[0]["type"].(string)
+	if gotType != "output_text" {
+		t.Fatalf("assistant content type = %q, want output_text", gotType)
+	}
+}
+
 func containsFunctionCallMarkup(s string) bool {
 	return len(s) > 0 && (strings.Contains(s, "<function_call>") || strings.Contains(s, "</function_call>"))
 }
