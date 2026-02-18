@@ -11,7 +11,7 @@
 - **自主协作能力**：支持自然语言驱动的自主执行、自动学习与启动自检。
 - **多智能体编排**：支持 Pipeline 协议（`role + goal + depends_on + shared_state`）。
 - **记忆与上下文治理**：支持分层记忆、`memory_search` 与自动上下文压缩。
-- **可靠性增强**：模型请求支持 fallback，覆盖配额、路由、网关瞬时错误等场景。
+- **可靠性增强**：支持代理内模型切换与跨代理切换（`proxy_fallbacks`），覆盖配额、路由、网关瞬时错误等场景。
 - **安全防护**：Shell Risk Gate、Sentinel 巡检与自动修复能力。
 - **技能扩展**：支持内置技能与 GitHub 技能安装，支持原子脚本执行。
 
@@ -136,6 +136,7 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
 - 启动会读取 `AGENTS.md`、`SOUL.md`、`USER.md` 作为行为约束与语义上下文。
 - 网关启动后会执行一次自检任务，结合历史会话与 `memory/HEARTBEAT.md` 判断是否继续未完成任务。
 - 上下文压缩同时按消息数量阈值和上下文体积阈值触发，控制 token 成本与长会话稳定性。
+- 上下文压缩模式支持 `summary`、`responses_compact`、`hybrid`；`responses_compact` 需要代理配置 `protocol=responses` 且 `supports_responses_compact=true`。
 - 分层记忆支持 `profile / project / procedures / recent notes`。
 
 上下文压缩配置示例：
@@ -145,6 +146,7 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
   "defaults": {
     "context_compaction": {
       "enabled": true,
+      "mode": "summary",
       "trigger_messages": 60,
       "keep_recent_messages": 20,
       "max_summary_chars": 6000,
@@ -167,7 +169,7 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
 
 ## 🛡️ 风险防护与稳定性
 
-- **Model fallback**：主模型失败时可回退到候选模型，覆盖限流、配额、网关瞬时异常、上游路由异常。
+- **Proxy/Model fallback**：先在当前代理中按 `models` 顺序切换，全部失败后再按 `proxy_fallbacks` 切换代理。
 - **HTTP 兼容处理**：可识别非 JSON 错页并给出响应预览；兼容从 `<function_call>` 文本块提取工具调用。
 - **Shell Risk Gate**：高风险命令默认阻断，支持 dry-run 与 force 策略。
 - **Sentinel**：周期巡检配置/内存/日志目录，支持自动修复与告警转发。

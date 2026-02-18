@@ -40,6 +40,13 @@ type LLMProvider interface {
 	GetDefaultModel() string
 }
 
+// ResponsesCompactor is an optional capability interface.
+// Providers that support OpenAI /v1/responses/compact can implement this.
+type ResponsesCompactor interface {
+	SupportsResponsesCompact() bool
+	BuildSummaryViaResponsesCompact(ctx context.Context, model string, existingSummary string, messages []Message, maxSummaryChars int) (string, error)
+}
+
 type ToolDefinition struct {
 	Type     string                 `json:"type"`
 	Function ToolFunctionDefinition `json:"function"`

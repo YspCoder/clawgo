@@ -2051,7 +2051,7 @@ func (al *AgentLoop) maybeCompactContext(ctx context.Context, sessionKey string)
 	compactUntil := len(history) - cfg.KeepRecentMessages
 	compactCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	newSummary, err := al.buildCompactedSummary(compactCtx, summary, history[:compactUntil], cfg.MaxTranscriptChars)
+	newSummary, err := al.buildCompactedSummary(compactCtx, summary, history[:compactUntil], cfg.MaxTranscriptChars, cfg.MaxSummaryChars, cfg.Mode)
 	if err != nil {
 		return err
 	}
@@ -2081,10 +2081,32 @@ func (al *AgentLoop) buildCompactedSummary(
 	existingSummary string,
 	messages []providers.Message,
 	maxTranscriptChars int,
+	maxSummaryChars int,
+	mode string,
 ) (string, error) {
+	mode = normalizeCompactionMode(mode)
 	transcript := formatCompactionTranscript(messages, maxTranscriptChars)
 	if strings.TrimSpace(transcript) == "" {
 		return strings.TrimSpace(existingSummary), nil
+	}
+
+	if mode == "responses_compact" || mode == "hybrid" {
+		if compactor, ok := al.provider.(providers.ResponsesCompactor); ok && compactor.SupportsResponsesCompact() {
+			compactSummary, err := compactor.BuildSummaryViaResponsesCompact(ctx, al.model, existingSummary, messages, maxSummaryChars)
+			if err == nil && strings.TrimSpace(compactSummary) != "" {
+				if mode == "responses_compact" {
+					return compactSummary, nil
+				}
+				existingSummary = strings.TrimSpace(existingSummary + "\n\n" + compactSummary)
+			} else if mode == "responses_compact" {
+				if err != nil {
+					return "", err
+				}
+				return "", fmt.Errorf("responses_compact produced empty summary")
+			}
+		} else if mode == "responses_compact" {
+			return "", fmt.Errorf("responses_compact mode requires provider support and protocol=responses")
+		}
 	}
 
 	systemPrompt := al.withBootstrapPolicy(`You are a conversation compactor. Merge prior summary and transcript into a concise, factual memory for future turns. Keep user preferences, constraints, decisions, unresolved tasks, and key technical context. Do not include speculative content.`)
@@ -2102,6 +2124,19 @@ func (al *AgentLoop) buildCompactedSummary(
 		return "", err
 	}
 	return resp.Content, nil
+}
+
+func normalizeCompactionMode(raw string) string {
+	switch strings.TrimSpace(raw) {
+	case "", "summary":
+		return "summary"
+	case "responses_compact":
+		return "responses_compact"
+	case "hybrid":
+		return "hybrid"
+	default:
+		return "summary"
+	}
 }
 
 func formatCompactionTranscript(messages []providers.Message, maxChars int) string {
@@ -2571,9 +2606,21 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 		if err != nil {
 			return true, "", fmt.Errorf("status failed: %w", err)
 		}
-		return true, fmt.Sprintf("Model: %s\nAPI Base: %s\nLogging: %v\nConfig: %s",
+		activeProxy := strings.TrimSpace(al.proxy)
+		if activeProxy == "" {
+			activeProxy = "proxy"
+		}
+		activeBase := cfg.Providers.Proxy.APIBase
+		if activeProxy != "proxy" {
+			if p, ok := cfg.Providers.Proxies[activeProxy]; ok {
+				activeBase = p.APIBase
+			}
+		}
+		return true, fmt.Sprintf("Model: %s\nProxy: %s\nAPI Base: %s\nResponses Compact: %v\nLogging: %v\nConfig: %s",
 			al.model,
-			cfg.Providers.Proxy.APIBase,
+			activeProxy,
+			activeBase,
+			providers.ProviderSupportsResponsesCompact(cfg, activeProxy),
 			cfg.Logging.Enabled,
 			al.getConfigPathForCommands(),
 		), nil

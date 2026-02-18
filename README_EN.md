@@ -11,7 +11,7 @@
 - **Autonomous collaboration**: natural-language autonomy, auto-learning, and startup self-check.
 - **Multi-agent orchestration**: built-in Pipeline protocol (`role + goal + depends_on + shared_state`).
 - **Memory and context governance**: layered memory, `memory_search`, and automatic context compaction.
-- **Reliability enhancements**: model fallback for quota, routing, and transient gateway failures.
+- **Reliability enhancements**: in-proxy model switching and cross-proxy fallback (`proxy_fallbacks`) for quota, routing, and transient gateway failures.
 - **Safety controls**: Shell Risk Gate, Sentinel inspection, and auto-heal support.
 - **Skill extensibility**: built-in skills plus GitHub skill installation and atomic script execution.
 
@@ -136,6 +136,7 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
 - On startup, the agent loads `AGENTS.md`, `SOUL.md`, and `USER.md` as behavior and semantic constraints.
 - Gateway startup triggers a self-check task using history and `memory/HEARTBEAT.md` to decide whether unfinished tasks should continue.
 - Context compaction is triggered by both message-count and transcript-size thresholds.
+- Compaction modes are `summary`, `responses_compact`, and `hybrid`; `responses_compact` requires `protocol=responses` and `supports_responses_compact=true` on the active proxy.
 - Layered memory supports `profile / project / procedures / recent notes`.
 
 Context compaction config example:
@@ -145,6 +146,7 @@ Context compaction config example:
   "defaults": {
     "context_compaction": {
       "enabled": true,
+      "mode": "summary",
       "trigger_messages": 60,
       "keep_recent_messages": 20,
       "max_summary_chars": 6000,
@@ -167,7 +169,7 @@ Useful for complex task decomposition, role-based execution, and shared state wo
 
 ## 🛡️ Safety and Reliability
 
-- **Model fallback**: retries with fallback models on quota/rate limits, transient gateway failures, and upstream auth-routing errors.
+- **Proxy/model fallback**: retries models in the current proxy first, then switches proxies in `proxy_fallbacks` when all models fail.
 - **HTTP compatibility handling**: detects non-JSON error pages with body preview; parses tool calls from `<function_call>` blocks.
 - **Shell Risk Gate**: blocks destructive operations by default; supports dry-run and force policies.
 - **Sentinel**: periodic checks for config/memory/log resources with optional auto-heal and notifications.

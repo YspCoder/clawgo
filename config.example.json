@@ -9,6 +9,7 @@
       "max_tool_iterations": 20,
       "context_compaction": {
         "enabled": true,
+        "mode": "summary",
         "trigger_messages": 60,
         "keep_recent_messages": 20,
         "max_summary_chars": 6000,
@@ -59,6 +60,7 @@
       "api_base": "http://localhost:8080/v1",
       "protocol": "chat_completions",
       "models": ["glm-4.7", "gpt-4o-mini"],
+      "supports_responses_compact": false,
       "auth": "bearer",
       "timeout_sec": 90
     },
@@ -68,6 +70,7 @@
         "api_base": "http://localhost:8081/v1",
         "protocol": "responses",
         "models": ["gpt-4o-mini", "deepseek-chat"],
+        "supports_responses_compact": true,
         "auth": "bearer",
         "timeout_sec": 90
       }

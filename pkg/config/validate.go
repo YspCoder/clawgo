@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Validate returns configuration problems found in cfg.
 // It does not mutate cfg.
@@ -16,6 +19,13 @@ func Validate(cfg *Config) []error {
 	}
 	if cfg.Agents.Defaults.ContextCompaction.Enabled {
 		cc := cfg.Agents.Defaults.ContextCompaction
+		if cc.Mode != "" {
+			switch cc.Mode {
+			case "summary", "responses_compact", "hybrid":
+			default:
+				errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.mode must be one of: summary, responses_compact, hybrid"))
+			}
+		}
 		if cc.TriggerMessages <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.trigger_messages must be > 0 when enabled=true"))
 		}
@@ -48,6 +58,15 @@ func Validate(cfg *Config) []error {
 	for _, name := range cfg.Agents.Defaults.ProxyFallbacks {
 		if !providerExists(cfg, name) {
 			errs = append(errs, fmt.Errorf("agents.defaults.proxy_fallbacks contains unknown proxy %q", name))
+		}
+	}
+	if cfg.Agents.Defaults.ContextCompaction.Enabled && cfg.Agents.Defaults.ContextCompaction.Mode == "responses_compact" {
+		active := cfg.Agents.Defaults.Proxy
+		if active == "" {
+			active = "proxy"
+		}
+		if pc, ok := providerConfigByName(cfg, active); !ok || !pc.SupportsResponsesCompact || pc.Protocol != "responses" {
+			errs = append(errs, fmt.Errorf("context_compaction.mode=responses_compact requires active proxy %q with protocol=responses and supports_responses_compact=true", active))
 		}
 	}
 
@@ -150,6 +169,9 @@ func validateProviderConfig(path string, p ProviderConfig) []error {
 			errs = append(errs, fmt.Errorf("%s.protocol must be one of: chat_completions, responses", path))
 		}
 	}
+	if p.SupportsResponsesCompact && p.Protocol != "responses" {
+		errs = append(errs, fmt.Errorf("%s.supports_responses_compact=true requires protocol=responses", path))
+	}
 	if p.TimeoutSec <= 0 {
 		errs = append(errs, fmt.Errorf("%s.timeout_sec must be > 0", path))
 	}
@@ -168,4 +190,12 @@ func providerExists(cfg *Config, name string) bool {
 	}
 	_, ok := cfg.Providers.Proxies[name]
 	return ok
+}
+
+func providerConfigByName(cfg *Config, name string) (ProviderConfig, bool) {
+	if strings.TrimSpace(name) == "proxy" {
+		return cfg.Providers.Proxy, true
+	}
+	pc, ok := cfg.Providers.Proxies[name]
+	return pc, ok
 }

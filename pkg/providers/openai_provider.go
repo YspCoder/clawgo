@@ -32,17 +32,18 @@ const (
 )
 
 type HTTPProvider struct {
-	apiKey       string
-	apiBase      string
-	protocol     string
-	defaultModel string
-	authMode     string
-	timeout      time.Duration
-	httpClient   *http.Client
-	client       openai.Client
+	apiKey                   string
+	apiBase                  string
+	protocol                 string
+	defaultModel             string
+	supportsResponsesCompact bool
+	authMode                 string
+	timeout                  time.Duration
+	httpClient               *http.Client
+	client                   openai.Client
 }
 
-func NewHTTPProvider(apiKey, apiBase, protocol, defaultModel, authMode string, timeout time.Duration) *HTTPProvider {
+func NewHTTPProvider(apiKey, apiBase, protocol, defaultModel string, supportsResponsesCompact bool, authMode string, timeout time.Duration) *HTTPProvider {
 	normalizedBase := normalizeAPIBase(apiBase)
 	resolvedProtocol := normalizeProtocol(protocol)
 	resolvedDefaultModel := strings.TrimSpace(defaultModel)
@@ -64,14 +65,15 @@ func NewHTTPProvider(apiKey, apiBase, protocol, defaultModel, authMode string, t
 	}
 
 	return &HTTPProvider{
-		apiKey:       apiKey,
-		apiBase:      normalizedBase,
-		protocol:     resolvedProtocol,
-		defaultModel: resolvedDefaultModel,
-		authMode:     authMode,
-		timeout:      timeout,
-		httpClient:   httpClient,
-		client:       openai.NewClient(clientOpts...),
+		apiKey:                   apiKey,
+		apiBase:                  normalizedBase,
+		protocol:                 resolvedProtocol,
+		defaultModel:             resolvedDefaultModel,
+		supportsResponsesCompact: supportsResponsesCompact,
+		authMode:                 authMode,
+		timeout:                  timeout,
+		httpClient:               httpClient,
+		client:                   openai.NewClient(clientOpts...),
 	}
 }
 
@@ -575,6 +577,80 @@ func (p *HTTPProvider) GetDefaultModel() string {
 	return p.defaultModel
 }
 
+func (p *HTTPProvider) SupportsResponsesCompact() bool {
+	return p != nil && p.supportsResponsesCompact && p.protocol == ProtocolResponses
+}
+
+func (p *HTTPProvider) BuildSummaryViaResponsesCompact(
+	ctx context.Context,
+	model string,
+	existingSummary string,
+	messages []Message,
+	maxSummaryChars int,
+) (string, error) {
+	if !p.SupportsResponsesCompact() {
+		return "", fmt.Errorf("responses compact is not enabled for this provider")
+	}
+
+	inputItems := make(responses.ResponseInputParam, 0, len(messages)+1)
+	if strings.TrimSpace(existingSummary) != "" {
+		inputItems = append(inputItems, responses.ResponseInputItemParamOfMessage(
+			"Existing summary:\n"+strings.TrimSpace(existingSummary),
+			responses.EasyInputMessageRoleSystem,
+		))
+	}
+	for _, msg := range messages {
+		inputItems = append(inputItems, toResponsesInputItems(msg)...)
+	}
+	if len(inputItems) == 0 {
+		return strings.TrimSpace(existingSummary), nil
+	}
+
+	compacted, err := p.client.Responses.Compact(ctx, responses.ResponseCompactParams{
+		Model: responses.ResponseCompactParamsModel(model),
+		Input: responses.ResponseCompactParamsInputUnion{
+			OfResponseInputItemArray: inputItems,
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("responses compact request failed: %w", err)
+	}
+
+	payload, err := json.Marshal(compacted.Output)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize compact output: %w", err)
+	}
+	compactedPayload := strings.TrimSpace(string(payload))
+	if compactedPayload == "" {
+		return "", fmt.Errorf("empty compact output")
+	}
+	if len(compactedPayload) > 12000 {
+		compactedPayload = compactedPayload[:12000] + "..."
+	}
+
+	summaryPrompt := fmt.Sprintf(
+		"Compacted conversation JSON:\n%s\n\nReturn a concise markdown summary with sections: Key Facts, Decisions, Open Items, Next Steps.",
+		compactedPayload,
+	)
+	summaryResp, err := p.client.Responses.New(ctx, responses.ResponseNewParams{
+		Model: model,
+		Input: responses.ResponseNewParamsInputUnion{
+			OfString: param.NewOpt(summaryPrompt),
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("responses summary request failed: %w", err)
+	}
+	summary := strings.TrimSpace(summaryResp.OutputText())
+	if summary == "" {
+		return "", fmt.Errorf("empty summary after responses compact")
+	}
+	if maxSummaryChars > 0 && len(summary) > maxSummaryChars {
+		summary = summary[:maxSummaryChars]
+	}
+	return summary, nil
+}
+
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	name := strings.TrimSpace(cfg.Agents.Defaults.Proxy)
 	if name == "" {
@@ -598,7 +674,15 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 	if len(pc.Models) > 0 {
 		defaultModel = pc.Models[0]
 	}
-	return NewHTTPProvider(pc.APIKey, pc.APIBase, pc.Protocol, defaultModel, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second), nil
+	return NewHTTPProvider(
+		pc.APIKey,
+		pc.APIBase,
+		pc.Protocol,
+		defaultModel,
+		pc.SupportsResponsesCompact,
+		pc.Auth,
+		time.Duration(pc.TimeoutSec)*time.Second,
+	), nil
 }
 
 func CreateProviders(cfg *config.Config) (map[string]LLMProvider, error) {
@@ -633,6 +717,17 @@ func GetProviderModels(cfg *config.Config, name string) []string {
 		out = append(out, model)
 	}
 	return out
+}
+
+func ProviderSupportsResponsesCompact(cfg *config.Config, name string) bool {
+	pc, err := getProviderConfigByName(cfg, name)
+	if err != nil {
+		return false
+	}
+	if !pc.SupportsResponsesCompact {
+		return false
+	}
+	return normalizeProtocol(pc.Protocol) == ProtocolResponses
 }
 
 func ListProviderNames(cfg *config.Config) []string {

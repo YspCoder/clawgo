@@ -38,11 +38,12 @@ type AgentDefaults struct {
 }
 
 type ContextCompactionConfig struct {
-	Enabled            bool `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_ENABLED"`
-	TriggerMessages    int  `json:"trigger_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_TRIGGER_MESSAGES"`
-	KeepRecentMessages int  `json:"keep_recent_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_KEEP_RECENT_MESSAGES"`
-	MaxSummaryChars    int  `json:"max_summary_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_SUMMARY_CHARS"`
-	MaxTranscriptChars int  `json:"max_transcript_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_TRANSCRIPT_CHARS"`
+	Enabled            bool   `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_ENABLED"`
+	Mode               string `json:"mode" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MODE"`
+	TriggerMessages    int    `json:"trigger_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_TRIGGER_MESSAGES"`
+	KeepRecentMessages int    `json:"keep_recent_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_KEEP_RECENT_MESSAGES"`
+	MaxSummaryChars    int    `json:"max_summary_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_SUMMARY_CHARS"`
+	MaxTranscriptChars int    `json:"max_transcript_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_TRANSCRIPT_CHARS"`
 }
 
 type ChannelsConfig struct {
@@ -109,12 +110,13 @@ type ProvidersConfig struct {
 }
 
 type ProviderConfig struct {
-	APIKey     string   `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase    string   `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
-	Protocol   string   `json:"protocol" env:"CLAWGO_PROVIDERS_{{.Name}}_PROTOCOL"`
-	Models     []string `json:"models" env:"CLAWGO_PROVIDERS_{{.Name}}_MODELS"`
-	Auth       string   `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
-	TimeoutSec int      `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`
+	APIKey                   string   `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
+	APIBase                  string   `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
+	Protocol                 string   `json:"protocol" env:"CLAWGO_PROVIDERS_{{.Name}}_PROTOCOL"`
+	Models                   []string `json:"models" env:"CLAWGO_PROVIDERS_{{.Name}}_MODELS"`
+	SupportsResponsesCompact bool     `json:"supports_responses_compact" env:"CLAWGO_PROVIDERS_{{.Name}}_SUPPORTS_RESPONSES_COMPACT"`
+	Auth                     string   `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
+	TimeoutSec               int      `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`
 }
 
 type GatewayConfig struct {
@@ -238,6 +240,7 @@ func DefaultConfig() *Config {
 				MaxToolIterations: 20,
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,
+					Mode:               "summary",
 					TriggerMessages:    60,
 					KeepRecentMessages: 20,
 					MaxSummaryChars:    6000,

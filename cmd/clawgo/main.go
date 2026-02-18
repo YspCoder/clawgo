@@ -296,6 +296,7 @@ func onboard() {
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Configure CLIProxyAPI at", configPath)
 	fmt.Println("     Ensure CLIProxyAPI is running: https://github.com/router-for-me/CLIProxyAPI")
+	fmt.Println("     Set providers.<name>.protocol/models; use supports_responses_compact=true only with protocol=responses")
 	fmt.Println("  2. Chat: clawgo agent -m \"Hello!\"")
 }
 
@@ -1509,9 +1510,11 @@ func statusCmd() {
 
 	if _, err := os.Stat(configPath); err == nil {
 		activeProvider := cfg.Providers.Proxy
+		activeProxyName := "proxy"
 		if name := strings.TrimSpace(cfg.Agents.Defaults.Proxy); name != "" && name != "proxy" {
 			if p, ok := cfg.Providers.Proxies[name]; ok {
 				activeProvider = p
+				activeProxyName = name
 			}
 		}
 		activeModel := ""
@@ -1522,7 +1525,9 @@ func statusCmd() {
 			}
 		}
 		fmt.Printf("Model: %s\n", activeModel)
+		fmt.Printf("Proxy: %s\n", activeProxyName)
 		fmt.Printf("CLIProxyAPI Base: %s\n", cfg.Providers.Proxy.APIBase)
+		fmt.Printf("Supports /v1/responses/compact: %v\n", providers.ProviderSupportsResponsesCompact(cfg, activeProxyName))
 		hasKey := cfg.Providers.Proxy.APIKey != ""
 		status := "not set"
 		if hasKey {
