@@ -29,10 +29,20 @@ type UsageInfo struct {
 }
 
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Role         string               `json:"role"`
+	Content      string               `json:"content"`
+	ContentParts []MessageContentPart `json:"content_parts,omitempty"`
+	ToolCalls    []ToolCall           `json:"tool_calls,omitempty"`
+	ToolCallID   string               `json:"tool_call_id,omitempty"`
+}
+
+type MessageContentPart struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+	MIMEType string `json:"mime_type,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	FileData string `json:"file_data,omitempty"`
 }
 
 type LLMProvider interface {

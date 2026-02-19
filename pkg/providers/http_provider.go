@@ -89,7 +89,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 func (p *HTTPProvider) callChatCompletions(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) ([]byte, int, string, error) {
 	requestBody := map[string]interface{}{
 		"model":    model,
-		"messages": messages,
+		"messages": toChatCompletionsMessages(messages),
 	}
 	if len(tools) > 0 {
 		requestBody["tools"] = tools
@@ -138,10 +138,85 @@ func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, to
 	return p.postJSON(ctx, endpointFor(p.apiBase, "/responses"), requestBody)
 }
 
+func toChatCompletionsMessages(messages []Message) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(messages))
+	for _, msg := range messages {
+		entry := map[string]interface{}{
+			"role": msg.Role,
+		}
+		content := toChatCompletionsContent(msg)
+		if len(content) > 0 {
+			entry["content"] = content
+		} else {
+			entry["content"] = msg.Content
+		}
+
+		if len(msg.ToolCalls) > 0 {
+			entry["tool_calls"] = msg.ToolCalls
+		}
+		if strings.TrimSpace(msg.ToolCallID) != "" {
+			entry["tool_call_id"] = msg.ToolCallID
+		}
+
+		out = append(out, entry)
+	}
+	return out
+}
+
+func toChatCompletionsContent(msg Message) []map[string]interface{} {
+	if len(msg.ContentParts) == 0 {
+		return nil
+	}
+	content := make([]map[string]interface{}, 0, len(msg.ContentParts))
+	for _, part := range msg.ContentParts {
+		switch strings.ToLower(strings.TrimSpace(part.Type)) {
+		case "input_text":
+			if strings.TrimSpace(part.Text) == "" {
+				continue
+			}
+			content = append(content, map[string]interface{}{
+				"type": "text",
+				"text": part.Text,
+			})
+		case "input_image":
+			if strings.TrimSpace(part.ImageURL) == "" {
+				continue
+			}
+			content = append(content, map[string]interface{}{
+				"type": "image_url",
+				"image_url": map[string]interface{}{
+					"url": part.ImageURL,
+				},
+			})
+		case "input_file":
+			fileLabel := strings.TrimSpace(part.Filename)
+			if fileLabel == "" {
+				fileLabel = "attached file"
+			}
+			mimeType := strings.TrimSpace(part.MIMEType)
+			if mimeType == "" {
+				mimeType = "application/octet-stream"
+			}
+			content = append(content, map[string]interface{}{
+				"type": "text",
+				"text": fmt.Sprintf("[file attachment: %s, mime=%s]", fileLabel, mimeType),
+			})
+		}
+	}
+	return content
+}
+
 func toResponsesInputItems(msg Message) []map[string]interface{} {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
 	case "system", "developer", "user":
+		if content := responsesMessageContent(msg); len(content) > 0 {
+			return []map[string]interface{}{{
+				"type":    "message",
+				"role":    role,
+				"content": content,
+			}}
+		}
 		return []map[string]interface{}{responsesMessageItem(role, msg.Content, "input_text")}
 	case "assistant":
 		items := make([]map[string]interface{}, 0, 1+len(msg.ToolCalls))
@@ -195,6 +270,43 @@ func toResponsesInputItems(msg Message) []map[string]interface{} {
 	default:
 		return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
 	}
+}
+
+func responsesMessageContent(msg Message) []map[string]interface{} {
+	content := make([]map[string]interface{}, 0, len(msg.ContentParts))
+	for _, part := range msg.ContentParts {
+		switch strings.ToLower(strings.TrimSpace(part.Type)) {
+		case "input_text":
+			if strings.TrimSpace(part.Text) == "" {
+				continue
+			}
+			content = append(content, map[string]interface{}{
+				"type": "input_text",
+				"text": part.Text,
+			})
+		case "input_image":
+			if strings.TrimSpace(part.ImageURL) == "" {
+				continue
+			}
+			content = append(content, map[string]interface{}{
+				"type":      "input_image",
+				"image_url": part.ImageURL,
+			})
+		case "input_file":
+			if strings.TrimSpace(part.FileData) == "" {
+				continue
+			}
+			entry := map[string]interface{}{
+				"type":      "input_file",
+				"file_data": part.FileData,
+			}
+			if strings.TrimSpace(part.Filename) != "" {
+				entry["filename"] = part.Filename
+			}
+			content = append(content, entry)
+		}
+	}
+	return content
 }
 
 func responsesMessageItem(role, text, contentType string) map[string]interface{} {

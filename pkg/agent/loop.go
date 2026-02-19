@@ -2549,7 +2549,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		history,
 		summary,
 		userPrompt,
-		nil,
+		msg.Media,
 		msg.Channel,
 		msg.ChatID,
 	)

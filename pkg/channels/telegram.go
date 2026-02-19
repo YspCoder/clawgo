@@ -358,7 +358,7 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 
 	if message.Photo != nil && len(message.Photo) > 0 {
 		photo := message.Photo[len(message.Photo)-1]
-		photoPath := c.downloadFile(runCtx, photo.FileID, ".jpg")
+		photoPath := c.downloadFile(runCtx, photo.FileID, ".jpg", "")
 		if photoPath != "" {
 			mediaPaths = append(mediaPaths, photoPath)
 			if content != "" {
@@ -369,7 +369,7 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	}
 
 	if message.Voice != nil {
-		voicePath := c.downloadFile(runCtx, message.Voice.FileID, ".ogg")
+		voicePath := c.downloadFile(runCtx, message.Voice.FileID, ".ogg", "")
 		if voicePath != "" {
 			mediaPaths = append(mediaPaths, voicePath)
 
@@ -402,7 +402,7 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	}
 
 	if message.Audio != nil {
-		audioPath := c.downloadFile(runCtx, message.Audio.FileID, ".mp3")
+		audioPath := c.downloadFile(runCtx, message.Audio.FileID, ".mp3", message.Audio.FileName)
 		if audioPath != "" {
 			mediaPaths = append(mediaPaths, audioPath)
 			if content != "" {
@@ -413,7 +413,7 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	}
 
 	if message.Document != nil {
-		docPath := c.downloadFile(runCtx, message.Document.FileID, "")
+		docPath := c.downloadFile(runCtx, message.Document.FileID, "", message.Document.FileName)
 		if docPath != "" {
 			mediaPaths = append(mediaPaths, docPath)
 			if content != "" {
@@ -501,7 +501,7 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	c.HandleMessage(senderID, fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
 }
 
-func (c *TelegramChannel) downloadFile(runCtx context.Context, fileID, ext string) string {
+func (c *TelegramChannel) downloadFile(runCtx context.Context, fileID, ext, fileName string) string {
 	getFileCtx, cancelGetFile := context.WithTimeout(runCtx, telegramAPICallTimeout)
 	file, err := c.bot.GetFile(getFileCtx, &telego.GetFileParams{FileID: fileID})
 	cancelGetFile()
@@ -516,7 +516,15 @@ func (c *TelegramChannel) downloadFile(runCtx context.Context, fileID, ext strin
 	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", c.config.Token, file.FilePath)
 	mediaDir := filepath.Join(os.TempDir(), "clawgo_media")
 	_ = os.MkdirAll(mediaDir, 0755)
-	localPath := filepath.Join(mediaDir, fileID[:min(16, len(fileID))]+ext)
+	finalExt := strings.TrimSpace(ext)
+	if finalExt == "" {
+		if fromName := strings.TrimSpace(filepath.Ext(fileName)); fromName != "" {
+			finalExt = fromName
+		} else if fromPath := strings.TrimSpace(filepath.Ext(file.FilePath)); fromPath != "" {
+			finalExt = fromPath
+		}
+	}
+	localPath := filepath.Join(mediaDir, fileID[:min(16, len(fileID))]+finalExt)
 
 	if err := c.downloadFromURL(runCtx, url, localPath); err != nil {
 		return ""

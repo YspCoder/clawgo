@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"encoding/base64"
 	"fmt"
+	"mime"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,6 +22,11 @@ type ContextBuilder struct {
 	memory       *MemoryStore
 	toolsSummary func() []string // Function to get tool summaries dynamically
 }
+
+const (
+	maxInlineMediaFileBytes  int64 = 5 * 1024 * 1024
+	maxInlineMediaTotalBytes int64 = 12 * 1024 * 1024
+)
 
 func getGlobalConfigDir() string {
 	home, err := os.UserHomeDir()
@@ -186,10 +193,14 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 
 	messages = append(messages, history...)
 
-	messages = append(messages, providers.Message{
+	userMsg := providers.Message{
 		Role:    "user",
 		Content: currentMessage,
-	})
+	}
+	if len(media) > 0 {
+		userMsg.ContentParts = buildUserContentParts(currentMessage, media)
+	}
+	messages = append(messages, userMsg)
 
 	return messages
 }
@@ -244,4 +255,112 @@ func (cb *ContextBuilder) GetSkillsInfo() map[string]interface{} {
 		"available": len(allSkills),
 		"names":     skillNames,
 	}
+}
+
+func buildUserContentParts(text string, media []string) []providers.MessageContentPart {
+	parts := make([]providers.MessageContentPart, 0, 1+len(media))
+	notes := make([]string, 0)
+	var totalInlineBytes int64
+
+	if strings.TrimSpace(text) != "" {
+		parts = append(parts, providers.MessageContentPart{
+			Type: "input_text",
+			Text: text,
+		})
+	}
+	for _, mediaPath := range media {
+		p := strings.TrimSpace(mediaPath)
+		if p == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(p), "http://") || strings.HasPrefix(strings.ToLower(p), "https://") {
+			notes = append(notes, fmt.Sprintf("Attachment kept as URL only and not inlined: %s", p))
+			continue
+		}
+
+		dataURL, mimeType, filename, sizeBytes, ok := buildFileDataURL(p)
+		if !ok {
+			notes = append(notes, fmt.Sprintf("Attachment could not be read and was skipped: %s", p))
+			continue
+		}
+		if sizeBytes > maxInlineMediaFileBytes {
+			notes = append(notes, fmt.Sprintf("Attachment too large and was not inlined (%s, %d bytes > %d bytes).", filename, sizeBytes, maxInlineMediaFileBytes))
+			continue
+		}
+		if totalInlineBytes+sizeBytes > maxInlineMediaTotalBytes {
+			notes = append(notes, fmt.Sprintf("Attachment skipped to keep request size bounded (%s).", filename))
+			continue
+		}
+		totalInlineBytes += sizeBytes
+
+		if strings.HasPrefix(mimeType, "image/") {
+			parts = append(parts, providers.MessageContentPart{
+				Type:     "input_image",
+				ImageURL: dataURL,
+				MIMEType: mimeType,
+				Filename: filename,
+			})
+			continue
+		}
+		parts = append(parts, providers.MessageContentPart{
+			Type:     "input_file",
+			FileData: dataURL,
+			MIMEType: mimeType,
+			Filename: filename,
+		})
+	}
+
+	if len(notes) > 0 {
+		parts = append(parts, providers.MessageContentPart{
+			Type: "input_text",
+			Text: "Attachment handling notes:\n- " + strings.Join(notes, "\n- "),
+		})
+	}
+	return parts
+}
+
+func buildFileDataURL(path string) (dataURL, mimeType, filename string, sizeBytes int64, ok bool) {
+	stat, err := os.Stat(path)
+	if err != nil || stat.IsDir() {
+		return "", "", "", 0, false
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", "", 0, false
+	}
+	if len(content) == 0 {
+		return "", "", "", 0, false
+	}
+	filename = filepath.Base(path)
+	mimeType = detectMIMEType(path)
+	encoded := base64.StdEncoding.EncodeToString(content)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), mimeType, filename, stat.Size(), true
+}
+
+func detectMIMEType(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		switch ext {
+		case ".pdf":
+			mimeType = "application/pdf"
+		case ".doc":
+			mimeType = "application/msword"
+		case ".docx":
+			mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+		case ".ppt":
+			mimeType = "application/vnd.ms-powerpoint"
+		case ".pptx":
+			mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+		case ".xls":
+			mimeType = "application/vnd.ms-excel"
+		case ".xlsx":
+			mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+		}
+	}
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	return mimeType
 }
