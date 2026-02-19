@@ -144,7 +144,45 @@ func toResponsesInputItems(msg Message) []map[string]interface{} {
 	case "system", "developer", "user":
 		return []map[string]interface{}{responsesMessageItem(role, msg.Content, "input_text")}
 	case "assistant":
-		return []map[string]interface{}{responsesMessageItem(role, msg.Content, "output_text")}
+		items := make([]map[string]interface{}, 0, 1+len(msg.ToolCalls))
+		if strings.TrimSpace(msg.Content) != "" || len(msg.ToolCalls) == 0 {
+			items = append(items, responsesMessageItem(role, msg.Content, "output_text"))
+		}
+		for _, tc := range msg.ToolCalls {
+			callID := strings.TrimSpace(tc.ID)
+			if callID == "" {
+				continue
+			}
+			name := strings.TrimSpace(tc.Name)
+			argsRaw := ""
+			if tc.Function != nil {
+				if strings.TrimSpace(tc.Function.Name) != "" {
+					name = strings.TrimSpace(tc.Function.Name)
+				}
+				argsRaw = strings.TrimSpace(tc.Function.Arguments)
+			}
+			if name == "" {
+				continue
+			}
+			if argsRaw == "" {
+				argsJSON, err := json.Marshal(tc.Arguments)
+				if err != nil {
+					argsRaw = "{}"
+				} else {
+					argsRaw = string(argsJSON)
+				}
+			}
+			items = append(items, map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   callID,
+				"name":      name,
+				"arguments": argsRaw,
+			})
+		}
+		if len(items) == 0 {
+			return []map[string]interface{}{responsesMessageItem(role, msg.Content, "output_text")}
+		}
+		return items
 	case "tool":
 		if strings.TrimSpace(msg.ToolCallID) == "" {
 			return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}

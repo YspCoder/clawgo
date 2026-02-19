@@ -135,6 +135,41 @@ func TestToResponsesInputItems_AssistantUsesOutputText(t *testing.T) {
 	}
 }
 
+func TestToResponsesInputItems_AssistantPreservesToolCalls(t *testing.T) {
+	items := toResponsesInputItems(Message{
+		Role:    "assistant",
+		Content: "",
+		ToolCalls: []ToolCall{
+			{
+				ID:   "call_abc",
+				Name: "exec_command",
+				Arguments: map[string]interface{}{
+					"cmd": "pwd",
+				},
+			},
+		},
+	})
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	gotType, _ := items[0]["type"].(string)
+	if gotType != "function_call" {
+		t.Fatalf("item type = %q, want function_call", gotType)
+	}
+	gotCallID, _ := items[0]["call_id"].(string)
+	if gotCallID != "call_abc" {
+		t.Fatalf("call_id = %q, want call_abc", gotCallID)
+	}
+	gotName, _ := items[0]["name"].(string)
+	if gotName != "exec_command" {
+		t.Fatalf("name = %q, want exec_command", gotName)
+	}
+	gotArgs, _ := items[0]["arguments"].(string)
+	if !strings.Contains(gotArgs, "\"cmd\":\"pwd\"") {
+		t.Fatalf("arguments = %q, want serialized cmd", gotArgs)
+	}
+}
+
 func containsFunctionCallMarkup(s string) bool {
 	return len(s) > 0 && (strings.Contains(s, "<function_call>") || strings.Contains(s, "</function_call>"))
 }
