@@ -629,14 +629,45 @@ func TestShouldForceSelfRepairHeuristic(t *testing.T) {
 func TestShouldRetryAfterDeferralNoTools(t *testing.T) {
 	t.Parallel()
 
-	if !shouldRetryAfterDeferralNoTools("需要先查看一下当前工作区才能确认，请稍等。", 1, false, false, false) {
+	if !shouldRetryAfterDeferralNoTools("需要先查看一下当前工作区才能确认，请稍等。", "当前状态", 1, false, false, false) {
 		t.Fatalf("expected deferral text to trigger retry")
 	}
-	if shouldRetryAfterDeferralNoTools("这里是直接答案。", 1, false, false, false) {
+	if shouldRetryAfterDeferralNoTools("这里是直接答案。", "当前状态", 1, false, false, false) {
 		t.Fatalf("did not expect normal direct answer to trigger retry")
 	}
-	if shouldRetryAfterDeferralNoTools("需要先查看一下当前工作区才能确认，请稍等。", 2, false, false, false) {
+	if shouldRetryAfterDeferralNoTools("需要先查看一下当前工作区才能确认，请稍等。", "当前状态", 2, false, false, false) {
 		t.Fatalf("did not expect retry after first iteration")
+	}
+	if !shouldRetryAfterDeferralNoTools("你可以先执行 git clone，然后配置远程。", "帮我链接git仓库", 1, false, false, false) {
+		t.Fatalf("expected git task instruction-only reply to trigger retry")
+	}
+}
+
+func TestControlIntentKeywordGate(t *testing.T) {
+	t.Parallel()
+
+	if shouldAttemptAutonomyIntentInference("当前系统状态看板") {
+		t.Fatalf("generic status should not trigger autonomy inference")
+	}
+	if !shouldAttemptAutonomyIntentInference("查看 autonomy mode 状态") {
+		t.Fatalf("autonomy keyword should trigger autonomy inference")
+	}
+	if shouldAttemptAutoLearnIntentInference("当前系统状态看板") {
+		t.Fatalf("generic status should not trigger auto-learn inference")
+	}
+	if !shouldAttemptAutoLearnIntentInference("请看一下 auto-learn 状态") {
+		t.Fatalf("auto-learn keyword should trigger auto-learn inference")
+	}
+}
+
+func TestShouldRejectNaturalizedOutput(t *testing.T) {
+	t.Parallel()
+
+	if !shouldRejectNaturalizedOutput("不", "Autonomy mode is not enabled.") {
+		t.Fatalf("expected single-token degeneration to be rejected")
+	}
+	if shouldRejectNaturalizedOutput("Autonomy mode is currently not enabled.", "Autonomy mode is not enabled.") {
+		t.Fatalf("expected normal rewrite to be accepted")
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -269,6 +270,14 @@ var defaultRunControlWaitKeywords = []string{"wait", "等待", "等到", "阻塞
 var defaultRunControlStatusKeywords = []string{"status", "状态", "进度", "running", "运行"}
 var defaultRunControlRunMentionKeywords = []string{"run", "任务"}
 var defaultParallelSafeToolNames = []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"}
+var autonomyIntentKeywords = []string{
+	"autonomy", "autonomous", "autonomy mode", "self-driven", "self driven",
+	"自主", "自驱", "自主模式", "自动执行", "自治模式",
+}
+var autoLearnIntentKeywords = []string{
+	"auto-learn", "autolearn", "learning loop", "learn loop",
+	"自学习", "学习循环", "自动学习", "学习模式",
+}
 var defaultRunWaitMinuteUnits = map[string]struct{}{
 	"分钟":      {},
 	"min":     {},
@@ -1773,7 +1782,16 @@ func hasToolMessages(messages []providers.Message) bool {
 	return false
 }
 
-func shouldRetryAfterDeferralNoTools(content string, iteration int, alreadyRetried bool, hasToolOutput bool, systemMode bool) bool {
+func latestUserTaskText(messages []providers.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.EqualFold(strings.TrimSpace(messages[i].Role), "user") {
+			return strings.TrimSpace(messages[i].Content)
+		}
+	}
+	return ""
+}
+
+func shouldRetryAfterDeferralNoTools(content string, userTask string, iteration int, alreadyRetried bool, hasToolOutput bool, systemMode bool) bool {
 	if systemMode || alreadyRetried || hasToolOutput {
 		return false
 	}
@@ -1793,7 +1811,26 @@ func shouldRetryAfterDeferralNoTools(content string, iteration int, alreadyRetri
 		"查看", "检查", "确认", "工作区", "状态",
 		"check", "inspect", "verify", "workspace", "status", "confirm",
 	)
-	return waitCue && verifyCue
+	if waitCue && verifyCue {
+		return true
+	}
+
+	task := strings.ToLower(strings.TrimSpace(userTask))
+	if task == "" {
+		return false
+	}
+	// Actionable repository operations should execute in-run instead of returning "how-to" text only.
+	repoTaskCue := containsAnySubstring(task,
+		"git", "仓库", "repo", "repository", "clone", "克隆", "拉取", "拉代码", "连接仓库", "链接仓库",
+	)
+	if !repoTaskCue {
+		return false
+	}
+	looksLikeInstructionOnly := containsAnySubstring(lower,
+		"你可以", "可以先", "步骤", "先执行", "请执行", "命令如下",
+		"you can", "steps", "run this command", "command is", "first,",
+	)
+	return looksLikeInstructionOnly
 }
 
 func formatRunStateReport(rs runState) string {
@@ -2373,7 +2410,29 @@ Rules:
 	if out == "" {
 		return fallback
 	}
+	if shouldRejectNaturalizedOutput(out, fallback) {
+		return fallback
+	}
 	return out
+}
+
+func shouldRejectNaturalizedOutput(out string, fallback string) bool {
+	candidate := strings.ToLower(strings.TrimSpace(out))
+	origin := strings.TrimSpace(fallback)
+	if candidate == "" || origin == "" {
+		return false
+	}
+	// Guard against degenerate yes/no single-token rewrites of normal status messages.
+	shortBinary := map[string]struct{}{
+		"yes": {}, "no": {}, "y": {}, "n": {}, "是": {}, "否": {}, "不": {}, "好": {},
+	}
+	if _, ok := shortBinary[candidate]; ok && utf8.RuneCountInString(origin) >= 8 {
+		return true
+	}
+	if utf8.RuneCountInString(candidate) <= 2 && utf8.RuneCountInString(origin) >= 12 {
+		return true
+	}
+	return false
 }
 
 func shouldPublishSyntheticResponse(msg bus.InboundMessage) bool {
@@ -2687,7 +2746,7 @@ func (al *AgentLoop) runLLMToolLoop(
 			})
 
 		if len(response.ToolCalls) == 0 {
-			if shouldRetryAfterDeferralNoTools(response.Content, state.iteration, state.deferralRetried, hasToolMessages(messages), systemMode) {
+			if shouldRetryAfterDeferralNoTools(response.Content, latestUserTaskText(messages), state.iteration, state.deferralRetried, hasToolMessages(messages), systemMode) {
 				state.deferralRetried = true
 				messages = append(messages, providers.Message{
 					Role:    "user",
@@ -5182,6 +5241,9 @@ func isExplicitRunCommand(content string) bool {
 }
 
 func (al *AgentLoop) detectAutonomyIntent(ctx context.Context, content string) (autonomyIntent, intentDetectionOutcome) {
+	if !shouldAttemptAutonomyIntentInference(content) {
+		return autonomyIntent{}, intentDetectionOutcome{}
+	}
 	policy := defaultControlPolicy()
 	if al != nil {
 		policy = al.controlPolicy
@@ -5202,6 +5264,9 @@ func (al *AgentLoop) detectAutonomyIntent(ctx context.Context, content string) (
 }
 
 func (al *AgentLoop) detectAutoLearnIntent(ctx context.Context, content string) (autoLearnIntent, intentDetectionOutcome) {
+	if !shouldAttemptAutoLearnIntentInference(content) {
+		return autoLearnIntent{}, intentDetectionOutcome{}
+	}
 	policy := defaultControlPolicy()
 	if al != nil {
 		policy = al.controlPolicy
@@ -5287,6 +5352,14 @@ Rules:
 	return intent, parsed.Confidence, true
 }
 
+func shouldAttemptAutonomyIntentInference(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	return containsAnySubstring(lower, autonomyIntentKeywords...)
+}
+
 func extractJSONObject(text string) string {
 	s := strings.TrimSpace(text)
 	if s == "" {
@@ -5366,6 +5439,14 @@ Rules:
 		intent.interval = &d
 	}
 	return intent, parsed.Confidence, true
+}
+
+func shouldAttemptAutoLearnIntentInference(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	return containsAnySubstring(lower, autoLearnIntentKeywords...)
 }
 
 func (al *AgentLoop) inferTaskExecutionDirectives(ctx context.Context, content string) (taskExecutionDirectives, bool) {
