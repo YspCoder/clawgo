@@ -30,8 +30,8 @@ func getGlobalConfigDir() string {
 }
 
 func NewContextBuilder(workspace string, memCfg config.MemoryConfig, toolsSummaryFunc func() []string) *ContextBuilder {
-	// builtin skills: 当前项目的 skills 目录
-	// 使用当前工作目录下的 skills/ 目录
+	// Built-in skills: the current project's skills directory.
+	// Use the skills/ directory under the current working directory.
 	wd, _ := os.Getwd()
 	builtinSkillsDir := filepath.Join(wd, "skills")
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")

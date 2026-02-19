@@ -129,6 +129,7 @@ type taskExecutionDirectivesLLMResponse struct {
 
 type stageReporter struct {
 	onUpdate func(content string)
+	localize func(content string) string
 }
 
 type StartupSelfCheckReport struct {
@@ -140,16 +141,37 @@ func (sr *stageReporter) Publish(stage int, total int, status string, detail str
 	if sr == nil || sr.onUpdate == nil {
 		return
 	}
+	_ = stage
+	_ = total
 	detail = strings.TrimSpace(detail)
-	if detail == "" {
-		detail = "-"
+	if detail != "" {
+		if sr.localize != nil {
+			detail = sr.localize(detail)
+		}
+		sr.onUpdate(detail)
+		return
 	}
 	status = strings.TrimSpace(status)
-	if status == "" {
-		status = "进度更新"
+	if status != "" {
+		if sr.localize != nil {
+			status = sr.localize(status)
+		}
+		sr.onUpdate(status)
+		return
 	}
-	sr.onUpdate(fmt.Sprintf("[进度] %s：%s", status, detail))
+	fallback := "Processing update"
+	if sr.localize != nil {
+		fallback = sr.localize(fallback)
+	}
+	sr.onUpdate(fallback)
 }
+
+type userLanguageHint struct {
+	sessionKey string
+	content    string
+}
+
+type userLanguageHintKey struct{}
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, cs *cron.CronService) *AgentLoop {
 	workspace := cfg.WorkspacePath()
@@ -267,9 +289,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		autonomyBySess:   make(map[string]*autonomySession),
 	}
 
-	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
+	// Inject recursive run logic so subagent has full tool-calling capability.
 	subagentManager.SetRunFunc(func(ctx context.Context, task, channel, chatID string) (string, error) {
-		sessionKey := fmt.Sprintf("subagent:%d", os.Getpid()) // 改用 PID 或随机数，避免 sessionKey 冲突
+		sessionKey := fmt.Sprintf("subagent:%d", os.Getpid()) // Use PID/random value to avoid session key collisions.
 		return loop.ProcessDirect(ctx, task, sessionKey)
 	})
 
@@ -345,7 +367,7 @@ func (al *AgentLoop) enqueueMessage(ctx context.Context, msg bus.InboundMessage)
 			Buttons: nil,
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: al.naturalizeUserFacingText(ctx, "消息队列当前较忙，请稍后再试。"),
+			Content: al.localizeUserFacingText(ctx, msg.SessionKey, msg.Content, "The message queue is currently busy. Please try again shortly."),
 		})
 	}
 }
@@ -403,7 +425,7 @@ func (al *AgentLoop) runSessionWorker(ctx context.Context, sessionKey string, wo
 					if errors.Is(err, context.Canceled) {
 						return
 					}
-					response = al.formatProcessingErrorMessage(msg, err)
+					response = al.formatProcessingErrorMessage(taskCtx, msg, err)
 				}
 
 				if response != "" && shouldPublishSyntheticResponse(msg) {
@@ -425,11 +447,8 @@ func (al *AgentLoop) clearWorkerCancel(worker *sessionWorker) {
 	worker.cancelMu.Unlock()
 }
 
-func (al *AgentLoop) formatProcessingErrorMessage(msg bus.InboundMessage, err error) string {
-	if al.preferChineseUserFacingText(msg.SessionKey, msg.Content) {
-		return err.Error()
-	}
-	return err.Error()
+func (al *AgentLoop) formatProcessingErrorMessage(ctx context.Context, msg bus.InboundMessage, err error) string {
+	return al.localizeUserFacingText(ctx, msg.SessionKey, msg.Content, fmt.Sprintf("Error processing message: %v", err))
 }
 
 func (al *AgentLoop) preferChineseUserFacingText(sessionKey, currentContent string) bool {
@@ -520,7 +539,7 @@ func (al *AgentLoop) stopAllAutonomySessions() {
 
 func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, idleInterval time.Duration, focus string) string {
 	if msg.Channel == "cli" {
-		return al.naturalizeUserFacingText(ctx, "自主模式需要在 gateway 运行模式下使用（持续消息循环）。")
+		return al.naturalizeUserFacingText(ctx, "Autonomy mode requires gateway runtime mode (continuous message loop).")
 	}
 
 	if idleInterval <= 0 {
@@ -538,7 +557,8 @@ func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, 
 		delete(al.autonomyBySess, msg.SessionKey)
 	}
 
-	sessionCtx, cancel := context.WithCancel(context.Background())
+	langCtx := withUserLanguageHint(context.Background(), msg.SessionKey, msg.Content)
+	sessionCtx, cancel := context.WithCancel(langCtx)
 	s := &autonomySession{
 		cancel:       cancel,
 		started:      time.Now(),
@@ -566,9 +586,9 @@ func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, 
 		})
 	}
 	if s.focus != "" {
-		return al.naturalizeUserFacingText(ctx, fmt.Sprintf("自主模式已开启，当前研究方向：%s。系统会持续静默推进，并每 %s 汇报一次进度或结果。", s.focus, idleInterval.Truncate(time.Second)))
+		return al.naturalizeUserFacingText(ctx, fmt.Sprintf("Autonomy mode is enabled. Current focus: %s. The system will continue in the background and report progress or results every %s.", s.focus, idleInterval.Truncate(time.Second)))
 	}
-	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("自主模式已开启：自动拆解执行 + 静默推进；每 %s 汇报一次进度或结果。", idleInterval.Truncate(time.Second)))
+	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("Autonomy mode is enabled: automatic decomposition + background execution; reports progress or results every %s.", idleInterval.Truncate(time.Second)))
 }
 
 func (al *AgentLoop) stopAutonomy(sessionKey string) bool {
@@ -625,21 +645,21 @@ func (al *AgentLoop) autonomyStatus(ctx context.Context, sessionKey string) stri
 
 	s, ok := al.autonomyBySess[sessionKey]
 	if !ok || s == nil {
-		return al.naturalizeUserFacingText(ctx, "自主模式未开启。")
+		return al.naturalizeUserFacingText(ctx, "Autonomy mode is not enabled.")
 	}
 
 	uptime := time.Since(s.started).Truncate(time.Second)
 	idle := time.Since(s.lastUserAt).Truncate(time.Second)
 	focus := strings.TrimSpace(s.focus)
 	if focus == "" {
-		focus = "未设置"
+		focus = "not set"
 	}
-	fallback := fmt.Sprintf("自主模式运行中：汇报周期 %s，已运行 %s，最近用户活跃距今 %s，自动推进 %d 轮。",
+	fallback := fmt.Sprintf("Autonomy mode is running: report interval %s, uptime %s, time since last user activity %s, automatic rounds %d.",
 		s.idleInterval.Truncate(time.Second),
 		uptime,
 		idle,
 		s.rounds,
-	) + fmt.Sprintf(" 当前研究方向：%s。", focus)
+	) + fmt.Sprintf(" Current focus: %s.", focus)
 	return al.naturalizeUserFacingText(ctx, fallback)
 }
 
@@ -713,25 +733,25 @@ func (al *AgentLoop) finishAutonomyRound(sessionKey string) {
 func buildAutonomyFollowUpPrompt(round int, focus string, reportDue bool) string {
 	focus = strings.TrimSpace(focus)
 	if focus == "" && reportDue {
-		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请基于当前会话上下文和已完成工作，自主完成一个高价值下一步，并用自然语言给出进度或结果。", round)
+		return fmt.Sprintf("Autonomy round %d: the user has not provided new input yet. Based on the current session context and completed work, autonomously complete one high-value next step and report progress or results in natural language.", round)
 	}
 	if focus == "" && !reportDue {
-		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请基于当前会话上下文和已完成工作，自主完成一个高价值下一步。本轮仅执行，不对外回复。", round)
+		return fmt.Sprintf("Autonomy round %d: the user has not provided new input yet. Based on the current session context and completed work, autonomously complete one high-value next step. This round is execution-only; do not send an external reply.", round)
 	}
 	if reportDue {
-		return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请优先围绕研究方向“%s”推进；如果该方向已完成，请说明并转向其他高价值下一步。完成后用自然语言给出进度或结果。", round, focus)
+		return fmt.Sprintf("Autonomy round %d: the user has not provided new input yet. Prioritize progress around the focus \"%s\"; if that focus is complete, explain and move to another high-value next step. After completion, report progress or results in natural language.", round, focus)
 	}
-	return fmt.Sprintf("自主模式第 %d 轮推进：用户暂时未继续输入。请优先围绕研究方向“%s”推进；如果该方向已完成，请说明并转向其他高价值下一步。本轮仅执行，不对外回复。", round, focus)
+	return fmt.Sprintf("Autonomy round %d: the user has not provided new input yet. Prioritize progress around the focus \"%s\"; if that focus is complete, explain and move to another high-value next step. This round is execution-only; do not send an external reply.", round, focus)
 }
 
 func buildAutonomyFocusPrompt(focus string) string {
 	focus = strings.TrimSpace(focus)
-	return fmt.Sprintf("自主模式已启动，本轮请优先围绕研究方向“%s”展开：先明确本轮目标，再执行并汇报阶段性进展与结果。", focus)
+	return fmt.Sprintf("Autonomy mode started. For this round, prioritize the focus \"%s\": clarify the round goal first, then execute and report progress and results.", focus)
 }
 
 func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessage, interval time.Duration) string {
 	if msg.Channel == "cli" {
-		return al.naturalizeUserFacingText(ctx, "自动学习需要在 gateway 运行模式下使用（持续消息循环）。")
+		return al.naturalizeUserFacingText(ctx, "Auto-learn requires gateway runtime mode (continuous message loop).")
 	}
 
 	if interval <= 0 {
@@ -749,7 +769,8 @@ func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessag
 		delete(al.autoLearners, msg.SessionKey)
 	}
 
-	learnerCtx, cancel := context.WithCancel(context.Background())
+	langCtx := withUserLanguageHint(context.Background(), msg.SessionKey, msg.Content)
+	learnerCtx, cancel := context.WithCancel(langCtx)
 	learner := &autoLearner{
 		cancel:   cancel,
 		started:  time.Now(),
@@ -760,7 +781,7 @@ func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessag
 
 	go al.runAutoLearnerLoop(learnerCtx, msg)
 
-	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("自动学习已开启：每 %s 执行 1 轮。使用 /autolearn stop 可停止。", interval.Truncate(time.Second)))
+	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("Auto-learn is enabled: one round every %s. Use /autolearn stop to stop it.", interval.Truncate(time.Second)))
 }
 
 func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -773,7 +794,7 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: al.naturalizeUserFacingText(ctx, fmt.Sprintf("自动学习第 %d 轮开始。", round)),
+			Content: al.naturalizeUserFacingText(ctx, fmt.Sprintf("Auto-learn round %d started.", round)),
 		})
 
 		al.bus.PublishInbound(bus.InboundMessage{
@@ -853,11 +874,11 @@ func (al *AgentLoop) autoLearnerStatus(ctx context.Context, sessionKey string) s
 
 	learner, ok := al.autoLearners[sessionKey]
 	if !ok || learner == nil {
-		return al.naturalizeUserFacingText(ctx, "自动学习未开启。使用 /autolearn start 可开启。")
+		return al.naturalizeUserFacingText(ctx, "Auto-learn is not enabled. Use /autolearn start to enable it.")
 	}
 
 	uptime := time.Since(learner.started).Truncate(time.Second)
-	fallback := fmt.Sprintf("自动学习运行中：每 %s 一轮，已运行 %s，累计 %d 轮。",
+	fallback := fmt.Sprintf("Auto-learn is running: one round every %s, uptime %s, total rounds %d.",
 		learner.interval.Truncate(time.Second),
 		uptime,
 		learner.rounds,
@@ -866,11 +887,11 @@ func (al *AgentLoop) autoLearnerStatus(ctx context.Context, sessionKey string) s
 }
 
 func buildAutoLearnPrompt(round int) string {
-	return fmt.Sprintf("自动学习模式第 %d 轮：无需用户下发任务。请基于当前会话与项目上下文，自主选择一个高价值的小任务并完成。要求：1) 明确本轮学习目标；2) 必要时调用工具执行；3) 将关键结论写入 memory/MEMORY.md；4) 输出简短进展报告。", round)
+	return fmt.Sprintf("Auto-learn round %d: no user task is required. Based on current session and project context, choose and complete one high-value small task autonomously. Requirements: 1) define the learning goal for this round; 2) call tools when needed; 3) write key conclusions to memory/MEMORY.md; 4) output a concise progress report.", round)
 }
 
 func buildAutonomyTaskPrompt(task string) string {
-	return fmt.Sprintf("开启自主执行策略。请直接推进任务并在关键节点自然汇报进展，最后给出结果与下一步建议。\n\n用户任务：%s", strings.TrimSpace(task))
+	return fmt.Sprintf("Enable autonomous execution strategy. Proceed with the task directly, report progress naturally at key points, and finally provide results plus next-step suggestions.\n\nUser task: %s", strings.TrimSpace(task))
 }
 
 func isSyntheticMessage(msg bus.InboundMessage) bool {
@@ -898,21 +919,47 @@ func shouldHandleControlIntents(msg bus.InboundMessage) bool {
 	return !isSyntheticMessage(msg)
 }
 
+func withUserLanguageHint(ctx context.Context, sessionKey, content string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, userLanguageHintKey{}, userLanguageHint{
+		sessionKey: strings.TrimSpace(sessionKey),
+		content:    content,
+	})
+}
+
+func (al *AgentLoop) localizeUserFacingText(ctx context.Context, sessionKey, currentContent, fallback string) string {
+	return al.naturalizeUserFacingText(withUserLanguageHint(ctx, sessionKey, currentContent), fallback)
+}
+
 func (al *AgentLoop) naturalizeUserFacingText(ctx context.Context, fallback string) string {
 	text := strings.TrimSpace(fallback)
 	if text == "" || ctx == nil {
 		return fallback
 	}
+	if al == nil || (al.provider == nil && len(al.providersByProxy) == 0) {
+		return fallback
+	}
+
+	targetLanguage := "English"
+	if al != nil {
+		if hint, ok := ctx.Value(userLanguageHintKey{}).(userLanguageHint); ok {
+			if al.preferChineseUserFacingText(hint.sessionKey, hint.content) {
+				targetLanguage = "Simplified Chinese"
+			}
+		}
+	}
 
 	llmCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 
-	systemPrompt := al.withBootstrapPolicy(`You rewrite assistant control/status replies in natural conversational Chinese.
+	systemPrompt := al.withBootstrapPolicy(fmt.Sprintf(`You rewrite assistant control/status replies in natural conversational %s.
 Rules:
 - Keep factual meaning unchanged.
 - Use concise natural wording, no rigid templates.
 - No markdown, no code block, no extra explanation.
-- Return plain text only.`)
+- Return plain text only.`, targetLanguage))
 
 	resp, err := al.callLLMWithModelFallback(llmCtx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
@@ -958,6 +1005,8 @@ func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey stri
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	ctx = withUserLanguageHint(ctx, msg.SessionKey, msg.Content)
+
 	// Add message preview to log
 	preview := truncate(msg.Content, 80)
 	logger.InfoCF("agent", fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, preview),
@@ -1001,14 +1050,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				return al.startAutonomy(ctx, msg, idle, intent.focus), nil
 			case "clear_focus":
 				if al.clearAutonomyFocus(msg.SessionKey) {
-					return al.naturalizeUserFacingText(ctx, "已确认：当前研究方向已完成，后续自主推进将转向其他高价值任务。"), nil
+					return al.naturalizeUserFacingText(ctx, "Confirmed: the current focus is complete. Subsequent autonomous rounds will shift to other high-value tasks."), nil
 				}
-				return al.naturalizeUserFacingText(ctx, "自主模式当前未运行，无法清空研究方向。"), nil
+				return al.naturalizeUserFacingText(ctx, "Autonomy mode is not running, so the focus cannot be cleared."), nil
 			case "stop":
 				if al.stopAutonomy(msg.SessionKey) {
-					return al.naturalizeUserFacingText(ctx, "自主模式已关闭。"), nil
+					return al.naturalizeUserFacingText(ctx, "Autonomy mode stopped."), nil
 				}
-				return al.naturalizeUserFacingText(ctx, "自主模式当前未运行。"), nil
+				return al.naturalizeUserFacingText(ctx, "Autonomy mode is not running."), nil
 			case "status":
 				return al.autonomyStatus(ctx, msg.SessionKey), nil
 			}
@@ -1024,9 +1073,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				return al.startAutoLearner(ctx, msg, interval), nil
 			case "stop":
 				if al.stopAutoLearner(msg.SessionKey) {
-					return al.naturalizeUserFacingText(ctx, "自动学习已停止。"), nil
+					return al.naturalizeUserFacingText(ctx, "Auto-learn stopped."), nil
 				}
-				return al.naturalizeUserFacingText(ctx, "自动学习当前未运行。"), nil
+				return al.naturalizeUserFacingText(ctx, "Auto-learn is not running."), nil
 			case "status":
 				return al.autoLearnerStatus(ctx, msg.SessionKey), nil
 			}
@@ -1056,6 +1105,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	var progress *stageReporter
 	if directives.stageReport {
 		progress = &stageReporter{
+			localize: func(content string) string {
+				return al.localizeUserFacingText(ctx, msg.SessionKey, msg.Content, content)
+			},
 			onUpdate: func(content string) {
 				al.bus.PublishOutbound(bus.OutboundMessage{
 					Channel: msg.Channel,
@@ -1064,8 +1116,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				})
 			},
 		}
-		progress.Publish(1, 5, "开始", "已接收任务")
-		progress.Publish(2, 5, "分析", "正在构建上下文")
+		progress.Publish(1, 5, "start", "I received your task and will clarify the goal and constraints first.")
+		progress.Publish(2, 5, "analysis", "I am building the context needed for execution.")
 	}
 
 	// Update tool contexts
@@ -1093,13 +1145,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	)
 
 	if progress != nil {
-		progress.Publish(3, 5, "执行", "正在运行任务")
+		progress.Publish(3, 5, "execution", "I am starting step-by-step execution.")
 	}
 
 	finalContent, iteration, err := al.runLLMToolLoop(ctx, messages, msg.SessionKey, false, progress)
 	if err != nil {
 		if progress != nil {
-			progress.Publish(5, 5, "失败", err.Error())
+			progress.Publish(5, 5, "failure", err.Error())
 		}
 		return "", err
 	}
@@ -1124,7 +1176,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
 
-	// 使用 AddMessageFull 存储包含思考过程或工具调用的完整助手消息
+	// Use AddMessageFull to persist the complete assistant message, including thoughts/tool calls.
 	al.sessions.AddMessageFull(msg.SessionKey, providers.Message{
 		Role:    "assistant",
 		Content: userContent,
@@ -1147,8 +1199,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		})
 
 	if progress != nil {
-		progress.Publish(4, 5, "收敛", "已生成最终回复")
-		progress.Publish(5, 5, "完成", fmt.Sprintf("任务执行结束（迭代 %d）", iteration))
+		progress.Publish(4, 5, "finalization", "Final response is ready.")
+		progress.Publish(5, 5, "done", fmt.Sprintf("Completed after %d iterations.", iteration))
 	}
 
 	return userContent, nil
@@ -1216,9 +1268,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	// Save to session with system message marker
 	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
 
-	// 如果 finalContent 中没有包含 tool calls (即最后一次 LLM 返回的结果)
-	// 我们已经通过循环内部的 AddMessageFull 存储了前面的步骤
-	// 这里的 AddMessageFull 会存储最终回复
+	// If finalContent has no tool calls (i.e., the final LLM output),
+	// earlier steps were already stored via AddMessageFull in the loop.
+	// This AddMessageFull stores the final reply.
 	al.sessions.AddMessageFull(sessionKey, providers.Message{
 		Role:    "assistant",
 		Content: finalContent,
@@ -1256,7 +1308,7 @@ func (al *AgentLoop) runLLMToolLoop(
 	for iteration < al.maxIterations {
 		iteration++
 		if progress != nil {
-			progress.Publish(3, 5, "执行", fmt.Sprintf("第 %d 轮推理", iteration))
+			progress.Publish(3, 5, "execution", fmt.Sprintf("Running iteration %d.", iteration))
 		}
 
 		if !systemMode {
@@ -1387,9 +1439,9 @@ func (al *AgentLoop) runLLMToolLoop(
 			}
 			if progress != nil {
 				if err != nil {
-					progress.Publish(3, 5, "执行", fmt.Sprintf("工具 %s 失败: %v", tc.Name, err))
+					progress.Publish(3, 5, "execution", fmt.Sprintf("Tool %s failed: %v", tc.Name, err))
 				} else {
-					progress.Publish(3, 5, "执行", fmt.Sprintf("工具 %s 完成", tc.Name))
+					progress.Publish(3, 5, "execution", fmt.Sprintf("Tool %s completed.", tc.Name))
 				}
 			}
 			lastToolResult = result
@@ -1596,7 +1648,7 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) Startup
 	}
 	report.TotalSessions = len(sessions)
 
-	// 启动阶段只做历史会话压缩检测，避免额外触发自检任务。
+	// During startup, only run historical-session compaction checks to avoid extra self-check tasks.
 	for _, sessionKey := range sessions {
 		select {
 		case <-ctx.Done():
@@ -2627,7 +2679,7 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 		), nil
 	case "/autolearn":
 		if len(fields) < 2 {
-			return true, al.naturalizeUserFacingText(ctx, "用法：/autolearn start [interval] | /autolearn stop | /autolearn status"), nil
+			return true, al.naturalizeUserFacingText(ctx, "Usage: /autolearn start [interval] | /autolearn stop | /autolearn status"), nil
 		}
 		switch strings.ToLower(fields[1]) {
 		case "start":
@@ -2642,17 +2694,17 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			return true, al.startAutoLearner(ctx, msg, interval), nil
 		case "stop":
 			if al.stopAutoLearner(msg.SessionKey) {
-				return true, al.naturalizeUserFacingText(ctx, "自动学习已停止。"), nil
+				return true, al.naturalizeUserFacingText(ctx, "Auto-learn stopped."), nil
 			}
-			return true, al.naturalizeUserFacingText(ctx, "自动学习当前未运行。"), nil
+			return true, al.naturalizeUserFacingText(ctx, "Auto-learn is not running."), nil
 		case "status":
 			return true, al.autoLearnerStatus(ctx, msg.SessionKey), nil
 		default:
-			return true, al.naturalizeUserFacingText(ctx, "用法：/autolearn start [interval] | /autolearn stop | /autolearn status"), nil
+			return true, al.naturalizeUserFacingText(ctx, "Usage: /autolearn start [interval] | /autolearn stop | /autolearn status"), nil
 		}
 	case "/autonomy":
 		if len(fields) < 2 {
-			return true, al.naturalizeUserFacingText(ctx, "用法：/autonomy start [idle] | /autonomy stop | /autonomy status"), nil
+			return true, al.naturalizeUserFacingText(ctx, "Usage: /autonomy start [idle] | /autonomy stop | /autonomy status"), nil
 		}
 		switch strings.ToLower(fields[1]) {
 		case "start":
@@ -2672,13 +2724,13 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			return true, al.startAutonomy(ctx, msg, idle, focus), nil
 		case "stop":
 			if al.stopAutonomy(msg.SessionKey) {
-				return true, al.naturalizeUserFacingText(ctx, "自主模式已关闭。"), nil
+				return true, al.naturalizeUserFacingText(ctx, "Autonomy mode stopped."), nil
 			}
-			return true, al.naturalizeUserFacingText(ctx, "自主模式当前未运行。"), nil
+			return true, al.naturalizeUserFacingText(ctx, "Autonomy mode is not running."), nil
 		case "status":
 			return true, al.autonomyStatus(ctx, msg.SessionKey), nil
 		default:
-			return true, al.naturalizeUserFacingText(ctx, "用法：/autonomy start [idle] | /autonomy stop | /autonomy status"), nil
+			return true, al.naturalizeUserFacingText(ctx, "Usage: /autonomy start [idle] | /autonomy stop | /autonomy status"), nil
 		}
 	case "/reload":
 		running, err := al.triggerGatewayReloadFromAgent()

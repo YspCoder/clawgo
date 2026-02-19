@@ -23,9 +23,9 @@ type SkillInfo struct {
 
 type SkillsLoader struct {
 	workspace       string
-	workspaceSkills string // workspace skills (项目级别)
-	globalSkills    string // 全局 skills (~/.clawgo/skills)
-	builtinSkills   string // 内置 skills
+	workspaceSkills string // workspace-level skills
+	globalSkills    string // global skills (~/.clawgo/skills)
+	builtinSkills   string // built-in skills
 }
 
 func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
@@ -62,14 +62,14 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 		}
 	}
 
-	// 全局 skills (~/.clawgo/skills) - 被 workspace skills 覆盖
+	// Global skills (~/.clawgo/skills) - overridden by workspace skills
 	if sl.globalSkills != "" {
 		if dirs, err := os.ReadDir(sl.globalSkills); err == nil {
 			for _, dir := range dirs {
 				if dir.IsDir() {
 					skillFile := filepath.Join(sl.globalSkills, dir.Name(), "SKILL.md")
 					if _, err := os.Stat(skillFile); err == nil {
-						// 检查是否已被 workspace skills 覆盖
+						// Check whether overridden by workspace skills
 						exists := false
 						for _, s := range skills {
 							if s.Name == dir.Name() && s.Source == "workspace" {
@@ -103,7 +103,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 				if dir.IsDir() {
 					skillFile := filepath.Join(sl.builtinSkills, dir.Name(), "SKILL.md")
 					if _, err := os.Stat(skillFile); err == nil {
-						// 检查是否已被 workspace 或 global skills 覆盖
+						// Check whether overridden by workspace or global skills
 						exists := false
 						for _, s := range skills {
 							if s.Name == dir.Name() && (s.Source == "workspace" || s.Source == "global") {
@@ -135,7 +135,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 }
 
 func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
-	// 1. 优先从 workspace skills 加载（项目级别）
+	// 1. Prefer workspace skills (project-level)
 	if sl.workspaceSkills != "" {
 		skillFile := filepath.Join(sl.workspaceSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
@@ -143,7 +143,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 2. 其次从全局 skills 加载 (~/.clawgo/skills)
+	// 2. Then load from global skills (~/.clawgo/skills)
 	if sl.globalSkills != "" {
 		skillFile := filepath.Join(sl.globalSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
@@ -151,7 +151,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 3. 最后从内置 skills 加载
+	// 3. Finally load from built-in skills
 	if sl.builtinSkills != "" {
 		skillFile := filepath.Join(sl.builtinSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {

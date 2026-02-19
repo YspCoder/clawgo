@@ -84,7 +84,7 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	resultsChan := make(chan []searchResult, len(files))
 	var wg sync.WaitGroup
 
-	// 并发搜索所有文件
+	// Search all files concurrently
 	for _, file := range files {
 		wg.Add(1)
 		go func(f string) {
@@ -96,7 +96,7 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 		}(file)
 	}
 
-	// 异步关闭通道
+	// Close channel asynchronously
 	go func() {
 		wg.Wait()
 		close(resultsChan)

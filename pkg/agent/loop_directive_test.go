@@ -8,8 +8,8 @@ import (
 )
 
 func TestParseTaskExecutionDirectives_RunCommand(t *testing.T) {
-	d := parseTaskExecutionDirectives("/run 修复构建脚本 --stage-report")
-	if d.task != "修复构建脚本" {
+	d := parseTaskExecutionDirectives("/run fix build script --stage-report")
+	if d.task != "fix build script" {
 		t.Fatalf("unexpected task: %q", d.task)
 	}
 	if !d.stageReport {
@@ -18,8 +18,8 @@ func TestParseTaskExecutionDirectives_RunCommand(t *testing.T) {
 }
 
 func TestParseTaskExecutionDirectives_Default(t *testing.T) {
-	d := parseTaskExecutionDirectives("帮我看看今天的日志异常")
-	if d.task != "帮我看看今天的日志异常" {
+	d := parseTaskExecutionDirectives("Please check today's log anomalies")
+	if d.task != "Please check today's log anomalies" {
 		t.Fatalf("unexpected task: %q", d.task)
 	}
 	if d.stageReport {
@@ -75,7 +75,7 @@ func TestParseAutoLearnIntent_StopFallbackCommand(t *testing.T) {
 }
 
 func TestParseAutoLearnIntent_NoNaturalLanguageFallback(t *testing.T) {
-	if _, ok := parseAutoLearnIntent("请开始自动学习"); ok {
+	if _, ok := parseAutoLearnIntent("please start auto learning"); ok {
 		t.Fatalf("expected no fallback match")
 	}
 }
@@ -127,7 +127,7 @@ func TestParseAutonomyIdleInterval(t *testing.T) {
 }
 
 func TestParseAutonomyIntent_NoNaturalLanguageFallback(t *testing.T) {
-	if intent, ok := parseAutonomyIntent("请自动执行这个任务"); ok {
+	if intent, ok := parseAutonomyIntent("please run this task automatically"); ok {
 		t.Fatalf("expected no intent, got: %+v", intent)
 	}
 }
@@ -158,7 +158,7 @@ func TestExtractJSONObject_Invalid(t *testing.T) {
 func TestShouldHandleControlIntents_UserMessage(t *testing.T) {
 	msg := bus.InboundMessage{
 		SenderID: "user",
-		Content:  "请进入自主模式",
+		Content:  "please enter autonomy mode",
 	}
 	if !shouldHandleControlIntents(msg) {
 		t.Fatalf("expected user message to be control-eligible")
@@ -168,7 +168,7 @@ func TestShouldHandleControlIntents_UserMessage(t *testing.T) {
 func TestShouldHandleControlIntents_AutonomySyntheticSender(t *testing.T) {
 	msg := bus.InboundMessage{
 		SenderID: "autonomy",
-		Content:  "自主模式第 1 轮推进",
+		Content:  "autonomy round 1",
 	}
 	if shouldHandleControlIntents(msg) {
 		t.Fatalf("expected autonomy synthetic message to be ignored for control intents")
@@ -178,7 +178,7 @@ func TestShouldHandleControlIntents_AutonomySyntheticSender(t *testing.T) {
 func TestShouldHandleControlIntents_AutoLearnSyntheticMetadata(t *testing.T) {
 	msg := bus.InboundMessage{
 		SenderID: "gateway",
-		Content:  "自动学习第 1 轮",
+		Content:  "auto-learn round 1",
 		Metadata: map[string]string{
 			"source": "autolearn",
 		},

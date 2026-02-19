@@ -82,7 +82,7 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 		return
 	}
 
-	// 生成 SessionKey: channel:chatID
+	// Build session key: channel:chatID
 	sessionKey := fmt.Sprintf("%s:%s", c.name, chatID)
 
 	msg := bus.InboundMessage{

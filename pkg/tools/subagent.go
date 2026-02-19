@@ -89,11 +89,11 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 		_ = sm.orc.MarkTaskRunning(task.PipelineID, task.PipelineTask)
 	}
 
-	// 1. 独立 Agent 逻辑：支持递归工具调用
-	// 这里简单实现：通过共享 AgentLoop 的逻辑来实现 full subagent 能力
-	// 但目前 subagent.go 不方便反向依赖 agent 包，我们暂时通过 Inject 方式解决
+	// 1. Independent agent logic: supports recursive tool calling.
+	// This lightweight approach reuses AgentLoop logic for full subagent capability.
+	// subagent.go cannot depend on agent package inversely, so use function injection.
 
-	// 如果没有注入 RunFunc，则退化为简单的一步 Chat
+	// Fall back to one-shot chat when RunFunc is not injected.
 	if sm.runFunc != nil {
 		result, err := sm.runFunc(ctx, task.Task, task.OriginChannel, task.OriginChatID)
 		sm.mu.Lock()
@@ -112,7 +112,7 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 		}
 		sm.mu.Unlock()
 	} else {
-		// 原有的 One-shot 逻辑
+		// Original one-shot logic
 		messages := []providers.Message{
 			{
 				Role:    "system",
@@ -145,7 +145,7 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 		sm.mu.Unlock()
 	}
 
-	// 2. 结果广播 (原有逻辑保持)
+	// 2. Result broadcast (keep existing behavior)
 	if sm.bus != nil {
 		prefix := "Task completed"
 		if task.Label != "" {

@@ -1,24 +1,24 @@
 package agent
 
 import (
+	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/session"
 )
 
-func TestFormatProcessingErrorMessage_ChineseCurrentMessage(t *testing.T) {
+func TestFormatProcessingErrorMessage_CurrentMessage(t *testing.T) {
 	al := &AgentLoop{}
 	msg := bus.InboundMessage{
-		SessionKey: "s-zh-current",
-		Content:    "请帮我看一下这个错误",
+		SessionKey: "s-current",
+		Content:    "Please help check this error",
 	}
 
-	out := al.formatProcessingErrorMessage(msg, errors.New("boom"))
-	if !strings.HasPrefix(out, "处理消息时发生错误：") {
-		t.Fatalf("expected Chinese error prefix, got %q", out)
+	out := al.formatProcessingErrorMessage(context.Background(), msg, errors.New("boom"))
+	if out != "Error processing message: boom" {
+		t.Fatalf("expected formatted error message, got %q", out)
 	}
 }
 
@@ -29,15 +29,15 @@ func TestFormatProcessingErrorMessage_EnglishCurrentMessage(t *testing.T) {
 		Content:    "Please help debug this issue",
 	}
 
-	out := al.formatProcessingErrorMessage(msg, errors.New("boom"))
-	if !strings.HasPrefix(out, "Error processing message:") {
-		t.Fatalf("expected English error prefix, got %q", out)
+	out := al.formatProcessingErrorMessage(context.Background(), msg, errors.New("boom"))
+	if out != "Error processing message: boom" {
+		t.Fatalf("expected formatted error message, got %q", out)
 	}
 }
 
-func TestFormatProcessingErrorMessage_UsesSessionHistoryLanguage(t *testing.T) {
+func TestFormatProcessingErrorMessage_UsesSessionHistory(t *testing.T) {
 	sm := session.NewSessionManager(t.TempDir())
-	sm.AddMessage("s-history", "user", "请继续，按这个方向修复")
+	sm.AddMessage("s-history", "user", "Please continue fixing in this direction")
 
 	al := &AgentLoop{sessions: sm}
 	msg := bus.InboundMessage{
@@ -45,8 +45,8 @@ func TestFormatProcessingErrorMessage_UsesSessionHistoryLanguage(t *testing.T) {
 		Content:    "ok",
 	}
 
-	out := al.formatProcessingErrorMessage(msg, errors.New("boom"))
-	if !strings.HasPrefix(out, "处理消息时发生错误：") {
-		t.Fatalf("expected Chinese error prefix from session history, got %q", out)
+	out := al.formatProcessingErrorMessage(context.Background(), msg, errors.New("boom"))
+	if out != "Error processing message: boom" {
+		t.Fatalf("expected formatted error message from session history, got %q", out)
 	}
 }

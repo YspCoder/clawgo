@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// SimpleCronParser 实现了一个极简的 Cron 表达式解析器 (minute hour day month dayOfWeek)
-// 借鉴 goclaw 可能使用的标准 cron 逻辑，补全 ClawGo 缺失的 Expr 调度能力
+// SimpleCronParser is a minimal cron expression parser (minute hour day month dayOfWeek).
+// It approximates standard cron behavior to provide missing Expr scheduling support.
 type SimpleCronParser struct {
 	expr string
 }
@@ -19,14 +19,15 @@ func NewSimpleCronParser(expr string) *SimpleCronParser {
 func (p *SimpleCronParser) Next(from time.Time) time.Time {
 	fields := strings.Fields(p.expr)
 	if len(fields) != 5 {
-		return time.Time{} // 格式错误
+		return time.Time{} // Invalid format
 	}
 
-	// 这是一个极简实现，仅支持 * 和 数字
-	// 生产环境下建议引入 github.com/robfig/cron/v3
+	// This minimal implementation only supports "*" and exact numbers.
+	// For production, use github.com/robfig/cron/v3.
 	next := from.Add(1 * time.Minute).Truncate(time.Minute)
-	
-	// 这里逻辑简化：如果不是 * 且不匹配，则递增直到匹配 (最大搜索 1 年)
+
+	// Simplified logic: if it is not "*" and does not match, keep incrementing until matched
+	// (up to one year of search).
 	for i := 0; i < 525600; i++ {
 		if p.match(next, fields) {
 			return next

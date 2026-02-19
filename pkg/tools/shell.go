@@ -119,7 +119,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 }
 
 func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd string) (string, error) {
-	// 实现 Docker 沙箱执行逻辑
+	// Execute command inside Docker sandbox
 	absCwd, _ := filepath.Abs(cwd)
 	dockerArgs := []string{
 		"run", "--rm",

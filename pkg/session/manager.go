@@ -92,7 +92,7 @@ func (sm *SessionManager) AddMessageFull(sessionKey string, msg providers.Messag
 	session.Updated = time.Now()
 	session.mu.Unlock()
 
-	// 立即持久化 (Append-only)
+	// Persist immediately (append-only)
 	if err := sm.appendMessage(sessionKey, msg); err != nil {
 		logger.ErrorCF("session", "Failed to persist session message", map[string]interface{}{
 			"session_key":     sessionKey,
@@ -277,8 +277,8 @@ func (sm *SessionManager) CompactHistory(key, summary string, keepLast int) (int
 }
 
 func (sm *SessionManager) Save(session *Session) error {
-	// 现已通过 AddMessageFull 实时增量持久化
-	// 这里保留 Save 方法用于更新 Summary 等元数据
+	// Messages are now persisted incrementally via AddMessageFull.
+	// Keep Save for summary and other metadata updates.
 	if sm.storage == "" {
 		return nil
 	}
@@ -307,7 +307,7 @@ func (sm *SessionManager) loadSessions() error {
 			continue
 		}
 
-		// 处理 JSONL 历史消息
+		// Load JSONL history messages
 		if filepath.Ext(file.Name()) == ".jsonl" {
 			sessionKey := strings.TrimSuffix(file.Name(), ".jsonl")
 			session := sm.GetOrCreate(sessionKey)
@@ -334,7 +334,7 @@ func (sm *SessionManager) loadSessions() error {
 			_ = f.Close()
 		}
 
-		// 处理元数据
+		// Load metadata
 		if filepath.Ext(file.Name()) == ".meta" {
 			sessionKey := strings.TrimSuffix(file.Name(), ".meta")
 			session := sm.GetOrCreate(sessionKey)
