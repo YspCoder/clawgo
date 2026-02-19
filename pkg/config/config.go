@@ -345,7 +345,7 @@ func DefaultConfig() *Config {
 				Timeout: 60 * time.Second,
 				Sandbox: SandboxConfig{
 					Enabled: false,
-					Image:   "golang:alpine",
+					Image:   "alpine:3.20",
 				},
 			},
 			Filesystem: FilesystemConfig{},

@@ -99,7 +99,7 @@
       "timeout": 60000000000,
       "sandbox": {
         "enabled": false,
-        "image": "golang:alpine"
+        "image": "alpine:3.20"
       }
     },
     "web": {

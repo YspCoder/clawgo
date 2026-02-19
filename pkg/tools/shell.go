@@ -86,7 +86,9 @@ func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd string) (s
 	absCwd, _ := filepath.Abs(cwd)
 	dockerArgs := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:/app", absCwd),
+		"--privileged",
+		"--user", "0:0",
+		"-v", fmt.Sprintf("%s:/app:rw", absCwd),
 		"-w", "/app",
 		t.sandboxImage,
 		"sh", "-c", command,

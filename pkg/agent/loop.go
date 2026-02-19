@@ -1707,7 +1707,25 @@ func shouldRetryAfterDeferralNoTools(content string, userTask string, iteration 
 		"你可以", "可以先", "步骤", "先执行", "请执行", "命令如下",
 		"you can", "steps", "run this command", "command is", "first,",
 	)
-	return looksLikeInstructionOnly
+	if looksLikeInstructionOnly {
+		return true
+	}
+
+	// If user already provided credentials/target URL in task text, asking for them again is usually a bad deferral.
+	taskLower := strings.ToLower(task)
+	taskHasCredential := containsAnySubstring(taskLower, "token", "password", "authorization", "bearer", "api_key", "apikey")
+	taskHasRepoURL := containsAnySubstring(taskLower, "http://", "https://", ".git")
+	if taskHasCredential || taskHasRepoURL {
+		asksCredentialAgain := containsAnySubstring(lower,
+			"请把token发给我", "请提供token", "需要token", "发我token", "请再发一次token",
+			"provide token", "send token", "share token", "need token", "resend token",
+			"授权我", "请授权", "grant permission", "need permission", "authorize me",
+		)
+		if asksCredentialAgain {
+			return true
+		}
+	}
+	return false
 }
 
 func formatRunStateReport(rs runState) string {
