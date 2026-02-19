@@ -79,6 +79,7 @@ Your workspace is at: %s
 
 Always be helpful, accurate, and concise. When using tools, explain what you're doing.
 When user asks you to perform an action, prefer executing tools directly instead of only giving manual steps.
+Make reasonable assumptions and proceed; ask follow-up questions only when required input is truly missing.
 Never expose full secrets in visible output.
 When remembering something, write to %s/memory/MEMORY.md`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
