@@ -166,10 +166,7 @@ Runtime-control config example (intent thresholds / autonomy guards / run-state 
   "defaults": {
     "runtime_control": {
       "intent_high_confidence": 0.75,
-      "intent_confirm_min_confidence": 0.45,
       "intent_max_input_chars": 1200,
-      "confirm_ttl_seconds": 300,
-      "confirm_max_clarification_turns": 2,
       "autonomy_tick_interval_sec": 20,
       "autonomy_min_run_interval_sec": 20,
       "autonomy_idle_threshold_sec": 20,
@@ -179,11 +176,6 @@ Runtime-control config example (intent thresholds / autonomy guards / run-state 
       "autolearn_max_rounds_without_user": 200,
       "run_state_ttl_seconds": 1800,
       "run_state_max": 500,
-      "run_control_latest_keywords": ["latest", "last run", "recent run", "最新", "最近", "上一次", "上个"],
-      "run_control_wait_keywords": ["wait", "等待", "等到", "阻塞"],
-      "run_control_status_keywords": ["status", "状态", "进度", "running", "运行"],
-      "run_control_run_mention_keywords": ["run", "任务"],
-      "run_control_minute_units": ["分钟", "min", "mins", "minute", "minutes", "m"],
       "tool_parallel_safe_names": ["read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"],
       "tool_max_parallel_calls": 2
     }

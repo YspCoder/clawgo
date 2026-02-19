@@ -21,17 +21,8 @@ func Validate(cfg *Config) []error {
 	if rc.IntentHighConfidence <= 0 || rc.IntentHighConfidence > 1 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_high_confidence must be in (0,1]"))
 	}
-	if rc.IntentConfirmMinConfidence < 0 || rc.IntentConfirmMinConfidence >= rc.IntentHighConfidence {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_confirm_min_confidence must be >= 0 and < intent_high_confidence"))
-	}
 	if rc.IntentMaxInputChars < 200 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_max_input_chars must be >= 200"))
-	}
-	if rc.ConfirmTTLSeconds <= 0 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.confirm_ttl_seconds must be > 0"))
-	}
-	if rc.ConfirmMaxClarificationTurns < 0 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.confirm_max_clarification_turns must be >= 0"))
 	}
 	if rc.AutonomyTickIntervalSec < 5 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_tick_interval_sec must be >= 5"))
@@ -60,11 +51,6 @@ func Validate(cfg *Config) []error {
 	if rc.RunStateMax <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.run_state_max must be > 0"))
 	}
-	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_latest_keywords", rc.RunControlLatestKeywords)...)
-	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_wait_keywords", rc.RunControlWaitKeywords)...)
-	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_status_keywords", rc.RunControlStatusKeywords)...)
-	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_run_mention_keywords", rc.RunControlRunMentionKeywords)...)
-	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_minute_units", rc.RunControlMinuteUnits)...)
 	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.tool_parallel_safe_names", rc.ToolParallelSafeNames)...)
 	if rc.ToolMaxParallelCalls <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.tool_max_parallel_calls must be > 0"))

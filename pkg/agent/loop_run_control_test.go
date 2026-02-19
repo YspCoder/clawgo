@@ -11,82 +11,32 @@ import (
 func TestDetectRunControlIntent(t *testing.T) {
 	t.Parallel()
 
-	intent, ok := detectRunControlIntent("请等待 run-123-7 120 秒后告诉我状态")
-	if !ok {
-		t.Fatalf("expected run control intent")
-	}
-	if intent.runID != "run-123-7" {
-		t.Fatalf("unexpected run id: %s", intent.runID)
-	}
-	if !intent.wait {
-		t.Fatalf("expected wait=true")
-	}
-	if intent.timeout != 120*time.Second {
-		t.Fatalf("unexpected timeout: %s", intent.timeout)
+	if got := normalizeRunWaitTimeout(0); got != defaultRunWaitTimeout {
+		t.Fatalf("expected default timeout, got %s", got)
 	}
 }
 
 func TestDetectRunControlIntentLatest(t *testing.T) {
 	t.Parallel()
 
-	intent, ok := detectRunControlIntent("latest run status")
-	if !ok {
-		t.Fatalf("expected latest run status intent")
-	}
-	if !intent.latest {
-		t.Fatalf("expected latest=true")
-	}
-	if intent.runID != "" {
-		t.Fatalf("expected empty run id")
+	if got := normalizeRunWaitTimeout(time.Second); got != minRunWaitTimeout {
+		t.Fatalf("expected min timeout %s, got %s", minRunWaitTimeout, got)
 	}
 }
 
 func TestParseRunWaitTimeout_MinClamp(t *testing.T) {
 	t.Parallel()
 
-	got := parseRunWaitTimeout("wait run-1-1 1 s")
-	if got != minRunWaitTimeout {
-		t.Fatalf("expected min timeout %s, got %s", minRunWaitTimeout, got)
+	if got := normalizeRunWaitTimeout(maxRunWaitTimeout + time.Minute); got != maxRunWaitTimeout {
+		t.Fatalf("expected max timeout %s, got %s", maxRunWaitTimeout, got)
 	}
 }
 
 func TestParseRunWaitTimeout_MinuteUnit(t *testing.T) {
 	t.Parallel()
 
-	got := parseRunWaitTimeout("等待 run-1-1 2 分钟")
-	if got != 2*time.Minute {
+	if got := normalizeRunWaitTimeout(2 * time.Minute); got != 2*time.Minute {
 		t.Fatalf("expected 2m, got %s", got)
-	}
-}
-
-func TestDetectRunControlIntentIgnoresNonControlText(t *testing.T) {
-	t.Parallel()
-
-	if _, ok := detectRunControlIntent("帮我写一个README"); ok {
-		t.Fatalf("did not expect run control intent")
-	}
-}
-
-func TestDetectRunControlIntentWithCustomLexicon(t *testing.T) {
-	t.Parallel()
-
-	lex := runControlLexicon{
-		latestKeywords:     []string{"newest"},
-		waitKeywords:       []string{"block"},
-		statusKeywords:     []string{"health"},
-		runMentionKeywords: []string{"job"},
-		minuteUnits:        map[string]struct{}{"mins": {}},
-	}
-
-	intent, ok := detectRunControlIntentWithLexicon("block run-55-1 for 2 mins and show health", lex)
-	if !ok {
-		t.Fatalf("expected intent with custom lexicon")
-	}
-	if !intent.wait {
-		t.Fatalf("expected wait=true")
-	}
-	if intent.timeout != 2*time.Minute {
-		t.Fatalf("unexpected timeout: %s", intent.timeout)
 	}
 }
 

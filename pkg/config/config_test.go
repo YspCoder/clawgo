@@ -65,7 +65,6 @@ func TestLoadConfigAllowsKnownRuntimeControlFields(t *testing.T) {
       "runtime_control": {
         "intent_high_confidence": 0.88,
         "run_state_max": 321,
-        "run_control_wait_keywords": ["wait", "block"],
         "tool_parallel_safe_names": ["read_file", "memory_search"],
         "tool_max_parallel_calls": 3
       }
@@ -85,9 +84,6 @@ func TestLoadConfigAllowsKnownRuntimeControlFields(t *testing.T) {
 	}
 	if got := cfg.Agents.Defaults.RuntimeControl.RunStateMax; got != 321 {
 		t.Fatalf("run_state_max mismatch: got %d", got)
-	}
-	if got := len(cfg.Agents.Defaults.RuntimeControl.RunControlWaitKeywords); got != 2 {
-		t.Fatalf("run_control_wait_keywords mismatch: got %d", got)
 	}
 	if got := cfg.Agents.Defaults.RuntimeControl.ToolMaxParallelCalls; got != 3 {
 		t.Fatalf("tool_max_parallel_calls mismatch: got %d", got)

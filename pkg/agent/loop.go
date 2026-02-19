@@ -109,14 +109,6 @@ type controlPolicy struct {
 	autoLearnMaxRoundsWithoutUser int
 }
 
-type runControlLexicon struct {
-	latestKeywords     []string
-	waitKeywords       []string
-	statusKeywords     []string
-	runMentionKeywords []string
-	minuteUnits        map[string]struct{}
-}
-
 type runtimeControlStats struct {
 	runAccepted                 int64
 	runCompleted                int64
@@ -204,7 +196,6 @@ type AgentLoop struct {
 	controlConfirmMu  sync.Mutex
 	controlConfirm    map[string]pendingControlConfirmation
 	controlPolicy     controlPolicy
-	runControlLex     runControlLexicon
 	parallelSafeTools map[string]struct{}
 	maxParallelCalls  int
 	controlStats      runtimeControlStats
@@ -263,12 +254,15 @@ type taskExecutionDirectivesLLMResponse struct {
 	Confidence  float64 `json:"confidence"`
 }
 
-var runIDPattern = regexp.MustCompile(`(?i)\b(run-\d+-\d+)\b`)
-var runWaitTimeoutPattern = regexp.MustCompile(`(?i)(\d+)\s*(seconds|second|secs|sec|minutes|minute|mins|min|分钟|秒|s|m)`)
-var defaultRunControlLatestKeywords = []string{"latest", "last run", "recent run", "最新", "最近", "上一次", "上个"}
-var defaultRunControlWaitKeywords = []string{"wait", "等待", "等到", "阻塞"}
-var defaultRunControlStatusKeywords = []string{"status", "状态", "进度", "running", "运行"}
-var defaultRunControlRunMentionKeywords = []string{"run", "任务"}
+type runControlIntentLLMResponse struct {
+	Matched        bool    `json:"matched"`
+	RunID          string  `json:"run_id"`
+	Latest         bool    `json:"latest"`
+	Wait           bool    `json:"wait"`
+	TimeoutSeconds int     `json:"timeout_seconds"`
+	Confidence     float64 `json:"confidence"`
+}
+
 var defaultParallelSafeToolNames = []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"}
 var autonomyIntentKeywords = []string{
 	"autonomy", "autonomous", "autonomy mode", "self-driven", "self driven",
@@ -277,14 +271,6 @@ var autonomyIntentKeywords = []string{
 var autoLearnIntentKeywords = []string{
 	"auto-learn", "autolearn", "learning loop", "learn loop",
 	"自学习", "学习循环", "自动学习", "学习模式",
-}
-var defaultRunWaitMinuteUnits = map[string]struct{}{
-	"分钟":      {},
-	"min":     {},
-	"mins":    {},
-	"minute":  {},
-	"minutes": {},
-	"m":       {},
 }
 
 type stageReporter struct {
@@ -375,17 +361,8 @@ func loadControlPolicyFromConfig(base controlPolicy, rc config.RuntimeControlCon
 	if rc.IntentHighConfidence > 0 {
 		p.intentHighConfidence = rc.IntentHighConfidence
 	}
-	if rc.IntentConfirmMinConfidence >= 0 {
-		p.intentConfirmMinConfidence = rc.IntentConfirmMinConfidence
-	}
 	if rc.IntentMaxInputChars > 0 {
 		p.intentMaxInputChars = rc.IntentMaxInputChars
-	}
-	if rc.ConfirmTTLSeconds > 0 {
-		p.confirmTTL = time.Duration(rc.ConfirmTTLSeconds) * time.Second
-	}
-	if rc.ConfirmMaxClarificationTurns >= 0 {
-		p.confirmMaxClarificationTurns = rc.ConfirmMaxClarificationTurns
 	}
 	if rc.AutonomyTickIntervalSec > 0 {
 		p.autonomyTickInterval = time.Duration(rc.AutonomyTickIntervalSec) * time.Second
@@ -421,42 +398,6 @@ func loadRunStatePolicyFromConfig(rc config.RuntimeControlConfig) (time.Duration
 		maxEntries = rc.RunStateMax
 	}
 	return ttl, maxEntries
-}
-
-func defaultRunControlLexicon() runControlLexicon {
-	latest := append([]string(nil), defaultRunControlLatestKeywords...)
-	wait := append([]string(nil), defaultRunControlWaitKeywords...)
-	status := append([]string(nil), defaultRunControlStatusKeywords...)
-	mention := append([]string(nil), defaultRunControlRunMentionKeywords...)
-	minutes := make(map[string]struct{}, len(defaultRunWaitMinuteUnits))
-	for unit := range defaultRunWaitMinuteUnits {
-		minutes[unit] = struct{}{}
-	}
-	return runControlLexicon{
-		latestKeywords:     latest,
-		waitKeywords:       wait,
-		statusKeywords:     status,
-		runMentionKeywords: mention,
-		minuteUnits:        minutes,
-	}
-}
-
-func loadRunControlLexiconFromConfig(rc config.RuntimeControlConfig) runControlLexicon {
-	base := defaultRunControlLexicon()
-	base.latestKeywords = normalizeKeywordList(rc.RunControlLatestKeywords, base.latestKeywords)
-	base.waitKeywords = normalizeKeywordList(rc.RunControlWaitKeywords, base.waitKeywords)
-	base.statusKeywords = normalizeKeywordList(rc.RunControlStatusKeywords, base.statusKeywords)
-	base.runMentionKeywords = normalizeKeywordList(rc.RunControlRunMentionKeywords, base.runMentionKeywords)
-
-	minuteUnits := normalizeKeywordList(rc.RunControlMinuteUnits, nil)
-	if len(minuteUnits) == 0 {
-		return base
-	}
-	base.minuteUnits = make(map[string]struct{}, len(minuteUnits))
-	for _, unit := range minuteUnits {
-		base.minuteUnits[unit] = struct{}{}
-	}
-	return base
 }
 
 func normalizeKeywordList(values []string, fallback []string) []string {
@@ -688,7 +629,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	defaultModel := defaultModelFromModels(modelsByProxy[primaryProxy], provider)
 	policy := loadControlPolicyFromConfig(defaultControlPolicy(), cfg.Agents.Defaults.RuntimeControl)
 	policy = applyLegacyControlPolicyEnvOverrides(policy)
-	runControlLex := loadRunControlLexiconFromConfig(cfg.Agents.Defaults.RuntimeControl)
 	parallelSafeTools, maxParallelCalls := loadToolParallelPolicyFromConfig(cfg.Agents.Defaults.RuntimeControl)
 	runStateTTL, runStateMax := loadRunStatePolicyFromConfig(cfg.Agents.Defaults.RuntimeControl)
 	// Keep compatibility with older env names.
@@ -722,7 +662,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		autonomyBySess:    make(map[string]*autonomySession),
 		controlConfirm:    make(map[string]pendingControlConfirmation),
 		controlPolicy:     policy,
-		runControlLex:     runControlLex,
 		parallelSafeTools: parallelSafeTools,
 		maxParallelCalls:  maxParallelCalls,
 		runStates:         make(map[string]*runState),
@@ -731,10 +670,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 	logger.InfoCF("agent", "Control policy initialized", map[string]interface{}{
 		"intent_high_confidence":            policy.intentHighConfidence,
-		"intent_confirm_min_confidence":     policy.intentConfirmMinConfidence,
 		"intent_max_input_chars":            policy.intentMaxInputChars,
-		"confirm_ttl":                       policy.confirmTTL.String(),
-		"confirm_max_clarification_turns":   policy.confirmMaxClarificationTurns,
 		"autonomy_tick_interval":            policy.autonomyTickInterval.String(),
 		"autonomy_min_run_interval":         policy.autonomyMinRunInterval.String(),
 		"autonomy_idle_threshold":           policy.autonomyIdleThreshold.String(),
@@ -742,11 +678,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		"autonomy_max_pending_duration":     policy.autonomyMaxPendingDuration.String(),
 		"autonomy_max_consecutive_stalls":   policy.autonomyMaxConsecutiveStalls,
 		"autolearn_max_rounds_without_user": policy.autoLearnMaxRoundsWithoutUser,
-		"run_control_latest_keywords":       len(runControlLex.latestKeywords),
-		"run_control_wait_keywords":         len(runControlLex.waitKeywords),
-		"run_control_status_keywords":       len(runControlLex.statusKeywords),
-		"run_control_run_keywords":          len(runControlLex.runMentionKeywords),
-		"run_control_minute_units":          len(runControlLex.minuteUnits),
 		"parallel_safe_tool_count":          len(parallelSafeTools),
 		"tool_max_parallel_calls":           maxParallelCalls,
 		"run_state_ttl":                     runStateTTL.String(),
@@ -1697,63 +1628,9 @@ func (al *AgentLoop) waitForRun(ctx context.Context, runID string) (runState, bo
 	}
 }
 
-func detectRunControlIntent(content string) (runControlIntent, bool) {
-	return detectRunControlIntentWithLexicon(content, defaultRunControlLexicon())
-}
-
-func detectRunControlIntentWithLexicon(content string, lex runControlLexicon) (runControlIntent, bool) {
-	text := strings.TrimSpace(content)
-	if text == "" {
-		return runControlIntent{}, false
-	}
-	if strings.HasPrefix(text, "/") {
-		return runControlIntent{}, false
-	}
-
-	lower := strings.ToLower(text)
-	intent := runControlIntent{
-		timeout: defaultRunWaitTimeout,
-	}
-	if m := runIDPattern.FindStringSubmatch(text); len(m) > 1 {
-		intent.runID = strings.ToLower(strings.TrimSpace(m[1]))
-	}
-	intent.latest = containsAnySubstring(lower, lex.latestKeywords...)
-	intent.wait = containsAnySubstring(lower, lex.waitKeywords...)
-	isStatusQuery := containsAnySubstring(lower, lex.statusKeywords...)
-	isRunMentioned := containsAnySubstring(lower, lex.runMentionKeywords...)
-	if !intent.wait && !isStatusQuery {
-		if intent.runID == "" || !isRunMentioned {
-			return runControlIntent{}, false
-		}
-	}
-	if intent.runID == "" && !intent.latest {
-		return runControlIntent{}, false
-	}
-	if intent.wait {
-		intent.timeout = parseRunWaitTimeoutWithLexicon(text, lex)
-	}
-	return intent, true
-}
-
-func parseRunWaitTimeout(content string) time.Duration {
-	return parseRunWaitTimeoutWithLexicon(content, defaultRunControlLexicon())
-}
-
-func parseRunWaitTimeoutWithLexicon(content string, lex runControlLexicon) time.Duration {
-	timeout := defaultRunWaitTimeout
-	matches := runWaitTimeoutPattern.FindStringSubmatch(content)
-	if len(matches) < 3 {
-		return timeout
-	}
-	n, err := strconv.Atoi(matches[1])
-	if err != nil || n <= 0 {
-		return timeout
-	}
-	unit := strings.ToLower(strings.TrimSpace(matches[2]))
-	if _, isMinute := lex.minuteUnits[unit]; isMinute {
-		timeout = time.Duration(n) * time.Minute
-	} else {
-		timeout = time.Duration(n) * time.Second
+func normalizeRunWaitTimeout(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		return defaultRunWaitTimeout
 	}
 	if timeout < minRunWaitTimeout {
 		return minRunWaitTimeout
@@ -1887,19 +1764,86 @@ func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey str
 	return al.naturalizeUserFacingText(ctx, formatRunStateReport(rs))
 }
 
+func (al *AgentLoop) inferRunControlIntent(ctx context.Context, content string) (runControlIntent, float64, bool) {
+	text := strings.TrimSpace(content)
+	if text == "" || strings.HasPrefix(text, "/") {
+		return runControlIntent{}, 0, false
+	}
+
+	limit := defaultControlPolicy().intentMaxInputChars
+	if al != nil && al.controlPolicy.intentMaxInputChars > 0 {
+		limit = al.controlPolicy.intentMaxInputChars
+	}
+	if len(text) > limit {
+		text = truncate(text, limit)
+	}
+
+	systemPrompt := al.withBootstrapPolicy(`You classify run-control intent for an AI assistant.
+Return JSON only.
+Schema:
+{"matched":true|false,"run_id":"","latest":false,"wait":false,"timeout_seconds":0,"confidence":0.0}
+Rules:
+- matched=true only when user asks run status/wait/latest-run control.
+- run_id: use canonical form like run-123-1 if provided, else empty.
+- latest=true when user asks latest/recent run.
+- wait=true when user asks to wait until run completes.
+- timeout_seconds: wait timeout in seconds, 0 means default.
+- confidence: 0..1`)
+
+	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: text},
+	}, nil, map[string]interface{}{
+		"max_tokens":  220,
+		"temperature": 0.0,
+	})
+	if err != nil || resp == nil {
+		return runControlIntent{}, 0, false
+	}
+
+	raw := extractJSONObject(resp.Content)
+	if raw == "" {
+		return runControlIntent{}, 0, false
+	}
+
+	var parsed runControlIntentLLMResponse
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return runControlIntent{}, 0, false
+	}
+	if !parsed.Matched {
+		return runControlIntent{}, parsed.Confidence, false
+	}
+
+	intent := runControlIntent{
+		runID:   strings.ToLower(strings.TrimSpace(parsed.RunID)),
+		latest:  parsed.Latest,
+		wait:    parsed.Wait,
+		timeout: defaultRunWaitTimeout,
+	}
+	if parsed.TimeoutSeconds > 0 {
+		intent.timeout = time.Duration(parsed.TimeoutSeconds) * time.Second
+	}
+	intent.timeout = normalizeRunWaitTimeout(intent.timeout)
+
+	if intent.runID == "" && !intent.latest {
+		return runControlIntent{}, parsed.Confidence, false
+	}
+	return intent, parsed.Confidence, true
+}
+
 func (al *AgentLoop) handleNaturalRunControl(ctx context.Context, msg bus.InboundMessage) (bool, string) {
-	intent, ok := detectRunControlIntentWithLexicon(msg.Content, al.effectiveRunControlLexicon())
+	intent, confidence, ok := al.inferRunControlIntent(ctx, msg.Content)
 	if !ok {
 		return false, ""
 	}
-	return true, al.executeRunControlIntent(ctx, msg.SessionKey, intent)
-}
-
-func (al *AgentLoop) effectiveRunControlLexicon() runControlLexicon {
-	if al == nil || len(al.runControlLex.latestKeywords) == 0 || len(al.runControlLex.minuteUnits) == 0 {
-		return defaultRunControlLexicon()
+	policy := defaultControlPolicy()
+	if al != nil {
+		policy = al.controlPolicy
 	}
-	return al.runControlLex
+	if confidence < policy.intentHighConfidence {
+		return false, ""
+	}
+	return true, al.executeRunControlIntent(ctx, msg.SessionKey, intent)
 }
 
 func (al *AgentLoop) controlMetricAdd(counter *int64, delta int64) {
@@ -2025,16 +1969,16 @@ func (al *AgentLoop) handleControlPlane(ctx context.Context, msg bus.InboundMess
 		al.clearPendingControlConfirmation(msg.SessionKey)
 		return true, al.executeAutonomyIntent(ctx, msg, intent), nil
 	} else if outcome.needsConfirm {
-		al.storePendingAutonomyConfirmation(msg.SessionKey, msg.Content, intent, outcome.confidence)
-		return true, al.naturalizeUserFacingText(ctx, al.formatAutonomyConfirmationPrompt(intent)), nil
+		al.clearPendingControlConfirmation(msg.SessionKey)
+		return true, al.executeAutonomyIntent(ctx, msg, intent), nil
 	}
 
 	if intent, outcome := al.detectAutoLearnIntent(ctx, msg.Content); outcome.matched {
 		al.clearPendingControlConfirmation(msg.SessionKey)
 		return true, al.executeAutoLearnIntent(ctx, msg, intent), nil
 	} else if outcome.needsConfirm {
-		al.storePendingAutoLearnConfirmation(msg.SessionKey, msg.Content, intent, outcome.confidence)
-		return true, al.naturalizeUserFacingText(ctx, al.formatAutoLearnConfirmationPrompt(intent)), nil
+		al.clearPendingControlConfirmation(msg.SessionKey)
+		return true, al.executeAutoLearnIntent(ctx, msg, intent), nil
 	}
 
 	return false, "", nil
