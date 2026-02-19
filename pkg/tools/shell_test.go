@@ -34,3 +34,27 @@ func TestExecToolExecuteTimeout(t *testing.T) {
 		t.Fatalf("expected timeout message, got %q", out)
 	}
 }
+
+func TestDetectMissingCommandFromOutput(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{in: "sh: git: not found", want: "git"},
+		{in: "/bin/sh: 1: rg: not found", want: "rg"},
+		{in: "bash: foo: command not found", want: "foo"},
+		{in: "normal error", want: ""},
+	}
+	for _, tc := range cases {
+		got := detectMissingCommandFromOutput(tc.in)
+		if got != tc.want {
+			t.Fatalf("detectMissingCommandFromOutput(%q)=%q want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestBuildInstallCommandCandidates_EmptyName(t *testing.T) {
+	if got := buildInstallCommandCandidates(""); len(got) != 0 {
+		t.Fatalf("expected empty candidates, got %v", got)
+	}
+}
