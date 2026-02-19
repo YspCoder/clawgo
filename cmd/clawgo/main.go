@@ -305,63 +305,20 @@ func ensureConfigOnboard(configPath string, defaults *config.Config) (string, er
 		return "", fmt.Errorf("defaults is nil")
 	}
 
+	exists := true
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		if err := config.SaveConfig(configPath, defaults); err != nil {
-			return "", err
-		}
-		return "created", nil
+		exists = false
 	} else if err != nil {
 		return "", err
 	}
 
-	defaultData, err := json.Marshal(defaults)
-	if err != nil {
+	if err := config.SaveConfig(configPath, defaults); err != nil {
 		return "", err
 	}
-	var defaultMap map[string]interface{}
-	if err := json.Unmarshal(defaultData, &defaultMap); err != nil {
-		return "", err
+	if exists {
+		return "overwritten", nil
 	}
-
-	existingMap, err := configops.LoadConfigAsMap(configPath)
-	if err != nil {
-		return "", err
-	}
-
-	changed := mergeMissingConfigValues(existingMap, defaultMap)
-	if !changed {
-		return "up-to-date", nil
-	}
-
-	mergedData, err := json.MarshalIndent(existingMap, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	if _, err := configops.WriteConfigAtomicWithBackup(configPath, mergedData); err != nil {
-		return "", err
-	}
-	return "updated (incremental)", nil
-}
-
-func mergeMissingConfigValues(dst map[string]interface{}, defaults map[string]interface{}) bool {
-	changed := false
-	for key, dv := range defaults {
-		existing, ok := dst[key]
-		if !ok {
-			dst[key] = dv
-			changed = true
-			continue
-		}
-
-		dm, dIsMap := dv.(map[string]interface{})
-		em, eIsMap := existing.(map[string]interface{})
-		if dIsMap && eIsMap {
-			if mergeMissingConfigValues(em, dm) {
-				changed = true
-			}
-		}
-	}
-	return changed
+	return "created", nil
 }
 
 func createWorkspaceTemplates(workspace string) error {
