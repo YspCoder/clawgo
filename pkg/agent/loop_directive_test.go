@@ -27,13 +27,13 @@ func TestParseTaskExecutionDirectives_Default(t *testing.T) {
 }
 
 func TestClassifyConfirmationReply(t *testing.T) {
-	if ok, confident := classifyConfirmationReply("yes"); !confident || !ok {
+	if ok, confident := classifyConfirmationReplyLexical("yes"); !confident || !ok {
 		t.Fatalf("expected yes to confirm")
 	}
-	if ok, confident := classifyConfirmationReply("取消"); !confident || ok {
+	if ok, confident := classifyConfirmationReplyLexical("取消"); !confident || ok {
 		t.Fatalf("expected cancel to reject")
 	}
-	if _, confident := classifyConfirmationReply("继续处理日志问题，不是这个"); confident {
+	if _, confident := classifyConfirmationReplyLexical("继续处理日志问题，不是这个"); confident {
 		t.Fatalf("expected non-confirmation sentence to be non-confident")
 	}
 }

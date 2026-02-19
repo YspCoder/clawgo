@@ -64,7 +64,41 @@ type autonomySession struct {
 	lastNudgeAt  time.Time
 	lastReportAt time.Time
 	pending      bool
+	pendingSince time.Time
+	stallCount   int
 	focus        string
+}
+
+type controlPolicy struct {
+	intentHighConfidence          float64
+	intentConfirmMinConfidence    float64
+	intentMaxInputChars           int
+	confirmTTL                    time.Duration
+	confirmMaxClarificationTurns  int
+	autonomyTickInterval          time.Duration
+	autonomyMinRunInterval        time.Duration
+	autonomyIdleThreshold         time.Duration
+	autonomyMaxRoundsWithoutUser  int
+	autonomyMaxPendingDuration    time.Duration
+	autonomyMaxConsecutiveStalls  int
+	autoLearnMaxRoundsWithoutUser int
+}
+
+type runtimeControlStats struct {
+	intentAutonomyMatched       int64
+	intentAutonomyNeedsConfirm  int64
+	intentAutonomyRejected      int64
+	intentAutoLearnMatched      int64
+	intentAutoLearnNeedsConfirm int64
+	intentAutoLearnRejected     int64
+	confirmPrompts              int64
+	confirmAccepted             int64
+	confirmRejected             int64
+	confirmExpired              int64
+	autonomyRounds              int64
+	autonomyStoppedByGuard      int64
+	autoLearnRounds             int64
+	autoLearnStoppedByGuard     int64
 }
 
 type AgentLoop struct {
@@ -92,6 +126,8 @@ type AgentLoop struct {
 	autonomyBySess   map[string]*autonomySession
 	controlConfirmMu sync.Mutex
 	controlConfirm   map[string]pendingControlConfirmation
+	controlPolicy    controlPolicy
+	controlStats     runtimeControlStats
 }
 
 type taskExecutionDirectives struct {
@@ -161,7 +197,115 @@ type pendingControlConfirmation struct {
 	interval      *time.Duration
 	confidence    float64
 	requestedAt   time.Time
+	clarifyTurns  int
 	originalInput string
+}
+
+func defaultControlPolicy() controlPolicy {
+	return controlPolicy{
+		intentHighConfidence:          0.75,
+		intentConfirmMinConfidence:    0.45,
+		intentMaxInputChars:           1200,
+		confirmTTL:                    5 * time.Minute,
+		confirmMaxClarificationTurns:  2,
+		autonomyTickInterval:          autonomyContinuousRunInterval,
+		autonomyMinRunInterval:        autonomyContinuousRunInterval,
+		autonomyIdleThreshold:         autonomyContinuousIdleThreshold,
+		autonomyMaxRoundsWithoutUser:  120,
+		autonomyMaxPendingDuration:    3 * time.Minute,
+		autonomyMaxConsecutiveStalls:  3,
+		autoLearnMaxRoundsWithoutUser: 200,
+	}
+}
+
+func envFloat64(key string, fallback float64) float64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return fallback
+	}
+	return f
+}
+
+func envInt(key string, fallback int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
+}
+
+func loadControlPolicyFromEnv(base controlPolicy) controlPolicy {
+	p := base
+	p.intentHighConfidence = envFloat64("CLAWGO_INTENT_HIGH_CONFIDENCE", p.intentHighConfidence)
+	p.intentConfirmMinConfidence = envFloat64("CLAWGO_INTENT_CONFIRM_MIN_CONFIDENCE", p.intentConfirmMinConfidence)
+	p.intentMaxInputChars = envInt("CLAWGO_INTENT_MAX_INPUT_CHARS", p.intentMaxInputChars)
+	p.confirmTTL = envDuration("CLAWGO_CONFIRM_TTL", p.confirmTTL)
+	p.confirmMaxClarificationTurns = envInt("CLAWGO_CONFIRM_MAX_CLARIFY_TURNS", p.confirmMaxClarificationTurns)
+	p.autonomyTickInterval = envDuration("CLAWGO_AUTONOMY_TICK_INTERVAL", p.autonomyTickInterval)
+	p.autonomyMinRunInterval = envDuration("CLAWGO_AUTONOMY_MIN_RUN_INTERVAL", p.autonomyMinRunInterval)
+	p.autonomyIdleThreshold = envDuration("CLAWGO_AUTONOMY_IDLE_THRESHOLD", p.autonomyIdleThreshold)
+	p.autonomyMaxRoundsWithoutUser = envInt("CLAWGO_AUTONOMY_MAX_ROUNDS_WITHOUT_USER", p.autonomyMaxRoundsWithoutUser)
+	p.autonomyMaxPendingDuration = envDuration("CLAWGO_AUTONOMY_MAX_PENDING_DURATION", p.autonomyMaxPendingDuration)
+	p.autonomyMaxConsecutiveStalls = envInt("CLAWGO_AUTONOMY_MAX_STALLS", p.autonomyMaxConsecutiveStalls)
+	p.autoLearnMaxRoundsWithoutUser = envInt("CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER", p.autoLearnMaxRoundsWithoutUser)
+
+	if p.intentHighConfidence <= 0 || p.intentHighConfidence > 1 {
+		p.intentHighConfidence = base.intentHighConfidence
+	}
+	if p.intentConfirmMinConfidence < 0 || p.intentConfirmMinConfidence >= p.intentHighConfidence {
+		p.intentConfirmMinConfidence = base.intentConfirmMinConfidence
+	}
+	if p.intentMaxInputChars < 200 {
+		p.intentMaxInputChars = base.intentMaxInputChars
+	}
+	if p.confirmTTL <= 0 {
+		p.confirmTTL = base.confirmTTL
+	}
+	if p.confirmMaxClarificationTurns < 0 {
+		p.confirmMaxClarificationTurns = base.confirmMaxClarificationTurns
+	}
+	if p.autonomyTickInterval < 5*time.Second {
+		p.autonomyTickInterval = base.autonomyTickInterval
+	}
+	if p.autonomyMinRunInterval < 5*time.Second {
+		p.autonomyMinRunInterval = base.autonomyMinRunInterval
+	}
+	if p.autonomyIdleThreshold < 5*time.Second {
+		p.autonomyIdleThreshold = base.autonomyIdleThreshold
+	}
+	if p.autonomyMaxRoundsWithoutUser <= 0 {
+		p.autonomyMaxRoundsWithoutUser = base.autonomyMaxRoundsWithoutUser
+	}
+	if p.autonomyMaxPendingDuration < 10*time.Second {
+		p.autonomyMaxPendingDuration = base.autonomyMaxPendingDuration
+	}
+	if p.autonomyMaxConsecutiveStalls <= 0 {
+		p.autonomyMaxConsecutiveStalls = base.autonomyMaxConsecutiveStalls
+	}
+	if p.autoLearnMaxRoundsWithoutUser <= 0 {
+		p.autoLearnMaxRoundsWithoutUser = base.autoLearnMaxRoundsWithoutUser
+	}
+	return p
 }
 
 func (sr *stageReporter) Publish(stage int, total int, status string, detail string) {
@@ -294,6 +438,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		provider = p
 	}
 	defaultModel := defaultModelFromModels(modelsByProxy[primaryProxy], provider)
+	policy := loadControlPolicyFromEnv(defaultControlPolicy())
 
 	loop := &AgentLoop{
 		bus:              msgBus,
@@ -315,7 +460,22 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		autoLearners:     make(map[string]*autoLearner),
 		autonomyBySess:   make(map[string]*autonomySession),
 		controlConfirm:   make(map[string]pendingControlConfirmation),
+		controlPolicy:    policy,
 	}
+	logger.InfoCF("agent", "Control policy initialized", map[string]interface{}{
+		"intent_high_confidence":            policy.intentHighConfidence,
+		"intent_confirm_min_confidence":     policy.intentConfirmMinConfidence,
+		"intent_max_input_chars":            policy.intentMaxInputChars,
+		"confirm_ttl":                       policy.confirmTTL.String(),
+		"confirm_max_clarification_turns":   policy.confirmMaxClarificationTurns,
+		"autonomy_tick_interval":            policy.autonomyTickInterval.String(),
+		"autonomy_min_run_interval":         policy.autonomyMinRunInterval.String(),
+		"autonomy_idle_threshold":           policy.autonomyIdleThreshold.String(),
+		"autonomy_max_rounds_without_user":  policy.autonomyMaxRoundsWithoutUser,
+		"autonomy_max_pending_duration":     policy.autonomyMaxPendingDuration.String(),
+		"autonomy_max_consecutive_stalls":   policy.autonomyMaxConsecutiveStalls,
+		"autolearn_max_rounds_without_user": policy.autoLearnMaxRoundsWithoutUser,
+	})
 
 	// Inject recursive run logic so subagent has full tool-calling capability.
 	subagentManager.SetRunFunc(func(ctx context.Context, task, channel, chatID string) (string, error) {
@@ -704,7 +864,11 @@ func (al *AgentLoop) autonomyStatus(ctx context.Context, sessionKey string) stri
 }
 
 func (al *AgentLoop) runAutonomyLoop(ctx context.Context, msg bus.InboundMessage) {
-	ticker := time.NewTicker(20 * time.Second)
+	tick := autonomyContinuousRunInterval
+	if al != nil && al.controlPolicy.autonomyTickInterval > 0 {
+		tick = al.controlPolicy.autonomyTickInterval
+	}
+	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
 	for {
@@ -720,6 +884,10 @@ func (al *AgentLoop) runAutonomyLoop(ctx context.Context, msg bus.InboundMessage
 }
 
 func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
+	policy := defaultControlPolicy()
+	if al != nil {
+		policy = al.controlPolicy
+	}
 	al.autonomyMu.Lock()
 	s, ok := al.autonomyBySess[msg.SessionKey]
 	if !ok || s == nil {
@@ -728,9 +896,47 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 	}
 
 	now := time.Now()
-	if s.pending ||
-		now.Sub(s.lastUserAt) < autonomyContinuousIdleThreshold ||
-		now.Sub(s.lastNudgeAt) < autonomyContinuousRunInterval {
+	if s.pending {
+		if !s.pendingSince.IsZero() && now.Sub(s.pendingSince) > policy.autonomyMaxPendingDuration {
+			s.pending = false
+			s.pendingSince = time.Time{}
+			s.stallCount++
+			if s.stallCount >= policy.autonomyMaxConsecutiveStalls {
+				if s.cancel != nil {
+					s.cancel()
+				}
+				delete(al.autonomyBySess, msg.SessionKey)
+				al.autonomyMu.Unlock()
+				al.controlMetricAdd(&al.controlStats.autonomyStoppedByGuard, 1)
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: al.naturalizeUserFacingText(context.Background(), "Autonomy mode stopped automatically because background rounds stalled repeatedly."),
+				})
+				return false
+			}
+		}
+		al.autonomyMu.Unlock()
+		return true
+	}
+	if policy.autonomyMaxRoundsWithoutUser > 0 &&
+		s.rounds >= policy.autonomyMaxRoundsWithoutUser &&
+		now.Sub(s.lastUserAt) >= policy.autonomyIdleThreshold {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		delete(al.autonomyBySess, msg.SessionKey)
+		al.autonomyMu.Unlock()
+		al.controlMetricAdd(&al.controlStats.autonomyStoppedByGuard, 1)
+		al.bus.PublishOutbound(bus.OutboundMessage{
+			Channel: msg.Channel,
+			ChatID:  msg.ChatID,
+			Content: al.naturalizeUserFacingText(context.Background(), "Autonomy mode paused automatically after many unattended rounds. Send a new request to continue."),
+		})
+		return false
+	}
+	if now.Sub(s.lastUserAt) < policy.autonomyIdleThreshold ||
+		now.Sub(s.lastNudgeAt) < policy.autonomyMinRunInterval {
 		al.autonomyMu.Unlock()
 		return true
 	}
@@ -739,12 +945,14 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 	round := s.rounds
 	s.lastNudgeAt = now
 	s.pending = true
+	s.pendingSince = now
 	reportDue := now.Sub(s.lastReportAt) >= s.idleInterval
 	if reportDue {
 		s.lastReportAt = now
 	}
 	focus := strings.TrimSpace(s.focus)
 	al.autonomyMu.Unlock()
+	al.controlMetricAdd(&al.controlStats.autonomyRounds, 1)
 
 	al.bus.PublishInbound(bus.InboundMessage{
 		Channel:    msg.Channel,
@@ -767,6 +975,8 @@ func (al *AgentLoop) finishAutonomyRound(sessionKey string) {
 	defer al.autonomyMu.Unlock()
 	if s, ok := al.autonomyBySess[sessionKey]; ok && s != nil {
 		s.pending = false
+		s.pendingSince = time.Time{}
+		s.stallCount = 0
 	}
 }
 
@@ -828,6 +1038,17 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 	runOnce := func() bool {
 		round, ok := al.bumpAutoLearnRound(msg.SessionKey)
 		if !ok {
+			return false
+		}
+		al.controlMetricAdd(&al.controlStats.autoLearnRounds, 1)
+		if al != nil && al.controlPolicy.autoLearnMaxRoundsWithoutUser > 0 && round > al.controlPolicy.autoLearnMaxRoundsWithoutUser {
+			al.stopAutoLearner(msg.SessionKey)
+			al.controlMetricAdd(&al.controlStats.autoLearnStoppedByGuard, 1)
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel: msg.Channel,
+				ChatID:  msg.ChatID,
+				Content: al.naturalizeUserFacingText(context.Background(), "Auto-learn stopped automatically after reaching the unattended round limit."),
+			})
 			return false
 		}
 
@@ -959,6 +1180,52 @@ func shouldHandleControlIntents(msg bus.InboundMessage) bool {
 	return !isSyntheticMessage(msg)
 }
 
+func (al *AgentLoop) controlMetricAdd(counter *int64, delta int64) {
+	if al == nil || counter == nil {
+		return
+	}
+	value := atomic.AddInt64(counter, delta)
+	if value == 1 || value%20 == 0 {
+		al.logControlStatsSnapshot()
+	}
+}
+
+func (al *AgentLoop) logControlStatsSnapshot() {
+	if al == nil {
+		return
+	}
+	al.autonomyMu.Lock()
+	autonomyActive := len(al.autonomyBySess)
+	al.autonomyMu.Unlock()
+	al.autoLearnMu.Lock()
+	autoLearnActive := len(al.autoLearners)
+	al.autoLearnMu.Unlock()
+	al.controlConfirmMu.Lock()
+	pendingConfirm := len(al.controlConfirm)
+	al.controlConfirmMu.Unlock()
+
+	stats := map[string]interface{}{
+		"intent_autonomy_matched":          atomic.LoadInt64(&al.controlStats.intentAutonomyMatched),
+		"intent_autonomy_needs_confirm":    atomic.LoadInt64(&al.controlStats.intentAutonomyNeedsConfirm),
+		"intent_autonomy_rejected":         atomic.LoadInt64(&al.controlStats.intentAutonomyRejected),
+		"intent_autolearn_matched":         atomic.LoadInt64(&al.controlStats.intentAutoLearnMatched),
+		"intent_autolearn_needs_confirm":   atomic.LoadInt64(&al.controlStats.intentAutoLearnNeedsConfirm),
+		"intent_autolearn_rejected":        atomic.LoadInt64(&al.controlStats.intentAutoLearnRejected),
+		"confirm_prompts":                  atomic.LoadInt64(&al.controlStats.confirmPrompts),
+		"confirm_accepted":                 atomic.LoadInt64(&al.controlStats.confirmAccepted),
+		"confirm_rejected":                 atomic.LoadInt64(&al.controlStats.confirmRejected),
+		"confirm_expired":                  atomic.LoadInt64(&al.controlStats.confirmExpired),
+		"autonomy_rounds":                  atomic.LoadInt64(&al.controlStats.autonomyRounds),
+		"autonomy_stopped_by_guard":        atomic.LoadInt64(&al.controlStats.autonomyStoppedByGuard),
+		"autolearn_rounds":                 atomic.LoadInt64(&al.controlStats.autoLearnRounds),
+		"autolearn_stopped_by_guard":       atomic.LoadInt64(&al.controlStats.autoLearnStoppedByGuard),
+		"autonomy_active_sessions":         autonomyActive,
+		"autolearn_active_sessions":        autoLearnActive,
+		"pending_control_confirm_sessions": pendingConfirm,
+	}
+	logger.InfoCF("agent", "Control runtime snapshot", stats)
+}
+
 func (al *AgentLoop) executeAutonomyIntent(ctx context.Context, msg bus.InboundMessage, intent autonomyIntent) string {
 	switch intent.action {
 	case "start":
@@ -1009,23 +1276,38 @@ func (al *AgentLoop) handlePendingControlConfirmation(ctx context.Context, msg b
 	if !ok {
 		return false, ""
 	}
-
-	if time.Since(pending.requestedAt) > 5*time.Minute {
+	policy := defaultControlPolicy()
+	if al != nil {
+		policy = al.controlPolicy
+	}
+	if time.Since(pending.requestedAt) > policy.confirmTTL {
 		al.clearPendingControlConfirmation(msg.SessionKey)
+		al.controlMetricAdd(&al.controlStats.confirmExpired, 1)
 		return false, ""
 	}
 
-	decision, confident := classifyConfirmationReply(msg.Content)
+	decision, confident := al.classifyConfirmationReplyWithInference(ctx, msg.Content, pending)
 	if !confident {
-		// Do not keep stale pending state when user continues with a different task.
-		al.clearPendingControlConfirmation(msg.SessionKey)
-		return false, ""
+		if looksLikeNewTaskMessage(msg.Content) {
+			al.clearPendingControlConfirmation(msg.SessionKey)
+			return false, ""
+		}
+		pending.clarifyTurns++
+		if pending.clarifyTurns > policy.confirmMaxClarificationTurns {
+			al.clearPendingControlConfirmation(msg.SessionKey)
+			return false, ""
+		}
+		al.setPendingControlConfirmation(msg.SessionKey, pending)
+		al.controlMetricAdd(&al.controlStats.confirmPrompts, 1)
+		return true, al.naturalizeUserFacingText(ctx, "I am checking a control action confirmation. Please reply with yes or no.")
 	}
 
 	al.clearPendingControlConfirmation(msg.SessionKey)
 	if !decision {
+		al.controlMetricAdd(&al.controlStats.confirmRejected, 1)
 		return true, al.naturalizeUserFacingText(ctx, "Understood. I will not change autonomous control mode now.")
 	}
+	al.controlMetricAdd(&al.controlStats.confirmAccepted, 1)
 
 	switch pending.intentType {
 	case "autonomy":
@@ -1050,7 +1332,25 @@ func (al *AgentLoop) handlePendingControlConfirmation(ctx context.Context, msg b
 	}
 }
 
-func classifyConfirmationReply(content string) (decision bool, confident bool) {
+func looksLikeNewTaskMessage(content string) bool {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return false
+	}
+	words := strings.Fields(text)
+	return len(words) >= 6 || len(text) >= 28
+}
+
+func (al *AgentLoop) classifyConfirmationReplyWithInference(ctx context.Context, content string, pending pendingControlConfirmation) (decision bool, confident bool) {
+	if decision, conf, ok := al.inferConfirmationDecision(ctx, content, pending); ok {
+		if conf >= 0.7 {
+			return decision, true
+		}
+	}
+	return classifyConfirmationReplyLexical(content)
+}
+
+func classifyConfirmationReplyLexical(content string) (decision bool, confident bool) {
 	normalized := strings.ToLower(strings.TrimSpace(content))
 	if normalized == "" {
 		return false, false
@@ -1075,6 +1375,48 @@ func classifyConfirmationReply(content string) (decision bool, confident bool) {
 	return false, false
 }
 
+type confirmationDecisionLLMResponse struct {
+	Decision   string  `json:"decision"`
+	Confidence float64 `json:"confidence"`
+}
+
+func (al *AgentLoop) inferConfirmationDecision(ctx context.Context, content string, pending pendingControlConfirmation) (decision bool, confidence float64, ok bool) {
+	if al == nil || strings.TrimSpace(content) == "" {
+		return false, 0, false
+	}
+	systemPrompt := al.withBootstrapPolicy(`Classify whether the user confirms a previously requested control action.
+Return JSON only.
+Schema:
+{"decision":"yes|no|other","confidence":0.0}`)
+	actionDesc := fmt.Sprintf("intent=%s action=%s", pending.intentType, pending.action)
+	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: fmt.Sprintf("Pending control: %s\nUser reply: %s", actionDesc, strings.TrimSpace(content))},
+	}, nil, map[string]interface{}{
+		"max_tokens":  90,
+		"temperature": 0.0,
+	})
+	if err != nil || resp == nil {
+		return false, 0, false
+	}
+	raw := extractJSONObject(resp.Content)
+	if raw == "" {
+		return false, 0, false
+	}
+	var parsed confirmationDecisionLLMResponse
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return false, 0, false
+	}
+	switch strings.ToLower(strings.TrimSpace(parsed.Decision)) {
+	case "yes":
+		return true, parsed.Confidence, true
+	case "no":
+		return false, parsed.Confidence, true
+	default:
+		return false, parsed.Confidence, false
+	}
+}
+
 func (al *AgentLoop) storePendingAutonomyConfirmation(sessionKey string, originalInput string, intent autonomyIntent, confidence float64) {
 	if al == nil {
 		return
@@ -1094,6 +1436,7 @@ func (al *AgentLoop) storePendingAutonomyConfirmation(sessionKey string, origina
 	al.controlConfirmMu.Lock()
 	al.controlConfirm[sessionKey] = pending
 	al.controlConfirmMu.Unlock()
+	al.controlMetricAdd(&al.controlStats.confirmPrompts, 1)
 }
 
 func (al *AgentLoop) storePendingAutoLearnConfirmation(sessionKey string, originalInput string, intent autoLearnIntent, confidence float64) {
@@ -1110,6 +1453,16 @@ func (al *AgentLoop) storePendingAutoLearnConfirmation(sessionKey string, origin
 	if intent.interval != nil {
 		d := *intent.interval
 		pending.interval = &d
+	}
+	al.controlConfirmMu.Lock()
+	al.controlConfirm[sessionKey] = pending
+	al.controlConfirmMu.Unlock()
+	al.controlMetricAdd(&al.controlStats.confirmPrompts, 1)
+}
+
+func (al *AgentLoop) setPendingControlConfirmation(sessionKey string, pending pendingControlConfirmation) {
+	if al == nil {
+		return
 	}
 	al.controlConfirmMu.Lock()
 	al.controlConfirm[sessionKey] = pending
@@ -2632,26 +2985,40 @@ func isExplicitRunCommand(content string) bool {
 }
 
 func (al *AgentLoop) detectAutonomyIntent(ctx context.Context, content string) (autonomyIntent, intentDetectionOutcome) {
+	policy := defaultControlPolicy()
+	if al != nil {
+		policy = al.controlPolicy
+	}
 	if intent, confidence, ok := al.inferAutonomyIntent(ctx, content); ok {
-		if confidence >= 0.75 {
+		if confidence >= policy.intentHighConfidence {
+			al.controlMetricAdd(&al.controlStats.intentAutonomyMatched, 1)
 			return intent, intentDetectionOutcome{matched: true, confidence: confidence}
 		}
-		if confidence >= 0.45 {
+		if confidence >= policy.intentConfirmMinConfidence {
+			al.controlMetricAdd(&al.controlStats.intentAutonomyNeedsConfirm, 1)
 			return intent, intentDetectionOutcome{needsConfirm: true, confidence: confidence}
 		}
+		al.controlMetricAdd(&al.controlStats.intentAutonomyRejected, 1)
 		return autonomyIntent{}, intentDetectionOutcome{}
 	}
 	return autonomyIntent{}, intentDetectionOutcome{}
 }
 
 func (al *AgentLoop) detectAutoLearnIntent(ctx context.Context, content string) (autoLearnIntent, intentDetectionOutcome) {
+	policy := defaultControlPolicy()
+	if al != nil {
+		policy = al.controlPolicy
+	}
 	if intent, confidence, ok := al.inferAutoLearnIntent(ctx, content); ok {
-		if confidence >= 0.75 {
+		if confidence >= policy.intentHighConfidence {
+			al.controlMetricAdd(&al.controlStats.intentAutoLearnMatched, 1)
 			return intent, intentDetectionOutcome{matched: true, confidence: confidence}
 		}
-		if confidence >= 0.45 {
+		if confidence >= policy.intentConfirmMinConfidence {
+			al.controlMetricAdd(&al.controlStats.intentAutoLearnNeedsConfirm, 1)
 			return intent, intentDetectionOutcome{needsConfirm: true, confidence: confidence}
 		}
+		al.controlMetricAdd(&al.controlStats.intentAutoLearnRejected, 1)
 		return autoLearnIntent{}, intentDetectionOutcome{}
 	}
 	return autoLearnIntent{}, intentDetectionOutcome{}
@@ -2663,9 +3030,13 @@ func (al *AgentLoop) inferAutonomyIntent(ctx context.Context, content string) (a
 		return autonomyIntent{}, 0, false
 	}
 
+	limit := defaultControlPolicy().intentMaxInputChars
+	if al != nil && al.controlPolicy.intentMaxInputChars > 0 {
+		limit = al.controlPolicy.intentMaxInputChars
+	}
 	// Truncate long messages instead of skipping inference entirely.
-	if len(text) > 1200 {
-		text = truncate(text, 1200)
+	if len(text) > limit {
+		text = truncate(text, limit)
 	}
 
 	systemPrompt := al.withBootstrapPolicy(`You classify autonomy-control intent for an AI assistant.
@@ -2745,8 +3116,12 @@ func (al *AgentLoop) inferAutoLearnIntent(ctx context.Context, content string) (
 	if text == "" {
 		return autoLearnIntent{}, 0, false
 	}
-	if len(text) > 1200 {
-		text = truncate(text, 1200)
+	limit := defaultControlPolicy().intentMaxInputChars
+	if al != nil && al.controlPolicy.intentMaxInputChars > 0 {
+		limit = al.controlPolicy.intentMaxInputChars
+	}
+	if len(text) > limit {
+		text = truncate(text, limit)
 	}
 
 	systemPrompt := al.withBootstrapPolicy(`You classify auto-learning-control intent for an AI assistant.
