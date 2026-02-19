@@ -134,8 +134,6 @@ type stageReporter struct {
 type StartupSelfCheckReport struct {
 	TotalSessions     int
 	CompactedSessions int
-	CheckedSessions   int
-	FailedSessions    int
 }
 
 func (sr *stageReporter) Publish(stage int, total int, status string, detail string) {
@@ -1576,15 +1574,10 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	return info
 }
 
-func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context, prompt, fallbackSessionKey string) StartupSelfCheckReport {
+func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) StartupSelfCheckReport {
 	report := StartupSelfCheckReport{}
 	if al == nil || al.sessions == nil {
 		return report
-	}
-
-	fallbackSessionKey = strings.TrimSpace(fallbackSessionKey)
-	if fallbackSessionKey == "" {
-		fallbackSessionKey = "gateway:startup-self-check"
 	}
 
 	keys := al.sessions.ListSessionKeys()
@@ -1603,7 +1596,7 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context, prompt,
 	}
 	report.TotalSessions = len(sessions)
 
-	// 仅对历史会话做压缩，避免启动时在每个历史会话重复执行自检任务。
+	// 启动阶段只做历史会话压缩检测，避免额外触发自检任务。
 	for _, sessionKey := range sessions {
 		select {
 		case <-ctx.Done():
@@ -1613,7 +1606,7 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context, prompt,
 
 		before := al.sessions.MessageCount(sessionKey)
 		if err := al.persistSessionWithCompaction(ctx, sessionKey); err != nil {
-			logger.WarnCF("agent", "Startup self-check pre-compaction failed", map[string]interface{}{
+			logger.WarnCF("agent", "Startup compaction check failed", map[string]interface{}{
 				"session_key":     sessionKey,
 				logger.FieldError: err.Error(),
 			})
@@ -1623,26 +1616,6 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context, prompt,
 			report.CompactedSessions++
 		}
 	}
-
-	select {
-	case <-ctx.Done():
-		return report
-	default:
-	}
-
-	// 自检任务始终只执行一次，默认写入 gateway 启动专用会话。
-	runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	_, err := al.ProcessDirect(runCtx, prompt, fallbackSessionKey)
-	cancel()
-	if err != nil {
-		report.FailedSessions++
-		logger.WarnCF("agent", "Startup self-check task failed", map[string]interface{}{
-			"session_key":     fallbackSessionKey,
-			logger.FieldError: err.Error(),
-		})
-		return report
-	}
-	report.CheckedSessions = 1
 
 	return report
 }
