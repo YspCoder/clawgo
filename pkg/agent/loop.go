@@ -3381,7 +3381,8 @@ func (al *AgentLoop) executeSingleToolCall(
 	progress *stageReporter,
 ) toolCallExecResult {
 	if !systemMode {
-		argsJSON, _ := json.Marshal(tc.Arguments)
+		safeArgs := sanitizeSensitiveToolArgs(tc.Arguments)
+		argsJSON, _ := json.Marshal(safeArgs)
 		argsPreview := truncate(string(argsJSON), 200)
 		logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview), map[string]interface{}{
 			"tool":      tc.Name,
@@ -4324,6 +4325,39 @@ func truncate(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func sanitizeSensitiveToolArgs(args map[string]interface{}) map[string]interface{} {
+	if len(args) == 0 {
+		return map[string]interface{}{}
+	}
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return map[string]interface{}{"_masked": true}
+	}
+	redacted := redactSecretsInText(string(raw))
+	out := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(redacted), &out); err != nil {
+		return map[string]interface{}{"_masked": true}
+	}
+	return out
+}
+
+func redactSecretsInText(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return text
+	}
+	out := text
+	authHeaderPattern := regexp.MustCompile(`(?i)(authorization\s*[:=]\s*["']?(?:bearer|token)\s+)([^\s"']+)`)
+	out = authHeaderPattern.ReplaceAllString(out, "${1}[REDACTED]")
+
+	keyValuePattern := regexp.MustCompile(`(?i)("?(?:token|api[_-]?key|password|passwd|secret|authorization|access[_-]?token|refresh[_-]?token)"?\s*:\s*")([^"]+)(")`)
+	out = keyValuePattern.ReplaceAllString(out, "${1}[REDACTED]${3}")
+
+	commonTokenPattern := regexp.MustCompile(`(?i)\b(ghp_[A-Za-z0-9_]+|glpat-[A-Za-z0-9_-]+)\b`)
+	out = commonTokenPattern.ReplaceAllString(out, "[REDACTED]")
+
+	return out
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.

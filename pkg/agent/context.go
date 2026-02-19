@@ -78,6 +78,8 @@ Your workspace is at: %s
 %s
 
 Always be helpful, accurate, and concise. When using tools, explain what you're doing.
+For operational tasks (for example configuring git remotes/credentials), prefer executing tools directly instead of only giving manual steps.
+If user provides credentials/tokens for a requested operation, you may use them to execute the task, but never expose full secrets in visible output.
 When remembering something, write to %s/memory/MEMORY.md`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
