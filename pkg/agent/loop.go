@@ -90,6 +90,8 @@ type AgentLoop struct {
 	autoLearners     map[string]*autoLearner
 	autonomyMu       sync.Mutex
 	autonomyBySess   map[string]*autonomySession
+	controlConfirmMu sync.Mutex
+	controlConfirm   map[string]pendingControlConfirmation
 }
 
 type taskExecutionDirectives struct {
@@ -106,6 +108,12 @@ type autonomyIntent struct {
 	action       string
 	idleInterval *time.Duration
 	focus        string
+}
+
+type intentDetectionOutcome struct {
+	matched      bool
+	needsConfirm bool
+	confidence   float64
 }
 
 type autonomyIntentLLMResponse struct {
@@ -144,6 +152,17 @@ type tokenUsageTotals struct {
 }
 
 type tokenUsageTotalsKey struct{}
+
+type pendingControlConfirmation struct {
+	intentType    string
+	action        string
+	idleInterval  *time.Duration
+	focus         string
+	interval      *time.Duration
+	confidence    float64
+	requestedAt   time.Time
+	originalInput string
+}
 
 func (sr *stageReporter) Publish(stage int, total int, status string, detail string) {
 	if sr == nil || sr.onUpdate == nil {
@@ -295,6 +314,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		workers:          make(map[string]*sessionWorker),
 		autoLearners:     make(map[string]*autoLearner),
 		autonomyBySess:   make(map[string]*autonomySession),
+		controlConfirm:   make(map[string]pendingControlConfirmation),
 	}
 
 	// Inject recursive run logic so subagent has full tool-calling capability.
@@ -801,7 +821,7 @@ func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessag
 
 	go al.runAutoLearnerLoop(learnerCtx, msg)
 
-	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("Auto-learn is enabled: one round every %s. Use /autolearn stop to stop it.", interval.Truncate(time.Second)))
+	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("Auto-learn is enabled: one round every %s. Tell me in natural language whenever you want to stop it.", interval.Truncate(time.Second)))
 }
 
 func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -894,7 +914,7 @@ func (al *AgentLoop) autoLearnerStatus(ctx context.Context, sessionKey string) s
 
 	learner, ok := al.autoLearners[sessionKey]
 	if !ok || learner == nil {
-		return al.naturalizeUserFacingText(ctx, "Auto-learn is not enabled. Use /autolearn start to enable it.")
+		return al.naturalizeUserFacingText(ctx, "Auto-learn is not enabled.")
 	}
 
 	uptime := time.Since(learner.started).Truncate(time.Second)
@@ -937,6 +957,221 @@ func isAutonomySyntheticMessage(msg bus.InboundMessage) bool {
 
 func shouldHandleControlIntents(msg bus.InboundMessage) bool {
 	return !isSyntheticMessage(msg)
+}
+
+func (al *AgentLoop) executeAutonomyIntent(ctx context.Context, msg bus.InboundMessage, intent autonomyIntent) string {
+	switch intent.action {
+	case "start":
+		idle := autonomyDefaultIdleInterval
+		if intent.idleInterval != nil {
+			idle = *intent.idleInterval
+		}
+		return al.startAutonomy(ctx, msg, idle, intent.focus)
+	case "clear_focus":
+		if al.clearAutonomyFocus(msg.SessionKey) {
+			return al.naturalizeUserFacingText(ctx, "Confirmed: the current focus is complete. Subsequent autonomous rounds will shift to other high-value tasks.")
+		}
+		return al.naturalizeUserFacingText(ctx, "Autonomy mode is not running, so the focus cannot be cleared.")
+	case "stop":
+		if al.stopAutonomy(msg.SessionKey) {
+			return al.naturalizeUserFacingText(ctx, "Autonomy mode stopped.")
+		}
+		return al.naturalizeUserFacingText(ctx, "Autonomy mode is not running.")
+	case "status":
+		return al.autonomyStatus(ctx, msg.SessionKey)
+	default:
+		return ""
+	}
+}
+
+func (al *AgentLoop) executeAutoLearnIntent(ctx context.Context, msg bus.InboundMessage, intent autoLearnIntent) string {
+	switch intent.action {
+	case "start":
+		interval := autoLearnDefaultInterval
+		if intent.interval != nil {
+			interval = *intent.interval
+		}
+		return al.startAutoLearner(ctx, msg, interval)
+	case "stop":
+		if al.stopAutoLearner(msg.SessionKey) {
+			return al.naturalizeUserFacingText(ctx, "Auto-learn stopped.")
+		}
+		return al.naturalizeUserFacingText(ctx, "Auto-learn is not running.")
+	case "status":
+		return al.autoLearnerStatus(ctx, msg.SessionKey)
+	default:
+		return ""
+	}
+}
+
+func (al *AgentLoop) handlePendingControlConfirmation(ctx context.Context, msg bus.InboundMessage) (bool, string) {
+	pending, ok := al.getPendingControlConfirmation(msg.SessionKey)
+	if !ok {
+		return false, ""
+	}
+
+	if time.Since(pending.requestedAt) > 5*time.Minute {
+		al.clearPendingControlConfirmation(msg.SessionKey)
+		return false, ""
+	}
+
+	decision, confident := classifyConfirmationReply(msg.Content)
+	if !confident {
+		// Do not keep stale pending state when user continues with a different task.
+		al.clearPendingControlConfirmation(msg.SessionKey)
+		return false, ""
+	}
+
+	al.clearPendingControlConfirmation(msg.SessionKey)
+	if !decision {
+		return true, al.naturalizeUserFacingText(ctx, "Understood. I will not change autonomous control mode now.")
+	}
+
+	switch pending.intentType {
+	case "autonomy":
+		intent := autonomyIntent{
+			action: pending.action,
+			focus:  pending.focus,
+		}
+		if pending.idleInterval != nil {
+			d := *pending.idleInterval
+			intent.idleInterval = &d
+		}
+		return true, al.executeAutonomyIntent(ctx, msg, intent)
+	case "autolearn":
+		intent := autoLearnIntent{action: pending.action}
+		if pending.interval != nil {
+			d := *pending.interval
+			intent.interval = &d
+		}
+		return true, al.executeAutoLearnIntent(ctx, msg, intent)
+	default:
+		return false, ""
+	}
+}
+
+func classifyConfirmationReply(content string) (decision bool, confident bool) {
+	normalized := strings.ToLower(strings.TrimSpace(content))
+	if normalized == "" {
+		return false, false
+	}
+	normalized = strings.NewReplacer("，", ",", "。", ".", "！", "!", "？", "?", "；", ";").Replace(normalized)
+	normalized = strings.Trim(normalized, " \t\r\n.,!?;:~`'\"")
+
+	yesSet := map[string]struct{}{
+		"yes": {}, "y": {}, "ok": {}, "okay": {}, "sure": {}, "confirm": {}, "go ahead": {}, "do it": {},
+		"是": {}, "好的": {}, "好": {}, "可以": {}, "行": {}, "确认": {}, "继续": {}, "开始吧": {},
+	}
+	noSet := map[string]struct{}{
+		"no": {}, "n": {}, "cancel": {}, "stop": {}, "don't": {}, "do not": {},
+		"不是": {}, "不用": {}, "不": {}, "先别": {}, "取消": {}, "不要": {},
+	}
+	if _, ok := yesSet[normalized]; ok {
+		return true, true
+	}
+	if _, ok := noSet[normalized]; ok {
+		return false, true
+	}
+	return false, false
+}
+
+func (al *AgentLoop) storePendingAutonomyConfirmation(sessionKey string, originalInput string, intent autonomyIntent, confidence float64) {
+	if al == nil {
+		return
+	}
+	pending := pendingControlConfirmation{
+		intentType:    "autonomy",
+		action:        intent.action,
+		focus:         intent.focus,
+		confidence:    confidence,
+		requestedAt:   time.Now(),
+		originalInput: strings.TrimSpace(originalInput),
+	}
+	if intent.idleInterval != nil {
+		d := *intent.idleInterval
+		pending.idleInterval = &d
+	}
+	al.controlConfirmMu.Lock()
+	al.controlConfirm[sessionKey] = pending
+	al.controlConfirmMu.Unlock()
+}
+
+func (al *AgentLoop) storePendingAutoLearnConfirmation(sessionKey string, originalInput string, intent autoLearnIntent, confidence float64) {
+	if al == nil {
+		return
+	}
+	pending := pendingControlConfirmation{
+		intentType:    "autolearn",
+		action:        intent.action,
+		confidence:    confidence,
+		requestedAt:   time.Now(),
+		originalInput: strings.TrimSpace(originalInput),
+	}
+	if intent.interval != nil {
+		d := *intent.interval
+		pending.interval = &d
+	}
+	al.controlConfirmMu.Lock()
+	al.controlConfirm[sessionKey] = pending
+	al.controlConfirmMu.Unlock()
+}
+
+func (al *AgentLoop) clearPendingControlConfirmation(sessionKey string) {
+	if al == nil {
+		return
+	}
+	al.controlConfirmMu.Lock()
+	delete(al.controlConfirm, sessionKey)
+	al.controlConfirmMu.Unlock()
+}
+
+func (al *AgentLoop) getPendingControlConfirmation(sessionKey string) (pendingControlConfirmation, bool) {
+	if al == nil {
+		return pendingControlConfirmation{}, false
+	}
+	al.controlConfirmMu.Lock()
+	defer al.controlConfirmMu.Unlock()
+	pending, ok := al.controlConfirm[sessionKey]
+	return pending, ok
+}
+
+func (al *AgentLoop) formatAutonomyConfirmationPrompt(intent autonomyIntent) string {
+	switch intent.action {
+	case "start":
+		idleText := autonomyDefaultIdleInterval.Truncate(time.Second).String()
+		if intent.idleInterval != nil {
+			idleText = intent.idleInterval.Truncate(time.Second).String()
+		}
+		if strings.TrimSpace(intent.focus) != "" {
+			return fmt.Sprintf("I inferred that you want to enable autonomy mode (idle interval %s, focus: %s). Reply \"yes\" to confirm or \"no\" to cancel.", idleText, strings.TrimSpace(intent.focus))
+		}
+		return fmt.Sprintf("I inferred that you want to enable autonomy mode (idle interval %s). Reply \"yes\" to confirm or \"no\" to cancel.", idleText)
+	case "stop":
+		return "I inferred that you want to stop autonomy mode. Reply \"yes\" to confirm or \"no\" to cancel."
+	case "status":
+		return "I inferred that you want autonomy status. Reply \"yes\" to confirm or \"no\" to cancel."
+	case "clear_focus":
+		return "I inferred that you want to clear the current autonomy focus. Reply \"yes\" to confirm or \"no\" to cancel."
+	default:
+		return "I inferred an autonomy control operation. Reply \"yes\" to confirm or \"no\" to cancel."
+	}
+}
+
+func (al *AgentLoop) formatAutoLearnConfirmationPrompt(intent autoLearnIntent) string {
+	switch intent.action {
+	case "start":
+		intervalText := autoLearnDefaultInterval.Truncate(time.Second).String()
+		if intent.interval != nil {
+			intervalText = intent.interval.Truncate(time.Second).String()
+		}
+		return fmt.Sprintf("I inferred that you want to start auto-learn (interval %s). Reply \"yes\" to confirm or \"no\" to cancel.", intervalText)
+	case "stop":
+		return "I inferred that you want to stop auto-learn. Reply \"yes\" to confirm or \"no\" to cancel."
+	case "status":
+		return "I inferred that you want auto-learn status. Reply \"yes\" to confirm or \"no\" to cancel."
+	default:
+		return "I inferred an auto-learn control operation. Reply \"yes\" to confirm or \"no\" to cancel."
+	}
 }
 
 func withTokenUsageTotals(ctx context.Context) (context.Context, *tokenUsageTotals) {
@@ -1100,45 +1335,26 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	if controlEligible {
-		if intent, ok := al.detectAutonomyIntent(ctx, msg.Content); ok {
-			switch intent.action {
-			case "start":
-				idle := autonomyDefaultIdleInterval
-				if intent.idleInterval != nil {
-					idle = *intent.idleInterval
-				}
-				return al.startAutonomy(ctx, msg, idle, intent.focus), nil
-			case "clear_focus":
-				if al.clearAutonomyFocus(msg.SessionKey) {
-					return al.naturalizeUserFacingText(ctx, "Confirmed: the current focus is complete. Subsequent autonomous rounds will shift to other high-value tasks."), nil
-				}
-				return al.naturalizeUserFacingText(ctx, "Autonomy mode is not running, so the focus cannot be cleared."), nil
-			case "stop":
-				if al.stopAutonomy(msg.SessionKey) {
-					return al.naturalizeUserFacingText(ctx, "Autonomy mode stopped."), nil
-				}
-				return al.naturalizeUserFacingText(ctx, "Autonomy mode is not running."), nil
-			case "status":
-				return al.autonomyStatus(ctx, msg.SessionKey), nil
-			}
+		if handled, response := al.handlePendingControlConfirmation(ctx, msg); handled {
+			return response, nil
+		}
+	}
+
+	if controlEligible {
+		if intent, outcome := al.detectAutonomyIntent(ctx, msg.Content); outcome.matched {
+			al.clearPendingControlConfirmation(msg.SessionKey)
+			return al.executeAutonomyIntent(ctx, msg, intent), nil
+		} else if outcome.needsConfirm {
+			al.storePendingAutonomyConfirmation(msg.SessionKey, msg.Content, intent, outcome.confidence)
+			return al.naturalizeUserFacingText(ctx, al.formatAutonomyConfirmationPrompt(intent)), nil
 		}
 
-		if intent, ok := al.detectAutoLearnIntent(ctx, msg.Content); ok {
-			switch intent.action {
-			case "start":
-				interval := autoLearnDefaultInterval
-				if intent.interval != nil {
-					interval = *intent.interval
-				}
-				return al.startAutoLearner(ctx, msg, interval), nil
-			case "stop":
-				if al.stopAutoLearner(msg.SessionKey) {
-					return al.naturalizeUserFacingText(ctx, "Auto-learn stopped."), nil
-				}
-				return al.naturalizeUserFacingText(ctx, "Auto-learn is not running."), nil
-			case "status":
-				return al.autoLearnerStatus(ctx, msg.SessionKey), nil
-			}
+		if intent, outcome := al.detectAutoLearnIntent(ctx, msg.Content); outcome.matched {
+			al.clearPendingControlConfirmation(msg.SessionKey)
+			return al.executeAutoLearnIntent(ctx, msg, intent), nil
+		} else if outcome.needsConfirm {
+			al.storePendingAutoLearnConfirmation(msg.SessionKey, msg.Content, intent, outcome.confidence)
+			return al.naturalizeUserFacingText(ctx, al.formatAutoLearnConfirmationPrompt(intent)), nil
 		}
 	}
 
@@ -2415,59 +2631,41 @@ func isExplicitRunCommand(content string) bool {
 	return head == "/run" || head == "@run"
 }
 
-func parseAutoLearnInterval(raw string) (time.Duration, error) {
-	text := strings.TrimSpace(raw)
-	if text == "" {
-		return autoLearnDefaultInterval, nil
+func (al *AgentLoop) detectAutonomyIntent(ctx context.Context, content string) (autonomyIntent, intentDetectionOutcome) {
+	if intent, confidence, ok := al.inferAutonomyIntent(ctx, content); ok {
+		if confidence >= 0.75 {
+			return intent, intentDetectionOutcome{matched: true, confidence: confidence}
+		}
+		if confidence >= 0.45 {
+			return intent, intentDetectionOutcome{needsConfirm: true, confidence: confidence}
+		}
+		return autonomyIntent{}, intentDetectionOutcome{}
 	}
-	if d, err := time.ParseDuration(text); err == nil {
-		return d, nil
-	}
-	var n int
-	if _, err := fmt.Sscanf(text, "%d", &n); err == nil && n > 0 {
-		return time.Duration(n) * time.Minute, nil
-	}
-	return 0, fmt.Errorf("invalid interval: %s (examples: 5m, 30s, 2h)", raw)
+	return autonomyIntent{}, intentDetectionOutcome{}
 }
 
-func parseAutonomyIdleInterval(raw string) (time.Duration, error) {
-	text := strings.TrimSpace(raw)
-	if text == "" {
-		return autonomyDefaultIdleInterval, nil
+func (al *AgentLoop) detectAutoLearnIntent(ctx context.Context, content string) (autoLearnIntent, intentDetectionOutcome) {
+	if intent, confidence, ok := al.inferAutoLearnIntent(ctx, content); ok {
+		if confidence >= 0.75 {
+			return intent, intentDetectionOutcome{matched: true, confidence: confidence}
+		}
+		if confidence >= 0.45 {
+			return intent, intentDetectionOutcome{needsConfirm: true, confidence: confidence}
+		}
+		return autoLearnIntent{}, intentDetectionOutcome{}
 	}
-	if d, err := time.ParseDuration(text); err == nil {
-		return d, nil
-	}
-	var n int
-	if _, err := fmt.Sscanf(text, "%d", &n); err == nil && n > 0 {
-		return time.Duration(n) * time.Minute, nil
-	}
-	return 0, fmt.Errorf("invalid idle interval: %s (examples: 30m, 1h)", raw)
+	return autoLearnIntent{}, intentDetectionOutcome{}
 }
 
-func (al *AgentLoop) detectAutonomyIntent(ctx context.Context, content string) (autonomyIntent, bool) {
-	if intent, ok := al.inferAutonomyIntent(ctx, content); ok {
-		return intent, true
-	}
-	return parseAutonomyIntent(content)
-}
-
-func (al *AgentLoop) detectAutoLearnIntent(ctx context.Context, content string) (autoLearnIntent, bool) {
-	if intent, ok := al.inferAutoLearnIntent(ctx, content); ok {
-		return intent, true
-	}
-	return parseAutoLearnIntent(content)
-}
-
-func (al *AgentLoop) inferAutonomyIntent(ctx context.Context, content string) (autonomyIntent, bool) {
+func (al *AgentLoop) inferAutonomyIntent(ctx context.Context, content string) (autonomyIntent, float64, bool) {
 	text := strings.TrimSpace(content)
 	if text == "" {
-		return autonomyIntent{}, false
+		return autonomyIntent{}, 0, false
 	}
 
-	// Avoid adding noticeable latency for very long task messages.
-	if len(text) > 800 {
-		return autonomyIntent{}, false
+	// Truncate long messages instead of skipping inference entirely.
+	if len(text) > 1200 {
+		text = truncate(text, 1200)
 	}
 
 	systemPrompt := al.withBootstrapPolicy(`You classify autonomy-control intent for an AI assistant.
@@ -2490,28 +2688,24 @@ Rules:
 		"temperature": 0.0,
 	})
 	if err != nil || resp == nil {
-		return autonomyIntent{}, false
+		return autonomyIntent{}, 0, false
 	}
 
 	raw := extractJSONObject(resp.Content)
 	if raw == "" {
-		return autonomyIntent{}, false
+		return autonomyIntent{}, 0, false
 	}
 
 	var parsed autonomyIntentLLMResponse
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return autonomyIntent{}, false
+		return autonomyIntent{}, 0, false
 	}
 
 	action := strings.ToLower(strings.TrimSpace(parsed.Action))
 	switch action {
 	case "start", "stop", "status", "clear_focus":
 	default:
-		return autonomyIntent{}, false
-	}
-
-	if parsed.Confidence < 0.75 {
-		return autonomyIntent{}, false
+		return autonomyIntent{}, 0, false
 	}
 
 	intent := autonomyIntent{
@@ -2522,7 +2716,7 @@ Rules:
 		d := time.Duration(parsed.IdleMinutes) * time.Minute
 		intent.idleInterval = &d
 	}
-	return intent, true
+	return intent, parsed.Confidence, true
 }
 
 func extractJSONObject(text string) string {
@@ -2546,10 +2740,13 @@ func extractJSONObject(text string) string {
 	return strings.TrimSpace(s[start : end+1])
 }
 
-func (al *AgentLoop) inferAutoLearnIntent(ctx context.Context, content string) (autoLearnIntent, bool) {
+func (al *AgentLoop) inferAutoLearnIntent(ctx context.Context, content string) (autoLearnIntent, float64, bool) {
 	text := strings.TrimSpace(content)
-	if text == "" || len(text) > 800 {
-		return autoLearnIntent{}, false
+	if text == "" {
+		return autoLearnIntent{}, 0, false
+	}
+	if len(text) > 1200 {
+		text = truncate(text, 1200)
 	}
 
 	systemPrompt := al.withBootstrapPolicy(`You classify auto-learning-control intent for an AI assistant.
@@ -2571,27 +2768,24 @@ Rules:
 		"temperature": 0.0,
 	})
 	if err != nil || resp == nil {
-		return autoLearnIntent{}, false
+		return autoLearnIntent{}, 0, false
 	}
 
 	raw := extractJSONObject(resp.Content)
 	if raw == "" {
-		return autoLearnIntent{}, false
+		return autoLearnIntent{}, 0, false
 	}
 
 	var parsed autoLearnIntentLLMResponse
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return autoLearnIntent{}, false
+		return autoLearnIntent{}, 0, false
 	}
 
 	action := strings.ToLower(strings.TrimSpace(parsed.Action))
 	switch action {
 	case "start", "stop", "status":
 	default:
-		return autoLearnIntent{}, false
-	}
-	if parsed.Confidence < 0.75 {
-		return autoLearnIntent{}, false
+		return autoLearnIntent{}, 0, false
 	}
 
 	intent := autoLearnIntent{action: action}
@@ -2599,7 +2793,7 @@ Rules:
 		d := time.Duration(parsed.IntervalMinutes) * time.Minute
 		intent.interval = &d
 	}
-	return intent, true
+	return intent, parsed.Confidence, true
 }
 
 func (al *AgentLoop) inferTaskExecutionDirectives(ctx context.Context, content string) (taskExecutionDirectives, bool) {
@@ -2651,55 +2845,6 @@ Rules:
 	}, true
 }
 
-func parseAutonomyIntent(content string) (autonomyIntent, bool) {
-	text := strings.TrimSpace(content)
-	if text == "" {
-		return autonomyIntent{}, false
-	}
-
-	fields := strings.Fields(strings.ToLower(text))
-	if len(fields) < 2 || fields[0] != "autonomy" {
-		return autonomyIntent{}, false
-	}
-	intent := autonomyIntent{action: fields[1]}
-	if intent.action == "start" && len(fields) >= 3 {
-		if d, err := parseAutonomyIdleInterval(fields[2]); err == nil {
-			intent.idleInterval = &d
-			if len(fields) >= 4 {
-				intent.focus = strings.TrimSpace(strings.Join(strings.Fields(text)[3:], " "))
-			}
-		} else {
-			intent.focus = strings.TrimSpace(strings.Join(strings.Fields(text)[2:], " "))
-		}
-	}
-	switch intent.action {
-	case "start", "stop", "status", "clear_focus":
-		return intent, true
-	default:
-		return autonomyIntent{}, false
-	}
-}
-
-func parseAutoLearnIntent(content string) (autoLearnIntent, bool) {
-	text := strings.TrimSpace(content)
-	fields := strings.Fields(strings.ToLower(text))
-	if len(fields) < 2 || fields[0] != "autolearn" {
-		return autoLearnIntent{}, false
-	}
-	intent := autoLearnIntent{action: fields[1]}
-	if intent.action == "start" && len(fields) >= 3 {
-		if d, err := parseAutoLearnInterval(fields[2]); err == nil {
-			intent.interval = &d
-		}
-	}
-	switch intent.action {
-	case "start", "stop", "status":
-		return intent, true
-	default:
-		return autoLearnIntent{}, false
-	}
-}
-
 func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMessage) (bool, string, error) {
 	text := strings.TrimSpace(msg.Content)
 	if !strings.HasPrefix(text, "/") {
@@ -2713,7 +2858,7 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 
 	switch fields[0] {
 	case "/help":
-		return true, "Slash commands:\n/help\n/status\n/run <task> [--stage-report]\n/autonomy start [idle]\n/autonomy stop\n/autonomy status\n/autolearn start [interval]\n/autolearn stop\n/autolearn status\n/config get <path>\n/config set <path> <value>\n/reload\n/pipeline list\n/pipeline status <pipeline_id>\n/pipeline ready <pipeline_id>", nil
+		return true, "Slash commands:\n/help\n/status\n/run <task> [--stage-report]\n/config get <path>\n/config set <path> <value>\n/reload\n/pipeline list\n/pipeline status <pipeline_id>\n/pipeline ready <pipeline_id>", nil
 	case "/stop":
 		return true, "Stop command is handled by queue runtime. Send /stop from your channel session to interrupt current response.", nil
 	case "/status":
@@ -2739,61 +2884,6 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			cfg.Logging.Enabled,
 			al.getConfigPathForCommands(),
 		), nil
-	case "/autolearn":
-		if len(fields) < 2 {
-			return true, al.naturalizeUserFacingText(ctx, "Usage: /autolearn start [interval] | /autolearn stop | /autolearn status"), nil
-		}
-		switch strings.ToLower(fields[1]) {
-		case "start":
-			interval := autoLearnDefaultInterval
-			if len(fields) >= 3 {
-				d, err := parseAutoLearnInterval(fields[2])
-				if err != nil {
-					return true, "", err
-				}
-				interval = d
-			}
-			return true, al.startAutoLearner(ctx, msg, interval), nil
-		case "stop":
-			if al.stopAutoLearner(msg.SessionKey) {
-				return true, al.naturalizeUserFacingText(ctx, "Auto-learn stopped."), nil
-			}
-			return true, al.naturalizeUserFacingText(ctx, "Auto-learn is not running."), nil
-		case "status":
-			return true, al.autoLearnerStatus(ctx, msg.SessionKey), nil
-		default:
-			return true, al.naturalizeUserFacingText(ctx, "Usage: /autolearn start [interval] | /autolearn stop | /autolearn status"), nil
-		}
-	case "/autonomy":
-		if len(fields) < 2 {
-			return true, al.naturalizeUserFacingText(ctx, "Usage: /autonomy start [idle] | /autonomy stop | /autonomy status"), nil
-		}
-		switch strings.ToLower(fields[1]) {
-		case "start":
-			idle := autonomyDefaultIdleInterval
-			focus := ""
-			if len(fields) >= 3 {
-				d, err := parseAutonomyIdleInterval(fields[2])
-				if err != nil {
-					focus = strings.Join(fields[2:], " ")
-				} else {
-					idle = d
-				}
-			}
-			if focus == "" && len(fields) >= 4 {
-				focus = strings.Join(fields[3:], " ")
-			}
-			return true, al.startAutonomy(ctx, msg, idle, focus), nil
-		case "stop":
-			if al.stopAutonomy(msg.SessionKey) {
-				return true, al.naturalizeUserFacingText(ctx, "Autonomy mode stopped."), nil
-			}
-			return true, al.naturalizeUserFacingText(ctx, "Autonomy mode is not running."), nil
-		case "status":
-			return true, al.autonomyStatus(ctx, msg.SessionKey), nil
-		default:
-			return true, al.naturalizeUserFacingText(ctx, "Usage: /autonomy start [idle] | /autonomy stop | /autonomy status"), nil
-		}
 	case "/reload":
 		running, err := al.triggerGatewayReloadFromAgent()
 		if err != nil {
