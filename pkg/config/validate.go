@@ -17,6 +17,58 @@ func Validate(cfg *Config) []error {
 	if cfg.Agents.Defaults.MaxToolIterations <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.max_tool_iterations must be > 0"))
 	}
+	rc := cfg.Agents.Defaults.RuntimeControl
+	if rc.IntentHighConfidence <= 0 || rc.IntentHighConfidence > 1 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_high_confidence must be in (0,1]"))
+	}
+	if rc.IntentConfirmMinConfidence < 0 || rc.IntentConfirmMinConfidence >= rc.IntentHighConfidence {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_confirm_min_confidence must be >= 0 and < intent_high_confidence"))
+	}
+	if rc.IntentMaxInputChars < 200 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_max_input_chars must be >= 200"))
+	}
+	if rc.ConfirmTTLSeconds <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.confirm_ttl_seconds must be > 0"))
+	}
+	if rc.ConfirmMaxClarificationTurns < 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.confirm_max_clarification_turns must be >= 0"))
+	}
+	if rc.AutonomyTickIntervalSec < 5 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_tick_interval_sec must be >= 5"))
+	}
+	if rc.AutonomyMinRunIntervalSec < 5 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_min_run_interval_sec must be >= 5"))
+	}
+	if rc.AutonomyIdleThresholdSec < 5 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_idle_threshold_sec must be >= 5"))
+	}
+	if rc.AutonomyMaxRoundsWithoutUser <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_rounds_without_user must be > 0"))
+	}
+	if rc.AutonomyMaxPendingDurationSec < 10 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_pending_duration_sec must be >= 10"))
+	}
+	if rc.AutonomyMaxConsecutiveStalls <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_consecutive_stalls must be > 0"))
+	}
+	if rc.AutoLearnMaxRoundsWithoutUser <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autolearn_max_rounds_without_user must be > 0"))
+	}
+	if rc.RunStateTTLSeconds < 60 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.run_state_ttl_seconds must be >= 60"))
+	}
+	if rc.RunStateMax <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.run_state_max must be > 0"))
+	}
+	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_latest_keywords", rc.RunControlLatestKeywords)...)
+	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_wait_keywords", rc.RunControlWaitKeywords)...)
+	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_status_keywords", rc.RunControlStatusKeywords)...)
+	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_run_mention_keywords", rc.RunControlRunMentionKeywords)...)
+	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.run_control_minute_units", rc.RunControlMinuteUnits)...)
+	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.tool_parallel_safe_names", rc.ToolParallelSafeNames)...)
+	if rc.ToolMaxParallelCalls <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.tool_max_parallel_calls must be > 0"))
+	}
 	if cfg.Agents.Defaults.ContextCompaction.Enabled {
 		cc := cfg.Agents.Defaults.ContextCompaction
 		if cc.Mode != "" {
@@ -198,4 +250,17 @@ func providerConfigByName(cfg *Config, name string) (ProviderConfig, bool) {
 	}
 	pc, ok := cfg.Providers.Proxies[name]
 	return pc, ok
+}
+
+func validateNonEmptyStringList(path string, values []string) []error {
+	if len(values) == 0 {
+		return nil
+	}
+	var errs []error
+	for i, value := range values {
+		if strings.TrimSpace(value) == "" {
+			errs = append(errs, fmt.Errorf("%s[%d] must not be empty", path, i))
+		}
+	}
+	return errs
 }

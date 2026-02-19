@@ -97,6 +97,7 @@ clawgo config reload
 - `config set` 使用原子写入。
 - 网关运行时若热更新失败，会自动回滚备份，避免损坏配置。
 - `--config` 指定的自定义配置路径会被 `config` 命令与通道内 `/config` 指令一致使用。
+- 配置加载使用严格 JSON 解析：未知字段与多余 JSON 内容会直接报错，避免拼写错误被静默忽略。
 
 ## 🌐 通道与消息控制
 
@@ -106,19 +107,21 @@ clawgo config reload
 /help
 /stop
 /status
+/status run [run_id|latest]
+/status wait <run_id|latest> [timeout_seconds]
 /config get <path>
 /config set <path> <value>
 /reload
-/autonomy start [idle]
-/autonomy stop
-/autonomy status
-/autolearn start [interval]
-/autolearn stop
-/autolearn status
 /pipeline list
 /pipeline status <pipeline_id>
 /pipeline ready <pipeline_id>
 ```
+
+自主与学习控制默认使用自然语言，不再依赖斜杠命令。例如：
+- `开始自主模式，每 30 分钟巡检一次`
+- `停止自动学习`
+- `看看最新 run 的状态`
+- `等待 run-1739950000000000000-8 完成后告诉我结果`
 
 调度语义（按 `session_key`）：
 - 同会话严格 FIFO 串行处理。
@@ -151,6 +154,38 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
       "keep_recent_messages": 20,
       "max_summary_chars": 6000,
       "max_transcript_chars": 20000
+    }
+  }
+}
+```
+
+运行控制配置示例（意图阈值 / 自主循环守卫 / 运行态保留）：
+
+```json
+"agents": {
+  "defaults": {
+    "runtime_control": {
+      "intent_high_confidence": 0.75,
+      "intent_confirm_min_confidence": 0.45,
+      "intent_max_input_chars": 1200,
+      "confirm_ttl_seconds": 300,
+      "confirm_max_clarification_turns": 2,
+      "autonomy_tick_interval_sec": 20,
+      "autonomy_min_run_interval_sec": 20,
+      "autonomy_idle_threshold_sec": 20,
+      "autonomy_max_rounds_without_user": 120,
+      "autonomy_max_pending_duration_sec": 180,
+      "autonomy_max_consecutive_stalls": 3,
+      "autolearn_max_rounds_without_user": 200,
+      "run_state_ttl_seconds": 1800,
+      "run_state_max": 500,
+      "run_control_latest_keywords": ["latest", "last run", "recent run", "最新", "最近", "上一次", "上个"],
+      "run_control_wait_keywords": ["wait", "等待", "等到", "阻塞"],
+      "run_control_status_keywords": ["status", "状态", "进度", "running", "运行"],
+      "run_control_run_mention_keywords": ["run", "任务"],
+      "run_control_minute_units": ["分钟", "min", "mins", "minute", "minutes", "m"],
+      "tool_parallel_safe_names": ["read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"],
+      "tool_max_parallel_calls": 2
     }
   }
 }

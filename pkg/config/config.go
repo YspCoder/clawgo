@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -35,6 +38,31 @@ type AgentDefaults struct {
 	Temperature       float64                 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	ContextCompaction ContextCompactionConfig `json:"context_compaction"`
+	RuntimeControl    RuntimeControlConfig    `json:"runtime_control"`
+}
+
+type RuntimeControlConfig struct {
+	IntentHighConfidence          float64  `json:"intent_high_confidence" env:"CLAWGO_INTENT_HIGH_CONFIDENCE"`
+	IntentConfirmMinConfidence    float64  `json:"intent_confirm_min_confidence" env:"CLAWGO_INTENT_CONFIRM_MIN_CONFIDENCE"`
+	IntentMaxInputChars           int      `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
+	ConfirmTTLSeconds             int      `json:"confirm_ttl_seconds" env:"CLAWGO_CONFIRM_TTL_SECONDS"`
+	ConfirmMaxClarificationTurns  int      `json:"confirm_max_clarification_turns" env:"CLAWGO_CONFIRM_MAX_CLARIFY_TURNS"`
+	AutonomyTickIntervalSec       int      `json:"autonomy_tick_interval_sec" env:"CLAWGO_AUTONOMY_TICK_INTERVAL_SEC"`
+	AutonomyMinRunIntervalSec     int      `json:"autonomy_min_run_interval_sec" env:"CLAWGO_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
+	AutonomyIdleThresholdSec      int      `json:"autonomy_idle_threshold_sec" env:"CLAWGO_AUTONOMY_IDLE_THRESHOLD_SEC"`
+	AutonomyMaxRoundsWithoutUser  int      `json:"autonomy_max_rounds_without_user" env:"CLAWGO_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
+	AutonomyMaxPendingDurationSec int      `json:"autonomy_max_pending_duration_sec" env:"CLAWGO_AUTONOMY_MAX_PENDING_DURATION_SEC"`
+	AutonomyMaxConsecutiveStalls  int      `json:"autonomy_max_consecutive_stalls" env:"CLAWGO_AUTONOMY_MAX_STALLS"`
+	AutoLearnMaxRoundsWithoutUser int      `json:"autolearn_max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
+	RunStateTTLSeconds            int      `json:"run_state_ttl_seconds" env:"CLAWGO_RUN_STATE_TTL_SECONDS"`
+	RunStateMax                   int      `json:"run_state_max" env:"CLAWGO_RUN_STATE_MAX"`
+	RunControlLatestKeywords      []string `json:"run_control_latest_keywords"`
+	RunControlWaitKeywords        []string `json:"run_control_wait_keywords"`
+	RunControlStatusKeywords      []string `json:"run_control_status_keywords"`
+	RunControlRunMentionKeywords  []string `json:"run_control_run_mention_keywords"`
+	RunControlMinuteUnits         []string `json:"run_control_minute_units"`
+	ToolParallelSafeNames         []string `json:"tool_parallel_safe_names"`
+	ToolMaxParallelCalls          int      `json:"tool_max_parallel_calls"`
 }
 
 type ContextCompactionConfig struct {
@@ -246,6 +274,29 @@ func DefaultConfig() *Config {
 					MaxSummaryChars:    6000,
 					MaxTranscriptChars: 20000,
 				},
+				RuntimeControl: RuntimeControlConfig{
+					IntentHighConfidence:          0.75,
+					IntentConfirmMinConfidence:    0.45,
+					IntentMaxInputChars:           1200,
+					ConfirmTTLSeconds:             300,
+					ConfirmMaxClarificationTurns:  2,
+					AutonomyTickIntervalSec:       20,
+					AutonomyMinRunIntervalSec:     20,
+					AutonomyIdleThresholdSec:      20,
+					AutonomyMaxRoundsWithoutUser:  120,
+					AutonomyMaxPendingDurationSec: 180,
+					AutonomyMaxConsecutiveStalls:  3,
+					AutoLearnMaxRoundsWithoutUser: 200,
+					RunStateTTLSeconds:            1800,
+					RunStateMax:                   500,
+					RunControlLatestKeywords:      []string{"latest", "last run", "recent run", "最新", "最近", "上一次", "上个"},
+					RunControlWaitKeywords:        []string{"wait", "等待", "等到", "阻塞"},
+					RunControlStatusKeywords:      []string{"status", "状态", "进度", "running", "运行"},
+					RunControlRunMentionKeywords:  []string{"run", "任务"},
+					RunControlMinuteUnits:         []string{"分钟", "min", "mins", "minute", "minutes", "m"},
+					ToolParallelSafeNames:         []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"},
+					ToolMaxParallelCalls:          2,
+				},
 			},
 		},
 		Channels: ChannelsConfig{
@@ -382,7 +433,7 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	if err := json.Unmarshal(data, cfg); err != nil {
+	if err := unmarshalConfigStrict(data, cfg); err != nil {
 		return nil, err
 	}
 
@@ -391,6 +442,22 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func unmarshalConfigStrict(data []byte, cfg *Config) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(cfg); err != nil {
+		return err
+	}
+	var extra json.RawMessage
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("invalid config: trailing JSON content")
+		}
+		return err
+	}
+	return nil
 }
 
 func SaveConfig(path string, cfg *Config) error {

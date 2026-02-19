@@ -97,6 +97,7 @@ Notes:
 - `config set` uses atomic write.
 - If gateway reload fails while running, config auto-rolls back from backup.
 - Custom `--config` path is consistently used by CLI config commands and in-channel `/config` commands.
+- Config loading uses strict JSON decoding: unknown fields and trailing JSON content now fail fast.
 
 ## 🌐 Channels and Message Control
 
@@ -106,19 +107,21 @@ Supported in-channel slash commands:
 /help
 /stop
 /status
+/status run [run_id|latest]
+/status wait <run_id|latest> [timeout_seconds]
 /config get <path>
 /config set <path> <value>
 /reload
-/autonomy start [idle]
-/autonomy stop
-/autonomy status
-/autolearn start [interval]
-/autolearn stop
-/autolearn status
 /pipeline list
 /pipeline status <pipeline_id>
 /pipeline ready <pipeline_id>
 ```
+
+Autonomy and auto-learn control now default to natural language (no slash commands required). Examples:
+- `start autonomy mode and check every 30 minutes`
+- `stop auto-learn`
+- `show latest run status`
+- `wait for run-1739950000000000000-8 and report when done`
 
 Scheduling semantics (`session_key` based):
 - Strict FIFO processing per session.
@@ -151,6 +154,38 @@ Context compaction config example:
       "keep_recent_messages": 20,
       "max_summary_chars": 6000,
       "max_transcript_chars": 20000
+    }
+  }
+}
+```
+
+Runtime-control config example (intent thresholds / autonomy guards / run-state retention):
+
+```json
+"agents": {
+  "defaults": {
+    "runtime_control": {
+      "intent_high_confidence": 0.75,
+      "intent_confirm_min_confidence": 0.45,
+      "intent_max_input_chars": 1200,
+      "confirm_ttl_seconds": 300,
+      "confirm_max_clarification_turns": 2,
+      "autonomy_tick_interval_sec": 20,
+      "autonomy_min_run_interval_sec": 20,
+      "autonomy_idle_threshold_sec": 20,
+      "autonomy_max_rounds_without_user": 120,
+      "autonomy_max_pending_duration_sec": 180,
+      "autonomy_max_consecutive_stalls": 3,
+      "autolearn_max_rounds_without_user": 200,
+      "run_state_ttl_seconds": 1800,
+      "run_state_max": 500,
+      "run_control_latest_keywords": ["latest", "last run", "recent run", "最新", "最近", "上一次", "上个"],
+      "run_control_wait_keywords": ["wait", "等待", "等到", "阻塞"],
+      "run_control_status_keywords": ["status", "状态", "进度", "running", "运行"],
+      "run_control_run_mention_keywords": ["run", "任务"],
+      "run_control_minute_units": ["分钟", "min", "mins", "minute", "minutes", "m"],
+      "tool_parallel_safe_names": ["read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"],
+      "tool_max_parallel_calls": 2
     }
   }
 }
