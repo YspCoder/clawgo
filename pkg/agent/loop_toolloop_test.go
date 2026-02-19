@@ -174,6 +174,32 @@ func (t replayTool) ResourceKeys(args map[string]interface{}) []string {
 	return t.resourceKeys(args)
 }
 
+type deferralRetryProvider struct {
+	planCalls int
+}
+
+func (p *deferralRetryProvider) Chat(ctx context.Context, messages []providers.Message, defs []providers.ToolDefinition, model string, options map[string]interface{}) (*providers.LLMResponse, error) {
+	if len(defs) == 0 {
+		return &providers.LLMResponse{Content: "finalized"}, nil
+	}
+	p.planCalls++
+	switch p.planCalls {
+	case 1:
+		return &providers.LLMResponse{Content: "需要先查看一下当前工作区才能确认，请稍等。"}, nil
+	case 2:
+		return &providers.LLMResponse{
+			Content: "先检查状态",
+			ToolCalls: []providers.ToolCall{
+				{ID: "tc-status-1", Name: "read_file", Arguments: map[string]interface{}{"path": "README.md"}},
+			},
+		}, nil
+	default:
+		return &providers.LLMResponse{Content: "已完成状态检查，当前一切正常。"}, nil
+	}
+}
+
+func (p *deferralRetryProvider) GetDefaultModel() string { return "test-model" }
+
 func TestActToolCalls_BudgetTruncationReplay(t *testing.T) {
 	t.Parallel()
 
@@ -597,6 +623,70 @@ func TestShouldForceSelfRepairHeuristic(t *testing.T) {
 	needs, _ = shouldForceSelfRepairHeuristic("summarize logs", "Here is summary.")
 	if needs {
 		t.Fatalf("did not expect repair for normal concise response")
+	}
+}
+
+func TestShouldRetryAfterDeferralNoTools(t *testing.T) {
+	t.Parallel()
+
+	if !shouldRetryAfterDeferralNoTools("需要先查看一下当前工作区才能确认，请稍等。", 1, false, false, false) {
+		t.Fatalf("expected deferral text to trigger retry")
+	}
+	if shouldRetryAfterDeferralNoTools("这里是直接答案。", 1, false, false, false) {
+		t.Fatalf("did not expect normal direct answer to trigger retry")
+	}
+	if shouldRetryAfterDeferralNoTools("需要先查看一下当前工作区才能确认，请稍等。", 2, false, false, false) {
+		t.Fatalf("did not expect retry after first iteration")
+	}
+}
+
+func TestRunLLMToolLoop_RecoversFromDeferralWithoutTools(t *testing.T) {
+	t.Parallel()
+
+	var toolExecCount int32
+	reg := tools.NewToolRegistry()
+	reg.Register(replayToolImpl{
+		name: "read_file",
+		run: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			atomic.AddInt32(&toolExecCount, 1)
+			return "README content", nil
+		},
+	})
+
+	provider := &deferralRetryProvider{}
+	al := &AgentLoop{
+		provider:         provider,
+		providersByProxy: map[string]providers.LLMProvider{"proxy": provider},
+		modelsByProxy:    map[string][]string{"proxy": []string{"test-model"}},
+		proxy:            "proxy",
+		model:            "test-model",
+		maxIterations:    5,
+		llmCallTimeout:   3 * time.Second,
+		tools:            reg,
+		sessions:         session.NewSessionManager(""),
+		workspace:        t.TempDir(),
+	}
+
+	msgs := []providers.Message{
+		{Role: "system", Content: "test system"},
+		{Role: "user", Content: "当前状态"},
+	}
+
+	out, iterations, err := al.runLLMToolLoop(context.Background(), msgs, "deferral:test", false, nil)
+	if err != nil {
+		t.Fatalf("runLLMToolLoop error: %v", err)
+	}
+	if strings.TrimSpace(out) == "" {
+		t.Fatalf("expected non-empty output")
+	}
+	if provider.planCalls < 3 {
+		t.Fatalf("expected additional planning round after deferral, got planCalls=%d", provider.planCalls)
+	}
+	if atomic.LoadInt32(&toolExecCount) == 0 {
+		t.Fatalf("expected tool execution after deferral recovery")
+	}
+	if iterations < 3 {
+		t.Fatalf("expected at least 3 iterations, got %d", iterations)
 	}
 }
 

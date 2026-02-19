@@ -1764,6 +1764,38 @@ func containsAnySubstring(text string, values ...string) bool {
 	return false
 }
 
+func hasToolMessages(messages []providers.Message) bool {
+	for _, m := range messages {
+		if strings.EqualFold(strings.TrimSpace(m.Role), "tool") {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldRetryAfterDeferralNoTools(content string, iteration int, alreadyRetried bool, hasToolOutput bool, systemMode bool) bool {
+	if systemMode || alreadyRetried || hasToolOutput {
+		return false
+	}
+	// Only apply on first planning turn to preserve direct-answer behavior for normal QA.
+	if iteration > 1 {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	waitCue := containsAnySubstring(lower,
+		"请稍等", "稍等", "等一下", "我先", "先查看", "需要先查看", "先检查",
+		"please wait", "wait a moment", "let me check", "i need to check", "i'll check", "checking",
+	)
+	verifyCue := containsAnySubstring(lower,
+		"查看", "检查", "确认", "工作区", "状态",
+		"check", "inspect", "verify", "workspace", "status", "confirm",
+	)
+	return waitCue && verifyCue
+}
+
 func formatRunStateReport(rs runState) string {
 	lines := []string{
 		fmt.Sprintf("Run ID: %s", rs.runID),
@@ -2655,6 +2687,20 @@ func (al *AgentLoop) runLLMToolLoop(
 			})
 
 		if len(response.ToolCalls) == 0 {
+			if shouldRetryAfterDeferralNoTools(response.Content, state.iteration, state.deferralRetried, hasToolMessages(messages), systemMode) {
+				state.deferralRetried = true
+				messages = append(messages, providers.Message{
+					Role:    "user",
+					Content: "Do not ask the user to wait. If verification is needed, call the required tools now and then provide the result in the same run.",
+				})
+				if !systemMode {
+					logger.WarnCF("agent", "Detected deferral-style direct reply without tool calls; forcing another tool-planning round", map[string]interface{}{
+						"iteration":   iteration,
+						"session_key": sessionKey,
+					})
+				}
+				continue
+			}
 			state.finalContent = response.Content
 			state.consecutiveAllToolErrorRounds = 0
 			state.repeatedToolCallRounds = 0
@@ -2840,6 +2886,7 @@ type toolLoopState struct {
 	lastReflectDecision           string
 	lastReflectConfidence         float64
 	lastReflectIteration          int
+	deferralRetried               bool
 }
 
 type toolActOutcome struct {
