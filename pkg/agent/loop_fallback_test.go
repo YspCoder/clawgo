@@ -277,3 +277,10 @@ func TestShouldRetryWithFallbackModel_AuthUnavailableError(t *testing.T) {
 		t.Fatalf("expected auth_unavailable error to trigger fallback retry")
 	}
 }
+
+func TestShouldRetryWithFallbackModel_ContextDeadlineExceeded(t *testing.T) {
+	err := fmt.Errorf("failed to send request: Post \"https://v2.kkkk.dev/v1/chat/completions\": context deadline exceeded")
+	if !shouldRetryWithFallbackModel(err) {
+		t.Fatalf("expected context deadline exceeded to trigger fallback retry")
+	}
+}
