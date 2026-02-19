@@ -19,6 +19,9 @@ type Session struct {
 	Key      string              `json:"key"`
 	Messages []providers.Message `json:"messages"`
 	Summary  string              `json:"summary,omitempty"`
+	TokenIn  int                 `json:"token_in,omitempty"`
+	TokenOut int                 `json:"token_out,omitempty"`
+	TokenSum int                 `json:"token_sum,omitempty"`
 	Created  time.Time           `json:"created"`
 	Updated  time.Time           `json:"updated"`
 	mu       sync.RWMutex
@@ -283,17 +286,52 @@ func (sm *SessionManager) Save(session *Session) error {
 		return nil
 	}
 
+	session.mu.RLock()
+	summary := session.Summary
+	updated := session.Updated
+	created := session.Created
+	tokenIn := session.TokenIn
+	tokenOut := session.TokenOut
+	tokenSum := session.TokenSum
+	session.mu.RUnlock()
+
 	metaPath := filepath.Join(sm.storage, session.Key+".meta")
 	meta := map[string]interface{}{
-		"summary": session.Summary,
-		"updated": session.Updated,
-		"created": session.Created,
+		"summary":   summary,
+		"updated":   updated,
+		"created":   created,
+		"token_in":  tokenIn,
+		"token_out": tokenOut,
+		"token_sum": tokenSum,
 	}
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(metaPath, data, 0644)
+}
+
+func (sm *SessionManager) AddTokenUsage(sessionKey string, in, out, sum int) {
+	session := sm.GetOrCreate(sessionKey)
+	if sum <= 0 {
+		sum = in + out
+	}
+
+	session.mu.Lock()
+	session.TokenIn += in
+	session.TokenOut += out
+	session.TokenSum += sum
+	session.Updated = time.Now()
+	session.mu.Unlock()
+
+	if sm.storage != "" {
+		if err := sm.Save(session); err != nil {
+			logger.WarnCF("session", "Failed to persist token usage", map[string]interface{}{
+				"session_key":     sessionKey,
+				logger.FieldError: err.Error(),
+			})
+		}
+	}
 }
 
 func (sm *SessionManager) loadSessions() error {
@@ -342,14 +380,20 @@ func (sm *SessionManager) loadSessions() error {
 			data, err := os.ReadFile(filepath.Join(sm.storage, file.Name()))
 			if err == nil {
 				var meta struct {
-					Summary string    `json:"summary"`
-					Updated time.Time `json:"updated"`
-					Created time.Time `json:"created"`
+					Summary  string    `json:"summary"`
+					Updated  time.Time `json:"updated"`
+					Created  time.Time `json:"created"`
+					TokenIn  int       `json:"token_in"`
+					TokenOut int       `json:"token_out"`
+					TokenSum int       `json:"token_sum"`
 				}
 				if err := json.Unmarshal(data, &meta); err == nil {
 					session.Summary = meta.Summary
 					session.Updated = meta.Updated
 					session.Created = meta.Created
+					session.TokenIn = meta.TokenIn
+					session.TokenOut = meta.TokenOut
+					session.TokenSum = meta.TokenSum
 				}
 			}
 		}

@@ -137,6 +137,14 @@ type StartupSelfCheckReport struct {
 	CompactedSessions int
 }
 
+type tokenUsageTotals struct {
+	input  int
+	output int
+	total  int
+}
+
+type tokenUsageTotalsKey struct{}
+
 func (sr *stageReporter) Publish(stage int, total int, status string, detail string) {
 	if sr == nil || sr.onUpdate == nil {
 		return
@@ -405,6 +413,7 @@ func (al *AgentLoop) runSessionWorker(ctx context.Context, sessionKey string, wo
 		case msg := <-worker.queue:
 			func() {
 				taskCtx, cancel := context.WithCancel(ctx)
+				taskCtx, tokenTotals := withTokenUsageTotals(taskCtx)
 				worker.cancelMu.Lock()
 				worker.cancel = cancel
 				worker.cancelMu.Unlock()
@@ -429,6 +438,17 @@ func (al *AgentLoop) runSessionWorker(ctx context.Context, sessionKey string, wo
 				}
 
 				if response != "" && shouldPublishSyntheticResponse(msg) {
+					if al != nil && al.sessions != nil && tokenTotals != nil {
+						al.sessions.AddTokenUsage(
+							msg.SessionKey,
+							tokenTotals.input,
+							tokenTotals.output,
+							tokenTotals.total,
+						)
+					}
+					response += formatTokenUsageSuffix(
+						tokenTotals,
+					)
 					al.bus.PublishOutbound(bus.OutboundMessage{
 						Buttons: nil,
 						Channel: msg.Channel,
@@ -919,6 +939,49 @@ func shouldHandleControlIntents(msg bus.InboundMessage) bool {
 	return !isSyntheticMessage(msg)
 }
 
+func withTokenUsageTotals(ctx context.Context) (context.Context, *tokenUsageTotals) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	totals := &tokenUsageTotals{}
+	return context.WithValue(ctx, tokenUsageTotalsKey{}, totals), totals
+}
+
+func tokenUsageTotalsFromContext(ctx context.Context) *tokenUsageTotals {
+	if ctx == nil {
+		return nil
+	}
+	totals, _ := ctx.Value(tokenUsageTotalsKey{}).(*tokenUsageTotals)
+	return totals
+}
+
+func addTokenUsageToContext(ctx context.Context, usage *providers.UsageInfo) {
+	totals := tokenUsageTotalsFromContext(ctx)
+	if totals == nil || usage == nil {
+		return
+	}
+	totals.input += usage.PromptTokens
+	totals.output += usage.CompletionTokens
+	if usage.TotalTokens > 0 {
+		totals.total += usage.TotalTokens
+	} else {
+		totals.total += usage.PromptTokens + usage.CompletionTokens
+	}
+}
+
+func formatTokenUsageSuffix(totals *tokenUsageTotals) string {
+	input := 0
+	output := 0
+	total := 0
+	if totals != nil {
+		input = totals.input
+		output = totals.output
+		total = totals.total
+	}
+	return fmt.Sprintf("\n\nUsage: in %d, out %d, total %d",
+		input, output, total)
+}
+
 func withUserLanguageHint(ctx context.Context, sessionKey, content string) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -943,14 +1006,11 @@ func (al *AgentLoop) naturalizeUserFacingText(ctx context.Context, fallback stri
 	}
 
 	targetLanguage := "English"
-	if al != nil {
-		if hint, ok := ctx.Value(userLanguageHintKey{}).(userLanguageHint); ok {
-			if al.preferChineseUserFacingText(hint.sessionKey, hint.content) {
-				targetLanguage = "Simplified Chinese"
-			}
+	if hint, ok := ctx.Value(userLanguageHintKey{}).(userLanguageHint); ok {
+		if al.preferChineseUserFacingText(hint.sessionKey, hint.content) {
+			targetLanguage = "Simplified Chinese"
 		}
 	}
-
 	llmCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 
@@ -1717,6 +1777,7 @@ func (al *AgentLoop) callLLMWithModelFallback(
 		for idx, model := range candidates {
 			response, err := al.provider.Chat(ctx, messages, tools, model, options)
 			if err == nil {
+				addTokenUsageToContext(ctx, response.Usage)
 				if al.model != model {
 					logger.WarnCF("agent", "Model switched after quota/rate-limit error", map[string]interface{}{
 						"from_model": al.model,
@@ -1761,6 +1822,7 @@ func (al *AgentLoop) callLLMWithModelFallback(
 		for midx, model := range modelCandidates {
 			response, err := proxyProvider.Chat(ctx, messages, tools, model, options)
 			if err == nil {
+				addTokenUsageToContext(ctx, response.Usage)
 				if al.proxy != proxyName {
 					logger.WarnCF("agent", "Proxy switched after model unavailability", map[string]interface{}{
 						"from_proxy": al.proxy,
