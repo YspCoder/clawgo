@@ -1048,12 +1048,8 @@ func isInteractiveStdin() bool {
 }
 
 func applyMaximumPermissionPolicy(cfg *config.Config) {
-	cfg.Tools.Shell.RestrictPath = false
-	cfg.Tools.Shell.DeniedCmds = []string{"rm -rf /"}
-	cfg.Tools.Shell.Risk.Enabled = false
-	cfg.Tools.Shell.Risk.AllowDestructive = true
-	cfg.Tools.Shell.Risk.RequireDryRun = false
-	cfg.Tools.Shell.Risk.RequireForceFlag = false
+	cfg.Tools.Shell.Enabled = true
+	cfg.Tools.Shell.Sandbox.Enabled = false
 }
 
 func gatewayInstallServiceCmd() error {

@@ -100,6 +100,16 @@
     }
   },
   "tools": {
+    "filesystem": {},
+    "shell": {
+      "enabled": true,
+      "working_dir": "",
+      "timeout": 60000000000,
+      "sandbox": {
+        "enabled": false,
+        "image": "golang:alpine"
+      }
+    },
     "web": {
       "search": {
         "api_key": "YOUR_BRAVE_API_KEY",

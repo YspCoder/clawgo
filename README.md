@@ -2,7 +2,7 @@
 
 [English](./README_EN.md)
 
-**ClawGo** 是一个面向 Linux 服务器的 Go 原生 AI Agent。它提供单二进制部署、多通道接入、可热更新配置与可控风险执行，适合长期在线自动化任务。
+**ClawGo** 是一个面向 Linux 服务器的 Go 原生 AI Agent。它提供单二进制部署、多通道接入与可热更新配置，适合长期在线自动化任务。
 
 ## 🚀 功能总览
 
@@ -12,7 +12,7 @@
 - **多智能体编排**：支持 Pipeline 协议（`role + goal + depends_on + shared_state`）。
 - **记忆与上下文治理**：支持分层记忆、`memory_search` 与自动上下文压缩。
 - **可靠性增强**：支持代理内模型切换与跨代理切换（`proxy_fallbacks`），覆盖配额、路由、网关瞬时错误等场景。
-- **安全防护**：Shell Risk Gate、Sentinel 巡检与自动修复能力。
+- **稳定性保障**：Sentinel 巡检与自动修复能力。
 - **技能扩展**：支持内置技能与 GitHub 技能安装，支持原子脚本执行。
 
 ## 🏁 快速开始
@@ -202,11 +202,10 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
 
 适用于拆解复杂任务、跨角色协作和共享状态推进。
 
-## 🛡️ 风险防护与稳定性
+## 🛡️ 稳定性
 
 - **Proxy/Model fallback**：先在当前代理中按 `models` 顺序切换，全部失败后再按 `proxy_fallbacks` 切换代理。
 - **HTTP 兼容处理**：可识别非 JSON 错页并给出响应预览；兼容从 `<function_call>` 文本块提取工具调用。
-- **Shell Risk Gate**：高风险命令默认阻断，支持 dry-run 与 force 策略。
 - **Sentinel**：周期巡检配置/内存/日志目录，支持自动修复与告警转发。
 
 Sentinel 配置示例：

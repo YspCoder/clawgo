@@ -171,21 +171,10 @@ type WebToolsConfig struct {
 }
 
 type ShellConfig struct {
-	Enabled      bool          `json:"enabled" env:"CLAWGO_TOOLS_SHELL_ENABLED"`
-	WorkingDir   string        `json:"working_dir" env:"CLAWGO_TOOLS_SHELL_WORKING_DIR"`
-	Timeout      time.Duration `json:"timeout" env:"CLAWGO_TOOLS_SHELL_TIMEOUT"`
-	DeniedCmds   []string      `json:"denied_cmds" env:"CLAWGO_TOOLS_SHELL_DENIED_CMDS"`
-	AllowedCmds  []string      `json:"allowed_cmds" env:"CLAWGO_TOOLS_SHELL_ALLOWED_CMDS"`
-	Sandbox      SandboxConfig `json:"sandbox"`
-	Risk         RiskConfig    `json:"risk"`
-	RestrictPath bool          `json:"restrict_path" env:"CLAWGO_TOOLS_SHELL_RESTRICT_PATH"`
-}
-
-type RiskConfig struct {
-	Enabled          bool `json:"enabled" env:"CLAWGO_TOOLS_SHELL_RISK_ENABLED"`
-	AllowDestructive bool `json:"allow_destructive" env:"CLAWGO_TOOLS_SHELL_RISK_ALLOW_DESTRUCTIVE"`
-	RequireDryRun    bool `json:"require_dry_run" env:"CLAWGO_TOOLS_SHELL_RISK_REQUIRE_DRY_RUN"`
-	RequireForceFlag bool `json:"require_force_flag" env:"CLAWGO_TOOLS_SHELL_RISK_REQUIRE_FORCE_FLAG"`
+	Enabled    bool          `json:"enabled" env:"CLAWGO_TOOLS_SHELL_ENABLED"`
+	WorkingDir string        `json:"working_dir" env:"CLAWGO_TOOLS_SHELL_WORKING_DIR"`
+	Timeout    time.Duration `json:"timeout" env:"CLAWGO_TOOLS_SHELL_TIMEOUT"`
+	Sandbox    SandboxConfig `json:"sandbox"`
 }
 
 type SandboxConfig struct {
@@ -193,10 +182,7 @@ type SandboxConfig struct {
 	Image   string `json:"image" env:"CLAWGO_TOOLS_SHELL_SANDBOX_IMAGE"`
 }
 
-type FilesystemConfig struct {
-	AllowedPaths []string `json:"allowed_paths" env:"CLAWGO_TOOLS_FILESYSTEM_ALLOWED_PATHS"`
-	DeniedPaths  []string `json:"denied_paths" env:"CLAWGO_TOOLS_FILESYSTEM_DENIED_PATHS"`
-}
+type FilesystemConfig struct{}
 
 type ToolsConfig struct {
 	Web        WebToolsConfig   `json:"web"`
@@ -373,24 +359,12 @@ func DefaultConfig() *Config {
 			Shell: ShellConfig{
 				Enabled: true,
 				Timeout: 60 * time.Second,
-				DeniedCmds: []string{
-					"rm -rf /", "dd if=", "mkfs", "shutdown", "reboot",
-				},
 				Sandbox: SandboxConfig{
 					Enabled: false,
 					Image:   "golang:alpine",
 				},
-				Risk: RiskConfig{
-					Enabled:          true,
-					AllowDestructive: false,
-					RequireDryRun:    true,
-					RequireForceFlag: true,
-				},
 			},
-			Filesystem: FilesystemConfig{
-				AllowedPaths: []string{},
-				DeniedPaths:  []string{"/etc/shadow", "/etc/passwd"},
-			},
+			Filesystem: FilesystemConfig{},
 		},
 		Logging: LoggingConfig{
 			Enabled:       true,

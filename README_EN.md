@@ -2,7 +2,7 @@
 
 [中文](./README.md)
 
-**ClawGo** is a Go-native AI agent for Linux servers. It provides single-binary deployment, multi-channel integration, hot-reloadable config, and controllable execution risk for long-running autonomous workflows.
+**ClawGo** is a Go-native AI agent for Linux servers. It provides single-binary deployment, multi-channel integration, and hot-reloadable config for long-running autonomous workflows.
 
 ## 🚀 Feature Overview
 
@@ -12,7 +12,7 @@
 - **Multi-agent orchestration**: built-in Pipeline protocol (`role + goal + depends_on + shared_state`).
 - **Memory and context governance**: layered memory, `memory_search`, and automatic context compaction.
 - **Reliability enhancements**: in-proxy model switching and cross-proxy fallback (`proxy_fallbacks`) for quota, routing, and transient gateway failures.
-- **Safety controls**: Shell Risk Gate, Sentinel inspection, and auto-heal support.
+- **Stability controls**: Sentinel inspection and auto-heal support.
 - **Skill extensibility**: built-in skills plus GitHub skill installation and atomic script execution.
 
 ## 🏁 Quick Start
@@ -202,11 +202,10 @@ Built-in orchestration tools:
 
 Useful for complex task decomposition, role-based execution, and shared state workflows.
 
-## 🛡️ Safety and Reliability
+## 🛡️ Reliability
 
 - **Proxy/model fallback**: retries models in the current proxy first, then switches proxies in `proxy_fallbacks` when all models fail.
 - **HTTP compatibility handling**: detects non-JSON error pages with body preview; parses tool calls from `<function_call>` blocks.
-- **Shell Risk Gate**: blocks destructive operations by default; supports dry-run and force policies.
 - **Sentinel**: periodic checks for config/memory/log resources with optional auto-heal and notifications.
 
 Sentinel config example:
