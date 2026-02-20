@@ -10,7 +10,6 @@ require (
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 	github.com/mymmrac/telego v1.6.0
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
-	github.com/openai/openai-go/v3 v3.22.0
 	github.com/tencent-connect/botgo v0.2.1
 	golang.org/x/oauth2 v0.35.0
 )
@@ -30,7 +29,6 @@ require (
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
-	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.69.0 // indirect
