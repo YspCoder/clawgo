@@ -1,4 +1,4 @@
-.PHONY: all build build-all install uninstall clean help test install-bootstrap-docs sync-embed-workspace
+.PHONY: all build build-all install uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace
 
 # Build variables
 BINARY_NAME=clawgo
@@ -74,6 +74,7 @@ all: build
 build: sync-embed-workspace
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
+	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
@@ -82,9 +83,10 @@ build: sync-embed-workspace
 build-all: sync-embed-workspace
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
-	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
-	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
+	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
+	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR); \
+	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR); \
+	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR); \
 # 	GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./$(CMD_DIR)
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	@echo "All builds complete"
@@ -99,6 +101,11 @@ sync-embed-workspace:
 	@mkdir -p "$(EMBED_WORKSPACE_DIR)"
 	@rsync -a --delete "$(WORKSPACE_SOURCE_DIR)/" "$(EMBED_WORKSPACE_DIR)/"
 	@echo "✓ Synced to $(EMBED_WORKSPACE_DIR)"
+
+## cleanup-embed-workspace: Remove synced embed workspace artifacts
+cleanup-embed-workspace:
+	@rm -rf "$(EMBED_WORKSPACE_DIR)"
+	@echo "✓ Cleaned embedded workspace artifacts"
 
 ## install: Install clawgo to system and copy builtin skills
 install: build
