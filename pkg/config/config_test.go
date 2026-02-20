@@ -16,7 +16,7 @@ func TestLoadConfigRejectsUnknownField(t *testing.T) {
   "agents": {
     "defaults": {
       "runtime_control": {
-        "intent_high_confidence": 0.8,
+        "intent_max_input_chars": 1200,
         "unknown_field": 1
       }
     }
@@ -40,7 +40,7 @@ func TestLoadConfigRejectsTrailingJSONContent(t *testing.T) {
 
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
-	content := `{"agents":{"defaults":{"runtime_control":{"intent_high_confidence":0.8}}}}{"extra":true}`
+	content := `{"agents":{"defaults":{"runtime_control":{"intent_max_input_chars":1200}}}}{"extra":true}`
 	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -63,7 +63,6 @@ func TestLoadConfigAllowsKnownRuntimeControlFields(t *testing.T) {
   "agents": {
     "defaults": {
       "runtime_control": {
-        "intent_high_confidence": 0.88,
         "run_state_max": 321,
         "tool_parallel_safe_names": ["read_file", "memory_search"],
         "tool_max_parallel_calls": 3
@@ -78,9 +77,6 @@ func TestLoadConfigAllowsKnownRuntimeControlFields(t *testing.T) {
 	cfg, err := LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
-	}
-	if got := cfg.Agents.Defaults.RuntimeControl.IntentHighConfidence; got != 0.88 {
-		t.Fatalf("intent_high_confidence mismatch: got %.2f", got)
 	}
 	if got := cfg.Agents.Defaults.RuntimeControl.RunStateMax; got != 321 {
 		t.Fatalf("run_state_max mismatch: got %d", got)

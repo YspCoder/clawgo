@@ -159,13 +159,12 @@ Context compaction config example:
 }
 ```
 
-Runtime-control config example (intent thresholds / autonomy guards / run-state retention):
+Runtime-control config example (autonomy guards / run-state retention):
 
 ```json
 "agents": {
   "defaults": {
     "runtime_control": {
-      "intent_high_confidence": 0.75,
       "intent_max_input_chars": 1200,
       "autonomy_tick_interval_sec": 20,
       "autonomy_min_run_interval_sec": 20,

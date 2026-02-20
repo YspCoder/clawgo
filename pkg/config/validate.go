@@ -18,9 +18,6 @@ func Validate(cfg *Config) []error {
 		errs = append(errs, fmt.Errorf("agents.defaults.max_tool_iterations must be > 0"))
 	}
 	rc := cfg.Agents.Defaults.RuntimeControl
-	if rc.IntentHighConfidence <= 0 || rc.IntentHighConfidence > 1 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_high_confidence must be in (0,1]"))
-	}
 	if rc.IntentMaxInputChars < 200 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_max_input_chars must be >= 200"))
 	}

@@ -159,13 +159,12 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
 }
 ```
 
-运行控制配置示例（意图阈值 / 自主循环守卫 / 运行态保留）：
+运行控制配置示例（自主循环守卫 / 运行态保留）：
 
 ```json
 "agents": {
   "defaults": {
     "runtime_control": {
-      "intent_high_confidence": 0.75,
       "intent_max_input_chars": 1200,
       "autonomy_tick_interval_sec": 20,
       "autonomy_min_run_interval_sec": 20,

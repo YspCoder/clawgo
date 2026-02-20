@@ -42,7 +42,6 @@ type AgentDefaults struct {
 }
 
 type RuntimeControlConfig struct {
-	IntentHighConfidence          float64  `json:"intent_high_confidence" env:"CLAWGO_INTENT_HIGH_CONFIDENCE"`
 	IntentMaxInputChars           int      `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
 	AutonomyTickIntervalSec       int      `json:"autonomy_tick_interval_sec" env:"CLAWGO_AUTONOMY_TICK_INTERVAL_SEC"`
 	AutonomyMinRunIntervalSec     int      `json:"autonomy_min_run_interval_sec" env:"CLAWGO_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
@@ -253,7 +252,6 @@ func DefaultConfig() *Config {
 					MaxTranscriptChars: 20000,
 				},
 				RuntimeControl: RuntimeControlConfig{
-					IntentHighConfidence:          0.75,
 					IntentMaxInputChars:           1200,
 					AutonomyTickIntervalSec:       20,
 					AutonomyMinRunIntervalSec:     20,

@@ -21,7 +21,6 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -95,11 +94,7 @@ type autonomySession struct {
 }
 
 type controlPolicy struct {
-	intentHighConfidence          float64
-	intentConfirmMinConfidence    float64
 	intentMaxInputChars           int
-	confirmTTL                    time.Duration
-	confirmMaxClarificationTurns  int
 	autonomyTickInterval          time.Duration
 	autonomyMinRunInterval        time.Duration
 	autonomyIdleThreshold         time.Duration
@@ -110,25 +105,19 @@ type controlPolicy struct {
 }
 
 type runtimeControlStats struct {
-	runAccepted                 int64
-	runCompleted                int64
-	runFailed                   int64
-	runCanceled                 int64
-	runControlHandled           int64
-	intentAutonomyMatched       int64
-	intentAutonomyNeedsConfirm  int64
-	intentAutonomyRejected      int64
-	intentAutoLearnMatched      int64
-	intentAutoLearnNeedsConfirm int64
-	intentAutoLearnRejected     int64
-	confirmPrompts              int64
-	confirmAccepted             int64
-	confirmRejected             int64
-	confirmExpired              int64
-	autonomyRounds              int64
-	autonomyStoppedByGuard      int64
-	autoLearnRounds             int64
-	autoLearnStoppedByGuard     int64
+	runAccepted             int64
+	runCompleted            int64
+	runFailed               int64
+	runCanceled             int64
+	runControlHandled       int64
+	intentAutonomyMatched   int64
+	intentAutonomyRejected  int64
+	intentAutoLearnMatched  int64
+	intentAutoLearnRejected int64
+	autonomyRounds          int64
+	autonomyStoppedByGuard  int64
+	autoLearnRounds         int64
+	autoLearnStoppedByGuard int64
 }
 
 type runStatus string
@@ -193,8 +182,6 @@ type AgentLoop struct {
 	autoLearners      map[string]*autoLearner
 	autonomyMu        sync.Mutex
 	autonomyBySess    map[string]*autonomySession
-	controlConfirmMu  sync.Mutex
-	controlConfirm    map[string]pendingControlConfirmation
 	controlPolicy     controlPolicy
 	parallelSafeTools map[string]struct{}
 	maxParallelCalls  int
@@ -230,9 +217,8 @@ type autonomyIntent struct {
 }
 
 type intentDetectionOutcome struct {
-	matched      bool
-	needsConfirm bool
-	confidence   float64
+	matched    bool
+	confidence float64
 }
 
 type autonomyIntentLLMResponse struct {
@@ -291,25 +277,9 @@ type tokenUsageTotals struct {
 
 type tokenUsageTotalsKey struct{}
 
-type pendingControlConfirmation struct {
-	intentType    string
-	action        string
-	idleInterval  *time.Duration
-	focus         string
-	interval      *time.Duration
-	confidence    float64
-	requestedAt   time.Time
-	clarifyTurns  int
-	originalInput string
-}
-
 func defaultControlPolicy() controlPolicy {
 	return controlPolicy{
-		intentHighConfidence:          0.75,
-		intentConfirmMinConfidence:    0.45,
 		intentMaxInputChars:           1200,
-		confirmTTL:                    5 * time.Minute,
-		confirmMaxClarificationTurns:  2,
 		autonomyTickInterval:          autonomyContinuousRunInterval,
 		autonomyMinRunInterval:        autonomyContinuousRunInterval,
 		autonomyIdleThreshold:         autonomyContinuousIdleThreshold,
@@ -358,9 +328,6 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 
 func loadControlPolicyFromConfig(base controlPolicy, rc config.RuntimeControlConfig) controlPolicy {
 	p := base
-	if rc.IntentHighConfidence > 0 {
-		p.intentHighConfidence = rc.IntentHighConfidence
-	}
 	if rc.IntentMaxInputChars > 0 {
 		p.intentMaxInputChars = rc.IntentMaxInputChars
 	}
@@ -445,11 +412,7 @@ func loadToolParallelPolicyFromConfig(rc config.RuntimeControlConfig) (map[strin
 // applyLegacyControlPolicyEnvOverrides keeps compatibility with older env names.
 func applyLegacyControlPolicyEnvOverrides(base controlPolicy) controlPolicy {
 	p := base
-	p.intentHighConfidence = envFloat64("CLAWGO_INTENT_HIGH_CONFIDENCE", p.intentHighConfidence)
-	p.intentConfirmMinConfidence = envFloat64("CLAWGO_INTENT_CONFIRM_MIN_CONFIDENCE", p.intentConfirmMinConfidence)
 	p.intentMaxInputChars = envInt("CLAWGO_INTENT_MAX_INPUT_CHARS", p.intentMaxInputChars)
-	p.confirmTTL = envDuration("CLAWGO_CONFIRM_TTL", p.confirmTTL)
-	p.confirmMaxClarificationTurns = envInt("CLAWGO_CONFIRM_MAX_CLARIFY_TURNS", p.confirmMaxClarificationTurns)
 	p.autonomyTickInterval = envDuration("CLAWGO_AUTONOMY_TICK_INTERVAL", p.autonomyTickInterval)
 	p.autonomyMinRunInterval = envDuration("CLAWGO_AUTONOMY_MIN_RUN_INTERVAL", p.autonomyMinRunInterval)
 	p.autonomyIdleThreshold = envDuration("CLAWGO_AUTONOMY_IDLE_THRESHOLD", p.autonomyIdleThreshold)
@@ -458,20 +421,8 @@ func applyLegacyControlPolicyEnvOverrides(base controlPolicy) controlPolicy {
 	p.autonomyMaxConsecutiveStalls = envInt("CLAWGO_AUTONOMY_MAX_STALLS", p.autonomyMaxConsecutiveStalls)
 	p.autoLearnMaxRoundsWithoutUser = envInt("CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER", p.autoLearnMaxRoundsWithoutUser)
 
-	if p.intentHighConfidence <= 0 || p.intentHighConfidence > 1 {
-		p.intentHighConfidence = base.intentHighConfidence
-	}
-	if p.intentConfirmMinConfidence < 0 || p.intentConfirmMinConfidence >= p.intentHighConfidence {
-		p.intentConfirmMinConfidence = base.intentConfirmMinConfidence
-	}
 	if p.intentMaxInputChars < 200 {
 		p.intentMaxInputChars = base.intentMaxInputChars
-	}
-	if p.confirmTTL <= 0 {
-		p.confirmTTL = base.confirmTTL
-	}
-	if p.confirmMaxClarificationTurns < 0 {
-		p.confirmMaxClarificationTurns = base.confirmMaxClarificationTurns
 	}
 	if p.autonomyTickInterval < 5*time.Second {
 		p.autonomyTickInterval = base.autonomyTickInterval
@@ -660,7 +611,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		workers:           make(map[string]*sessionWorker),
 		autoLearners:      make(map[string]*autoLearner),
 		autonomyBySess:    make(map[string]*autonomySession),
-		controlConfirm:    make(map[string]pendingControlConfirmation),
 		controlPolicy:     policy,
 		parallelSafeTools: parallelSafeTools,
 		maxParallelCalls:  maxParallelCalls,
@@ -669,7 +619,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		runStateMax:       runStateMax,
 	}
 	logger.InfoCF("agent", "Control policy initialized", map[string]interface{}{
-		"intent_high_confidence":            policy.intentHighConfidence,
 		"intent_max_input_chars":            policy.intentMaxInputChars,
 		"autonomy_tick_interval":            policy.autonomyTickInterval.String(),
 		"autonomy_min_run_interval":         policy.autonomyMinRunInterval.String(),
@@ -762,7 +711,7 @@ func (al *AgentLoop) enqueueMessage(ctx context.Context, msg bus.InboundMessage)
 			Buttons: nil,
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: al.localizeUserFacingText(ctx, msg.SessionKey, msg.Content, "The message queue is currently busy. Please try again shortly."),
+			Content: "The message queue is currently busy. Please try again shortly.",
 		})
 	}
 }
@@ -855,9 +804,7 @@ func (al *AgentLoop) clearWorkerCancel(worker *sessionWorker) {
 }
 
 func (al *AgentLoop) formatProcessingErrorMessage(ctx context.Context, msg bus.InboundMessage, err error) string {
-	return al.renderControlReply(withUserLanguageHint(ctx, msg.SessionKey, msg.Content), "message_processing_error", map[string]interface{}{
-		"error": strings.TrimSpace(err.Error()),
-	}, "消息处理失败。")
+	return "消息处理失败。"
 }
 
 func (al *AgentLoop) preferChineseUserFacingText(sessionKey, currentContent string) bool {
@@ -955,7 +902,7 @@ func (al *AgentLoop) stopAllAutonomySessions() {
 
 func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, idleInterval time.Duration, focus string) string {
 	if msg.Channel == "cli" {
-		return al.naturalizeUserFacingText(ctx, "Autonomy mode requires gateway runtime mode (continuous message loop).")
+		return "自主模式需要在 gateway 运行模式下使用。"
 	}
 
 	if idleInterval <= 0 {
@@ -1002,16 +949,9 @@ func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, 
 		})
 	}
 	if s.focus != "" {
-		return al.renderControlReply(ctx, "autonomy_started", map[string]interface{}{
-			"focus":           s.focus,
-			"report_interval": idleInterval.Truncate(time.Second).String(),
-			"mode":            "background",
-		}, "自主模式已开启。")
+		return "自主模式已开启。"
 	}
-	return al.renderControlReply(ctx, "autonomy_started", map[string]interface{}{
-		"report_interval": idleInterval.Truncate(time.Second).String(),
-		"mode":            "background",
-	}, "自主模式已开启。")
+	return "自主模式已开启。"
 }
 
 func (al *AgentLoop) stopAutonomy(sessionKey string) bool {
@@ -1063,23 +1003,16 @@ func (al *AgentLoop) noteAutonomyUserActivity(msg bus.InboundMessage) {
 }
 
 func (al *AgentLoop) autonomyStatus(ctx context.Context, sessionKey string) string {
+	_ = ctx
 	al.autonomyMu.Lock()
 	defer al.autonomyMu.Unlock()
 
 	s, ok := al.autonomyBySess[sessionKey]
 	if !ok || s == nil {
-		return al.naturalizeUserFacingText(ctx, "Autonomy mode is not enabled.")
+		return "自主模式未开启。"
 	}
 
-	return al.renderControlReply(ctx, "autonomy_status", map[string]interface{}{
-		"report_interval":   s.idleInterval.Truncate(time.Second).String(),
-		"uptime":            time.Since(s.started).Truncate(time.Second).String(),
-		"idle_since_user":   time.Since(s.lastUserAt).Truncate(time.Second).String(),
-		"automatic_rounds":  s.rounds,
-		"current_focus":     strings.TrimSpace(s.focus),
-		"autonomy_running":  true,
-		"session_has_focus": strings.TrimSpace(s.focus) != "",
-	}, "自主模式运行中。")
+	return "自主模式运行中。"
 }
 
 func (al *AgentLoop) runAutonomyLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -1130,7 +1063,7 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 				al.bus.PublishOutbound(bus.OutboundMessage{
 					Channel: msg.Channel,
 					ChatID:  msg.ChatID,
-					Content: al.localizeUserFacingText(context.Background(), msg.SessionKey, "", "Autonomy mode stopped automatically because background rounds stalled repeatedly."),
+					Content: "Autonomy mode stopped automatically because background rounds stalled repeatedly.",
 				})
 				return false
 			}
@@ -1150,7 +1083,7 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: al.localizeUserFacingText(context.Background(), msg.SessionKey, "", "Autonomy mode paused automatically after many unattended rounds. Send a new request to continue."),
+			Content: "Autonomy mode paused automatically after many unattended rounds. Send a new request to continue.",
 		})
 		return false
 	}
@@ -1220,7 +1153,7 @@ func buildAutonomyFocusPrompt(focus string) string {
 
 func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessage, interval time.Duration) string {
 	if msg.Channel == "cli" {
-		return al.naturalizeUserFacingText(ctx, "Auto-learn requires gateway runtime mode (continuous message loop).")
+		return "自动学习需要在 gateway 运行模式下使用。"
 	}
 
 	if interval <= 0 {
@@ -1250,9 +1183,7 @@ func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessag
 
 	go al.runAutoLearnerLoop(learnerCtx, msg)
 
-	return al.renderControlReply(ctx, "autolearn_started", map[string]interface{}{
-		"interval": interval.Truncate(time.Second).String(),
-	}, "自动学习已开启。")
+	return "自动学习已开启。"
 }
 
 func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -1268,7 +1199,7 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 			al.bus.PublishOutbound(bus.OutboundMessage{
 				Channel: msg.Channel,
 				ChatID:  msg.ChatID,
-				Content: al.localizeUserFacingText(context.Background(), msg.SessionKey, "", "Auto-learn stopped automatically after reaching the unattended round limit."),
+				Content: "Auto-learn stopped automatically after reaching the unattended round limit.",
 			})
 			return false
 		}
@@ -1276,9 +1207,7 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: al.renderControlReply(ctx, "autolearn_round_started", map[string]interface{}{
-				"round": round,
-			}, "自动学习新一轮已开始。"),
+			Content: "自动学习新一轮已开始。",
 		})
 
 		al.bus.PublishInbound(bus.InboundMessage{
@@ -1353,20 +1282,16 @@ func (al *AgentLoop) stopAutoLearner(sessionKey string) bool {
 }
 
 func (al *AgentLoop) autoLearnerStatus(ctx context.Context, sessionKey string) string {
+	_ = ctx
 	al.autoLearnMu.Lock()
 	defer al.autoLearnMu.Unlock()
 
 	learner, ok := al.autoLearners[sessionKey]
 	if !ok || learner == nil {
-		return al.naturalizeUserFacingText(ctx, "Auto-learn is not enabled.")
+		return "自动学习未开启。"
 	}
 
-	return al.renderControlReply(ctx, "autolearn_status", map[string]interface{}{
-		"interval":      learner.interval.Truncate(time.Second).String(),
-		"uptime":        time.Since(learner.started).Truncate(time.Second).String(),
-		"total_rounds":  learner.rounds,
-		"running_state": "running",
-	}, "自动学习运行中。")
+	return "自动学习运行中。"
 }
 
 func buildAutoLearnPrompt(round int) string {
@@ -1754,9 +1679,7 @@ func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey str
 		rs, found = al.getRunState(intent.runID)
 	}
 	if !found {
-		return al.renderControlReply(ctx, "run_state_not_found", map[string]interface{}{
-			"session_key": sessionKey,
-		}, "未找到匹配的运行记录。")
+		return "未找到匹配的运行记录。"
 	}
 
 	if intent.wait && (rs.status == runStatusAccepted || rs.status == runStatusRunning) {
@@ -1768,15 +1691,10 @@ func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey str
 			if latest, ok := al.getRunState(rs.runID); ok {
 				rs = latest
 			}
-			return al.renderControlReply(ctx, "run_state_wait_timeout", map[string]interface{}{
-				"wait_timeout": intent.timeout.Truncate(time.Second).String(),
-				"run_state":    runStateToReplyPayload(rs),
-			}, "等待超时，任务仍在运行。")
+			return "等待超时，任务仍在运行。"
 		}
 	}
-	return al.renderControlReply(ctx, "run_state_report", map[string]interface{}{
-		"run_state": runStateToReplyPayload(rs),
-	}, "运行状态已更新。")
+	return "运行状态已更新。"
 }
 
 func (al *AgentLoop) inferRunControlIntent(ctx context.Context, content string) (runControlIntent, float64, bool) {
@@ -1847,15 +1765,8 @@ Rules:
 }
 
 func (al *AgentLoop) handleNaturalRunControl(ctx context.Context, msg bus.InboundMessage) (bool, string) {
-	intent, confidence, ok := al.inferRunControlIntent(ctx, msg.Content)
+	intent, _, ok := al.inferRunControlIntent(ctx, msg.Content)
 	if !ok {
-		return false, ""
-	}
-	policy := defaultControlPolicy()
-	if al != nil {
-		policy = al.controlPolicy
-	}
-	if confidence < policy.intentHighConfidence {
 		return false, ""
 	}
 	return true, al.executeRunControlIntent(ctx, msg.SessionKey, intent)
@@ -1881,42 +1792,33 @@ func (al *AgentLoop) logControlStatsSnapshot() {
 	al.autoLearnMu.Lock()
 	autoLearnActive := len(al.autoLearners)
 	al.autoLearnMu.Unlock()
-	al.controlConfirmMu.Lock()
-	pendingConfirm := len(al.controlConfirm)
-	al.controlConfirmMu.Unlock()
 	al.runStateMu.Lock()
 	runStatesTotal := len(al.runStates)
 	al.runStateMu.Unlock()
 
 	stats := map[string]interface{}{
-		"run_accepted":                     atomic.LoadInt64(&al.controlStats.runAccepted),
-		"run_completed":                    atomic.LoadInt64(&al.controlStats.runCompleted),
-		"run_failed":                       atomic.LoadInt64(&al.controlStats.runFailed),
-		"run_canceled":                     atomic.LoadInt64(&al.controlStats.runCanceled),
-		"run_control_handled":              atomic.LoadInt64(&al.controlStats.runControlHandled),
-		"intent_autonomy_matched":          atomic.LoadInt64(&al.controlStats.intentAutonomyMatched),
-		"intent_autonomy_needs_confirm":    atomic.LoadInt64(&al.controlStats.intentAutonomyNeedsConfirm),
-		"intent_autonomy_rejected":         atomic.LoadInt64(&al.controlStats.intentAutonomyRejected),
-		"intent_autolearn_matched":         atomic.LoadInt64(&al.controlStats.intentAutoLearnMatched),
-		"intent_autolearn_needs_confirm":   atomic.LoadInt64(&al.controlStats.intentAutoLearnNeedsConfirm),
-		"intent_autolearn_rejected":        atomic.LoadInt64(&al.controlStats.intentAutoLearnRejected),
-		"confirm_prompts":                  atomic.LoadInt64(&al.controlStats.confirmPrompts),
-		"confirm_accepted":                 atomic.LoadInt64(&al.controlStats.confirmAccepted),
-		"confirm_rejected":                 atomic.LoadInt64(&al.controlStats.confirmRejected),
-		"confirm_expired":                  atomic.LoadInt64(&al.controlStats.confirmExpired),
-		"autonomy_rounds":                  atomic.LoadInt64(&al.controlStats.autonomyRounds),
-		"autonomy_stopped_by_guard":        atomic.LoadInt64(&al.controlStats.autonomyStoppedByGuard),
-		"autolearn_rounds":                 atomic.LoadInt64(&al.controlStats.autoLearnRounds),
-		"autolearn_stopped_by_guard":       atomic.LoadInt64(&al.controlStats.autoLearnStoppedByGuard),
-		"autonomy_active_sessions":         autonomyActive,
-		"autolearn_active_sessions":        autoLearnActive,
-		"pending_control_confirm_sessions": pendingConfirm,
-		"run_states_total":                 runStatesTotal,
+		"run_accepted":               atomic.LoadInt64(&al.controlStats.runAccepted),
+		"run_completed":              atomic.LoadInt64(&al.controlStats.runCompleted),
+		"run_failed":                 atomic.LoadInt64(&al.controlStats.runFailed),
+		"run_canceled":               atomic.LoadInt64(&al.controlStats.runCanceled),
+		"run_control_handled":        atomic.LoadInt64(&al.controlStats.runControlHandled),
+		"intent_autonomy_matched":    atomic.LoadInt64(&al.controlStats.intentAutonomyMatched),
+		"intent_autonomy_rejected":   atomic.LoadInt64(&al.controlStats.intentAutonomyRejected),
+		"intent_autolearn_matched":   atomic.LoadInt64(&al.controlStats.intentAutoLearnMatched),
+		"intent_autolearn_rejected":  atomic.LoadInt64(&al.controlStats.intentAutoLearnRejected),
+		"autonomy_rounds":            atomic.LoadInt64(&al.controlStats.autonomyRounds),
+		"autonomy_stopped_by_guard":  atomic.LoadInt64(&al.controlStats.autonomyStoppedByGuard),
+		"autolearn_rounds":           atomic.LoadInt64(&al.controlStats.autoLearnRounds),
+		"autolearn_stopped_by_guard": atomic.LoadInt64(&al.controlStats.autoLearnStoppedByGuard),
+		"autonomy_active_sessions":   autonomyActive,
+		"autolearn_active_sessions":  autoLearnActive,
+		"run_states_total":           runStatesTotal,
 	}
 	logger.InfoCF("agent", "Control runtime snapshot", stats)
 }
 
 func (al *AgentLoop) executeAutonomyIntent(ctx context.Context, msg bus.InboundMessage, intent autonomyIntent) string {
+	_ = ctx
 	switch intent.action {
 	case "start":
 		idle := autonomyDefaultIdleInterval
@@ -1926,14 +1828,14 @@ func (al *AgentLoop) executeAutonomyIntent(ctx context.Context, msg bus.InboundM
 		return al.startAutonomy(ctx, msg, idle, intent.focus)
 	case "clear_focus":
 		if al.clearAutonomyFocus(msg.SessionKey) {
-			return al.naturalizeUserFacingText(ctx, "Confirmed: the current focus is complete. Subsequent autonomous rounds will shift to other high-value tasks.")
+			return "已确认当前焦点完成，后续将转到其他高价值任务。"
 		}
-		return al.naturalizeUserFacingText(ctx, "Autonomy mode is not running, so the focus cannot be cleared.")
+		return "自主模式未运行，无法清除焦点。"
 	case "stop":
 		if al.stopAutonomy(msg.SessionKey) {
-			return al.naturalizeUserFacingText(ctx, "Autonomy mode stopped.")
+			return "自主模式已停止。"
 		}
-		return al.naturalizeUserFacingText(ctx, "Autonomy mode is not running.")
+		return "自主模式未运行。"
 	case "status":
 		return al.autonomyStatus(ctx, msg.SessionKey)
 	default:
@@ -1942,6 +1844,7 @@ func (al *AgentLoop) executeAutonomyIntent(ctx context.Context, msg bus.InboundM
 }
 
 func (al *AgentLoop) executeAutoLearnIntent(ctx context.Context, msg bus.InboundMessage, intent autoLearnIntent) string {
+	_ = ctx
 	switch intent.action {
 	case "start":
 		interval := autoLearnDefaultInterval
@@ -1951,9 +1854,9 @@ func (al *AgentLoop) executeAutoLearnIntent(ctx context.Context, msg bus.Inbound
 		return al.startAutoLearner(ctx, msg, interval)
 	case "stop":
 		if al.stopAutoLearner(msg.SessionKey) {
-			return al.naturalizeUserFacingText(ctx, "Auto-learn stopped.")
+			return "自动学习已停止。"
 		}
-		return al.naturalizeUserFacingText(ctx, "Auto-learn is not running.")
+		return "自动学习未运行。"
 	case "status":
 		return al.autoLearnerStatus(ctx, msg.SessionKey)
 	default:
@@ -1973,251 +1876,19 @@ func (al *AgentLoop) handleControlPlane(ctx context.Context, msg bus.InboundMess
 
 	al.noteAutonomyUserActivity(msg)
 
-	if handled, result := al.handlePendingControlConfirmation(ctx, msg); handled {
-		return true, result, nil
-	}
 	if handled, result := al.handleNaturalRunControl(ctx, msg); handled {
 		return true, result, nil
 	}
 
 	if intent, outcome := al.detectAutonomyIntent(ctx, msg.Content); outcome.matched {
-		al.clearPendingControlConfirmation(msg.SessionKey)
-		return true, al.executeAutonomyIntent(ctx, msg, intent), nil
-	} else if outcome.needsConfirm {
-		al.clearPendingControlConfirmation(msg.SessionKey)
 		return true, al.executeAutonomyIntent(ctx, msg, intent), nil
 	}
 
 	if intent, outcome := al.detectAutoLearnIntent(ctx, msg.Content); outcome.matched {
-		al.clearPendingControlConfirmation(msg.SessionKey)
-		return true, al.executeAutoLearnIntent(ctx, msg, intent), nil
-	} else if outcome.needsConfirm {
-		al.clearPendingControlConfirmation(msg.SessionKey)
 		return true, al.executeAutoLearnIntent(ctx, msg, intent), nil
 	}
 
 	return false, "", nil
-}
-
-func (al *AgentLoop) handlePendingControlConfirmation(ctx context.Context, msg bus.InboundMessage) (bool, string) {
-	pending, ok := al.getPendingControlConfirmation(msg.SessionKey)
-	if !ok {
-		return false, ""
-	}
-	policy := defaultControlPolicy()
-	if al != nil {
-		policy = al.controlPolicy
-	}
-	if time.Since(pending.requestedAt) > policy.confirmTTL {
-		al.clearPendingControlConfirmation(msg.SessionKey)
-		al.controlMetricAdd(&al.controlStats.confirmExpired, 1)
-		return false, ""
-	}
-
-	decision, confident := al.classifyConfirmationReplyWithInference(ctx, msg.Content, pending)
-	if !confident {
-		if looksLikeNewTaskMessage(msg.Content) {
-			al.clearPendingControlConfirmation(msg.SessionKey)
-			return false, ""
-		}
-		pending.clarifyTurns++
-		if pending.clarifyTurns > policy.confirmMaxClarificationTurns {
-			al.clearPendingControlConfirmation(msg.SessionKey)
-			return false, ""
-		}
-		al.setPendingControlConfirmation(msg.SessionKey, pending)
-		al.controlMetricAdd(&al.controlStats.confirmPrompts, 1)
-		return true, al.renderControlReply(ctx, "control_confirmation_needed", map[string]interface{}{
-			"expected_reply": "yes_or_no",
-		}, "请回复“是”或“否”以确认操作。")
-	}
-
-	al.clearPendingControlConfirmation(msg.SessionKey)
-	if !decision {
-		al.controlMetricAdd(&al.controlStats.confirmRejected, 1)
-		return true, al.renderControlReply(ctx, "control_confirmation_rejected", map[string]interface{}{
-			"action": pending.action,
-		}, "已取消本次控制操作。")
-	}
-	al.controlMetricAdd(&al.controlStats.confirmAccepted, 1)
-
-	switch pending.intentType {
-	case "autonomy":
-		intent := autonomyIntent{
-			action: pending.action,
-			focus:  pending.focus,
-		}
-		if pending.idleInterval != nil {
-			d := *pending.idleInterval
-			intent.idleInterval = &d
-		}
-		return true, al.executeAutonomyIntent(ctx, msg, intent)
-	case "autolearn":
-		intent := autoLearnIntent{action: pending.action}
-		if pending.interval != nil {
-			d := *pending.interval
-			intent.interval = &d
-		}
-		return true, al.executeAutoLearnIntent(ctx, msg, intent)
-	default:
-		return false, ""
-	}
-}
-
-func looksLikeNewTaskMessage(content string) bool {
-	text := strings.TrimSpace(content)
-	if text == "" {
-		return false
-	}
-	words := strings.Fields(text)
-	return len(words) >= 6 || len(text) >= 28
-}
-
-func (al *AgentLoop) classifyConfirmationReplyWithInference(ctx context.Context, content string, pending pendingControlConfirmation) (decision bool, confident bool) {
-	if decision, conf, ok := al.inferConfirmationDecision(ctx, content, pending); ok {
-		if conf >= 0.7 {
-			return decision, true
-		}
-	}
-	return classifyConfirmationReplyLexical(content)
-}
-
-func classifyConfirmationReplyLexical(content string) (decision bool, confident bool) {
-	normalized := strings.ToLower(strings.TrimSpace(content))
-	if normalized == "" {
-		return false, false
-	}
-	normalized = strings.NewReplacer("，", ",", "。", ".", "！", "!", "？", "?", "；", ";").Replace(normalized)
-	normalized = strings.Trim(normalized, " \t\r\n.,!?;:~`'\"")
-
-	yesSet := map[string]struct{}{
-		"yes": {}, "y": {}, "ok": {}, "okay": {}, "sure": {}, "confirm": {}, "go ahead": {}, "do it": {},
-		"是": {}, "好的": {}, "好": {}, "可以": {}, "行": {}, "确认": {}, "继续": {}, "开始吧": {},
-	}
-	noSet := map[string]struct{}{
-		"no": {}, "n": {}, "cancel": {}, "stop": {}, "don't": {}, "do not": {},
-		"不是": {}, "不用": {}, "不": {}, "先别": {}, "取消": {}, "不要": {},
-	}
-	if _, ok := yesSet[normalized]; ok {
-		return true, true
-	}
-	if _, ok := noSet[normalized]; ok {
-		return false, true
-	}
-	return false, false
-}
-
-type confirmationDecisionLLMResponse struct {
-	Decision   string  `json:"decision"`
-	Confidence float64 `json:"confidence"`
-}
-
-func (al *AgentLoop) inferConfirmationDecision(ctx context.Context, content string, pending pendingControlConfirmation) (decision bool, confidence float64, ok bool) {
-	if al == nil || strings.TrimSpace(content) == "" {
-		return false, 0, false
-	}
-	systemPrompt := al.withBootstrapPolicy(`Classify whether the user confirms a previously requested control action.
-Return JSON only.
-Schema:
-{"decision":"yes|no|other","confidence":0.0}`)
-	actionDesc := fmt.Sprintf("intent=%s action=%s", pending.intentType, pending.action)
-	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: fmt.Sprintf("Pending control: %s\nUser reply: %s", actionDesc, strings.TrimSpace(content))},
-	}, nil, map[string]interface{}{
-		"max_tokens":  90,
-		"temperature": 0.0,
-	})
-	if err != nil || resp == nil {
-		return false, 0, false
-	}
-	raw := extractJSONObject(resp.Content)
-	if raw == "" {
-		return false, 0, false
-	}
-	var parsed confirmationDecisionLLMResponse
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return false, 0, false
-	}
-	switch strings.ToLower(strings.TrimSpace(parsed.Decision)) {
-	case "yes":
-		return true, parsed.Confidence, true
-	case "no":
-		return false, parsed.Confidence, true
-	default:
-		return false, parsed.Confidence, false
-	}
-}
-
-func (al *AgentLoop) storePendingAutonomyConfirmation(sessionKey string, originalInput string, intent autonomyIntent, confidence float64) {
-	if al == nil {
-		return
-	}
-	pending := pendingControlConfirmation{
-		intentType:    "autonomy",
-		action:        intent.action,
-		focus:         intent.focus,
-		confidence:    confidence,
-		requestedAt:   time.Now(),
-		originalInput: strings.TrimSpace(originalInput),
-	}
-	if intent.idleInterval != nil {
-		d := *intent.idleInterval
-		pending.idleInterval = &d
-	}
-	al.controlConfirmMu.Lock()
-	al.controlConfirm[sessionKey] = pending
-	al.controlConfirmMu.Unlock()
-	al.controlMetricAdd(&al.controlStats.confirmPrompts, 1)
-}
-
-func (al *AgentLoop) storePendingAutoLearnConfirmation(sessionKey string, originalInput string, intent autoLearnIntent, confidence float64) {
-	if al == nil {
-		return
-	}
-	pending := pendingControlConfirmation{
-		intentType:    "autolearn",
-		action:        intent.action,
-		confidence:    confidence,
-		requestedAt:   time.Now(),
-		originalInput: strings.TrimSpace(originalInput),
-	}
-	if intent.interval != nil {
-		d := *intent.interval
-		pending.interval = &d
-	}
-	al.controlConfirmMu.Lock()
-	al.controlConfirm[sessionKey] = pending
-	al.controlConfirmMu.Unlock()
-	al.controlMetricAdd(&al.controlStats.confirmPrompts, 1)
-}
-
-func (al *AgentLoop) setPendingControlConfirmation(sessionKey string, pending pendingControlConfirmation) {
-	if al == nil {
-		return
-	}
-	al.controlConfirmMu.Lock()
-	al.controlConfirm[sessionKey] = pending
-	al.controlConfirmMu.Unlock()
-}
-
-func (al *AgentLoop) clearPendingControlConfirmation(sessionKey string) {
-	if al == nil {
-		return
-	}
-	al.controlConfirmMu.Lock()
-	delete(al.controlConfirm, sessionKey)
-	al.controlConfirmMu.Unlock()
-}
-
-func (al *AgentLoop) getPendingControlConfirmation(sessionKey string) (pendingControlConfirmation, bool) {
-	if al == nil {
-		return pendingControlConfirmation{}, false
-	}
-	al.controlConfirmMu.Lock()
-	defer al.controlConfirmMu.Unlock()
-	pending, ok := al.controlConfirm[sessionKey]
-	return pending, ok
 }
 
 func withTokenUsageTotals(ctx context.Context) (context.Context, *tokenUsageTotals) {
@@ -2288,157 +1959,6 @@ func withUserLanguageHint(ctx context.Context, sessionKey, content string) conte
 		sessionKey: strings.TrimSpace(sessionKey),
 		content:    content,
 	})
-}
-
-func (al *AgentLoop) localizeUserFacingText(ctx context.Context, sessionKey, currentContent, fallback string) string {
-	return al.naturalizeUserFacingText(withUserLanguageHint(ctx, sessionKey, currentContent), fallback)
-}
-
-func (al *AgentLoop) naturalizeUserFacingText(ctx context.Context, fallback string) string {
-	text := strings.TrimSpace(fallback)
-	if text == "" || ctx == nil {
-		return fallback
-	}
-	if al == nil || (al.provider == nil && len(al.providersByProxy) == 0) {
-		return fallback
-	}
-
-	targetLanguage := "the same language as the original text"
-	if hint, ok := ctx.Value(userLanguageHintKey{}).(userLanguageHint); ok {
-		if al.preferChineseUserFacingText(hint.sessionKey, hint.content) {
-			targetLanguage = "Simplified Chinese"
-		}
-	}
-	languageRule := "- Keep wording in the same language as the original text; do not mix languages."
-	if targetLanguage == "Simplified Chinese" {
-		languageRule = "- Use Simplified Chinese naturally. Keep unavoidable technical identifiers (commands, IDs, model names) as-is."
-	}
-	llmCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-
-	systemPrompt := al.withBootstrapPolicy(fmt.Sprintf(`You rewrite assistant control/status replies in natural conversational %s.
-Rules:
-- Keep factual meaning unchanged.
-- Use concise natural wording, no rigid templates.
-- %s
-- No markdown, no code block, no extra explanation.
-- Return plain text only.`, targetLanguage, languageRule))
-
-	resp, err := al.callLLMWithModelFallback(llmCtx, []providers.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: text},
-	}, nil, map[string]interface{}{
-		"max_tokens":  180,
-		"temperature": 0.4,
-	})
-	if err != nil || resp == nil {
-		return fallback
-	}
-
-	out := strings.TrimSpace(resp.Content)
-	if out == "" {
-		return fallback
-	}
-	if shouldRejectNaturalizedOutput(out, fallback) {
-		return fallback
-	}
-	return out
-}
-
-func (al *AgentLoop) renderControlReply(ctx context.Context, event string, fields map[string]interface{}, fallback string) string {
-	base := strings.TrimSpace(fallback)
-	if base == "" {
-		base = "操作已完成。"
-	}
-	if ctx == nil || al == nil || (al.provider == nil && len(al.providersByProxy) == 0) {
-		return base
-	}
-
-	targetLanguage := "the same language as the latest user message"
-	if hint, ok := ctx.Value(userLanguageHintKey{}).(userLanguageHint); ok {
-		if al.preferChineseUserFacingText(hint.sessionKey, hint.content) {
-			targetLanguage = "Simplified Chinese"
-		}
-	}
-
-	payload := map[string]interface{}{
-		"event":  strings.TrimSpace(event),
-		"fields": fields,
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return al.naturalizeUserFacingText(ctx, base)
-	}
-
-	llmCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-
-	systemPrompt := al.withBootstrapPolicy(fmt.Sprintf(`You generate user-facing control/status replies from structured event data.
-Output language: %s.
-Rules:
-- Use concise natural wording.
-- Preserve factual values from fields.
-- No markdown, no code block.
-- Return plain text only.`, targetLanguage))
-
-	resp, err := al.callLLMWithModelFallback(llmCtx, []providers.Message{
-		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: string(raw)},
-	}, nil, map[string]interface{}{
-		"max_tokens":  200,
-		"temperature": 0.4,
-	})
-	if err != nil || resp == nil {
-		return al.naturalizeUserFacingText(ctx, base)
-	}
-	out := strings.TrimSpace(resp.Content)
-	if out == "" || shouldRejectNaturalizedOutput(out, base) {
-		return al.naturalizeUserFacingText(ctx, base)
-	}
-	return out
-}
-
-func runStateToReplyPayload(rs runState) map[string]interface{} {
-	payload := map[string]interface{}{
-		"run_id":          rs.runID,
-		"status":          rs.status,
-		"session":         rs.sessionKey,
-		"accepted_at":     rs.acceptedAt.Format(time.RFC3339),
-		"control_handled": rs.controlHandled,
-		"response_length": rs.responseLen,
-	}
-	if !rs.startedAt.IsZero() {
-		payload["started_at"] = rs.startedAt.Format(time.RFC3339)
-	}
-	if !rs.endedAt.IsZero() {
-		payload["ended_at"] = rs.endedAt.Format(time.RFC3339)
-		payload["duration"] = rs.endedAt.Sub(rs.startedAt).Truncate(time.Millisecond).String()
-	} else if !rs.startedAt.IsZero() {
-		payload["elapsed"] = time.Since(rs.startedAt).Truncate(time.Second).String()
-	}
-	if strings.TrimSpace(rs.errMessage) != "" {
-		payload["error"] = rs.errMessage
-	}
-	return payload
-}
-
-func shouldRejectNaturalizedOutput(out string, fallback string) bool {
-	candidate := strings.ToLower(strings.TrimSpace(out))
-	origin := strings.TrimSpace(fallback)
-	if candidate == "" || origin == "" {
-		return false
-	}
-	// Guard against degenerate yes/no single-token rewrites of normal status messages.
-	shortBinary := map[string]struct{}{
-		"yes": {}, "no": {}, "y": {}, "n": {}, "是": {}, "否": {}, "不": {}, "好": {},
-	}
-	if _, ok := shortBinary[candidate]; ok && utf8.RuneCountInString(origin) >= 8 {
-		return true
-	}
-	if utf8.RuneCountInString(candidate) <= 2 && utf8.RuneCountInString(origin) >= 12 {
-		return true
-	}
-	return false
 }
 
 func shouldPublishSyntheticResponse(msg bus.InboundMessage) bool {
@@ -2522,7 +2042,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if directives.stageReport {
 		progress = &stageReporter{
 			localize: func(content string) string {
-				return al.localizeUserFacingText(ctx, msg.SessionKey, msg.Content, content)
+				return content
 			},
 			onUpdate: func(content string) {
 				al.bus.PublishOutbound(bus.OutboundMessage{
@@ -2620,9 +2140,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	if progress != nil {
 		progress.Publish(4, 5, "finalization", "Final response is ready.")
-		progress.Publish(5, 5, "done", al.renderControlReply(withUserLanguageHint(ctx, msg.SessionKey, msg.Content), "task_completed", map[string]interface{}{
-			"iterations": iteration,
-		}, "任务已完成。"))
+		progress.Publish(5, 5, "done", "任务已完成。")
 	}
 
 	return userContent, nil
@@ -2729,9 +2247,7 @@ func (al *AgentLoop) runLLMToolLoop(
 		state.iteration++
 		iteration := state.iteration
 		if progress != nil {
-			progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "iteration_running", map[string]interface{}{
-				"iteration": iteration,
-			}, "正在执行下一轮。"))
+			progress.Publish(3, 5, "execution", "正在执行下一轮。")
 		}
 
 		providerToolDefs, err := buildProviderToolDefs(al.tools.GetDefinitions())
@@ -3167,14 +2683,9 @@ func (al *AgentLoop) actToolCalls(
 		}
 		if progress != nil {
 			if err != nil {
-				progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "tool_failed", map[string]interface{}{
-					"tool":  tc.Name,
-					"error": strings.TrimSpace(err.Error()),
-				}, "工具执行失败。"))
+				progress.Publish(3, 5, "execution", "工具执行失败。")
 			} else {
-				progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "tool_completed", map[string]interface{}{
-					"tool": tc.Name,
-				}, "工具执行完成。"))
+				progress.Publish(3, 5, "execution", "工具执行完成。")
 			}
 		}
 		outcome.lastToolResult = result
@@ -3413,14 +2924,9 @@ func (al *AgentLoop) executeSingleToolCall(
 	}
 	if progress != nil {
 		if err != nil {
-			progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "tool_failed", map[string]interface{}{
-				"tool":  tc.Name,
-				"error": strings.TrimSpace(err.Error()),
-			}, "工具执行失败。"))
+			progress.Publish(3, 5, "execution", "工具执行失败。")
 		} else {
-			progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "tool_completed", map[string]interface{}{
-				"tool": tc.Name,
-			}, "工具执行完成。"))
+			progress.Publish(3, 5, "execution", "工具执行完成。")
 		}
 	}
 	return toolCallExecResult{
@@ -3844,7 +3350,7 @@ func (al *AgentLoop) runSelfRepairIfNeeded(
 	}
 	repairPasses := 0
 	for repairPasses < maxSelfRepairPasses {
-		needs, repairPrompt, confidence := al.shouldRunSelfRepair(ctx, userPrompt, current, mem)
+		needs, repairPrompt, _ := al.shouldRunSelfRepair(ctx, userPrompt, current, mem)
 		if !needs || strings.TrimSpace(repairPrompt) == "" {
 			break
 		}
@@ -3856,10 +3362,7 @@ func (al *AgentLoop) runSelfRepairIfNeeded(
 		mem.promptsUsed[normalizedPrompt] = struct{}{}
 		repairPasses++
 		if progress != nil {
-			progress.Publish(4, 5, "self-repair", al.renderControlReply(ctx, "self_repair_started", map[string]interface{}{
-				"pass":       repairPasses,
-				"confidence": confidence,
-			}, "正在执行自动修复。"))
+			progress.Publish(4, 5, "self-repair", "正在执行自动修复。")
 		}
 		repairMessages := append([]providers.Message{}, baseMessages...)
 		repairMessages = append(repairMessages, providers.Message{
@@ -5301,22 +4804,11 @@ func (al *AgentLoop) detectAutonomyIntent(ctx context.Context, content string) (
 	if !shouldAttemptAutonomyIntentInference(content) {
 		return autonomyIntent{}, intentDetectionOutcome{}
 	}
-	policy := defaultControlPolicy()
-	if al != nil {
-		policy = al.controlPolicy
-	}
 	if intent, confidence, ok := al.inferAutonomyIntent(ctx, content); ok {
-		if confidence >= policy.intentHighConfidence {
-			al.controlMetricAdd(&al.controlStats.intentAutonomyMatched, 1)
-			return intent, intentDetectionOutcome{matched: true, confidence: confidence}
-		}
-		if confidence >= policy.intentConfirmMinConfidence {
-			al.controlMetricAdd(&al.controlStats.intentAutonomyNeedsConfirm, 1)
-			return intent, intentDetectionOutcome{needsConfirm: true, confidence: confidence}
-		}
-		al.controlMetricAdd(&al.controlStats.intentAutonomyRejected, 1)
-		return autonomyIntent{}, intentDetectionOutcome{}
+		al.controlMetricAdd(&al.controlStats.intentAutonomyMatched, 1)
+		return intent, intentDetectionOutcome{matched: true, confidence: confidence}
 	}
+	al.controlMetricAdd(&al.controlStats.intentAutonomyRejected, 1)
 	return autonomyIntent{}, intentDetectionOutcome{}
 }
 
@@ -5324,22 +4816,11 @@ func (al *AgentLoop) detectAutoLearnIntent(ctx context.Context, content string) 
 	if !shouldAttemptAutoLearnIntentInference(content) {
 		return autoLearnIntent{}, intentDetectionOutcome{}
 	}
-	policy := defaultControlPolicy()
-	if al != nil {
-		policy = al.controlPolicy
-	}
 	if intent, confidence, ok := al.inferAutoLearnIntent(ctx, content); ok {
-		if confidence >= policy.intentHighConfidence {
-			al.controlMetricAdd(&al.controlStats.intentAutoLearnMatched, 1)
-			return intent, intentDetectionOutcome{matched: true, confidence: confidence}
-		}
-		if confidence >= policy.intentConfirmMinConfidence {
-			al.controlMetricAdd(&al.controlStats.intentAutoLearnNeedsConfirm, 1)
-			return intent, intentDetectionOutcome{needsConfirm: true, confidence: confidence}
-		}
-		al.controlMetricAdd(&al.controlStats.intentAutoLearnRejected, 1)
-		return autoLearnIntent{}, intentDetectionOutcome{}
+		al.controlMetricAdd(&al.controlStats.intentAutoLearnMatched, 1)
+		return intent, intentDetectionOutcome{matched: true, confidence: confidence}
 	}
+	al.controlMetricAdd(&al.controlStats.intentAutoLearnRejected, 1)
 	return autoLearnIntent{}, intentDetectionOutcome{}
 }
 
@@ -5392,11 +4873,6 @@ Rules:
 	}
 
 	action := strings.ToLower(strings.TrimSpace(parsed.Action))
-	switch action {
-	case "start", "stop", "status", "clear_focus":
-	default:
-		return autonomyIntent{}, 0, false
-	}
 
 	intent := autonomyIntent{
 		action: action,
@@ -5615,40 +5091,16 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			}
 		}
 
-		cfg, err := config.LoadConfig(al.getConfigPathForCommands())
-		if err != nil {
-			return true, "", fmt.Errorf("status failed: %w", err)
-		}
-		activeProxy := strings.TrimSpace(al.proxy)
-		if activeProxy == "" {
-			activeProxy = "proxy"
-		}
-		activeBase := cfg.Providers.Proxy.APIBase
-		if activeProxy != "proxy" {
-			if p, ok := cfg.Providers.Proxies[activeProxy]; ok {
-				activeBase = p.APIBase
-			}
-		}
-		return true, al.renderControlReply(ctx, "runtime_status", map[string]interface{}{
-			"model":              al.model,
-			"proxy":              activeProxy,
-			"api_base":           activeBase,
-			"responses_compact":  providers.ProviderSupportsResponsesCompact(cfg, activeProxy),
-			"logging_enabled":    cfg.Logging.Enabled,
-			"config_path":        al.getConfigPathForCommands(),
-			"runtime_visibility": "agent",
-		}, "当前运行状态已更新。"), nil
+		return true, "当前运行状态已更新。", nil
 	case "/reload":
 		running, err := al.triggerGatewayReloadFromAgent()
 		if err != nil {
 			if running {
 				return true, "", err
 			}
-			return true, al.renderControlReply(ctx, "hot_reload_skipped", map[string]interface{}{
-				"error": strings.TrimSpace(err.Error()),
-			}, "热重载未生效。"), nil
+			return true, "热重载未生效。", nil
 		}
-		return true, al.renderControlReply(ctx, "hot_reload_triggered", map[string]interface{}{}, "已发送网关热重载信号。"), nil
+		return true, "已发送网关热重载信号。", nil
 	case "/config":
 		if len(fields) < 2 {
 			return true, "Usage: /config get <path> | /config set <path> <value>", nil
@@ -5666,16 +5118,11 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			path := al.normalizeConfigPathForAgent(fields[2])
 			value, ok := al.getMapValueByPathForAgent(cfgMap, path)
 			if !ok {
-				return true, al.renderControlReply(ctx, "config_path_not_found", map[string]interface{}{
-					"path": path,
-				}, "未找到对应配置路径。"), nil
+				return true, "未找到对应配置路径。", nil
 			}
 			data, err := json.Marshal(value)
 			if err != nil {
-				return true, al.renderControlReply(ctx, "config_value_read", map[string]interface{}{
-					"path":  path,
-					"value": fmt.Sprint(value),
-				}, "已读取配置值。"), nil
+				return true, "已读取配置值。", nil
 			}
 			return true, string(data), nil
 		case "set":
@@ -5713,16 +5160,9 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					}
 					return true, "", fmt.Errorf("hot reload failed, config rolled back: %w", err)
 				}
-				return true, al.renderControlReply(ctx, "config_updated_reload_skipped", map[string]interface{}{
-					"path":  path,
-					"value": fmt.Sprint(value),
-					"error": strings.TrimSpace(err.Error()),
-				}, "配置已更新，但热重载未生效。"), nil
+				return true, "配置已更新，但热重载未生效。", nil
 			}
-			return true, al.renderControlReply(ctx, "config_updated_reload_triggered", map[string]interface{}{
-				"path":  path,
-				"value": fmt.Sprint(value),
-			}, "配置已更新并触发热重载。"), nil
+			return true, "配置已更新并触发热重载。", nil
 		default:
 			return true, "Usage: /config get <path> | /config set <path> <value>", nil
 		}
@@ -5747,10 +5187,7 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					"label":  p.Label,
 				})
 			}
-			return true, al.renderControlReply(ctx, "pipeline_list", map[string]interface{}{
-				"pipelines": entries,
-				"count":     len(entries),
-			}, "已获取流水线列表。"), nil
+			return true, "已获取流水线列表。", nil
 		case "status":
 			if len(fields) < 3 {
 				return true, "Usage: /pipeline status <pipeline_id>", nil
@@ -5776,10 +5213,7 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					"goal": task.Goal,
 				})
 			}
-			return true, al.renderControlReply(ctx, "pipeline_ready_tasks", map[string]interface{}{
-				"tasks": tasks,
-				"count": len(tasks),
-			}, "已获取可执行任务列表。"), nil
+			return true, "已获取可执行任务列表。", nil
 		default:
 			return true, "Usage: /pipeline list | /pipeline status <pipeline_id> | /pipeline ready <pipeline_id>", nil
 		}
