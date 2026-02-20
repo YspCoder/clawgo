@@ -855,7 +855,9 @@ func (al *AgentLoop) clearWorkerCancel(worker *sessionWorker) {
 }
 
 func (al *AgentLoop) formatProcessingErrorMessage(ctx context.Context, msg bus.InboundMessage, err error) string {
-	return al.localizeUserFacingText(ctx, msg.SessionKey, msg.Content, fmt.Sprintf("Error processing message: %v", err))
+	return al.renderControlReply(withUserLanguageHint(ctx, msg.SessionKey, msg.Content), "message_processing_error", map[string]interface{}{
+		"error": strings.TrimSpace(err.Error()),
+	}, "消息处理失败。")
 }
 
 func (al *AgentLoop) preferChineseUserFacingText(sessionKey, currentContent string) bool {
@@ -1000,9 +1002,16 @@ func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, 
 		})
 	}
 	if s.focus != "" {
-		return al.naturalizeUserFacingText(ctx, fmt.Sprintf("Autonomy mode is enabled. Current focus: %s. The system will continue in the background and report progress or results every %s.", s.focus, idleInterval.Truncate(time.Second)))
+		return al.renderControlReply(ctx, "autonomy_started", map[string]interface{}{
+			"focus":           s.focus,
+			"report_interval": idleInterval.Truncate(time.Second).String(),
+			"mode":            "background",
+		}, "自主模式已开启。")
 	}
-	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("Autonomy mode is enabled: automatic decomposition + background execution; reports progress or results every %s.", idleInterval.Truncate(time.Second)))
+	return al.renderControlReply(ctx, "autonomy_started", map[string]interface{}{
+		"report_interval": idleInterval.Truncate(time.Second).String(),
+		"mode":            "background",
+	}, "自主模式已开启。")
 }
 
 func (al *AgentLoop) stopAutonomy(sessionKey string) bool {
@@ -1062,19 +1071,15 @@ func (al *AgentLoop) autonomyStatus(ctx context.Context, sessionKey string) stri
 		return al.naturalizeUserFacingText(ctx, "Autonomy mode is not enabled.")
 	}
 
-	uptime := time.Since(s.started).Truncate(time.Second)
-	idle := time.Since(s.lastUserAt).Truncate(time.Second)
-	focus := strings.TrimSpace(s.focus)
-	if focus == "" {
-		focus = "not set"
-	}
-	fallback := fmt.Sprintf("Autonomy mode is running: report interval %s, uptime %s, time since last user activity %s, automatic rounds %d.",
-		s.idleInterval.Truncate(time.Second),
-		uptime,
-		idle,
-		s.rounds,
-	) + fmt.Sprintf(" Current focus: %s.", focus)
-	return al.naturalizeUserFacingText(ctx, fallback)
+	return al.renderControlReply(ctx, "autonomy_status", map[string]interface{}{
+		"report_interval":   s.idleInterval.Truncate(time.Second).String(),
+		"uptime":            time.Since(s.started).Truncate(time.Second).String(),
+		"idle_since_user":   time.Since(s.lastUserAt).Truncate(time.Second).String(),
+		"automatic_rounds":  s.rounds,
+		"current_focus":     strings.TrimSpace(s.focus),
+		"autonomy_running":  true,
+		"session_has_focus": strings.TrimSpace(s.focus) != "",
+	}, "自主模式运行中。")
 }
 
 func (al *AgentLoop) runAutonomyLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -1245,7 +1250,9 @@ func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessag
 
 	go al.runAutoLearnerLoop(learnerCtx, msg)
 
-	return al.naturalizeUserFacingText(ctx, fmt.Sprintf("Auto-learn is enabled: one round every %s. Tell me in natural language whenever you want to stop it.", interval.Truncate(time.Second)))
+	return al.renderControlReply(ctx, "autolearn_started", map[string]interface{}{
+		"interval": interval.Truncate(time.Second).String(),
+	}, "自动学习已开启。")
 }
 
 func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -1269,7 +1276,9 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: al.naturalizeUserFacingText(ctx, fmt.Sprintf("Auto-learn round %d started.", round)),
+			Content: al.renderControlReply(ctx, "autolearn_round_started", map[string]interface{}{
+				"round": round,
+			}, "自动学习新一轮已开始。"),
 		})
 
 		al.bus.PublishInbound(bus.InboundMessage{
@@ -1352,13 +1361,12 @@ func (al *AgentLoop) autoLearnerStatus(ctx context.Context, sessionKey string) s
 		return al.naturalizeUserFacingText(ctx, "Auto-learn is not enabled.")
 	}
 
-	uptime := time.Since(learner.started).Truncate(time.Second)
-	fallback := fmt.Sprintf("Auto-learn is running: one round every %s, uptime %s, total rounds %d.",
-		learner.interval.Truncate(time.Second),
-		uptime,
-		learner.rounds,
-	)
-	return al.naturalizeUserFacingText(ctx, fallback)
+	return al.renderControlReply(ctx, "autolearn_status", map[string]interface{}{
+		"interval":      learner.interval.Truncate(time.Second).String(),
+		"uptime":        time.Since(learner.started).Truncate(time.Second).String(),
+		"total_rounds":  learner.rounds,
+		"running_state": "running",
+	}, "自动学习运行中。")
 }
 
 func buildAutoLearnPrompt(round int) string {
@@ -1735,30 +1743,6 @@ func shouldRetryAfterDeferralNoTools(content string, userTask string, iteration 
 	return false
 }
 
-func formatRunStateReport(rs runState) string {
-	lines := []string{
-		fmt.Sprintf("Run ID: %s", rs.runID),
-		fmt.Sprintf("Status: %s", rs.status),
-		fmt.Sprintf("Session: %s", rs.sessionKey),
-		fmt.Sprintf("Accepted At: %s", rs.acceptedAt.Format(time.RFC3339)),
-	}
-	if !rs.startedAt.IsZero() {
-		lines = append(lines, fmt.Sprintf("Started At: %s", rs.startedAt.Format(time.RFC3339)))
-	}
-	if !rs.endedAt.IsZero() {
-		lines = append(lines, fmt.Sprintf("Ended At: %s", rs.endedAt.Format(time.RFC3339)))
-		lines = append(lines, fmt.Sprintf("Duration: %s", rs.endedAt.Sub(rs.startedAt).Truncate(time.Millisecond)))
-	} else if !rs.startedAt.IsZero() {
-		lines = append(lines, fmt.Sprintf("Elapsed: %s", time.Since(rs.startedAt).Truncate(time.Second)))
-	}
-	lines = append(lines, fmt.Sprintf("Control Handled: %v", rs.controlHandled))
-	lines = append(lines, fmt.Sprintf("Response Length: %d", rs.responseLen))
-	if strings.TrimSpace(rs.errMessage) != "" {
-		lines = append(lines, fmt.Sprintf("Error: %s", rs.errMessage))
-	}
-	return strings.Join(lines, "\n")
-}
-
 func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey string, intent runControlIntent) string {
 	var (
 		rs    runState
@@ -1770,7 +1754,9 @@ func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey str
 		rs, found = al.getRunState(intent.runID)
 	}
 	if !found {
-		return al.naturalizeUserFacingText(ctx, "No matching run state found. Try specifying a run ID or asking for the latest run status.")
+		return al.renderControlReply(ctx, "run_state_not_found", map[string]interface{}{
+			"session_key": sessionKey,
+		}, "未找到匹配的运行记录。")
 	}
 
 	if intent.wait && (rs.status == runStatusAccepted || rs.status == runStatusRunning) {
@@ -1782,11 +1768,15 @@ func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey str
 			if latest, ok := al.getRunState(rs.runID); ok {
 				rs = latest
 			}
-			fallback := fmt.Sprintf("Run %s is still %s after waiting %s.\n%s", rs.runID, rs.status, intent.timeout.Truncate(time.Second), formatRunStateReport(rs))
-			return al.naturalizeUserFacingText(ctx, fallback)
+			return al.renderControlReply(ctx, "run_state_wait_timeout", map[string]interface{}{
+				"wait_timeout": intent.timeout.Truncate(time.Second).String(),
+				"run_state":    runStateToReplyPayload(rs),
+			}, "等待超时，任务仍在运行。")
 		}
 	}
-	return al.naturalizeUserFacingText(ctx, formatRunStateReport(rs))
+	return al.renderControlReply(ctx, "run_state_report", map[string]interface{}{
+		"run_state": runStateToReplyPayload(rs),
+	}, "运行状态已更新。")
 }
 
 func (al *AgentLoop) inferRunControlIntent(ctx context.Context, content string) (runControlIntent, float64, bool) {
@@ -2037,13 +2027,17 @@ func (al *AgentLoop) handlePendingControlConfirmation(ctx context.Context, msg b
 		}
 		al.setPendingControlConfirmation(msg.SessionKey, pending)
 		al.controlMetricAdd(&al.controlStats.confirmPrompts, 1)
-		return true, al.naturalizeUserFacingText(ctx, "I am checking a control action confirmation. Please reply with yes or no.")
+		return true, al.renderControlReply(ctx, "control_confirmation_needed", map[string]interface{}{
+			"expected_reply": "yes_or_no",
+		}, "请回复“是”或“否”以确认操作。")
 	}
 
 	al.clearPendingControlConfirmation(msg.SessionKey)
 	if !decision {
 		al.controlMetricAdd(&al.controlStats.confirmRejected, 1)
-		return true, al.naturalizeUserFacingText(ctx, "Understood. I will not change autonomous control mode now.")
+		return true, al.renderControlReply(ctx, "control_confirmation_rejected", map[string]interface{}{
+			"action": pending.action,
+		}, "已取消本次控制操作。")
 	}
 	al.controlMetricAdd(&al.controlStats.confirmAccepted, 1)
 
@@ -2226,45 +2220,6 @@ func (al *AgentLoop) getPendingControlConfirmation(sessionKey string) (pendingCo
 	return pending, ok
 }
 
-func (al *AgentLoop) formatAutonomyConfirmationPrompt(intent autonomyIntent) string {
-	switch intent.action {
-	case "start":
-		idleText := autonomyDefaultIdleInterval.Truncate(time.Second).String()
-		if intent.idleInterval != nil {
-			idleText = intent.idleInterval.Truncate(time.Second).String()
-		}
-		if strings.TrimSpace(intent.focus) != "" {
-			return fmt.Sprintf("I inferred that you want to enable autonomy mode (idle interval %s, focus: %s). Reply \"yes\" to confirm or \"no\" to cancel.", idleText, strings.TrimSpace(intent.focus))
-		}
-		return fmt.Sprintf("I inferred that you want to enable autonomy mode (idle interval %s). Reply \"yes\" to confirm or \"no\" to cancel.", idleText)
-	case "stop":
-		return "I inferred that you want to stop autonomy mode. Reply \"yes\" to confirm or \"no\" to cancel."
-	case "status":
-		return "I inferred that you want autonomy status. Reply \"yes\" to confirm or \"no\" to cancel."
-	case "clear_focus":
-		return "I inferred that you want to clear the current autonomy focus. Reply \"yes\" to confirm or \"no\" to cancel."
-	default:
-		return "I inferred an autonomy control operation. Reply \"yes\" to confirm or \"no\" to cancel."
-	}
-}
-
-func (al *AgentLoop) formatAutoLearnConfirmationPrompt(intent autoLearnIntent) string {
-	switch intent.action {
-	case "start":
-		intervalText := autoLearnDefaultInterval.Truncate(time.Second).String()
-		if intent.interval != nil {
-			intervalText = intent.interval.Truncate(time.Second).String()
-		}
-		return fmt.Sprintf("I inferred that you want to start auto-learn (interval %s). Reply \"yes\" to confirm or \"no\" to cancel.", intervalText)
-	case "stop":
-		return "I inferred that you want to stop auto-learn. Reply \"yes\" to confirm or \"no\" to cancel."
-	case "status":
-		return "I inferred that you want auto-learn status. Reply \"yes\" to confirm or \"no\" to cancel."
-	default:
-		return "I inferred an auto-learn control operation. Reply \"yes\" to confirm or \"no\" to cancel."
-	}
-}
-
 func withTokenUsageTotals(ctx context.Context) (context.Context, *tokenUsageTotals) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -2388,6 +2343,83 @@ Rules:
 		return fallback
 	}
 	return out
+}
+
+func (al *AgentLoop) renderControlReply(ctx context.Context, event string, fields map[string]interface{}, fallback string) string {
+	base := strings.TrimSpace(fallback)
+	if base == "" {
+		base = "操作已完成。"
+	}
+	if ctx == nil || al == nil || (al.provider == nil && len(al.providersByProxy) == 0) {
+		return base
+	}
+
+	targetLanguage := "the same language as the latest user message"
+	if hint, ok := ctx.Value(userLanguageHintKey{}).(userLanguageHint); ok {
+		if al.preferChineseUserFacingText(hint.sessionKey, hint.content) {
+			targetLanguage = "Simplified Chinese"
+		}
+	}
+
+	payload := map[string]interface{}{
+		"event":  strings.TrimSpace(event),
+		"fields": fields,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return al.naturalizeUserFacingText(ctx, base)
+	}
+
+	llmCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+
+	systemPrompt := al.withBootstrapPolicy(fmt.Sprintf(`You generate user-facing control/status replies from structured event data.
+Output language: %s.
+Rules:
+- Use concise natural wording.
+- Preserve factual values from fields.
+- No markdown, no code block.
+- Return plain text only.`, targetLanguage))
+
+	resp, err := al.callLLMWithModelFallback(llmCtx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: string(raw)},
+	}, nil, map[string]interface{}{
+		"max_tokens":  200,
+		"temperature": 0.4,
+	})
+	if err != nil || resp == nil {
+		return al.naturalizeUserFacingText(ctx, base)
+	}
+	out := strings.TrimSpace(resp.Content)
+	if out == "" || shouldRejectNaturalizedOutput(out, base) {
+		return al.naturalizeUserFacingText(ctx, base)
+	}
+	return out
+}
+
+func runStateToReplyPayload(rs runState) map[string]interface{} {
+	payload := map[string]interface{}{
+		"run_id":          rs.runID,
+		"status":          rs.status,
+		"session":         rs.sessionKey,
+		"accepted_at":     rs.acceptedAt.Format(time.RFC3339),
+		"control_handled": rs.controlHandled,
+		"response_length": rs.responseLen,
+	}
+	if !rs.startedAt.IsZero() {
+		payload["started_at"] = rs.startedAt.Format(time.RFC3339)
+	}
+	if !rs.endedAt.IsZero() {
+		payload["ended_at"] = rs.endedAt.Format(time.RFC3339)
+		payload["duration"] = rs.endedAt.Sub(rs.startedAt).Truncate(time.Millisecond).String()
+	} else if !rs.startedAt.IsZero() {
+		payload["elapsed"] = time.Since(rs.startedAt).Truncate(time.Second).String()
+	}
+	if strings.TrimSpace(rs.errMessage) != "" {
+		payload["error"] = rs.errMessage
+	}
+	return payload
 }
 
 func shouldRejectNaturalizedOutput(out string, fallback string) bool {
@@ -2588,7 +2620,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	if progress != nil {
 		progress.Publish(4, 5, "finalization", "Final response is ready.")
-		progress.Publish(5, 5, "done", fmt.Sprintf("Completed after %d iterations.", iteration))
+		progress.Publish(5, 5, "done", al.renderControlReply(withUserLanguageHint(ctx, msg.SessionKey, msg.Content), "task_completed", map[string]interface{}{
+			"iterations": iteration,
+		}, "任务已完成。"))
 	}
 
 	return userContent, nil
@@ -2695,7 +2729,9 @@ func (al *AgentLoop) runLLMToolLoop(
 		state.iteration++
 		iteration := state.iteration
 		if progress != nil {
-			progress.Publish(3, 5, "execution", fmt.Sprintf("Running iteration %d.", iteration))
+			progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "iteration_running", map[string]interface{}{
+				"iteration": iteration,
+			}, "正在执行下一轮。"))
 		}
 
 		providerToolDefs, err := buildProviderToolDefs(al.tools.GetDefinitions())
@@ -2842,7 +2878,7 @@ func (al *AgentLoop) runLLMToolLoop(
 			case "done":
 				finalResp, ferr := al.finalizeToolLoop(ctx, append(messages, providers.Message{
 					Role:    "user",
-					Content: fmt.Sprintf("Reflection indicates completion (confidence %.2f). Provide the final user-facing answer now without tools. Reason: %s", confidence, reason),
+					Content: "Reflection indicates completion. Provide the final user-facing answer now without tools.",
 				}))
 				if ferr == nil && finalResp != nil && strings.TrimSpace(finalResp.Content) != "" {
 					state.finalContent = finalResp.Content
@@ -2850,13 +2886,13 @@ func (al *AgentLoop) runLLMToolLoop(
 				}
 				messages = append(messages, providers.Message{
 					Role:    "user",
-					Content: fmt.Sprintf("Reflection indicates completion. Provide final answer now without tools. Reason: %s", reason),
+					Content: "Reflection indicates completion. Provide final answer now without tools.",
 				})
 				break
 			case "blocked":
 				finalResp, ferr := al.finalizeToolLoop(ctx, append(messages, providers.Message{
 					Role:    "user",
-					Content: fmt.Sprintf("Reflection indicates blocked progress (confidence %.2f). Stop calling tools and provide diagnosis, blockers, and minimum user input needed. Reason: %s", confidence, reason),
+					Content: "Reflection indicates blocked progress. Stop calling tools and provide diagnosis, blockers, and minimum user input needed.",
 				}))
 				if ferr == nil && finalResp != nil && strings.TrimSpace(finalResp.Content) != "" {
 					state.finalContent = finalResp.Content
@@ -2864,13 +2900,13 @@ func (al *AgentLoop) runLLMToolLoop(
 				}
 				messages = append(messages, providers.Message{
 					Role:    "user",
-					Content: fmt.Sprintf("Blocked progress detected. Stop calling tools and provide diagnosis plus minimum needed user action. Reason: %s", reason),
+					Content: "Blocked progress detected. Stop calling tools and provide diagnosis plus minimum needed user action.",
 				})
 				break
 			default:
 				messages = append(messages, providers.Message{
 					Role:    "user",
-					Content: fmt.Sprintf("Continue execution with minimal next-step tools only. Avoid repetition. Reflection reason: %s", reason),
+					Content: "Continue execution with minimal next-step tools only. Avoid repetition.",
 				})
 			}
 			if state.finalContent != "" || decision == "done" || decision == "blocked" {
@@ -3131,9 +3167,14 @@ func (al *AgentLoop) actToolCalls(
 		}
 		if progress != nil {
 			if err != nil {
-				progress.Publish(3, 5, "execution", fmt.Sprintf("Tool %s failed: %v", tc.Name, err))
+				progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "tool_failed", map[string]interface{}{
+					"tool":  tc.Name,
+					"error": strings.TrimSpace(err.Error()),
+				}, "工具执行失败。"))
 			} else {
-				progress.Publish(3, 5, "execution", fmt.Sprintf("Tool %s completed.", tc.Name))
+				progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "tool_completed", map[string]interface{}{
+					"tool": tc.Name,
+				}, "工具执行完成。"))
 			}
 		}
 		outcome.lastToolResult = result
@@ -3372,9 +3413,14 @@ func (al *AgentLoop) executeSingleToolCall(
 	}
 	if progress != nil {
 		if err != nil {
-			progress.Publish(3, 5, "execution", fmt.Sprintf("Tool %s failed: %v", tc.Name, err))
+			progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "tool_failed", map[string]interface{}{
+				"tool":  tc.Name,
+				"error": strings.TrimSpace(err.Error()),
+			}, "工具执行失败。"))
 		} else {
-			progress.Publish(3, 5, "execution", fmt.Sprintf("Tool %s completed.", tc.Name))
+			progress.Publish(3, 5, "execution", al.renderControlReply(ctx, "tool_completed", map[string]interface{}{
+				"tool": tc.Name,
+			}, "工具执行完成。"))
 		}
 	}
 	return toolCallExecResult{
@@ -3810,7 +3856,10 @@ func (al *AgentLoop) runSelfRepairIfNeeded(
 		mem.promptsUsed[normalizedPrompt] = struct{}{}
 		repairPasses++
 		if progress != nil {
-			progress.Publish(4, 5, "self-repair", fmt.Sprintf("Running self-repair pass %d (confidence %.2f).", repairPasses, confidence))
+			progress.Publish(4, 5, "self-repair", al.renderControlReply(ctx, "self_repair_started", map[string]interface{}{
+				"pass":       repairPasses,
+				"confidence": confidence,
+			}, "正在执行自动修复。"))
 		}
 		repairMessages := append([]providers.Message{}, baseMessages...)
 		repairMessages = append(repairMessages, providers.Message{
@@ -5580,24 +5629,26 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 				activeBase = p.APIBase
 			}
 		}
-		statusText := fmt.Sprintf("Model: %s\nProxy: %s\nAPI Base: %s\nResponses Compact: %v\nLogging: %v\nConfig: %s",
-			al.model,
-			activeProxy,
-			activeBase,
-			providers.ProviderSupportsResponsesCompact(cfg, activeProxy),
-			cfg.Logging.Enabled,
-			al.getConfigPathForCommands(),
-		)
-		return true, statusText, nil
+		return true, al.renderControlReply(ctx, "runtime_status", map[string]interface{}{
+			"model":              al.model,
+			"proxy":              activeProxy,
+			"api_base":           activeBase,
+			"responses_compact":  providers.ProviderSupportsResponsesCompact(cfg, activeProxy),
+			"logging_enabled":    cfg.Logging.Enabled,
+			"config_path":        al.getConfigPathForCommands(),
+			"runtime_visibility": "agent",
+		}, "当前运行状态已更新。"), nil
 	case "/reload":
 		running, err := al.triggerGatewayReloadFromAgent()
 		if err != nil {
 			if running {
 				return true, "", err
 			}
-			return true, fmt.Sprintf("Hot reload not applied: %v", err), nil
+			return true, al.renderControlReply(ctx, "hot_reload_skipped", map[string]interface{}{
+				"error": strings.TrimSpace(err.Error()),
+			}, "热重载未生效。"), nil
 		}
-		return true, "Gateway hot reload signal sent", nil
+		return true, al.renderControlReply(ctx, "hot_reload_triggered", map[string]interface{}{}, "已发送网关热重载信号。"), nil
 	case "/config":
 		if len(fields) < 2 {
 			return true, "Usage: /config get <path> | /config set <path> <value>", nil
@@ -5615,11 +5666,16 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			path := al.normalizeConfigPathForAgent(fields[2])
 			value, ok := al.getMapValueByPathForAgent(cfgMap, path)
 			if !ok {
-				return true, fmt.Sprintf("Path not found: %s", path), nil
+				return true, al.renderControlReply(ctx, "config_path_not_found", map[string]interface{}{
+					"path": path,
+				}, "未找到对应配置路径。"), nil
 			}
 			data, err := json.Marshal(value)
 			if err != nil {
-				return true, fmt.Sprintf("%v", value), nil
+				return true, al.renderControlReply(ctx, "config_value_read", map[string]interface{}{
+					"path":  path,
+					"value": fmt.Sprint(value),
+				}, "已读取配置值。"), nil
 			}
 			return true, string(data), nil
 		case "set":
@@ -5657,9 +5713,16 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					}
 					return true, "", fmt.Errorf("hot reload failed, config rolled back: %w", err)
 				}
-				return true, fmt.Sprintf("Updated %s = %v\nHot reload not applied: %v", path, value, err), nil
+				return true, al.renderControlReply(ctx, "config_updated_reload_skipped", map[string]interface{}{
+					"path":  path,
+					"value": fmt.Sprint(value),
+					"error": strings.TrimSpace(err.Error()),
+				}, "配置已更新，但热重载未生效。"), nil
 			}
-			return true, fmt.Sprintf("Updated %s = %v\nGateway hot reload signal sent", path, value), nil
+			return true, al.renderControlReply(ctx, "config_updated_reload_triggered", map[string]interface{}{
+				"path":  path,
+				"value": fmt.Sprint(value),
+			}, "配置已更新并触发热重载。"), nil
 		default:
 			return true, "Usage: /config get <path> | /config set <path> <value>", nil
 		}
@@ -5676,12 +5739,18 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			if len(items) == 0 {
 				return true, "No pipelines found.", nil
 			}
-			var sb strings.Builder
-			sb.WriteString("Pipelines:\n")
+			entries := make([]map[string]interface{}, 0, len(items))
 			for _, p := range items {
-				sb.WriteString(fmt.Sprintf("- %s [%s] %s\n", p.ID, p.Status, p.Label))
+				entries = append(entries, map[string]interface{}{
+					"id":     p.ID,
+					"status": p.Status,
+					"label":  p.Label,
+				})
 			}
-			return true, sb.String(), nil
+			return true, al.renderControlReply(ctx, "pipeline_list", map[string]interface{}{
+				"pipelines": entries,
+				"count":     len(entries),
+			}, "已获取流水线列表。"), nil
 		case "status":
 			if len(fields) < 3 {
 				return true, "Usage: /pipeline status <pipeline_id>", nil
@@ -5699,12 +5768,18 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			if len(ready) == 0 {
 				return true, "No ready tasks.", nil
 			}
-			var sb strings.Builder
-			sb.WriteString("Ready tasks:\n")
+			tasks := make([]map[string]interface{}, 0, len(ready))
 			for _, task := range ready {
-				sb.WriteString(fmt.Sprintf("- %s (%s) %s\n", task.ID, task.Role, task.Goal))
+				tasks = append(tasks, map[string]interface{}{
+					"id":   task.ID,
+					"role": task.Role,
+					"goal": task.Goal,
+				})
 			}
-			return true, sb.String(), nil
+			return true, al.renderControlReply(ctx, "pipeline_ready_tasks", map[string]interface{}{
+				"tasks": tasks,
+				"count": len(tasks),
+			}, "已获取可执行任务列表。"), nil
 		default:
 			return true, "Usage: /pipeline list | /pipeline status <pipeline_id> | /pipeline ready <pipeline_id>", nil
 		}
