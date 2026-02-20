@@ -882,14 +882,21 @@ func (al *AgentLoop) preferChineseUserFacingText(sessionKey, currentContent stri
 }
 
 func countLanguageSignals(text string) (zhCount int, enCount int) {
+	inEnglishWord := false
 	for _, r := range text {
 		if unicode.In(r, unicode.Han) {
 			zhCount++
+			inEnglishWord = false
 			continue
 		}
 		if r <= unicode.MaxASCII && unicode.IsLetter(r) {
-			enCount++
+			if !inEnglishWord {
+				enCount++
+				inEnglishWord = true
+			}
+			continue
 		}
+		inEnglishWord = false
 	}
 	return zhCount, enCount
 }
@@ -1118,7 +1125,7 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 				al.bus.PublishOutbound(bus.OutboundMessage{
 					Channel: msg.Channel,
 					ChatID:  msg.ChatID,
-					Content: al.naturalizeUserFacingText(context.Background(), "Autonomy mode stopped automatically because background rounds stalled repeatedly."),
+					Content: al.localizeUserFacingText(context.Background(), msg.SessionKey, "", "Autonomy mode stopped automatically because background rounds stalled repeatedly."),
 				})
 				return false
 			}
@@ -1138,7 +1145,7 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: msg.Channel,
 			ChatID:  msg.ChatID,
-			Content: al.naturalizeUserFacingText(context.Background(), "Autonomy mode paused automatically after many unattended rounds. Send a new request to continue."),
+			Content: al.localizeUserFacingText(context.Background(), msg.SessionKey, "", "Autonomy mode paused automatically after many unattended rounds. Send a new request to continue."),
 		})
 		return false
 	}
@@ -1254,7 +1261,7 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 			al.bus.PublishOutbound(bus.OutboundMessage{
 				Channel: msg.Channel,
 				ChatID:  msg.ChatID,
-				Content: al.naturalizeUserFacingText(context.Background(), "Auto-learn stopped automatically after reaching the unattended round limit."),
+				Content: al.localizeUserFacingText(context.Background(), msg.SessionKey, "", "Auto-learn stopped automatically after reaching the unattended round limit."),
 			})
 			return false
 		}
@@ -2341,11 +2348,15 @@ func (al *AgentLoop) naturalizeUserFacingText(ctx context.Context, fallback stri
 		return fallback
 	}
 
-	targetLanguage := "English"
+	targetLanguage := "the same language as the original text"
 	if hint, ok := ctx.Value(userLanguageHintKey{}).(userLanguageHint); ok {
 		if al.preferChineseUserFacingText(hint.sessionKey, hint.content) {
 			targetLanguage = "Simplified Chinese"
 		}
+	}
+	languageRule := "- Keep wording in the same language as the original text; do not mix languages."
+	if targetLanguage == "Simplified Chinese" {
+		languageRule = "- Use Simplified Chinese naturally. Keep unavoidable technical identifiers (commands, IDs, model names) as-is."
 	}
 	llmCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
@@ -2354,8 +2365,9 @@ func (al *AgentLoop) naturalizeUserFacingText(ctx context.Context, fallback stri
 Rules:
 - Keep factual meaning unchanged.
 - Use concise natural wording, no rigid templates.
+- %s
 - No markdown, no code block, no extra explanation.
-- Return plain text only.`, targetLanguage))
+- Return plain text only.`, targetLanguage, languageRule))
 
 	resp, err := al.callLLMWithModelFallback(llmCtx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
