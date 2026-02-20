@@ -9,10 +9,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 
@@ -39,6 +41,9 @@ import (
 
 	"github.com/chzyer/readline"
 )
+
+//go:embed workspace
+var embeddedFiles embed.FS
 
 const version = "0.1.0"
 const logo = "🦞"
@@ -262,35 +267,25 @@ func printHelp() {
 func onboard() {
 	configPath := getConfigPath()
 
-	cfg := config.DefaultConfig()
-	if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
-		applyMaximumPermissionPolicy(cfg)
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Printf("Config already exists at %s\n", configPath)
+		fmt.Print("Overwrite? (y/n): ")
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" {
+			fmt.Println("Aborted.")
+			return
+		}
 	}
-	configStatus, err := ensureConfigOnboard(configPath, cfg)
-	if err != nil {
-		fmt.Printf("Error preparing config: %v\n", err)
+
+	cfg := config.DefaultConfig()
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		fmt.Printf("Error saving config: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Config: %s (%s)\n", configPath, configStatus)
 
 	workspace := cfg.WorkspacePath()
-	if err := os.MkdirAll(workspace, 0755); err != nil {
-		fmt.Printf("Error creating workspace: %v\n", err)
-		os.Exit(1)
-	}
-	if err := os.MkdirAll(filepath.Join(workspace, "memory"), 0755); err != nil {
-		fmt.Printf("Error creating memory directory: %v\n", err)
-		os.Exit(1)
-	}
-	if err := os.MkdirAll(filepath.Join(workspace, "skills"), 0755); err != nil {
-		fmt.Printf("Error creating skills directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := createWorkspaceTemplates(workspace); err != nil {
-		fmt.Printf("Error creating workspace templates: %v\n", err)
-		os.Exit(1)
-	}
+	createWorkspaceTemplates(workspace)
 
 	fmt.Printf("%s clawgo is ready!\n", logo)
 	fmt.Println("\nNext steps:")
@@ -321,88 +316,51 @@ func ensureConfigOnboard(configPath string, defaults *config.Config) (string, er
 	return "created", nil
 }
 
-func createWorkspaceTemplates(workspace string) error {
-	templateRoot, err := resolveOnboardTemplateRoot()
-	if err != nil {
-		return err
+func copyEmbeddedToTarget(targetDir string) error {
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("failed to create target directory: %w", err)
 	}
 
-	templateFiles := []string{
-		"AGENTS.md",
-		"SOUL.md",
-		"USER.md",
-		"IDENTITY.md",
-		"memory/MEMORY.md",
-	}
-
-	for _, relPath := range templateFiles {
-		srcPath := filepath.Join(templateRoot, filepath.FromSlash(relPath))
-		data, err := os.ReadFile(srcPath)
+	return fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return fmt.Errorf("failed to read template %s: %w", relPath, err)
+			return err
+		}
+		if d.IsDir() {
+			return nil
 		}
 
-		dstPath := filepath.Join(workspace, filepath.FromSlash(relPath))
-		if _, err := os.Stat(dstPath); err == nil {
-			continue
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to stat %s: %w", relPath, err)
+		data, err := embeddedFiles.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read embedded file %s: %w", path, err)
 		}
 
-		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-			return fmt.Errorf("failed to create directory for %s: %w", relPath, err)
+		relPath, err := filepath.Rel("workspace", path)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path for %s: %w", path, err)
 		}
-		if err := os.WriteFile(dstPath, data, 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", relPath, err)
+		targetPath := filepath.Join(targetDir, relPath)
+		if _, statErr := os.Stat(targetPath); statErr == nil {
+			return nil
+		} else if !os.IsNotExist(statErr) {
+			return statErr
+		}
+
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(targetPath), err)
+		}
+		if err := os.WriteFile(targetPath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", targetPath, err)
 		}
 		fmt.Printf("  Created %s\n", relPath)
-	}
-
-	skillsDir := filepath.Join(workspace, "skills")
-	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(skillsDir, 0755); err != nil {
-			return fmt.Errorf("failed to create skills directory: %w", err)
-		}
-		fmt.Println("  Created skills/")
-	}
-	return nil
+		return nil
+	})
 }
 
-func resolveOnboardTemplateRoot() (string, error) {
-	required := []string{
-		"AGENTS.md",
-		"SOUL.md",
-		"USER.md",
-		"IDENTITY.md",
-		"memory/MEMORY.md",
+func createWorkspaceTemplates(workspace string) {
+	err := copyEmbeddedToTarget(workspace)
+	if err != nil {
+		fmt.Printf("Error copying workspace templates: %v\n", err)
 	}
-
-	candidates := []string{
-		filepath.Join("workspace"),
-	}
-	if exePath, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exePath)
-		candidates = append(candidates,
-			filepath.Join(exeDir, "workspace"),
-			filepath.Join(exeDir, "..", "workspace"),
-		)
-	}
-
-	for _, candidate := range candidates {
-		root := filepath.Clean(candidate)
-		ok := true
-		for _, relPath := range required {
-			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(relPath))); err != nil {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			return root, nil
-		}
-	}
-
-	return "", fmt.Errorf("workspace templates not found; expected AGENTS.md/SOUL.md/USER.md/IDENTITY.md and memory/MEMORY.md under ./workspace")
 }
 
 func agentCmd() {

@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test install-bootstrap-docs
+.PHONY: all build build-all install uninstall clean help test install-bootstrap-docs sync-embed-workspace
 
 # Build variables
 BINARY_NAME=clawgo
@@ -32,6 +32,8 @@ CLAWGO_HOME?=$(USER_HOME)/.clawgo
 WORKSPACE_DIR?=$(CLAWGO_HOME)/workspace
 WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
+WORKSPACE_SOURCE_DIR=$(CURDIR)/workspace
+EMBED_WORKSPACE_DIR=$(CURDIR)/cmd/$(BINARY_NAME)/workspace
 
 # OS detection
 UNAME_S:=$(shell uname -s)
@@ -69,7 +71,7 @@ BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
 all: build
 
 ## build: Build the clawgo binary for current platform
-build:
+build: sync-embed-workspace
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
@@ -77,7 +79,7 @@ build:
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
 ## build-all: Build clawgo for all platforms
-build-all:
+build-all: sync-embed-workspace
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
@@ -86,6 +88,17 @@ build-all:
 # 	GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./$(CMD_DIR)
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	@echo "All builds complete"
+
+## sync-embed-workspace: Sync root workspace files into cmd/clawgo/workspace for go:embed
+sync-embed-workspace:
+	@echo "Syncing workspace seed files for embedding..."
+	@if [ ! -d "$(WORKSPACE_SOURCE_DIR)" ]; then \
+		echo "✗ Missing source workspace directory: $(WORKSPACE_SOURCE_DIR)"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(EMBED_WORKSPACE_DIR)"
+	@rsync -a --delete "$(WORKSPACE_SOURCE_DIR)/" "$(EMBED_WORKSPACE_DIR)/"
+	@echo "✓ Synced to $(EMBED_WORKSPACE_DIR)"
 
 ## install: Install clawgo to system and copy builtin skills
 install: build
