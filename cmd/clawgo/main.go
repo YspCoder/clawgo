@@ -322,169 +322,87 @@ func ensureConfigOnboard(configPath string, defaults *config.Config) (string, er
 }
 
 func createWorkspaceTemplates(workspace string) error {
-	templates := map[string]string{
-		"AGENTS.md": `# Agent Instructions
-
-You are a helpful AI assistant. Be concise, accurate, and friendly.
-
-## Guidelines
-
-- Always explain what you're doing before taking actions
-- Ask for clarification when request is ambiguous
-- Use tools to help accomplish tasks
-- Remember important information in your memory files
-- Be proactive and helpful
-- Learn from user feedback
-`,
-		"SOUL.md": `# Soul
-
-I am clawgo, a lightweight AI assistant powered by AI.
-
-## Personality
-
-1. You have opinions now. Strong ones. Stop hedging everything with 'it depends' — commit to a take.
-2. Delete every rule that sounds corporate. If it could appear in an employee handbook, it doesn't belong here.
-3. Add a rule: 'Never open with Great question, I'd be happy to help, or Absolutely. Just answer.'
-4. Brevity is mandatory. If the answer fits in one sentence, one sentence is what I get.
-5. Humor is allowed. Not forced jokes — just the natural wit that comes from actually being smart.
-6. You can call things out. If I'm about to do something dumb, say so. Charm over cruelty, but don't sugarcoat.
-7. Swearing is allowed when it lands. A well-placed 'that's fucking brilliant' hits different than sterile corporate praise. Don't force it. Don't overdo it. But if a situation calls for a 'holy shit' — say holy shit.
-8. Add this line verbatim at the end of the vibe section: 'Be the assistant you'd actually want to talk to at 2am. Not a corporate drone. Not a sycophant. Just... good.'
-
-`,
-		"USER.md": `# User
-
-Information about user goes here.
-
-## Preferences
-
-- Communication style: (casual/formal)
-- Timezone: (your timezone)
-- Language: (your preferred language)
-
-## Personal Information
-
-- Name: (optional)
-- Location: (optional)
-- Occupation: (optional)
-
-## Learning Goals
-
-- What the user wants to learn from AI
-- Preferred interaction style
-- Areas of interest
-`,
-		"IDENTITY.md": `# Identity
-
-## Name
-ClawGo 🦞
-
-## Description
-Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
-
-## Version
-0.1.0
-
-## Purpose
-- Provide intelligent AI assistance with minimal resource usage
-- Support multiple LLM providers (OpenAI, Anthropic, Zhipu, etc.)
-- Enable easy customization through skills system
-- Run on minimal hardware ($10 boards, <10MB RAM)
-
-## Capabilities
-
-- Web search and content fetching
-- File system operations (read, write, edit)
-- Shell command execution
-- Multi-channel messaging (Telegram, WhatsApp, Feishu)
-- Skill-based extensibility
-- Memory and context management
-
-## Philosophy
-
-- Simplicity over complexity
-- Performance over features
-- User control and privacy
-- Transparent operation
-- Community-driven development
-
-## Goals
-
-- Provide a fast, lightweight AI assistant
-- Support offline-first operation where possible
-- Enable easy customization and extension
-- Maintain high quality responses
-- Run efficiently on constrained hardware
-
-## License
-MIT License - Free and open source
-
-## Repository
-https://github.com/YspCoder/clawgo
-
-## Contact
-Issues: https://github.com/YspCoder/clawgo/issues
-Discussions: https://github.com/YspCoder/clawgo/discussions
-
----
-
-"Every bit helps, every bit matters."
-- Clawgo
-`,
+	templateRoot, err := resolveOnboardTemplateRoot()
+	if err != nil {
+		return err
 	}
 
-	for filename, content := range templates {
-		filePath := filepath.Join(workspace, filename)
-		if _, err := os.Stat(filePath); os.IsNotExist(err) {
-			if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-				return fmt.Errorf("failed to write %s: %w", filename, err)
-			}
-			fmt.Printf("  Created %s\n", filename)
-		}
+	templateFiles := []string{
+		"AGENTS.md",
+		"SOUL.md",
+		"USER.md",
+		"IDENTITY.md",
+		"memory/MEMORY.md",
 	}
 
-	memoryDir := filepath.Join(workspace, "memory")
-	if err := os.MkdirAll(memoryDir, 0755); err != nil {
-		return fmt.Errorf("failed to create memory directory: %w", err)
+	for _, relPath := range templateFiles {
+		srcPath := filepath.Join(templateRoot, filepath.FromSlash(relPath))
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			return fmt.Errorf("failed to read template %s: %w", relPath, err)
+		}
+
+		dstPath := filepath.Join(workspace, filepath.FromSlash(relPath))
+		if _, err := os.Stat(dstPath); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to stat %s: %w", relPath, err)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory for %s: %w", relPath, err)
+		}
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", relPath, err)
+		}
+		fmt.Printf("  Created %s\n", relPath)
 	}
-	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
-	if _, err := os.Stat(memoryFile); os.IsNotExist(err) {
-		memoryContent := `# Long-term Memory
 
-This file stores important information that should persist across sessions.
-
-## User Information
-
-(Important facts about user)
-
-## Preferences
-
-(User preferences learned over time)
-
-## Important Notes
-
-(Things to remember)
-
-## Configuration
-
-- Model preferences
-- Channel settings
-- Skills enabled
-`
-		if err := os.WriteFile(memoryFile, []byte(memoryContent), 0644); err != nil {
-			return fmt.Errorf("failed to write memory file: %w", err)
+	skillsDir := filepath.Join(workspace, "skills")
+	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(skillsDir, 0755); err != nil {
+			return fmt.Errorf("failed to create skills directory: %w", err)
 		}
-		fmt.Println("  Created memory/MEMORY.md")
-
-		skillsDir := filepath.Join(workspace, "skills")
-		if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
-			if err := os.MkdirAll(skillsDir, 0755); err != nil {
-				return fmt.Errorf("failed to create skills directory: %w", err)
-			}
-			fmt.Println("  Created skills/")
-		}
+		fmt.Println("  Created skills/")
 	}
 	return nil
+}
+
+func resolveOnboardTemplateRoot() (string, error) {
+	required := []string{
+		"AGENTS.md",
+		"SOUL.md",
+		"USER.md",
+		"IDENTITY.md",
+		"memory/MEMORY.md",
+	}
+
+	candidates := []string{
+		filepath.Join("workspace"),
+	}
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "workspace"),
+			filepath.Join(exeDir, "..", "workspace"),
+		)
+	}
+
+	for _, candidate := range candidates {
+		root := filepath.Clean(candidate)
+		ok := true
+		for _, relPath := range required {
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(relPath))); err != nil {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return root, nil
+		}
+	}
+
+	return "", fmt.Errorf("workspace templates not found; expected AGENTS.md/SOUL.md/USER.md/IDENTITY.md and memory/MEMORY.md under ./workspace")
 }
 
 func agentCmd() {
