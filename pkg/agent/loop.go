@@ -50,7 +50,6 @@ const toolLoopAllErrorRoundsThreshold = 2
 const toolLoopMaxCallsPerIteration = 6
 const toolLoopSingleCallTimeout = 20 * time.Second
 const toolLoopMaxActDuration = 45 * time.Second
-const toolLoopReflectTimeout = 6 * time.Second
 const toolLoopMinCallsPerIteration = 2
 const toolLoopMinSingleCallTimeout = 8 * time.Second
 const toolLoopMinActDuration = 18 * time.Second
@@ -59,9 +58,6 @@ const finalizeDraftMinCharsForPolish = 90
 const finalizeQualityThreshold = 0.72
 const finalizeHeuristicHighThreshold = 0.82
 const finalizeHeuristicLowThreshold = 0.48
-const reflectionCooldownRounds = 2
-const toolSummaryMaxRecords = 4
-const maxSelfRepairPasses = 2
 const compactionAttemptTimeout = 8 * time.Second
 const compactionRetryPerCandidate = 1
 
@@ -95,14 +91,12 @@ type autonomySession struct {
 }
 
 type controlPolicy struct {
-	intentMaxInputChars           int
-	autonomyTickInterval          time.Duration
-	autonomyMinRunInterval        time.Duration
-	autonomyIdleThreshold         time.Duration
-	autonomyMaxRoundsWithoutUser  int
-	autonomyMaxPendingDuration    time.Duration
-	autonomyMaxConsecutiveStalls  int
-	autoLearnMaxRoundsWithoutUser int
+	intentMaxInputChars          int
+	autonomyTickInterval         time.Duration
+	autonomyMinRunInterval       time.Duration
+	autonomyIdleThreshold        time.Duration
+	autonomyMaxPendingDuration   time.Duration
+	autonomyMaxConsecutiveStalls int
 }
 
 type runtimeControlStats struct {
@@ -118,7 +112,6 @@ type runtimeControlStats struct {
 	autonomyRounds          int64
 	autonomyStoppedByGuard  int64
 	autoLearnRounds         int64
-	autoLearnStoppedByGuard int64
 }
 
 type runStatus string
@@ -207,12 +200,13 @@ type runControlIntent struct {
 }
 
 type autoLearnIntent struct {
-	action   string
+	enabled  *bool
 	interval *time.Duration
 }
 
 type autonomyIntent struct {
-	action       string
+	enabled      *bool
+	clearFocus   bool
 	idleInterval *time.Duration
 	focus        string
 }
@@ -223,14 +217,17 @@ type intentDetectionOutcome struct {
 }
 
 type autonomyIntentLLMResponse struct {
-	Action      string  `json:"action"`
+	Matched     bool    `json:"matched"`
+	Enabled     *bool   `json:"enabled"`
+	ClearFocus  bool    `json:"clear_focus"`
 	IdleMinutes int     `json:"idle_minutes"`
 	Focus       string  `json:"focus"`
 	Confidence  float64 `json:"confidence"`
 }
 
 type autoLearnIntentLLMResponse struct {
-	Action          string  `json:"action"`
+	Matched         bool    `json:"matched"`
+	Enabled         *bool   `json:"enabled"`
 	IntervalMinutes int     `json:"interval_minutes"`
 	Confidence      float64 `json:"confidence"`
 }
@@ -272,14 +269,12 @@ type tokenUsageTotalsKey struct{}
 
 func defaultControlPolicy() controlPolicy {
 	return controlPolicy{
-		intentMaxInputChars:           1200,
-		autonomyTickInterval:          autonomyContinuousRunInterval,
-		autonomyMinRunInterval:        autonomyContinuousRunInterval,
-		autonomyIdleThreshold:         autonomyContinuousIdleThreshold,
-		autonomyMaxRoundsWithoutUser:  120,
-		autonomyMaxPendingDuration:    3 * time.Minute,
-		autonomyMaxConsecutiveStalls:  3,
-		autoLearnMaxRoundsWithoutUser: 200,
+		intentMaxInputChars:          1200,
+		autonomyTickInterval:         autonomyContinuousRunInterval,
+		autonomyMinRunInterval:       autonomyContinuousRunInterval,
+		autonomyIdleThreshold:        autonomyContinuousIdleThreshold,
+		autonomyMaxPendingDuration:   3 * time.Minute,
+		autonomyMaxConsecutiveStalls: 3,
 	}
 }
 
@@ -333,17 +328,11 @@ func loadControlPolicyFromConfig(base controlPolicy, rc config.RuntimeControlCon
 	if rc.AutonomyIdleThresholdSec > 0 {
 		p.autonomyIdleThreshold = time.Duration(rc.AutonomyIdleThresholdSec) * time.Second
 	}
-	if rc.AutonomyMaxRoundsWithoutUser > 0 {
-		p.autonomyMaxRoundsWithoutUser = rc.AutonomyMaxRoundsWithoutUser
-	}
 	if rc.AutonomyMaxPendingDurationSec > 0 {
 		p.autonomyMaxPendingDuration = time.Duration(rc.AutonomyMaxPendingDurationSec) * time.Second
 	}
 	if rc.AutonomyMaxConsecutiveStalls > 0 {
 		p.autonomyMaxConsecutiveStalls = rc.AutonomyMaxConsecutiveStalls
-	}
-	if rc.AutoLearnMaxRoundsWithoutUser > 0 {
-		p.autoLearnMaxRoundsWithoutUser = rc.AutoLearnMaxRoundsWithoutUser
 	}
 	return p
 }
@@ -409,10 +398,8 @@ func applyLegacyControlPolicyEnvOverrides(base controlPolicy) controlPolicy {
 	p.autonomyTickInterval = envDuration("CLAWGO_AUTONOMY_TICK_INTERVAL", p.autonomyTickInterval)
 	p.autonomyMinRunInterval = envDuration("CLAWGO_AUTONOMY_MIN_RUN_INTERVAL", p.autonomyMinRunInterval)
 	p.autonomyIdleThreshold = envDuration("CLAWGO_AUTONOMY_IDLE_THRESHOLD", p.autonomyIdleThreshold)
-	p.autonomyMaxRoundsWithoutUser = envInt("CLAWGO_AUTONOMY_MAX_ROUNDS_WITHOUT_USER", p.autonomyMaxRoundsWithoutUser)
 	p.autonomyMaxPendingDuration = envDuration("CLAWGO_AUTONOMY_MAX_PENDING_DURATION", p.autonomyMaxPendingDuration)
 	p.autonomyMaxConsecutiveStalls = envInt("CLAWGO_AUTONOMY_MAX_STALLS", p.autonomyMaxConsecutiveStalls)
-	p.autoLearnMaxRoundsWithoutUser = envInt("CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER", p.autoLearnMaxRoundsWithoutUser)
 
 	if p.intentMaxInputChars < 200 {
 		p.intentMaxInputChars = base.intentMaxInputChars
@@ -426,17 +413,11 @@ func applyLegacyControlPolicyEnvOverrides(base controlPolicy) controlPolicy {
 	if p.autonomyIdleThreshold < 5*time.Second {
 		p.autonomyIdleThreshold = base.autonomyIdleThreshold
 	}
-	if p.autonomyMaxRoundsWithoutUser <= 0 {
-		p.autonomyMaxRoundsWithoutUser = base.autonomyMaxRoundsWithoutUser
-	}
 	if p.autonomyMaxPendingDuration < 10*time.Second {
 		p.autonomyMaxPendingDuration = base.autonomyMaxPendingDuration
 	}
 	if p.autonomyMaxConsecutiveStalls <= 0 {
 		p.autonomyMaxConsecutiveStalls = base.autonomyMaxConsecutiveStalls
-	}
-	if p.autoLearnMaxRoundsWithoutUser <= 0 {
-		p.autoLearnMaxRoundsWithoutUser = base.autoLearnMaxRoundsWithoutUser
 	}
 	return p
 }
@@ -612,18 +593,16 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		runStateMax:       runStateMax,
 	}
 	logger.InfoCF("agent", "Control policy initialized", map[string]interface{}{
-		"intent_max_input_chars":            policy.intentMaxInputChars,
-		"autonomy_tick_interval":            policy.autonomyTickInterval.String(),
-		"autonomy_min_run_interval":         policy.autonomyMinRunInterval.String(),
-		"autonomy_idle_threshold":           policy.autonomyIdleThreshold.String(),
-		"autonomy_max_rounds_without_user":  policy.autonomyMaxRoundsWithoutUser,
-		"autonomy_max_pending_duration":     policy.autonomyMaxPendingDuration.String(),
-		"autonomy_max_consecutive_stalls":   policy.autonomyMaxConsecutiveStalls,
-		"autolearn_max_rounds_without_user": policy.autoLearnMaxRoundsWithoutUser,
-		"parallel_safe_tool_count":          len(parallelSafeTools),
-		"tool_max_parallel_calls":           maxParallelCalls,
-		"run_state_ttl":                     runStateTTL.String(),
-		"run_state_max":                     runStateMax,
+		"intent_max_input_chars":          policy.intentMaxInputChars,
+		"autonomy_tick_interval":          policy.autonomyTickInterval.String(),
+		"autonomy_min_run_interval":       policy.autonomyMinRunInterval.String(),
+		"autonomy_idle_threshold":         policy.autonomyIdleThreshold.String(),
+		"autonomy_max_pending_duration":   policy.autonomyMaxPendingDuration.String(),
+		"autonomy_max_consecutive_stalls": policy.autonomyMaxConsecutiveStalls,
+		"parallel_safe_tool_count":        len(parallelSafeTools),
+		"tool_max_parallel_calls":         maxParallelCalls,
+		"run_state_ttl":                   runStateTTL.String(),
+		"run_state_max":                   runStateMax,
 	})
 
 	// Inject recursive run logic so subagent has full tool-calling capability.
@@ -829,7 +808,7 @@ func (al *AgentLoop) clearWorkerCancel(worker *sessionWorker) {
 }
 
 func (al *AgentLoop) formatProcessingErrorMessage(ctx context.Context, msg bus.InboundMessage, err error) string {
-	return "消息处理失败。"
+	return ""
 }
 
 func (al *AgentLoop) preferChineseUserFacingText(sessionKey, currentContent string) bool {
@@ -925,9 +904,9 @@ func (al *AgentLoop) stopAllAutonomySessions() {
 	}
 }
 
-func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, idleInterval time.Duration, focus string) string {
+func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, idleInterval time.Duration, focus string) {
 	if msg.Channel == "cli" {
-		return "自主模式需要在 gateway 运行模式下使用。"
+		return
 	}
 
 	if idleInterval <= 0 {
@@ -973,10 +952,7 @@ func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, 
 			},
 		})
 	}
-	if s.focus != "" {
-		return "自主模式已开启。"
-	}
-	return "自主模式已开启。"
+	return
 }
 
 func (al *AgentLoop) stopAutonomy(sessionKey string) bool {
@@ -1027,19 +1003,6 @@ func (al *AgentLoop) noteAutonomyUserActivity(msg bus.InboundMessage) {
 	s.lastUserAt = time.Now()
 }
 
-func (al *AgentLoop) autonomyStatus(ctx context.Context, sessionKey string) string {
-	_ = ctx
-	al.autonomyMu.Lock()
-	defer al.autonomyMu.Unlock()
-
-	s, ok := al.autonomyBySess[sessionKey]
-	if !ok || s == nil {
-		return "自主模式未开启。"
-	}
-
-	return "自主模式运行中。"
-}
-
 func (al *AgentLoop) runAutonomyLoop(ctx context.Context, msg bus.InboundMessage) {
 	tick := autonomyContinuousRunInterval
 	if al != nil && al.controlPolicy.autonomyTickInterval > 0 {
@@ -1086,32 +1049,11 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 				al.autonomyMu.Unlock()
 				al.cancelSessionWorkerRun(msg.SessionKey)
 				al.controlMetricAdd(&al.controlStats.autonomyStoppedByGuard, 1)
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: msg.Channel,
-					ChatID:  msg.ChatID,
-					Content: al.autonomyGuardStopMessage(msg.SessionKey),
-				})
 				return false
 			}
 		}
 		al.autonomyMu.Unlock()
 		return true
-	}
-	if policy.autonomyMaxRoundsWithoutUser > 0 &&
-		s.rounds >= policy.autonomyMaxRoundsWithoutUser &&
-		now.Sub(s.lastUserAt) >= policy.autonomyIdleThreshold {
-		if s.cancel != nil {
-			s.cancel()
-		}
-		delete(al.autonomyBySess, msg.SessionKey)
-		al.autonomyMu.Unlock()
-		al.controlMetricAdd(&al.controlStats.autonomyStoppedByGuard, 1)
-		al.bus.PublishOutbound(bus.OutboundMessage{
-			Channel: msg.Channel,
-			ChatID:  msg.ChatID,
-			Content: al.autonomyGuardPauseMessage(msg.SessionKey),
-		})
-		return false
 	}
 	if now.Sub(s.lastUserAt) < policy.autonomyIdleThreshold ||
 		now.Sub(s.lastNudgeAt) < policy.autonomyMinRunInterval {
@@ -1158,61 +1100,6 @@ func (al *AgentLoop) finishAutonomyRound(sessionKey string) {
 	}
 }
 
-func (al *AgentLoop) autonomyGuardStopMessage(sessionKey string) string {
-	return al.renderControlNotice(
-		sessionKey,
-		"Explain autonomy mode stopped automatically because background rounds stalled repeatedly, and suggest sending a new request to continue.",
-		"自主模式已因后台轮次连续停滞而自动停止；如需继续，请发送新的请求。",
-	)
-}
-
-func (al *AgentLoop) autonomyGuardPauseMessage(sessionKey string) string {
-	return al.renderControlNotice(
-		sessionKey,
-		"Explain autonomy mode paused automatically after too many unattended rounds, and suggest sending a new request to continue.",
-		"自主模式已在长时间无用户输入后自动暂停；如需继续，请发送新的请求。",
-	)
-}
-
-func (al *AgentLoop) autoLearnGuardStopMessage(sessionKey string) string {
-	return al.renderControlNotice(
-		sessionKey,
-		"Explain auto-learn stopped automatically after reaching the unattended round limit.",
-		"自动学习已因达到无人值守轮次上限而自动停止。",
-	)
-}
-
-func (al *AgentLoop) renderControlNotice(sessionKey, requirement, fallback string) string {
-	if al == nil {
-		return fallback
-	}
-
-	ctx, cancel := context.WithTimeout(
-		withUserLanguageHint(context.Background(), sessionKey, ""),
-		8*time.Second,
-	)
-	defer cancel()
-
-	systemPrompt := al.withBootstrapPolicy(`Generate one short user-facing notification sentence.
-Requirements:
-- Use natural language only.
-- ` + strings.TrimSpace(requirement))
-
-	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
-		{Role: "system", Content: systemPrompt},
-	}, nil, map[string]interface{}{
-		"max_tokens":  80,
-		"temperature": 0.2,
-	})
-	if err == nil && resp != nil {
-		text := strings.TrimSpace(resp.Content)
-		if text != "" {
-			return text
-		}
-	}
-	return fallback
-}
-
 func buildAutonomyFollowUpPrompt(round int, focus string, reportDue bool) string {
 	focus = strings.TrimSpace(focus)
 	if focus == "" && reportDue {
@@ -1232,9 +1119,9 @@ func buildAutonomyFocusPrompt(focus string) string {
 	return fmt.Sprintf("Autonomy mode started. For this round, prioritize the focus \"%s\": clarify the round goal first, then execute and report progress and results.", focus)
 }
 
-func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessage, interval time.Duration) string {
+func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessage, interval time.Duration) {
 	if msg.Channel == "cli" {
-		return "自动学习需要在 gateway 运行模式下使用。"
+		return
 	}
 
 	if interval <= 0 {
@@ -1263,8 +1150,7 @@ func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessag
 	al.autoLearnMu.Unlock()
 
 	go al.runAutoLearnerLoop(learnerCtx, msg)
-
-	return "自动学习已开启。"
+	return
 }
 
 func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMessage) {
@@ -1274,22 +1160,6 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 			return false
 		}
 		al.controlMetricAdd(&al.controlStats.autoLearnRounds, 1)
-		if al != nil && al.controlPolicy.autoLearnMaxRoundsWithoutUser > 0 && round > al.controlPolicy.autoLearnMaxRoundsWithoutUser {
-			al.stopAutoLearner(msg.SessionKey)
-			al.controlMetricAdd(&al.controlStats.autoLearnStoppedByGuard, 1)
-			al.bus.PublishOutbound(bus.OutboundMessage{
-				Channel: msg.Channel,
-				ChatID:  msg.ChatID,
-				Content: al.autoLearnGuardStopMessage(msg.SessionKey),
-			})
-			return false
-		}
-
-		al.bus.PublishOutbound(bus.OutboundMessage{
-			Channel: msg.Channel,
-			ChatID:  msg.ChatID,
-			Content: "自动学习新一轮已开始。",
-		})
 
 		al.bus.PublishInbound(bus.InboundMessage{
 			Channel:    msg.Channel,
@@ -1360,19 +1230,6 @@ func (al *AgentLoop) stopAutoLearner(sessionKey string) bool {
 	}
 	delete(al.autoLearners, sessionKey)
 	return true
-}
-
-func (al *AgentLoop) autoLearnerStatus(ctx context.Context, sessionKey string) string {
-	_ = ctx
-	al.autoLearnMu.Lock()
-	defer al.autoLearnMu.Unlock()
-
-	learner, ok := al.autoLearners[sessionKey]
-	if !ok || learner == nil {
-		return "自动学习未开启。"
-	}
-
-	return "自动学习运行中。"
 }
 
 func buildAutoLearnPrompt(round int) string {
@@ -1671,84 +1528,6 @@ func containsAnySubstring(text string, values ...string) bool {
 	return false
 }
 
-func hasToolMessages(messages []providers.Message) bool {
-	for _, m := range messages {
-		if strings.EqualFold(strings.TrimSpace(m.Role), "tool") {
-			return true
-		}
-	}
-	return false
-}
-
-func latestUserTaskText(messages []providers.Message) string {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if strings.EqualFold(strings.TrimSpace(messages[i].Role), "user") {
-			return strings.TrimSpace(messages[i].Content)
-		}
-	}
-	return ""
-}
-
-func shouldRetryAfterDeferralNoTools(content string, userTask string, iteration int, alreadyRetried bool, hasToolOutput bool, systemMode bool) bool {
-	if systemMode || alreadyRetried || hasToolOutput {
-		return false
-	}
-	// Only apply on first planning turn to preserve direct-answer behavior for normal QA.
-	if iteration > 1 {
-		return false
-	}
-	lower := strings.ToLower(strings.TrimSpace(content))
-	if lower == "" {
-		return false
-	}
-	waitCue := containsAnySubstring(lower,
-		"请稍等", "稍等", "等一下", "我先", "先查看", "需要先查看", "先检查",
-		"please wait", "wait a moment", "let me check", "i need to check", "i'll check", "checking",
-	)
-	verifyCue := containsAnySubstring(lower,
-		"查看", "检查", "确认", "工作区", "状态",
-		"check", "inspect", "verify", "workspace", "status", "confirm",
-	)
-	if waitCue && verifyCue {
-		return true
-	}
-
-	task := strings.ToLower(strings.TrimSpace(userTask))
-	if task == "" {
-		return false
-	}
-	// Actionable repository operations should execute in-run instead of returning "how-to" text only.
-	repoTaskCue := containsAnySubstring(task,
-		"git", "仓库", "repo", "repository", "clone", "克隆", "拉取", "拉代码", "连接仓库", "链接仓库",
-	)
-	if !repoTaskCue {
-		return false
-	}
-	looksLikeInstructionOnly := containsAnySubstring(lower,
-		"你可以", "可以先", "步骤", "先执行", "请执行", "命令如下",
-		"you can", "steps", "run this command", "command is", "first,",
-	)
-	if looksLikeInstructionOnly {
-		return true
-	}
-
-	// If user already provided credentials/target URL in task text, asking for them again is usually a bad deferral.
-	taskLower := strings.ToLower(task)
-	taskHasCredential := containsAnySubstring(taskLower, "token", "password", "authorization", "bearer", "api_key", "apikey")
-	taskHasRepoURL := containsAnySubstring(taskLower, "http://", "https://", ".git")
-	if taskHasCredential || taskHasRepoURL {
-		asksCredentialAgain := containsAnySubstring(lower,
-			"请把token发给我", "请提供token", "需要token", "发我token", "请再发一次token",
-			"provide token", "send token", "share token", "need token", "resend token",
-			"授权我", "请授权", "grant permission", "need permission", "authorize me",
-		)
-		if asksCredentialAgain {
-			return true
-		}
-	}
-	return false
-}
-
 func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey string, intent runControlIntent) string {
 	var (
 		rs    runState
@@ -1760,7 +1539,7 @@ func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey str
 		rs, found = al.getRunState(intent.runID)
 	}
 	if !found {
-		return "未找到匹配的运行记录。"
+		return ""
 	}
 
 	if intent.wait && (rs.status == runStatusAccepted || rs.status == runStatusRunning) {
@@ -1772,10 +1551,10 @@ func (al *AgentLoop) executeRunControlIntent(ctx context.Context, sessionKey str
 			if latest, ok := al.getRunState(rs.runID); ok {
 				rs = latest
 			}
-			return "等待超时，任务仍在运行。"
+			return ""
 		}
 	}
-	return "运行状态已更新。"
+	return ""
 }
 
 func (al *AgentLoop) inferRunControlIntent(ctx context.Context, content string) (runControlIntent, float64, bool) {
@@ -1792,17 +1571,9 @@ func (al *AgentLoop) inferRunControlIntent(ctx context.Context, content string) 
 		text = truncate(text, limit)
 	}
 
-	systemPrompt := al.withBootstrapPolicy(`You classify run-control intent for an AI assistant.
-Return JSON only.
-Schema:
-{"matched":true|false,"run_id":"","latest":false,"wait":false,"timeout_seconds":0,"confidence":0.0}
-Rules:
-- matched=true only when user asks run status/wait/latest-run control.
-- run_id: use canonical form like run-123-1 if provided, else empty.
-- latest=true when user asks latest/recent run.
-- wait=true when user asks to wait until run completes.
-- timeout_seconds: wait timeout in seconds, 0 means default.
-- confidence: 0..1`)
+	systemPrompt := al.withBootstrapPolicy(`Classify run-control intent. JSON only:
+{"matched":false,"run_id":"","latest":false,"wait":false,"timeout_seconds":0,"confidence":0.0}
+Set matched=true only for run status/wait/latest control; confidence in [0,1].`)
 
 	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
@@ -1878,71 +1649,58 @@ func (al *AgentLoop) logControlStatsSnapshot() {
 	al.runStateMu.Unlock()
 
 	stats := map[string]interface{}{
-		"run_accepted":               atomic.LoadInt64(&al.controlStats.runAccepted),
-		"run_completed":              atomic.LoadInt64(&al.controlStats.runCompleted),
-		"run_failed":                 atomic.LoadInt64(&al.controlStats.runFailed),
-		"run_canceled":               atomic.LoadInt64(&al.controlStats.runCanceled),
-		"run_control_handled":        atomic.LoadInt64(&al.controlStats.runControlHandled),
-		"intent_autonomy_matched":    atomic.LoadInt64(&al.controlStats.intentAutonomyMatched),
-		"intent_autonomy_rejected":   atomic.LoadInt64(&al.controlStats.intentAutonomyRejected),
-		"intent_autolearn_matched":   atomic.LoadInt64(&al.controlStats.intentAutoLearnMatched),
-		"intent_autolearn_rejected":  atomic.LoadInt64(&al.controlStats.intentAutoLearnRejected),
-		"autonomy_rounds":            atomic.LoadInt64(&al.controlStats.autonomyRounds),
-		"autonomy_stopped_by_guard":  atomic.LoadInt64(&al.controlStats.autonomyStoppedByGuard),
-		"autolearn_rounds":           atomic.LoadInt64(&al.controlStats.autoLearnRounds),
-		"autolearn_stopped_by_guard": atomic.LoadInt64(&al.controlStats.autoLearnStoppedByGuard),
-		"autonomy_active_sessions":   autonomyActive,
-		"autolearn_active_sessions":  autoLearnActive,
-		"run_states_total":           runStatesTotal,
+		"run_accepted":              atomic.LoadInt64(&al.controlStats.runAccepted),
+		"run_completed":             atomic.LoadInt64(&al.controlStats.runCompleted),
+		"run_failed":                atomic.LoadInt64(&al.controlStats.runFailed),
+		"run_canceled":              atomic.LoadInt64(&al.controlStats.runCanceled),
+		"run_control_handled":       atomic.LoadInt64(&al.controlStats.runControlHandled),
+		"intent_autonomy_matched":   atomic.LoadInt64(&al.controlStats.intentAutonomyMatched),
+		"intent_autonomy_rejected":  atomic.LoadInt64(&al.controlStats.intentAutonomyRejected),
+		"intent_autolearn_matched":  atomic.LoadInt64(&al.controlStats.intentAutoLearnMatched),
+		"intent_autolearn_rejected": atomic.LoadInt64(&al.controlStats.intentAutoLearnRejected),
+		"autonomy_rounds":           atomic.LoadInt64(&al.controlStats.autonomyRounds),
+		"autonomy_stopped_by_guard": atomic.LoadInt64(&al.controlStats.autonomyStoppedByGuard),
+		"autolearn_rounds":          atomic.LoadInt64(&al.controlStats.autoLearnRounds),
+		"autonomy_active_sessions":  autonomyActive,
+		"autolearn_active_sessions": autoLearnActive,
+		"run_states_total":          runStatesTotal,
 	}
 	logger.InfoCF("agent", "Control runtime snapshot", stats)
 }
 
-func (al *AgentLoop) executeAutonomyIntent(ctx context.Context, msg bus.InboundMessage, intent autonomyIntent) string {
+func (al *AgentLoop) executeAutonomyIntent(ctx context.Context, msg bus.InboundMessage, intent autonomyIntent) {
 	_ = ctx
-	switch intent.action {
-	case "start":
+	if intent.clearFocus {
+		_ = al.clearAutonomyFocus(msg.SessionKey)
+	}
+	if intent.enabled == nil {
+		return
+	}
+	if *intent.enabled {
 		idle := autonomyDefaultIdleInterval
 		if intent.idleInterval != nil {
 			idle = *intent.idleInterval
 		}
-		return al.startAutonomy(ctx, msg, idle, intent.focus)
-	case "clear_focus":
-		if al.clearAutonomyFocus(msg.SessionKey) {
-			return "已确认当前焦点完成，后续将转到其他高价值任务。"
-		}
-		return "自主模式未运行，无法清除焦点。"
-	case "stop":
-		if al.stopAutonomy(msg.SessionKey) {
-			return "自主模式已停止。"
-		}
-		return "自主模式未运行。"
-	case "status":
-		return al.autonomyStatus(ctx, msg.SessionKey)
-	default:
-		return ""
+		al.startAutonomy(ctx, msg, idle, intent.focus)
+		return
 	}
+	_ = al.stopAutonomy(msg.SessionKey)
 }
 
-func (al *AgentLoop) executeAutoLearnIntent(ctx context.Context, msg bus.InboundMessage, intent autoLearnIntent) string {
+func (al *AgentLoop) executeAutoLearnIntent(ctx context.Context, msg bus.InboundMessage, intent autoLearnIntent) {
 	_ = ctx
-	switch intent.action {
-	case "start":
+	if intent.enabled == nil {
+		return
+	}
+	if *intent.enabled {
 		interval := autoLearnDefaultInterval
 		if intent.interval != nil {
 			interval = *intent.interval
 		}
-		return al.startAutoLearner(ctx, msg, interval)
-	case "stop":
-		if al.stopAutoLearner(msg.SessionKey) {
-			return "自动学习已停止。"
-		}
-		return "自动学习未运行。"
-	case "status":
-		return al.autoLearnerStatus(ctx, msg.SessionKey)
-	default:
-		return ""
+		al.startAutoLearner(ctx, msg, interval)
+		return
 	}
+	_ = al.stopAutoLearner(msg.SessionKey)
 }
 
 func (al *AgentLoop) handleControlPlane(ctx context.Context, msg bus.InboundMessage) (handled bool, response string, err error) {
@@ -1962,11 +1720,13 @@ func (al *AgentLoop) handleControlPlane(ctx context.Context, msg bus.InboundMess
 	}
 
 	if intent, outcome := al.detectAutonomyIntent(ctx, msg.Content); outcome.matched {
-		return true, al.executeAutonomyIntent(ctx, msg, intent), nil
+		al.executeAutonomyIntent(ctx, msg, intent)
+		return true, "", nil
 	}
 
 	if intent, outcome := al.detectAutoLearnIntent(ctx, msg.Content); outcome.matched {
-		return true, al.executeAutoLearnIntent(ctx, msg, intent), nil
+		al.executeAutoLearnIntent(ctx, msg, intent)
+		return true, "", nil
 	}
 
 	return false, "", nil
@@ -2177,11 +1937,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 		return "", err
 	}
-	finalContent, repairPasses := al.runSelfRepairIfNeeded(ctx, msg.SessionKey, userPrompt, messages, finalContent, progress)
-	if repairPasses > 0 {
-		iteration += repairPasses
-	}
-
 	if finalContent == "" {
 		finalContent = "Done."
 	}
@@ -2226,7 +1981,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	if progress != nil {
 		progress.Publish(4, 5, "finalization", "Final response is ready.")
-		progress.Publish(5, 5, "done", "任务已完成。")
+		progress.Publish(5, 5, "done", "Task completed.")
 	}
 
 	return userContent, nil
@@ -2358,20 +2113,6 @@ func (al *AgentLoop) runLLMToolLoop(
 			})
 
 		if len(response.ToolCalls) == 0 {
-			if shouldRetryAfterDeferralNoTools(response.Content, latestUserTaskText(messages), state.iteration, state.deferralRetried, hasToolMessages(messages), systemMode) {
-				state.deferralRetried = true
-				messages = append(messages, providers.Message{
-					Role:    "user",
-					Content: "Do not ask the user to wait. If verification is needed, call the required tools now and then provide the result in the same run.",
-				})
-				if !systemMode {
-					logger.WarnCF("agent", "Detected deferral-style direct reply without tool calls; forcing another tool-planning round", map[string]interface{}{
-						"iteration":   iteration,
-						"session_key": sessionKey,
-					})
-				}
-				continue
-			}
 			state.finalContent = response.Content
 			state.consecutiveAllToolErrorRounds = 0
 			state.repeatedToolCallRounds = 0
@@ -2399,10 +2140,6 @@ func (al *AgentLoop) runLLMToolLoop(
 				"session_key":  sessionKey,
 				"repeat_round": state.repeatedToolCallRounds,
 			})
-			messages = append(messages, providers.Message{
-				Role:    "user",
-				Content: "You are repeating the same tool calls. Stop calling tools and provide the best final answer now, including blockers and the minimum user input needed.",
-			})
 			break
 		}
 
@@ -2420,12 +2157,6 @@ func (al *AgentLoop) runLLMToolLoop(
 		budget := al.computeToolLoopBudget(state)
 		outcome := al.actToolCalls(ctx, response.Content, response.ToolCalls, &messages, sessionKey, iteration, budget, systemMode, progress)
 		state.lastToolResult = outcome.lastToolResult
-		if summary := summarizeToolActOutcome(outcome); summary != "" {
-			messages = append(messages, providers.Message{
-				Role:    "user",
-				Content: "Structured tool execution summary (for decision making): " + summary,
-			})
-		}
 		if outcome.executedCalls > 0 && outcome.roundToolErrors == outcome.executedCalls {
 			state.consecutiveAllToolErrorRounds++
 		} else {
@@ -2446,74 +2177,14 @@ func (al *AgentLoop) runLLMToolLoop(
 				"error_rounds":        state.consecutiveAllToolErrorRounds,
 				"tools_in_last_round": outcome.executedCalls,
 			})
-			messages = append(messages, providers.Message{
-				Role:    "user",
-				Content: "All recent tool calls failed. Stop calling tools and provide a final answer with diagnosis, fallback suggestions, and what input/permission is missing.",
-			})
 			break
 		}
 		if outcome.blockedLikely {
-			finalResp, ferr := al.finalizeToolLoop(ctx, append(messages, providers.Message{
-				Role:    "user",
-				Content: "Tool errors indicate hard blockers (permission/input/resource). Stop calling tools and provide diagnosis plus exact minimum user action needed.",
-			}))
+			finalResp, ferr := al.finalizeToolLoop(ctx, messages)
 			if ferr == nil && finalResp != nil && strings.TrimSpace(finalResp.Content) != "" {
 				state.finalContent = finalResp.Content
 			}
 			break
-		}
-
-		if al.shouldTriggerReflection(state, outcome) {
-			decision, reason, confidence := al.reflectToolLoopProgress(ctx, messages)
-			state.lastReflectDecision = decision
-			state.lastReflectConfidence = confidence
-			state.lastReflectIteration = iteration
-			if !systemMode {
-				logger.DebugCF("agent", "Tool-loop reflection", map[string]interface{}{
-					"iteration":  iteration,
-					"decision":   decision,
-					"reason":     reason,
-					"confidence": confidence,
-				})
-			}
-			switch decision {
-			case "done":
-				finalResp, ferr := al.finalizeToolLoop(ctx, append(messages, providers.Message{
-					Role:    "user",
-					Content: "Reflection indicates completion. Provide the final user-facing answer now without tools.",
-				}))
-				if ferr == nil && finalResp != nil && strings.TrimSpace(finalResp.Content) != "" {
-					state.finalContent = finalResp.Content
-					break
-				}
-				messages = append(messages, providers.Message{
-					Role:    "user",
-					Content: "Reflection indicates completion. Provide final answer now without tools.",
-				})
-				break
-			case "blocked":
-				finalResp, ferr := al.finalizeToolLoop(ctx, append(messages, providers.Message{
-					Role:    "user",
-					Content: "Reflection indicates blocked progress. Stop calling tools and provide diagnosis, blockers, and minimum user input needed.",
-				}))
-				if ferr == nil && finalResp != nil && strings.TrimSpace(finalResp.Content) != "" {
-					state.finalContent = finalResp.Content
-					break
-				}
-				messages = append(messages, providers.Message{
-					Role:    "user",
-					Content: "Blocked progress detected. Stop calling tools and provide diagnosis plus minimum needed user action.",
-				})
-				break
-			default:
-				messages = append(messages, providers.Message{
-					Role:    "user",
-					Content: "Continue execution with minimal next-step tools only. Avoid repetition.",
-				})
-			}
-			if state.finalContent != "" || decision == "done" || decision == "blocked" {
-				break
-			}
 		}
 	}
 
@@ -2554,10 +2225,6 @@ type toolLoopState struct {
 	lastToolCallSignature         string
 	repeatedToolCallRounds        int
 	consecutiveAllToolErrorRounds int
-	lastReflectDecision           string
-	lastReflectConfidence         float64
-	lastReflectIteration          int
-	deferralRetried               bool
 }
 
 type toolActOutcome struct {
@@ -2573,34 +2240,8 @@ type toolActOutcome struct {
 	records         []toolExecutionRecord
 }
 
-type loopReflectResponse struct {
-	Decision   string  `json:"decision"`
-	Reason     string  `json:"reason"`
-	Confidence float64 `json:"confidence"`
-}
-
 type finalizeQualityResponse struct {
 	Score float64 `json:"score"`
-}
-
-type localReflectSignal struct {
-	decision   string
-	reason     string
-	confidence float64
-	uncertain  bool
-}
-
-type selfRepairDecision struct {
-	NeedsRepair  bool    `json:"needs_repair"`
-	Reason       string  `json:"reason"`
-	RepairPrompt string  `json:"repair_prompt"`
-	Confidence   float64 `json:"confidence"`
-}
-
-type selfRepairMemory struct {
-	promptsUsed   map[string]struct{}
-	outputsSeen   map[string]struct{}
-	failureReason []string
 }
 
 type toolExecutionRecord struct {
@@ -3082,7 +2723,7 @@ func (al *AgentLoop) finalizeToolLoop(ctx context.Context, messages []providers.
 	finalizeMessages := append([]providers.Message{}, messages...)
 	finalizeMessages = append(finalizeMessages, providers.Message{
 		Role:    "user",
-		Content: "Now provide your final response to the user based on the completed tool results. Do not call any tools.",
+		Content: "Provide final user response from current results. No tool calls.",
 	})
 	finalizeMessages = sanitizeMessagesForToolCalling(finalizeMessages)
 
@@ -3137,13 +2778,8 @@ func (al *AgentLoop) assessFinalizeDraftQuality(ctx context.Context, draft strin
 	// Only call LLM when heuristic is uncertain; keep this call lightweight.
 	msgs := []providers.Message{
 		{
-			Role: "user",
-			Content: `Evaluate draft answer quality for user delivery.
-Return JSON only:
-{"score":0.0}
-Scoring:
-- 1.0 = clear, concise, actionable, no repetition.
-- 0.0 = unclear or noisy.`,
+			Role:    "user",
+			Content: `Rate draft quality for user delivery. JSON only: {"score":0.0}. score in [0,1].`,
 		},
 		{
 			Role:    "user",
@@ -3261,13 +2897,8 @@ func (al *AgentLoop) polishFinalResponse(ctx context.Context, draft string) (str
 	// Phase-2 polish: keep facts, remove repetition, and present concise actionable output.
 	polishMessages := []providers.Message{
 		{
-			Role: "system",
-			Content: al.withBootstrapPolicy(`Rewrite the draft answer for end users.
-Rules:
-- Keep factual meaning unchanged.
-- Keep concise and actionable.
-- Remove internal reasoning or repetitive text.
-- Plain text only.`),
+			Role:    "system",
+			Content: al.withBootstrapPolicy(`Rewrite for end users: preserve facts, concise/actionable, remove repetition/internal reasoning, plain text.`),
 		},
 		{
 			Role:    "user",
@@ -3288,304 +2919,6 @@ Rules:
 		return "", err
 	}
 	return strings.TrimSpace(resp.Content), nil
-}
-
-func (al *AgentLoop) reflectToolLoopProgress(ctx context.Context, messages []providers.Message) (decision string, reason string, confidence float64) {
-	if al == nil {
-		return "continue", "agent unavailable", 0
-	}
-	local := inferLocalReflectionSignal(messages)
-	if !local.uncertain {
-		return local.decision, local.reason, local.confidence
-	}
-
-	reflectMessages := append([]providers.Message{}, messages...)
-	reflectMessages = append(reflectMessages, providers.Message{
-		Role: "user",
-		Content: `Classify current execution progress using JSON only.
-Schema:
-{"decision":"done|continue|blocked","reason":"short reason","confidence":0.0}
-Rules:
-- done: objective appears completed from current tool outputs.
-- blocked: cannot make meaningful progress without new user input/permission/resource.
-- continue: still actionable with additional non-repetitive tool calls.
-- Keep reason <= 18 words.`,
-	})
-	reflectMessages = sanitizeMessagesForToolCalling(reflectMessages)
-
-	rctx, cancel := context.WithTimeout(ctx, toolLoopReflectTimeout)
-	defer cancel()
-	resp, err := al.callLLMWithModelFallback(rctx, reflectMessages, nil, map[string]interface{}{
-		"max_tokens":  120,
-		"temperature": 0.0,
-	})
-	if err != nil || resp == nil {
-		return local.decision, local.reason, local.confidence
-	}
-	raw := extractJSONObject(resp.Content)
-	if raw == "" {
-		return local.decision, local.reason, local.confidence
-	}
-	var parsed loopReflectResponse
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return local.decision, local.reason, local.confidence
-	}
-	decision = normalizeReflectDecision(parsed.Decision)
-	reason = strings.TrimSpace(parsed.Reason)
-	if reason == "" {
-		reason = "insufficient signal"
-	}
-	confidence = parsed.Confidence
-	if confidence < 0 {
-		confidence = 0
-	}
-	if confidence > 1 {
-		confidence = 1
-	}
-	if decision == "done" && confidence < 0.55 {
-		return "continue", reason, confidence
-	}
-	if decision == "blocked" && confidence < 0.45 {
-		return "continue", reason, confidence
-	}
-	return decision, reason, confidence
-}
-
-func inferLocalReflectionSignal(messages []providers.Message) localReflectSignal {
-	lastToolCount := 0
-	errorCount := 0
-	emptyCount := 0
-	latestToolText := ""
-
-	// Scan recent tool outputs only (windowed) for cheap deterministic signal.
-	for i := len(messages) - 1; i >= 0 && lastToolCount < 6; i-- {
-		if strings.TrimSpace(messages[i].Role) != "tool" {
-			continue
-		}
-		lastToolCount++
-		text := strings.TrimSpace(messages[i].Content)
-		if latestToolText == "" {
-			latestToolText = strings.ToLower(text)
-		}
-		if text == "" {
-			emptyCount++
-			continue
-		}
-		lower := strings.ToLower(text)
-		if strings.HasPrefix(lower, "error:") || containsAnySubstring(lower, "failed", "permission denied", "forbidden", "unauthorized", "not allowed") {
-			errorCount++
-		}
-	}
-	if lastToolCount == 0 {
-		return localReflectSignal{
-			decision:   "continue",
-			reason:     "insufficient local signal",
-			confidence: 0.40,
-			uncertain:  true,
-		}
-	}
-	if errorCount >= 2 && errorCount == lastToolCount {
-		return localReflectSignal{
-			decision:   "blocked",
-			reason:     "recent tool outputs are all errors",
-			confidence: 0.90,
-			uncertain:  false,
-		}
-	}
-	if errorCount > 0 && containsAnySubstring(latestToolText, "permission denied", "forbidden", "unauthorized", "not allowed") {
-		return localReflectSignal{
-			decision:   "blocked",
-			reason:     "permission failure detected",
-			confidence: 0.86,
-			uncertain:  false,
-		}
-	}
-	if errorCount == 0 && emptyCount == 0 && containsAnySubstring(latestToolText, "completed", "success", "done", "ok") {
-		return localReflectSignal{
-			decision:   "done",
-			reason:     "successful tool output indicates completion",
-			confidence: 0.80,
-			uncertain:  false,
-		}
-	}
-	return localReflectSignal{
-		decision:   "continue",
-		reason:     "mixed signals require model judgment",
-		confidence: 0.52,
-		uncertain:  true,
-	}
-}
-
-func (al *AgentLoop) runSelfRepairIfNeeded(
-	ctx context.Context,
-	sessionKey string,
-	userPrompt string,
-	baseMessages []providers.Message,
-	finalContent string,
-	progress *stageReporter,
-) (string, int) {
-	current := strings.TrimSpace(finalContent)
-	if current == "" {
-		return finalContent, 0
-	}
-	mem := selfRepairMemory{
-		promptsUsed: make(map[string]struct{}),
-		outputsSeen: map[string]struct{}{
-			repairOutputSignature(current): {},
-		},
-	}
-	repairPasses := 0
-	for repairPasses < maxSelfRepairPasses {
-		needs, repairPrompt, _ := al.shouldRunSelfRepair(ctx, userPrompt, current, mem)
-		if !needs || strings.TrimSpace(repairPrompt) == "" {
-			break
-		}
-		normalizedPrompt := normalizeRepairPrompt(repairPrompt)
-		if _, seen := mem.promptsUsed[normalizedPrompt]; seen {
-			mem.failureReason = append(mem.failureReason, "repeated prompt")
-			break
-		}
-		mem.promptsUsed[normalizedPrompt] = struct{}{}
-		repairPasses++
-		if progress != nil {
-			progress.Publish(4, 5, "self-repair", "正在执行自动修复。")
-		}
-		repairMessages := append([]providers.Message{}, baseMessages...)
-		repairMessages = append(repairMessages, providers.Message{
-			Role: "user",
-			Content: fmt.Sprintf("Self-repair pass: %s\nCurrent draft response:\n%s",
-				repairPrompt,
-				truncateString(current, 1200),
-			),
-		})
-		repaired, _, err := al.runLLMToolLoop(ctx, repairMessages, sessionKey, false, nil)
-		repaired = strings.TrimSpace(repaired)
-		if err != nil || repaired == "" {
-			mem.failureReason = append(mem.failureReason, "empty or failed repair run")
-			break
-		}
-		sig := repairOutputSignature(repaired)
-		if _, seen := mem.outputsSeen[sig]; seen {
-			mem.failureReason = append(mem.failureReason, "repeated output")
-			break
-		}
-		mem.outputsSeen[sig] = struct{}{}
-		current = repaired
-	}
-	return current, repairPasses
-}
-
-func (al *AgentLoop) shouldRunSelfRepair(ctx context.Context, userPrompt string, finalContent string, mem selfRepairMemory) (needs bool, repairPrompt string, confidence float64) {
-	text := strings.TrimSpace(finalContent)
-	if text == "" {
-		return false, "", 0
-	}
-	if needs, prompt := shouldForceSelfRepairHeuristic(strings.TrimSpace(userPrompt), text); needs {
-		if promptSeen(mem, prompt) {
-			return false, "", 0
-		}
-		return true, prompt, 0.86
-	}
-
-	if al == nil {
-		return false, "", 0
-	}
-	llmTimeout := al.llmCallTimeout / 4
-	if llmTimeout < 2*time.Second {
-		llmTimeout = 2 * time.Second
-	}
-	rctx, cancel := context.WithTimeout(ctx, llmTimeout)
-	defer cancel()
-	resp, err := al.callLLMWithModelFallback(rctx, []providers.Message{
-		{
-			Role: "user",
-			Content: `Judge whether the draft fully satisfies the user task.
-Return JSON only:
-{"needs_repair":true|false,"reason":"short reason","repair_prompt":"short actionable prompt","confidence":0.0}`,
-		},
-		{Role: "user", Content: fmt.Sprintf("User task:\n%s\n\nDraft response:\n%s", userPrompt, truncateString(text, 1200))},
-	}, nil, map[string]interface{}{
-		"max_tokens":  96,
-		"temperature": 0.0,
-	})
-	if err != nil || resp == nil {
-		return false, "", 0
-	}
-	raw := extractJSONObject(resp.Content)
-	if raw == "" {
-		return false, "", 0
-	}
-	var parsed selfRepairDecision
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return false, "", 0
-	}
-	if parsed.Confidence < 0 {
-		parsed.Confidence = 0
-	}
-	if parsed.Confidence > 1 {
-		parsed.Confidence = 1
-	}
-	if !parsed.NeedsRepair || parsed.Confidence < 0.62 {
-		return false, "", parsed.Confidence
-	}
-	prompt := strings.TrimSpace(parsed.RepairPrompt)
-	if prompt == "" {
-		prompt = strings.TrimSpace(parsed.Reason)
-	}
-	if prompt == "" {
-		prompt = "Address missing requirements and provide a complete, actionable final answer."
-	}
-	if promptSeen(mem, prompt) {
-		return false, "", parsed.Confidence
-	}
-	return true, prompt, parsed.Confidence
-}
-
-func normalizeRepairPrompt(prompt string) string {
-	return strings.ToLower(strings.TrimSpace(prompt))
-}
-
-func promptSeen(mem selfRepairMemory, prompt string) bool {
-	if len(mem.promptsUsed) == 0 {
-		return false
-	}
-	_, ok := mem.promptsUsed[normalizeRepairPrompt(prompt)]
-	return ok
-}
-
-func repairOutputSignature(content string) string {
-	text := strings.ToLower(strings.TrimSpace(content))
-	if len(text) > 480 {
-		text = text[:480]
-	}
-	return text
-}
-
-func shouldForceSelfRepairHeuristic(userPrompt string, finalContent string) (bool, string) {
-	prompt := strings.ToLower(strings.TrimSpace(userPrompt))
-	resp := strings.ToLower(strings.TrimSpace(finalContent))
-	if resp == "" {
-		return true, "Response is empty. Provide complete final answer."
-	}
-	if containsAnySubstring(resp, "i don't know", "cannot complete", "无法完成", "不知道", "todo", "tbd") {
-		return true, "Replace uncertainty with concrete diagnosis and next actionable steps."
-	}
-	if containsAnySubstring(prompt, "steps", "步骤", "plan", "方案", "how to", "如何") &&
-		!containsAnySubstring(resp, "1.", "2.", "step", "步骤", "next", "下一步") {
-		return true, "Provide structured step-by-step answer aligned with user task."
-	}
-	return false, ""
-}
-
-func normalizeReflectDecision(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "done":
-		return "done"
-	case "blocked":
-		return "blocked"
-	default:
-		return "continue"
-	}
 }
 
 func classifyToolExecutionError(err error, blockedAlready bool) (errType string, retryable bool, blockedLikely bool) {
@@ -3611,107 +2944,6 @@ func classifyToolExecutionError(err error, blockedAlready bool) (errType string,
 	}
 }
 
-func summarizeToolActOutcome(outcome toolActOutcome) string {
-	if outcome.executedCalls == 0 {
-		return ""
-	}
-	records, truncatedCount := compactToolExecutionRecords(outcome.records, toolSummaryMaxRecords)
-	errorTypeCount := map[string]int{}
-	for _, r := range outcome.records {
-		if r.Status != "error" {
-			continue
-		}
-		key := strings.TrimSpace(r.ErrorType)
-		if key == "" {
-			key = "unknown"
-		}
-		errorTypeCount[key]++
-	}
-	summary := map[string]interface{}{
-		"executed_calls":      outcome.executedCalls,
-		"dropped_calls":       outcome.droppedCalls,
-		"errors":              outcome.roundToolErrors,
-		"retryable_errors":    outcome.retryableErrors,
-		"hard_errors":         outcome.hardErrors,
-		"empty_results":       outcome.emptyResults,
-		"blocked_likely":      outcome.blockedLikely,
-		"truncated_by_budget": outcome.truncated,
-		"records":             records,
-		"records_truncated":   truncatedCount,
-		"error_type_count":    errorTypeCount,
-	}
-	data, err := json.Marshal(summary)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
-func compactToolExecutionRecords(records []toolExecutionRecord, max int) ([]toolExecutionRecord, int) {
-	if len(records) == 0 || max <= 0 || len(records) <= max {
-		return records, 0
-	}
-	selected := make([]toolExecutionRecord, 0, max)
-	used := make(map[int]struct{}, max)
-
-	// Keep all errors first.
-	for i, r := range records {
-		if len(selected) >= max {
-			break
-		}
-		if r.Status == "error" {
-			selected = append(selected, r)
-			used[i] = struct{}{}
-		}
-	}
-	// Keep one early non-error exemplar.
-	for i, r := range records {
-		if len(selected) >= max {
-			break
-		}
-		if _, ok := used[i]; ok {
-			continue
-		}
-		if r.Status != "error" {
-			selected = append(selected, r)
-			used[i] = struct{}{}
-			break
-		}
-	}
-	// Keep one latest non-error exemplar from tail.
-	for i := len(records) - 1; i >= 0; i-- {
-		if len(selected) >= max {
-			break
-		}
-		if _, ok := used[i]; ok {
-			continue
-		}
-		r := records[i]
-		if r.Status != "error" {
-			selected = append(selected, r)
-			used[i] = struct{}{}
-			break
-		}
-	}
-	// Fill remaining slots by original order.
-	for i, r := range records {
-		if len(selected) >= max {
-			break
-		}
-		if _, ok := used[i]; ok {
-			continue
-		}
-		selected = append(selected, r)
-		used[i] = struct{}{}
-	}
-
-	truncated := len(records) - len(selected)
-	if truncated < 0 {
-		truncated = 0
-	}
-	return selected, truncated
-}
-
 func (al *AgentLoop) computeToolLoopBudget(state toolLoopState) toolLoopBudget {
 	b := toolLoopBudget{
 		maxCallsPerIteration: toolLoopMaxCallsPerIteration,
@@ -3728,27 +2960,6 @@ func (al *AgentLoop) computeToolLoopBudget(state toolLoopState) toolLoopBudget {
 		b.maxCallsPerIteration = toolLoopMaxCallsPerIteration - 2
 		b.singleCallTimeout = toolLoopSingleCallTimeout - 6*time.Second
 		b.maxActDuration = toolLoopMaxActDuration - 15*time.Second
-	}
-	// Couple reflection confidence to next-round budget when reflection is recent.
-	if state.lastReflectIteration > 0 && state.iteration-state.lastReflectIteration <= 1 {
-		switch state.lastReflectDecision {
-		case "blocked":
-			b.maxCallsPerIteration = toolLoopMinCallsPerIteration
-			b.singleCallTimeout = toolLoopMinSingleCallTimeout
-			b.maxActDuration = toolLoopMinActDuration
-		case "continue":
-			if state.lastReflectConfidence < 0.6 {
-				b.maxCallsPerIteration -= 1
-				b.singleCallTimeout -= 3 * time.Second
-				b.maxActDuration -= 8 * time.Second
-			} else if state.lastReflectConfidence >= 0.85 &&
-				state.consecutiveAllToolErrorRounds == 0 &&
-				state.repeatedToolCallRounds == 0 {
-				b.maxCallsPerIteration += 1
-				b.singleCallTimeout += 2 * time.Second
-				b.maxActDuration += 6 * time.Second
-			}
-		}
 	}
 	// Near max iterations, force conservative execution.
 	if al != nil && state.iteration >= al.maxIterations-1 {
@@ -3785,35 +2996,6 @@ func shouldPersistToolResultRecord(record toolExecutionRecord, index int, total 
 		return true
 	}
 	return index == 0 || index == total-1
-}
-
-func (al *AgentLoop) shouldTriggerReflection(state toolLoopState, outcome toolActOutcome) bool {
-	forceTrigger := false
-	if outcome.roundToolErrors > 0 {
-		forceTrigger = true
-	}
-	if outcome.hardErrors > 0 {
-		forceTrigger = true
-	}
-	if state.repeatedToolCallRounds > 0 {
-		forceTrigger = true
-	}
-	if al != nil && state.iteration >= al.maxIterations-1 {
-		forceTrigger = true
-	}
-	if outcome.executedCalls > 0 && (strings.TrimSpace(outcome.lastToolResult) == "" || outcome.emptyResults > 0) {
-		forceTrigger = true
-	}
-	if forceTrigger {
-		return true
-	}
-
-	// Cooldown: avoid reflection too frequently when no hard risk signals.
-	if state.lastReflectIteration > 0 && state.iteration-state.lastReflectIteration < reflectionCooldownRounds {
-		return false
-	}
-	// Soft trigger: periodically check progress only when there is meaningful activity.
-	return outcome.executedCalls > 0
 }
 
 // sanitizeMessagesForToolCalling removes orphan tool-calling turns so provider-side
@@ -4919,17 +4101,9 @@ func (al *AgentLoop) inferAutonomyIntent(ctx context.Context, content string) (a
 		text = truncate(text, limit)
 	}
 
-	systemPrompt := al.withBootstrapPolicy(`You classify autonomy-control intent for an AI assistant.
-Return JSON only, no markdown.
-Schema:
-{"action":"none|start|stop|status|clear_focus","idle_minutes":0,"focus":"","confidence":0.0}
-Rules:
-- "start": user asks assistant to enter autonomous/self-driven mode.
-- "stop": user asks assistant to disable autonomous mode.
-- "status": user asks autonomy mode status.
-- "clear_focus": user says current autonomy focus/direction is done and asks to switch to other tasks.
-- "none": anything else.
-- confidence: 0..1`)
+	systemPrompt := al.withBootstrapPolicy(`Classify autonomy control. JSON only:
+{"matched":false,"enabled":null,"clear_focus":false,"idle_minutes":0,"focus":"","confidence":0.0}
+matched=true only for autonomy control; confidence in [0,1].`)
 
 	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
@@ -4951,12 +4125,16 @@ Rules:
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return autonomyIntent{}, 0, false
 	}
-
-	action := strings.ToLower(strings.TrimSpace(parsed.Action))
-
+	if !parsed.Matched {
+		return autonomyIntent{}, 0, false
+	}
+	if parsed.Enabled == nil && !parsed.ClearFocus {
+		return autonomyIntent{}, 0, false
+	}
 	intent := autonomyIntent{
-		action: action,
-		focus:  strings.TrimSpace(parsed.Focus),
+		enabled:    parsed.Enabled,
+		clearFocus: parsed.ClearFocus,
+		focus:      strings.TrimSpace(parsed.Focus),
 	}
 	if parsed.IdleMinutes > 0 {
 		d := time.Duration(parsed.IdleMinutes) * time.Minute
@@ -4999,16 +4177,9 @@ func (al *AgentLoop) inferAutoLearnIntent(ctx context.Context, content string) (
 		text = truncate(text, limit)
 	}
 
-	systemPrompt := al.withBootstrapPolicy(`You classify auto-learning-control intent for an AI assistant.
-Return JSON only.
-Schema:
-{"action":"none|start|stop|status","interval_minutes":0,"confidence":0.0}
-Rules:
-- "start": user asks assistant to start autonomous learning loop.
-- "stop": user asks assistant to stop autonomous learning loop.
-- "status": user asks learning loop status.
-- "none": anything else.
-- confidence: 0..1`)
+	systemPrompt := al.withBootstrapPolicy(`Classify auto-learning control. JSON only:
+{"matched":false,"enabled":null,"interval_minutes":0,"confidence":0.0}
+matched=true only for auto-learning control; confidence in [0,1].`)
 
 	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
@@ -5030,15 +4201,11 @@ Rules:
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		return autoLearnIntent{}, 0, false
 	}
-
-	action := strings.ToLower(strings.TrimSpace(parsed.Action))
-	switch action {
-	case "start", "stop", "status":
-	default:
+	if !parsed.Matched || parsed.Enabled == nil {
 		return autoLearnIntent{}, 0, false
 	}
 
-	intent := autoLearnIntent{action: action}
+	intent := autoLearnIntent{enabled: parsed.Enabled}
 	if parsed.IntervalMinutes > 0 {
 		d := time.Duration(parsed.IntervalMinutes) * time.Minute
 		intent.interval = &d
@@ -5052,14 +4219,9 @@ func (al *AgentLoop) inferTaskExecutionDirectives(ctx context.Context, content s
 		return taskExecutionDirectives{}, false
 	}
 
-	systemPrompt := al.withBootstrapPolicy(`Extract execution directives from user message.
-Return JSON only.
-Schema:
+	systemPrompt := al.withBootstrapPolicy(`Extract execution directives. JSON only:
 {"task":"","stage_report":false,"confidence":0.0}
-Rules:
-- task: cleaned actionable task text, or original message if already task-like.
-- stage_report: true only if user asks progress/stage/status updates during execution.
-- confidence: 0..1`)
+task = actionable task text; stage_report=true only when user asks in-run progress; confidence in [0,1].`)
 
 	resp, err := al.callLLMWithModelFallback(ctx, []providers.Message{
 		{Role: "system", Content: systemPrompt},
@@ -5155,16 +4317,16 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			}
 		}
 
-		return true, "当前运行状态已更新。", nil
+		return true, "Run status updated.", nil
 	case "/reload":
 		running, err := al.triggerGatewayReloadFromAgent()
 		if err != nil {
 			if running {
 				return true, "", err
 			}
-			return true, "热重载未生效。", nil
+			return true, "Hot reload did not take effect.", nil
 		}
-		return true, "已发送网关热重载信号。", nil
+		return true, "Gateway hot-reload signal sent.", nil
 	case "/config":
 		if len(fields) < 2 {
 			return true, "Usage: /config get <path> | /config set <path> <value>", nil
@@ -5182,11 +4344,11 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 			path := al.normalizeConfigPathForAgent(fields[2])
 			value, ok := al.getMapValueByPathForAgent(cfgMap, path)
 			if !ok {
-				return true, "未找到对应配置路径。", nil
+				return true, "Config path not found.", nil
 			}
 			data, err := json.Marshal(value)
 			if err != nil {
-				return true, "已读取配置值。", nil
+				return true, "Config value read.", nil
 			}
 			return true, string(data), nil
 		case "set":
@@ -5224,9 +4386,9 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					}
 					return true, "", fmt.Errorf("hot reload failed, config rolled back: %w", err)
 				}
-				return true, "配置已更新，但热重载未生效。", nil
+				return true, "Config updated, but hot reload did not take effect.", nil
 			}
-			return true, "配置已更新并触发热重载。", nil
+			return true, "Config updated and hot reload triggered.", nil
 		default:
 			return true, "Usage: /config get <path> | /config set <path> <value>", nil
 		}
@@ -5251,7 +4413,7 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					"label":  p.Label,
 				})
 			}
-			return true, "已获取流水线列表。", nil
+			return true, "Pipeline list retrieved.", nil
 		case "status":
 			if len(fields) < 3 {
 				return true, "Usage: /pipeline status <pipeline_id>", nil
@@ -5277,7 +4439,7 @@ func (al *AgentLoop) handleSlashCommand(ctx context.Context, msg bus.InboundMess
 					"goal": task.Goal,
 				})
 			}
-			return true, "已获取可执行任务列表。", nil
+			return true, "Ready task list retrieved.", nil
 		default:
 			return true, "Usage: /pipeline list | /pipeline status <pipeline_id> | /pipeline ready <pipeline_id>", nil
 		}
@@ -5317,13 +4479,7 @@ func (al *AgentLoop) withBootstrapPolicy(taskPrompt string) string {
 	if bootstrapPolicy == "" {
 		return taskPrompt
 	}
-
-	return fmt.Sprintf(`Follow the workspace bootstrap policy while interpreting user language and intent.
-Prioritize semantic understanding over fixed command words.
-
-%s
-
-%s`, bootstrapPolicy, taskPrompt)
+	return strings.TrimSpace(bootstrapPolicy + "\n\n" + taskPrompt)
 }
 
 func (al *AgentLoop) loadBootstrapPolicyContext() string {

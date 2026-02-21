@@ -18,7 +18,6 @@ import (
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
 	"clawgo/pkg/logger"
-	"clawgo/pkg/voice"
 )
 
 const (
@@ -36,7 +35,6 @@ type TelegramChannel struct {
 	chatIDsMu    sync.RWMutex
 	updates      <-chan telego.Update
 	runCancel    cancelGuard
-	transcriber  *voice.GroqTranscriber
 	placeholders sync.Map // chatID -> messageID
 	stopThinking sync.Map // chatID -> chan struct{}
 	handleSem    chan struct{}
@@ -56,7 +54,6 @@ func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*Telegr
 		bot:          bot,
 		config:       cfg,
 		chatIDs:      make(map[string]int64),
-		transcriber:  nil,
 		placeholders: sync.Map{},
 		stopThinking: sync.Map{},
 		handleSem:    make(chan struct{}, telegramMaxConcurrentHandlers),
@@ -68,10 +65,6 @@ func withTelegramAPITimeout(ctx context.Context) (context.Context, context.Cance
 		ctx = context.Background()
 	}
 	return context.WithTimeout(ctx, telegramAPICallTimeout)
-}
-
-func (c *TelegramChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
-	c.transcriber = transcriber
 }
 
 func (c *TelegramChannel) HealthCheck(ctx context.Context) error {
@@ -372,32 +365,10 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 		voicePath := c.downloadFile(runCtx, message.Voice.FileID, ".ogg", "")
 		if voicePath != "" {
 			mediaPaths = append(mediaPaths, voicePath)
-
-			transcribedText := ""
-			if c.transcriber != nil && c.transcriber.IsAvailable() {
-				ctx, cancel := context.WithTimeout(runCtx, 30*time.Second)
-				defer cancel()
-
-				result, err := c.transcriber.Transcribe(ctx, voicePath)
-				if err != nil {
-					logger.WarnCF("telegram", "Voice transcription failed", map[string]interface{}{
-						logger.FieldError: err.Error(),
-					})
-					transcribedText = fmt.Sprintf("[voice: %s (transcription failed)]", voicePath)
-				} else {
-					transcribedText = fmt.Sprintf("[voice transcription: %s]", result.Text)
-					logger.InfoCF("telegram", "Voice transcribed successfully", map[string]interface{}{
-						"text_preview": truncateString(result.Text, 120),
-					})
-				}
-			} else {
-				transcribedText = fmt.Sprintf("[voice: %s]", voicePath)
-			}
-
 			if content != "" {
 				content += "\n"
 			}
-			content += transcribedText
+			content += fmt.Sprintf("[voice: %s]", voicePath)
 		}
 	}
 

@@ -1,6 +1,9 @@
 package channels
 
 import (
+	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
+	"clawgo/pkg/logger"
 	"context"
 	"fmt"
 	"io"
@@ -8,20 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
-	"clawgo/pkg/voice"
 	"github.com/bwmarrin/discordgo"
 )
 
 type DiscordChannel struct {
 	*BaseChannel
-	session     *discordgo.Session
-	config      config.DiscordConfig
-	transcriber *voice.GroqTranscriber
+	session *discordgo.Session
+	config  config.DiscordConfig
 }
 
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
@@ -36,12 +33,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		BaseChannel: base,
 		session:     session,
 		config:      cfg,
-		transcriber: nil,
 	}, nil
-}
-
-func (c *DiscordChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
-	c.transcriber = transcriber
 }
 
 func (c *DiscordChannel) Start(ctx context.Context) error {
@@ -123,26 +115,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 			if localPath != "" {
 				mediaPaths = append(mediaPaths, localPath)
 
-				transcribedText := ""
-				if c.transcriber != nil && c.transcriber.IsAvailable() {
-					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-					defer cancel()
-
-					result, err := c.transcriber.Transcribe(ctx, localPath)
-					if err != nil {
-						logger.WarnCF("discord", "Voice transcription failed", map[string]interface{}{
-							logger.FieldError: err.Error(),
-						})
-						transcribedText = fmt.Sprintf("[audio: %s (transcription failed)]", localPath)
-					} else {
-						transcribedText = fmt.Sprintf("[audio transcription: %s]", result.Text)
-						logger.InfoCF("discord", "Audio transcribed successfully", map[string]interface{}{
-							"text_preview": truncateString(result.Text, 120),
-						})
-					}
-				} else {
-					transcribedText = fmt.Sprintf("[audio: %s]", localPath)
-				}
+				transcribedText := fmt.Sprintf("[audio: %s]", localPath)
 
 				if content != "" {
 					content += "\n"

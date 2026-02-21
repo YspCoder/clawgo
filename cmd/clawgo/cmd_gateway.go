@@ -23,7 +23,6 @@ import (
 	"clawgo/pkg/logger"
 	"clawgo/pkg/providers"
 	"clawgo/pkg/sentinel"
-	"clawgo/pkg/voice"
 )
 
 func gatewayCmd() {
@@ -475,34 +474,6 @@ func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.Me
 	channelManager, err := channels.NewManager(cfg, msgBus)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create channel manager: %w", err)
-	}
-
-	activeProvider := cfg.Providers.Proxy
-	if name := strings.TrimSpace(cfg.Agents.Defaults.Proxy); name != "" && name != "proxy" {
-		if p, ok := cfg.Providers.Proxies[name]; ok {
-			activeProvider = p
-		}
-	}
-
-	var transcriber *voice.GroqTranscriber
-	if activeProvider.APIKey != "" && strings.Contains(activeProvider.APIBase, "groq.com") {
-		transcriber = voice.NewGroqTranscriber(activeProvider.APIKey)
-		logger.InfoC("voice", "Groq voice transcription enabled via Proxy config")
-	}
-
-	if transcriber != nil {
-		if telegramChannel, ok := channelManager.GetChannel("telegram"); ok {
-			if tc, ok := telegramChannel.(*channels.TelegramChannel); ok {
-				tc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Telegram channel")
-			}
-		}
-		if discordChannel, ok := channelManager.GetChannel("discord"); ok {
-			if dc, ok := discordChannel.(*channels.DiscordChannel); ok {
-				dc.SetTranscriber(transcriber)
-				logger.InfoC("voice", "Groq transcription attached to Discord channel")
-			}
-		}
 	}
 
 	return agentLoop, channelManager, nil
