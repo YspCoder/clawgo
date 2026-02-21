@@ -418,49 +418,6 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	})
 	cancelAPI()
 
-	stopChan := make(chan struct{})
-	if prev, ok := c.stopThinking.LoadAndDelete(fmt.Sprintf("%d", chatID)); ok {
-		safeCloseSignal(prev)
-	}
-	c.stopThinking.Store(fmt.Sprintf("%d", chatID), stopChan)
-
-	sendCtx, cancelSend := context.WithTimeout(runCtx, telegramAPICallTimeout)
-	pMsg, err := c.bot.SendMessage(sendCtx, telegoutil.Message(telegoutil.ID(chatID), "Thinking... 💭"))
-	cancelSend()
-	if err == nil {
-		pID := pMsg.MessageID
-		c.placeholders.Store(fmt.Sprintf("%d", chatID), pID)
-
-		go func(cid int64, mid int, stop <-chan struct{}, parentCtx context.Context) {
-			dots := []string{".", "..", "..."}
-			emotes := []string{"💭", "🤔", "☁️"}
-			i := 0
-			ticker := time.NewTicker(2000 * time.Millisecond)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-parentCtx.Done():
-					return
-				case <-stop:
-					return
-				case <-ticker.C:
-					i++
-					text := fmt.Sprintf("Thinking%s %s", dots[i%len(dots)], emotes[i%len(emotes)])
-					editCtx, cancelEdit := context.WithTimeout(parentCtx, telegramAPICallTimeout)
-					_, err := c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{
-						ChatID:    telegoutil.ID(cid),
-						MessageID: mid,
-						Text:      text,
-					})
-					cancelEdit()
-					if err != nil {
-						return
-					}
-				}
-			}
-		}(chatID, pID, stopChan, runCtx)
-	}
-
 	metadata := map[string]string{
 		"message_id": fmt.Sprintf("%d", message.MessageID),
 		"user_id":    fmt.Sprintf("%d", user.ID),
