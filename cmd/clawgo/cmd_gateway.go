@@ -386,16 +386,51 @@ func userGatewayUnitPath() (string, string, error) {
 
 func detectInstalledGatewayService() (string, string, error) {
 	systemPath := "/etc/systemd/system/" + gatewayServiceName
-	if info, err := os.Stat(systemPath); err == nil && !info.IsDir() {
-		return "system", systemPath, nil
-	}
-
-	scope, userPath, err := userGatewayUnitPath()
+	userScope, userPath, err := userGatewayUnitPath()
 	if err != nil {
 		return "", "", err
 	}
+
+	systemExists := false
+	if info, err := os.Stat(systemPath); err == nil && !info.IsDir() {
+		systemExists = true
+	}
+
+	userExists := false
 	if info, err := os.Stat(userPath); err == nil && !info.IsDir() {
-		return scope, userPath, nil
+		userExists = true
+	}
+
+	preferredScope := strings.ToLower(strings.TrimSpace(os.Getenv("CLAWGO_GATEWAY_SCOPE")))
+	switch preferredScope {
+	case "system":
+		if systemExists {
+			return "system", systemPath, nil
+		}
+		return "", "", fmt.Errorf("gateway service unit not found in system scope: %s", systemPath)
+	case "user":
+		if userExists {
+			return userScope, userPath, nil
+		}
+		return "", "", fmt.Errorf("gateway service unit not found in user scope: %s", userPath)
+	}
+
+	// Auto-pick scope by current privilege to avoid non-root users accidentally
+	// selecting system scope when both unit files exist.
+	if os.Geteuid() == 0 {
+		if systemExists {
+			return "system", systemPath, nil
+		}
+		if userExists {
+			return userScope, userPath, nil
+		}
+	} else {
+		if userExists {
+			return userScope, userPath, nil
+		}
+		if systemExists {
+			return "system", systemPath, nil
+		}
 	}
 
 	return "", "", fmt.Errorf("gateway service not registered. Run: clawgo gateway")
