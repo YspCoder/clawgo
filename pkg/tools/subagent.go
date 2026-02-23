@@ -156,10 +156,15 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			announceContent += fmt.Sprintf("\n\nPipeline: %s\nPipeline Task: %s", task.PipelineID, task.PipelineTask)
 		}
 		sm.bus.PublishInbound(bus.InboundMessage{
-			Channel:  "system",
-			SenderID: fmt.Sprintf("subagent:%s", task.ID),
-			ChatID:   fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			Content:  announceContent,
+			Channel:    "system",
+			SenderID:   fmt.Sprintf("subagent:%s", task.ID),
+			ChatID:     fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
+			SessionKey: fmt.Sprintf("subagent:%s", task.ID),
+			Content:    announceContent,
+			Metadata: map[string]string{
+				"trigger":    "subagent",
+				"subagent_id": task.ID,
+			},
 		})
 	}
 }

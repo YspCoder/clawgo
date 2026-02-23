@@ -14,6 +14,7 @@ import (
 
 type Session struct {
 	Key               string              `json:"key"`
+	Kind              string              `json:"kind,omitempty"`
 	Messages          []providers.Message `json:"messages"`
 	Summary           string              `json:"summary,omitempty"`
 	LastLanguage      string              `json:"last_language,omitempty"`
@@ -62,6 +63,7 @@ func (sm *SessionManager) GetOrCreate(key string) *Session {
 
 	session = &Session{
 		Key:      key,
+		Kind:     detectSessionKind(key),
 		Messages: []providers.Message{},
 		Created:  time.Now(),
 		Updated:  time.Now(),
@@ -221,6 +223,7 @@ func (sm *SessionManager) Save(session *Session) error {
 
 	metaPath := filepath.Join(sm.storage, session.Key+".meta")
 	meta := map[string]interface{}{
+		"kind":               session.Kind,
 		"summary":            session.Summary,
 		"last_language":      session.LastLanguage,
 		"preferred_language": session.PreferredLanguage,
@@ -245,6 +248,24 @@ func (sm *SessionManager) Keys() []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func detectSessionKind(key string) string {
+	k := strings.TrimSpace(strings.ToLower(key))
+	switch {
+	case strings.HasPrefix(k, "cron:"):
+		return "cron"
+	case strings.HasPrefix(k, "subagent:") || strings.Contains(k, ":subagent:"):
+		return "subagent"
+	case strings.HasPrefix(k, "hook:"):
+		return "hook"
+	case strings.HasPrefix(k, "node:"):
+		return "node"
+	case strings.Contains(k, ":"):
+		return "main"
+	default:
+		return "other"
+	}
 }
 
 func (sm *SessionManager) loadSessions() error {
@@ -288,6 +309,7 @@ func (sm *SessionManager) loadSessions() error {
 			data, err := os.ReadFile(filepath.Join(sm.storage, file.Name()))
 			if err == nil {
 				var meta struct {
+					Kind              string    `json:"kind"`
 					Summary           string    `json:"summary"`
 					LastLanguage      string    `json:"last_language"`
 					PreferredLanguage string    `json:"preferred_language"`
@@ -295,6 +317,10 @@ func (sm *SessionManager) loadSessions() error {
 					Created           time.Time `json:"created"`
 				}
 				if err := json.Unmarshal(data, &meta); err == nil {
+					session.Kind = meta.Kind
+					if strings.TrimSpace(session.Kind) == "" {
+						session.Kind = detectSessionKind(session.Key)
+					}
 					session.Summary = meta.Summary
 					session.LastLanguage = meta.LastLanguage
 					session.PreferredLanguage = meta.PreferredLanguage
