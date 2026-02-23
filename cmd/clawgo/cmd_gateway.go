@@ -61,11 +61,26 @@ func gatewayCmd() {
 	msgBus := bus.NewMessageBus()
 	cronStorePath := filepath.Join(filepath.Dir(getConfigPath()), "cron", "jobs.json")
 	cronService := cron.NewCronService(cronStorePath, func(job *cron.CronJob) (string, error) {
-		if job == nil || strings.TrimSpace(job.Payload.Message) == "" {
+		if job == nil {
 			return "", nil
 		}
+
 		targetChannel := strings.TrimSpace(job.Payload.Channel)
 		targetChatID := strings.TrimSpace(job.Payload.To)
+		message := strings.TrimSpace(job.Payload.Message)
+
+		if job.Payload.Deliver && targetChannel != "" && targetChatID != "" && message != "" {
+			msgBus.PublishOutbound(bus.OutboundMessage{
+				Channel: targetChannel,
+				ChatID:  targetChatID,
+				Content: message,
+			})
+			return "delivered", nil
+		}
+
+		if message == "" {
+			return "", nil
+		}
 		if targetChannel == "" || targetChatID == "" {
 			targetChannel = "internal"
 			targetChatID = "cron"
@@ -74,7 +89,7 @@ func gatewayCmd() {
 			Channel:    "system",
 			SenderID:   "cron",
 			ChatID:     fmt.Sprintf("%s:%s", targetChannel, targetChatID),
-			Content:    job.Payload.Message,
+			Content:    message,
 			SessionKey: fmt.Sprintf("cron:%s", job.ID),
 			Metadata: map[string]string{
 				"trigger": "cron",
@@ -84,23 +99,7 @@ func gatewayCmd() {
 		return "scheduled", nil
 	})
 	configureCronServiceRuntime(cronService, cfg)
-	hbInterval := cfg.Agents.Defaults.Heartbeat.EverySec
-	if hbInterval <= 0 {
-		hbInterval = 30 * 60
-	}
-	heartbeatService := heartbeat.NewHeartbeatService(cfg.WorkspacePath(), func(prompt string) (string, error) {
-		msgBus.PublishInbound(bus.InboundMessage{
-			Channel:    "system",
-			SenderID:   "heartbeat",
-			ChatID:     "internal:heartbeat",
-			Content:    prompt,
-			SessionKey: "heartbeat:default",
-			Metadata: map[string]string{
-				"trigger": "heartbeat",
-			},
-		})
-		return "queued", nil
-	}, hbInterval, cfg.Agents.Defaults.Heartbeat.Enabled)
+	heartbeatService := buildHeartbeatService(cfg, msgBus)
 	sentinelService := sentinel.NewService(
 		getConfigPath(),
 		cfg.WorkspacePath(),
@@ -181,6 +180,11 @@ func gatewayCmd() {
 				applyMaximumPermissionPolicy(newCfg)
 			}
 			configureCronServiceRuntime(cronService, newCfg)
+			heartbeatService.Stop()
+			heartbeatService = buildHeartbeatService(newCfg, msgBus)
+			if err := heartbeatService.Start(); err != nil {
+				fmt.Printf("Error starting heartbeat service: %v\n", err)
+			}
 
 			if reflect.DeepEqual(cfg, newCfg) {
 				fmt.Println("✓ Config unchanged, skip reload")
@@ -564,4 +568,24 @@ func configureCronServiceRuntime(cs *cron.CronService, cfg *config.Config) {
 		MaxConsecutiveFailureRetries: int64(cfg.Cron.MaxConsecutiveFailureRetries),
 		MaxWorkers:                   cfg.Cron.MaxWorkers,
 	})
+}
+
+func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbeat.HeartbeatService {
+	hbInterval := cfg.Agents.Defaults.Heartbeat.EverySec
+	if hbInterval <= 0 {
+		hbInterval = 30 * 60
+	}
+	return heartbeat.NewHeartbeatService(cfg.WorkspacePath(), func(prompt string) (string, error) {
+		msgBus.PublishInbound(bus.InboundMessage{
+			Channel:    "system",
+			SenderID:   "heartbeat",
+			ChatID:     "internal:heartbeat",
+			Content:    prompt,
+			SessionKey: "heartbeat:default",
+			Metadata: map[string]string{
+				"trigger": "heartbeat",
+			},
+		})
+		return "queued", nil
+	}, hbInterval, cfg.Agents.Defaults.Heartbeat.Enabled)
 }

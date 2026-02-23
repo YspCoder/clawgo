@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"clawgo/pkg/providers"
 )
-
 func statusCmd() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -63,6 +63,27 @@ func statusCmd() {
 			fmt.Printf("Log File: %s\n", cfg.LogFilePath())
 			fmt.Printf("Log Max Size: %d MB\n", cfg.Logging.MaxSizeMB)
 			fmt.Printf("Log Retention: %d days\n", cfg.Logging.RetentionDays)
+		}
+
+		fmt.Printf("Heartbeat: enabled=%v interval=%ds ackMaxChars=%d\n",
+			cfg.Agents.Defaults.Heartbeat.Enabled,
+			cfg.Agents.Defaults.Heartbeat.EverySec,
+			cfg.Agents.Defaults.Heartbeat.AckMaxChars,
+		)
+		fmt.Printf("Cron Runtime: workers=%d sleep=%d-%ds\n",
+			cfg.Cron.MaxWorkers,
+			cfg.Cron.MinSleepSec,
+			cfg.Cron.MaxSleepSec,
+		)
+
+		heartbeatLog := filepath.Join(workspace, "memory", "heartbeat.log")
+		if data, err := os.ReadFile(heartbeatLog); err == nil {
+			trimmed := strings.TrimSpace(string(data))
+			if trimmed != "" {
+				lines := strings.Split(trimmed, "\n")
+				fmt.Printf("Heartbeat Runs Logged: %d\n", len(lines))
+				fmt.Printf("Heartbeat Last Log: %s\n", lines[len(lines)-1])
+			}
 		}
 	}
 }
