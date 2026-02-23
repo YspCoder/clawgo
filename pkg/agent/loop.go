@@ -37,6 +37,7 @@ type AgentLoop struct {
 	compactionTrigger      int
 	compactionKeepRecent   int
 	heartbeatAckMaxChars   int
+	audit                  *triggerAudit
 	running                bool
 }
 
@@ -133,6 +134,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		compactionTrigger:    cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
 		compactionKeepRecent: cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
 		heartbeatAckMaxChars: cfg.Agents.Defaults.Heartbeat.AckMaxChars,
+		audit:                newTriggerAudit(workspace),
 		running:              false,
 	}
 
@@ -163,15 +165,22 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				response = fmt.Sprintf("Error processing message: %v", err)
 			}
 
+			trigger := al.getTrigger(msg)
+			suppressed := false
 			if response != "" {
 				if al.shouldSuppressOutbound(msg, response) {
-					continue
+					suppressed = true
+				} else {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel: msg.Channel,
+						ChatID:  msg.ChatID,
+						Content: response,
+					})
 				}
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: msg.Channel,
-					ChatID:  msg.ChatID,
-					Content: response,
-				})
+			}
+			al.audit.Record(trigger, msg.Channel, msg.SessionKey, suppressed, err)
+			if suppressed {
+				continue
 			}
 		}
 	}
@@ -181,6 +190,22 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running = false
+}
+
+func (al *AgentLoop) getTrigger(msg bus.InboundMessage) string {
+	if msg.Metadata != nil {
+		if t := strings.TrimSpace(msg.Metadata["trigger"]); t != "" {
+			return strings.ToLower(t)
+		}
+	}
+	if msg.Channel == "system" {
+		sid := strings.ToLower(strings.TrimSpace(msg.SenderID))
+		if sid != "" {
+			return sid
+		}
+		return "system"
+	}
+	return "user"
 }
 
 func (al *AgentLoop) shouldSuppressOutbound(msg bus.InboundMessage, response string) bool {

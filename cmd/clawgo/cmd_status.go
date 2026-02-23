@@ -85,5 +85,10 @@ func statusCmd() {
 				fmt.Printf("Heartbeat Last Log: %s\n", lines[len(lines)-1])
 			}
 		}
+
+		triggerStats := filepath.Join(workspace, "memory", "trigger-stats.json")
+		if data, err := os.ReadFile(triggerStats); err == nil {
+			fmt.Printf("Trigger Stats: %s\n", strings.TrimSpace(string(data)))
+		}
 	}
 }
