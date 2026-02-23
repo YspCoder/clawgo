@@ -307,6 +307,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	history := al.sessions.GetHistory(msg.SessionKey)
 	summary := al.sessions.GetSummary(msg.SessionKey)
+	if shouldRecallMemory(msg.Content) {
+		if recall, err := al.tools.Execute(ctx, "memory_search", map[string]interface{}{"query": msg.Content, "maxResults": 3}); err == nil && strings.TrimSpace(recall) != "" {
+			summary = strings.TrimSpace(summary + "\n\n[Memory Recall]\n" + recall)
+		}
+	}
 	if explicitPref := ExtractLanguagePreference(msg.Content); explicitPref != "" {
 		al.sessions.SetPreferredLanguage(msg.SessionKey, explicitPref)
 	}
@@ -826,6 +831,20 @@ func truncateString(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func shouldRecallMemory(text string) bool {
+	s := strings.ToLower(strings.TrimSpace(text))
+	if s == "" {
+		return false
+	}
+	keywords := []string{"remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision", "日期", "when did", "what did we"}
+	for _, k := range keywords {
+		if strings.Contains(s, k) {
+			return true
+		}
+	}
+	return false
 }
 
 func alSessionListForTool(sm *session.SessionManager, limit int) []tools.SessionInfo {

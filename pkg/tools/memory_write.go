@@ -94,6 +94,11 @@ func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface
 
 	formatted := formatMemoryLine(content, importance, source, tags)
 
+	if (kind == "longterm" || kind == "memory" || kind == "permanent") && !allowLongTermWrite(importance, tags) {
+		kind = "daily"
+		formatted = formatMemoryLine(content, importance, source, append(tags, "downgraded:longterm_gate"))
+	}
+
 	switch kind {
 	case "longterm", "memory", "permanent":
 		path := filepath.Join(t.workspace, "MEMORY.md")
@@ -178,4 +183,18 @@ func formatMemoryLine(content, importance, source string, tags []string) string 
 		meta = append(meta, "tags="+strings.Join(tags, ","))
 	}
 	return fmt.Sprintf("[%s] %s", strings.Join(meta, " | "), content)
+}
+
+func allowLongTermWrite(importance string, tags []string) bool {
+	if strings.ToLower(strings.TrimSpace(importance)) == "high" {
+		return true
+	}
+	for _, t := range tags {
+		s := strings.ToLower(strings.TrimSpace(t))
+		switch s {
+		case "preference", "decision", "rule", "policy", "identity":
+			return true
+		}
+	}
+	return false
 }
