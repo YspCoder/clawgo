@@ -36,11 +36,12 @@ func (t *SessionsTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action":        map[string]interface{}{"type": "string", "description": "list|history"},
-			"key":           map[string]interface{}{"type": "string", "description": "session key for history"},
-			"limit":         map[string]interface{}{"type": "integer", "description": "max items", "default": 20},
-			"kinds":         map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional session kinds filter for list"},
-			"include_tools": map[string]interface{}{"type": "boolean", "description": "include tool role messages in history", "default": false},
+			"action":         map[string]interface{}{"type": "string", "description": "list|history"},
+			"key":            map[string]interface{}{"type": "string", "description": "session key for history"},
+			"limit":          map[string]interface{}{"type": "integer", "description": "max items", "default": 20},
+			"active_minutes": map[string]interface{}{"type": "integer", "description": "only sessions updated in recent N minutes (list action)"},
+			"kinds":          map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional session kinds filter for list"},
+			"include_tools":  map[string]interface{}{"type": "boolean", "description": "include tool role messages in history", "default": false},
 		},
 		"required": []string{"action"},
 	}
@@ -57,6 +58,10 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 	includeTools := false
 	if v, ok := args["include_tools"].(bool); ok {
 		includeTools = v
+	}
+	activeMinutes := 0
+	if v, ok := args["active_minutes"].(float64); ok && int(v) > 0 {
+		activeMinutes = int(v)
 	}
 	kindFilter := map[string]struct{}{}
 	if rawKinds, ok := args["kinds"].([]interface{}); ok {
@@ -84,6 +89,16 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 			for _, s := range items {
 				k := strings.ToLower(strings.TrimSpace(s.Kind))
 				if _, ok := kindFilter[k]; ok {
+					filtered = append(filtered, s)
+				}
+			}
+			items = filtered
+		}
+		if activeMinutes > 0 {
+			cutoff := time.Now().Add(-time.Duration(activeMinutes) * time.Minute)
+			filtered := make([]SessionInfo, 0, len(items))
+			for _, s := range items {
+				if s.UpdatedAt.After(cutoff) {
 					filtered = append(filtered, s)
 				}
 			}

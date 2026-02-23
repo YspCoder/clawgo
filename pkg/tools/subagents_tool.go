@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -52,40 +54,48 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		}
 		var sb strings.Builder
 		sb.WriteString("Subagents:\n")
-		for _, task := range tasks {
-			sb.WriteString(fmt.Sprintf("- %s [%s] label=%s\n", task.ID, task.Status, task.Label))
+		sort.Slice(tasks, func(i, j int) bool { return tasks[i].Created > tasks[j].Created })
+		for i, task := range tasks {
+			sb.WriteString(fmt.Sprintf("- #%d %s [%s] label=%s\n", i+1, task.ID, task.Status, task.Label))
 		}
 		return strings.TrimSpace(sb.String()), nil
 	case "info":
-		if id == "" {
-			return "id is required for info", nil
+		resolvedID, err := t.resolveTaskID(id)
+		if err != nil {
+			return err.Error(), nil
 		}
-		task, ok := t.manager.GetTask(id)
+		task, ok := t.manager.GetTask(resolvedID)
 		if !ok {
 			return "subagent not found", nil
 		}
 		return fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nCreated: %d\nUpdated: %d\nSteering Count: %d\nTask: %s\nResult:\n%s", task.ID, task.Status, task.Label, task.Created, task.Updated, len(task.Steering), task.Task, task.Result), nil
 	case "kill":
-		if id == "" {
-			return "id is required for kill", nil
+		resolvedID, err := t.resolveTaskID(id)
+		if err != nil {
+			return err.Error(), nil
 		}
-		if !t.manager.KillTask(id) {
+		if !t.manager.KillTask(resolvedID) {
 			return "subagent not found", nil
 		}
 		return "subagent kill requested", nil
 	case "steer", "send":
-		if id == "" || message == "" {
-			return "id and message are required for steer/send", nil
+		if message == "" {
+			return "message is required for steer/send", nil
 		}
-		if !t.manager.SteerTask(id, message) {
+		resolvedID, err := t.resolveTaskID(id)
+		if err != nil {
+			return err.Error(), nil
+		}
+		if !t.manager.SteerTask(resolvedID, message) {
 			return "subagent not found", nil
 		}
 		return "steering message accepted", nil
 	case "log":
-		if id == "" {
-			return "id is required for log", nil
+		resolvedID, err := t.resolveTaskID(id)
+		if err != nil {
+			return err.Error(), nil
 		}
-		task, ok := t.manager.GetTask(id)
+		task, ok := t.manager.GetTask(resolvedID)
 		if !ok {
 			return "subagent not found", nil
 		}
@@ -109,4 +119,27 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 	default:
 		return "unsupported action", nil
 	}
+}
+
+func (t *SubagentsTool) resolveTaskID(idOrIndex string) (string, error) {
+	idOrIndex = strings.TrimSpace(idOrIndex)
+	if idOrIndex == "" {
+		return "", fmt.Errorf("id is required")
+	}
+	if strings.HasPrefix(idOrIndex, "#") {
+		n, err := strconv.Atoi(strings.TrimPrefix(idOrIndex, "#"))
+		if err != nil || n <= 0 {
+			return "", fmt.Errorf("invalid subagent index")
+		}
+		tasks := t.manager.ListTasks()
+		if len(tasks) == 0 {
+			return "", fmt.Errorf("no subagents")
+		}
+		sort.Slice(tasks, func(i, j int) bool { return tasks[i].Created > tasks[j].Created })
+		if n > len(tasks) {
+			return "", fmt.Errorf("subagent index out of range")
+		}
+		return tasks[n-1].ID, nil
+	}
+	return idOrIndex, nil
 }

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"clawgo/pkg/providers"
 )
@@ -101,6 +103,12 @@ func statusCmd() {
 				}
 			}
 		}
+		if recent, err := collectRecentSubagentSessions(sessionsDir, 5); err == nil && len(recent) > 0 {
+			fmt.Println("Recent Subagent Sessions:")
+			for _, key := range recent {
+				fmt.Printf("  - %s\n", key)
+			}
+		}
 	}
 }
 
@@ -132,4 +140,50 @@ func collectSessionKindCounts(sessionsDir string) (map[string]int, error) {
 		counts[kind]++
 	}
 	return counts, nil
+}
+
+func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {
+	entries, err := os.ReadDir(sessionsDir)
+	if err != nil {
+		return nil, err
+	}
+	type item struct {
+		key     string
+		updated int64
+	}
+	items := make([]item, 0)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".meta") {
+			continue
+		}
+		metaPath := filepath.Join(sessionsDir, e.Name())
+		data, err := os.ReadFile(metaPath)
+		if err != nil {
+			continue
+		}
+		var meta struct {
+			Kind    string `json:"kind"`
+			Updated string `json:"updated"`
+		}
+		if err := json.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(meta.Kind)) != "subagent" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339Nano, meta.Updated)
+		if err != nil {
+			t, _ = time.Parse(time.RFC3339, meta.Updated)
+		}
+		items = append(items, item{key: strings.TrimSuffix(e.Name(), ".meta"), updated: t.UnixMilli()})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].updated > items[j].updated })
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.key)
+	}
+	return out, nil
 }
