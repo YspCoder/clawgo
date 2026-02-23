@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"clawgo/pkg/lifecycle"
@@ -29,7 +30,7 @@ func NewHeartbeatService(workspace string, onHeartbeat func(string) (string, err
 
 func (hs *HeartbeatService) Start() error {
 	if !hs.enabled {
-		return fmt.Errorf("heartbeat service is disabled")
+		return nil
 	}
 	hs.runner.Start(hs.runLoop)
 	return nil
@@ -73,23 +74,21 @@ func (hs *HeartbeatService) checkHeartbeat() {
 }
 
 func (hs *HeartbeatService) buildPrompt() string {
-	notesDir := filepath.Join(hs.workspace, "memory")
-	notesFile := filepath.Join(notesDir, "HEARTBEAT.md")
+	notesFile := filepath.Join(hs.workspace, "HEARTBEAT.md")
 
 	var notes string
 	if data, err := os.ReadFile(notesFile); err == nil {
-		notes = string(data)
+		candidate := string(data)
+		if !isEffectivelyEmptyMarkdown(candidate) {
+			notes = candidate
+		}
 	}
 
 	now := time.Now().Format("2006-01-02 15:04")
 
-	prompt := fmt.Sprintf(`# Heartbeat Check
+	prompt := fmt.Sprintf(`Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.
 
 Current time: %s
-
-Check if there are any tasks I should be aware of or actions I should take.
-Review the memory file for any important updates or changes.
-Be proactive in identifying potential issues or improvements.
 
 %s
 `, now, notes)
@@ -107,4 +106,18 @@ func (hs *HeartbeatService) log(message string) {
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	f.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, message))
+}
+
+func isEffectivelyEmptyMarkdown(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		if strings.HasPrefix(t, "#") {
+			continue
+		}
+		return false
+	}
+	return true
 }

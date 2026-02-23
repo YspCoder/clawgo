@@ -36,6 +36,7 @@ type AgentLoop struct {
 	compactionEnabled      bool
 	compactionTrigger      int
 	compactionKeepRecent   int
+	heartbeatAckMaxChars   int
 	running                bool
 }
 
@@ -131,6 +132,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		compactionEnabled:    cfg.Agents.Defaults.ContextCompaction.Enabled,
 		compactionTrigger:    cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
 		compactionKeepRecent: cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
+		heartbeatAckMaxChars: cfg.Agents.Defaults.Heartbeat.AckMaxChars,
 		running:              false,
 	}
 
@@ -162,6 +164,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			}
 
 			if response != "" {
+				if al.shouldSuppressOutbound(msg, response) {
+					continue
+				}
 				al.bus.PublishOutbound(bus.OutboundMessage{
 					Channel: msg.Channel,
 					ChatID:  msg.ChatID,
@@ -176,6 +181,27 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running = false
+}
+
+func (al *AgentLoop) shouldSuppressOutbound(msg bus.InboundMessage, response string) bool {
+	if msg.Metadata == nil {
+		return false
+	}
+	trigger := strings.ToLower(strings.TrimSpace(msg.Metadata["trigger"]))
+	if trigger != "heartbeat" {
+		return false
+	}
+
+	r := strings.TrimSpace(response)
+	if !strings.HasPrefix(r, "HEARTBEAT_OK") {
+		return false
+	}
+
+	maxChars := al.heartbeatAckMaxChars
+	if maxChars <= 0 {
+		maxChars = 64
+	}
+	return len(r) <= maxChars
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {

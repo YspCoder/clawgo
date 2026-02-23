@@ -60,9 +60,47 @@ func gatewayCmd() {
 
 	msgBus := bus.NewMessageBus()
 	cronStorePath := filepath.Join(filepath.Dir(getConfigPath()), "cron", "jobs.json")
-	cronService := cron.NewCronService(cronStorePath, nil)
+	cronService := cron.NewCronService(cronStorePath, func(job *cron.CronJob) (string, error) {
+		if job == nil || strings.TrimSpace(job.Payload.Message) == "" {
+			return "", nil
+		}
+		targetChannel := strings.TrimSpace(job.Payload.Channel)
+		targetChatID := strings.TrimSpace(job.Payload.To)
+		if targetChannel == "" || targetChatID == "" {
+			targetChannel = "internal"
+			targetChatID = "cron"
+		}
+		msgBus.PublishInbound(bus.InboundMessage{
+			Channel:    "system",
+			SenderID:   "cron",
+			ChatID:     fmt.Sprintf("%s:%s", targetChannel, targetChatID),
+			Content:    job.Payload.Message,
+			SessionKey: fmt.Sprintf("cron:%s", job.ID),
+			Metadata: map[string]string{
+				"trigger": "cron",
+				"job_id":  job.ID,
+			},
+		})
+		return "scheduled", nil
+	})
 	configureCronServiceRuntime(cronService, cfg)
-	heartbeatService := heartbeat.NewHeartbeatService(cfg.WorkspacePath(), nil, 30*60, true)
+	hbInterval := cfg.Agents.Defaults.Heartbeat.EverySec
+	if hbInterval <= 0 {
+		hbInterval = 30 * 60
+	}
+	heartbeatService := heartbeat.NewHeartbeatService(cfg.WorkspacePath(), func(prompt string) (string, error) {
+		msgBus.PublishInbound(bus.InboundMessage{
+			Channel:    "system",
+			SenderID:   "heartbeat",
+			ChatID:     "internal:heartbeat",
+			Content:    prompt,
+			SessionKey: "heartbeat:default",
+			Metadata: map[string]string{
+				"trigger": "heartbeat",
+			},
+		})
+		return "queued", nil
+	}, hbInterval, cfg.Agents.Defaults.Heartbeat.Enabled)
 	sentinelService := sentinel.NewService(
 		getConfigPath(),
 		cfg.WorkspacePath(),

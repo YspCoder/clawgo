@@ -37,8 +37,15 @@ type AgentDefaults struct {
 	MaxTokens         int                     `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature       float64                 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Heartbeat         HeartbeatConfig         `json:"heartbeat"`
 	ContextCompaction ContextCompactionConfig `json:"context_compaction"`
 	RuntimeControl    RuntimeControlConfig    `json:"runtime_control"`
+}
+
+type HeartbeatConfig struct {
+	Enabled     bool `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_ENABLED"`
+	EverySec    int  `json:"every_sec" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_EVERY_SEC"`
+	AckMaxChars int  `json:"ack_max_chars" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_ACK_MAX_CHARS"`
 }
 
 type RuntimeControlConfig struct {
@@ -254,6 +261,11 @@ func DefaultConfig() *Config {
 				MaxTokens:         8192,
 				Temperature:       0.7,
 				MaxToolIterations: 20,
+				Heartbeat: HeartbeatConfig{
+					Enabled:     true,
+					EverySec:    30 * 60,
+					AckMaxChars: 64,
+				},
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,
 					Mode:               "summary",
