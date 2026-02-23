@@ -36,12 +36,20 @@ type AgentLoop struct {
 	compactionEnabled      bool
 	compactionTrigger      int
 	compactionKeepRecent   int
-	heartbeatAckMaxChars   int
-	memoryRecallKeywords   []string
-	noResponseFallback     string
-	thinkOnlyFallback      string
-	audit                  *triggerAudit
-	running                bool
+	heartbeatAckMaxChars    int
+	memoryRecallKeywords    []string
+	noResponseFallback      string
+	thinkOnlyFallback       string
+	langUsage               string
+	langInvalid             string
+	langUpdatedTemplate     string
+	runtimeCompactionNote   string
+	startupCompactionNote   string
+	toolNoSubagents         string
+	toolNoSessions          string
+	toolUnsupportedAction   string
+	audit                   *triggerAudit
+	running                 bool
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -102,7 +110,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus, orchestrator)
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
-	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager))
+	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager, cfg.Agents.Defaults.Texts.SubagentsNone, cfg.Agents.Defaults.Texts.UnsupportedAction))
 	toolsRegistry.Register(tools.NewSessionsTool(
 		func(limit int) []tools.SessionInfo {
 			sessions := alSessionListForTool(sessionsManager, limit)
@@ -115,6 +123,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 			}
 			return h
 		},
+		cfg.Agents.Defaults.Texts.SessionsNone,
+		cfg.Agents.Defaults.Texts.UnsupportedAction,
 	))
 
 	// Register edit file tool
@@ -150,12 +160,17 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		compactionEnabled:    cfg.Agents.Defaults.ContextCompaction.Enabled,
 		compactionTrigger:    cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
 		compactionKeepRecent: cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
-		heartbeatAckMaxChars: cfg.Agents.Defaults.Heartbeat.AckMaxChars,
-		memoryRecallKeywords: cfg.Agents.Defaults.Texts.MemoryRecallKeywords,
-		noResponseFallback:   cfg.Agents.Defaults.Texts.NoResponseFallback,
-		thinkOnlyFallback:    cfg.Agents.Defaults.Texts.ThinkOnlyFallback,
-		audit:                newTriggerAudit(workspace),
-		running:              false,
+		heartbeatAckMaxChars:  cfg.Agents.Defaults.Heartbeat.AckMaxChars,
+		memoryRecallKeywords:  cfg.Agents.Defaults.Texts.MemoryRecallKeywords,
+		noResponseFallback:    cfg.Agents.Defaults.Texts.NoResponseFallback,
+		thinkOnlyFallback:     cfg.Agents.Defaults.Texts.ThinkOnlyFallback,
+		langUsage:             cfg.Agents.Defaults.Texts.LangUsage,
+		langInvalid:           cfg.Agents.Defaults.Texts.LangInvalid,
+		langUpdatedTemplate:   cfg.Agents.Defaults.Texts.LangUpdatedTemplate,
+		runtimeCompactionNote: cfg.Agents.Defaults.Texts.RuntimeCompactionNote,
+		startupCompactionNote: cfg.Agents.Defaults.Texts.StartupCompactionNote,
+		audit:                 newTriggerAudit(workspace),
+		running:               false,
 	}
 
 	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
@@ -288,15 +303,27 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			if last == "" {
 				last = "(none)"
 			}
-			return fmt.Sprintf("Usage: /lang <code>\nCurrent preferred: %s\nLast detected: %s", preferred, last), nil
+			usage := strings.TrimSpace(al.langUsage)
+			if usage == "" {
+				usage = "Usage: /lang <code>"
+			}
+			return fmt.Sprintf("%s\nCurrent preferred: %s\nLast detected: %s", usage, preferred, last), nil
 		}
 		lang := normalizeLang(parts[1])
 		if lang == "" {
-			return "Invalid language code.", nil
+			invalid := strings.TrimSpace(al.langInvalid)
+			if invalid == "" {
+				invalid = "Invalid language code."
+			}
+			return invalid, nil
 		}
 		al.sessions.SetPreferredLanguage(msg.SessionKey, lang)
 		al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey))
-		return fmt.Sprintf("Language preference updated to %s", lang), nil
+		tpl := strings.TrimSpace(al.langUpdatedTemplate)
+		if tpl == "" {
+			tpl = "Language preference updated to %s"
+		}
+		return fmt.Sprintf(tpl, lang), nil
 	}
 
 	// Update tool contexts
@@ -731,7 +758,11 @@ func (al *AgentLoop) compactSessionIfNeeded(sessionKey string) {
 		return
 	}
 	removed := len(h) - keepRecent
-	note := fmt.Sprintf("[runtime-compaction] removed %d old messages, kept %d recent messages", removed, keepRecent)
+	tpl := strings.TrimSpace(al.runtimeCompactionNote)
+	if tpl == "" {
+		tpl = "[runtime-compaction] removed %d old messages, kept %d recent messages"
+	}
+	note := fmt.Sprintf(tpl, removed, keepRecent)
 	if al.sessions.CompactSession(sessionKey, keepRecent, note) {
 		al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
 	}
@@ -769,7 +800,11 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) Startup
 		}
 
 		removed := len(history) - keepRecent
-		note := fmt.Sprintf("[startup-compaction] removed %d old messages, kept %d recent messages", removed, keepRecent)
+		tpl := strings.TrimSpace(al.startupCompactionNote)
+		if tpl == "" {
+			tpl = "[startup-compaction] removed %d old messages, kept %d recent messages"
+		}
+		note := fmt.Sprintf(tpl, removed, keepRecent)
 		if al.sessions.CompactSession(key, keepRecent, note) {
 			al.sessions.Save(al.sessions.GetOrCreate(key))
 			report.CompactedSessions++

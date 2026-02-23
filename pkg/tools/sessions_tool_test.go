@@ -15,7 +15,7 @@ func TestSessionsToolListWithKindsAndQuery(t *testing.T) {
 			{Key: "telegram:1", Kind: "main", Summary: "project alpha", UpdatedAt: time.Now()},
 			{Key: "cron:1", Kind: "cron", Summary: "nightly sync", UpdatedAt: time.Now()},
 		}
-	}, nil)
+	}, nil, "", "")
 
 	out, err := tool.Execute(context.Background(), map[string]interface{}{
 		"action": "list",
@@ -37,7 +37,7 @@ func TestSessionsToolHistoryWithoutTools(t *testing.T) {
 			{Role: "tool", Content: "tool output"},
 			{Role: "assistant", Content: "ok"},
 		}
-	})
+	}, "", "")
 
 	out, err := tool.Execute(context.Background(), map[string]interface{}{
 		"action": "history",
@@ -58,7 +58,7 @@ func TestSessionsToolHistoryFromMe(t *testing.T) {
 			{Role: "assistant", Content: "a1"},
 			{Role: "assistant", Content: "a2"},
 		}
-	})
+	}, "", "")
 
 	out, err := tool.Execute(context.Background(), map[string]interface{}{
 		"action":  "history",

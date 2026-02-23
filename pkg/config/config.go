@@ -44,9 +44,17 @@ type AgentDefaults struct {
 }
 
 type AgentTextConfig struct {
-	NoResponseFallback string   `json:"no_response_fallback"`
-	ThinkOnlyFallback  string   `json:"think_only_fallback"`
-	MemoryRecallKeywords []string `json:"memory_recall_keywords"`
+	NoResponseFallback      string   `json:"no_response_fallback"`
+	ThinkOnlyFallback       string   `json:"think_only_fallback"`
+	MemoryRecallKeywords    []string `json:"memory_recall_keywords"`
+	LangUsage               string   `json:"lang_usage"`
+	LangInvalid             string   `json:"lang_invalid"`
+	LangUpdatedTemplate     string   `json:"lang_updated_template"`
+	SubagentsNone           string   `json:"subagents_none"`
+	SessionsNone            string   `json:"sessions_none"`
+	UnsupportedAction       string   `json:"unsupported_action"`
+	RuntimeCompactionNote   string   `json:"runtime_compaction_note"`
+	StartupCompactionNote   string   `json:"startup_compaction_note"`
 }
 
 type HeartbeatConfig struct {
@@ -276,9 +284,17 @@ func DefaultConfig() *Config {
 					PromptTemplate: "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
 				},
 				Texts: AgentTextConfig{
-					NoResponseFallback: "I've completed processing but have no response to give.",
-					ThinkOnlyFallback:  "Thinking process completed.",
-					MemoryRecallKeywords: []string{"remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision", "日期", "when did", "what did we"},
+					NoResponseFallback:    "I've completed processing but have no response to give.",
+					ThinkOnlyFallback:     "Thinking process completed.",
+					MemoryRecallKeywords:  []string{"remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision", "日期", "when did", "what did we"},
+					LangUsage:             "Usage: /lang <code>",
+					LangInvalid:           "Invalid language code.",
+					LangUpdatedTemplate:   "Language preference updated to %s",
+					SubagentsNone:         "No subagents.",
+					SessionsNone:          "No sessions.",
+					UnsupportedAction:     "unsupported action",
+					RuntimeCompactionNote: "[runtime-compaction] removed %d old messages, kept %d recent messages",
+					StartupCompactionNote: "[startup-compaction] removed %d old messages, kept %d recent messages",
 				},
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,

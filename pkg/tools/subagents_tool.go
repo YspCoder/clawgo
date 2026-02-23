@@ -10,11 +10,13 @@ import (
 )
 
 type SubagentsTool struct {
-	manager *SubagentManager
+	manager           *SubagentManager
+	noSubagentsText   string
+	unsupportedAction string
 }
 
-func NewSubagentsTool(m *SubagentManager) *SubagentsTool {
-	return &SubagentsTool{manager: m}
+func NewSubagentsTool(m *SubagentManager, noSubagentsText, unsupportedAction string) *SubagentsTool {
+	return &SubagentsTool{manager: m, noSubagentsText: noSubagentsText, unsupportedAction: unsupportedAction}
 }
 
 func (t *SubagentsTool) Name() string { return "subagents" }
@@ -56,7 +58,7 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 	case "list":
 		tasks := t.filterRecent(t.manager.ListTasks(), recentMinutes)
 		if len(tasks) == 0 {
-			return "No subagents.", nil
+			return firstNonEmpty(t.noSubagentsText, "No subagents."), nil
 		}
 		var sb strings.Builder
 		sb.WriteString("Subagents:\n")
@@ -69,7 +71,7 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		if strings.EqualFold(strings.TrimSpace(id), "all") {
 			tasks := t.filterRecent(t.manager.ListTasks(), recentMinutes)
 			if len(tasks) == 0 {
-				return "No subagents.", nil
+				return firstNonEmpty(t.noSubagentsText, "No subagents."), nil
 			}
 			sort.Slice(tasks, func(i, j int) bool { return tasks[i].Created > tasks[j].Created })
 			var sb strings.Builder
@@ -92,7 +94,7 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		if strings.EqualFold(strings.TrimSpace(id), "all") {
 			tasks := t.filterRecent(t.manager.ListTasks(), recentMinutes)
 			if len(tasks) == 0 {
-				return "No subagents.", nil
+				return firstNonEmpty(t.noSubagentsText, "No subagents."), nil
 			}
 			killed := 0
 			for _, task := range tasks {
@@ -159,7 +161,7 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		}
 		return fmt.Sprintf("subagent resumed as %s", label), nil
 	default:
-		return "unsupported action", nil
+		return firstNonEmpty(t.unsupportedAction, "unsupported action"), nil
 	}
 }
 
