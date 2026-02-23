@@ -118,7 +118,11 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	sb.WriteString(fmt.Sprintf("Found %d memories for '%s':\n\n", len(allResults), query))
 	for _, res := range allResults {
 		relPath, _ := filepath.Rel(t.workspace, res.file)
-		sb.WriteString(fmt.Sprintf("--- Source: %s:%d ---\n%s\n\n", relPath, res.lineNum, res.content))
+		lineEnd := res.lineNum + countLines(res.content) - 1
+		if lineEnd < res.lineNum {
+			lineEnd = res.lineNum
+		}
+		sb.WriteString(fmt.Sprintf("Source: %s#L%d-L%d\n%s\n\n", relPath, res.lineNum, lineEnd, res.content))
 	}
 
 	return sb.String(), nil
@@ -152,6 +156,14 @@ func (t *MemorySearchTool) getMemoryFiles() []string {
 	})
 
 	return dedupeStrings(files)
+}
+
+func countLines(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	return len(strings.Split(s, "\n"))
 }
 
 func dedupeStrings(items []string) []string {

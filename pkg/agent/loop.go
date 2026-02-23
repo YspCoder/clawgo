@@ -307,9 +307,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	history := al.sessions.GetHistory(msg.SessionKey)
 	summary := al.sessions.GetSummary(msg.SessionKey)
+	memoryRecallUsed := false
+	memoryRecallText := ""
 	if shouldRecallMemory(msg.Content) {
 		if recall, err := al.tools.Execute(ctx, "memory_search", map[string]interface{}{"query": msg.Content, "maxResults": 3}); err == nil && strings.TrimSpace(recall) != "" {
-			summary = strings.TrimSpace(summary + "\n\n[Memory Recall]\n" + recall)
+			memoryRecallUsed = true
+			memoryRecallText = strings.TrimSpace(recall)
+			summary = strings.TrimSpace(summary + "\n\n[Memory Recall]\n" + memoryRecallText)
 		}
 	}
 	if explicitPref := ExtractLanguagePreference(msg.Content); explicitPref != "" {
@@ -469,6 +473,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		// If no tools ran and only thoughts, user might be confused.
 		if iteration == 1 {
 			userContent = "Thinking process completed."
+		}
+	}
+
+	if memoryRecallUsed && !strings.Contains(strings.ToLower(userContent), "source:") {
+		if src := extractFirstSourceLine(memoryRecallText); src != "" {
+			userContent = strings.TrimSpace(userContent + "\n\n" + src)
 		}
 	}
 
@@ -845,6 +855,16 @@ func shouldRecallMemory(text string) bool {
 		}
 	}
 	return false
+}
+
+func extractFirstSourceLine(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(t), "source:") {
+			return t
+		}
+	}
+	return ""
 }
 
 func alSessionListForTool(sm *session.SessionManager, limit int) []tools.SessionInfo {
