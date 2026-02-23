@@ -82,6 +82,24 @@ func Validate(cfg *Config) []error {
 			errs = append(errs, fmt.Errorf("agents.defaults.heartbeat.ack_max_chars must be > 0 when enabled=true"))
 		}
 	}
+	aut := cfg.Agents.Defaults.Autonomy
+	if aut.Enabled {
+		if aut.TickIntervalSec <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.tick_interval_sec must be > 0 when enabled=true"))
+		}
+		if aut.MinRunIntervalSec <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.min_run_interval_sec must be > 0 when enabled=true"))
+		}
+		if aut.MaxPendingDurationSec <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_pending_duration_sec must be > 0 when enabled=true"))
+		}
+		if aut.MaxConsecutiveStalls <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_consecutive_stalls must be > 0 when enabled=true"))
+		}
+		if aut.MaxDispatchPerTick <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_dispatch_per_tick must be > 0 when enabled=true"))
+		}
+	}
 	texts := cfg.Agents.Defaults.Texts
 	if strings.TrimSpace(texts.NoResponseFallback) == "" {
 		errs = append(errs, fmt.Errorf("agents.defaults.texts.no_response_fallback must be non-empty"))

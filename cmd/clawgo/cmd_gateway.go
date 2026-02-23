@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"clawgo/pkg/agent"
+	"clawgo/pkg/autonomy"
 	"clawgo/pkg/bus"
 	"clawgo/pkg/channels"
 	"clawgo/pkg/config"
@@ -100,6 +101,7 @@ func gatewayCmd() {
 	})
 	configureCronServiceRuntime(cronService, cfg)
 	heartbeatService := buildHeartbeatService(cfg, msgBus)
+	autonomyEngine := buildAutonomyEngine(cfg, msgBus)
 	sentinelService := sentinel.NewService(
 		getConfigPath(),
 		cfg.WorkspacePath(),
@@ -152,6 +154,10 @@ func gatewayCmd() {
 		fmt.Printf("Error starting heartbeat service: %v\n", err)
 	}
 	fmt.Println("✓ Heartbeat service started")
+	autonomyEngine.Start()
+	if cfg.Agents.Defaults.Autonomy.Enabled {
+		fmt.Println("✓ Autonomy engine started")
+	}
 	if cfg.Sentinel.Enabled {
 		sentinelService.Start()
 		fmt.Println("✓ Sentinel service started")
@@ -181,10 +187,13 @@ func gatewayCmd() {
 			}
 			configureCronServiceRuntime(cronService, newCfg)
 			heartbeatService.Stop()
+			autonomyEngine.Stop()
 			heartbeatService = buildHeartbeatService(newCfg, msgBus)
+			autonomyEngine = buildAutonomyEngine(newCfg, msgBus)
 			if err := heartbeatService.Start(); err != nil {
 				fmt.Printf("Error starting heartbeat service: %v\n", err)
 			}
+			autonomyEngine.Start()
 
 			if reflect.DeepEqual(cfg, newCfg) {
 				fmt.Println("✓ Config unchanged, skip reload")
@@ -274,6 +283,7 @@ func gatewayCmd() {
 			fmt.Println("\nShutting down...")
 			cancel()
 			heartbeatService.Stop()
+			autonomyEngine.Stop()
 			sentinelService.Stop()
 			cronService.Stop()
 			agentLoop.Stop()
@@ -627,4 +637,19 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 		})
 		return "queued", nil
 	}, hbInterval, cfg.Agents.Defaults.Heartbeat.Enabled, cfg.Agents.Defaults.Heartbeat.PromptTemplate)
+}
+
+func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
+	a := cfg.Agents.Defaults.Autonomy
+	return autonomy.NewEngine(autonomy.Options{
+		Enabled:               a.Enabled,
+		TickIntervalSec:       a.TickIntervalSec,
+		MinRunIntervalSec:     a.MinRunIntervalSec,
+		MaxPendingDurationSec: a.MaxPendingDurationSec,
+		MaxConsecutiveStalls:  a.MaxConsecutiveStalls,
+		MaxDispatchPerTick:    a.MaxDispatchPerTick,
+		Workspace:             cfg.WorkspacePath(),
+		DefaultNotifyChannel:  a.NotifyChannel,
+		DefaultNotifyChatID:   a.NotifyChatID,
+	}, msgBus)
 }

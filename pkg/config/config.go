@@ -38,9 +38,21 @@ type AgentDefaults struct {
 	Temperature       float64                 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	Heartbeat         HeartbeatConfig         `json:"heartbeat"`
+	Autonomy          AutonomyConfig          `json:"autonomy"`
 	Texts             AgentTextConfig         `json:"texts"`
 	ContextCompaction ContextCompactionConfig `json:"context_compaction"`
 	RuntimeControl    RuntimeControlConfig    `json:"runtime_control"`
+}
+
+type AutonomyConfig struct {
+	Enabled              bool   `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ENABLED"`
+	TickIntervalSec      int    `json:"tick_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TICK_INTERVAL_SEC"`
+	MinRunIntervalSec    int    `json:"min_run_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
+	MaxPendingDurationSec int   `json:"max_pending_duration_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_PENDING_DURATION_SEC"`
+	MaxConsecutiveStalls int    `json:"max_consecutive_stalls" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_CONSECUTIVE_STALLS"`
+	MaxDispatchPerTick   int    `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
+	NotifyChannel        string `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
+	NotifyChatID         string `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
 }
 
 type AgentTextConfig struct {
@@ -283,6 +295,16 @@ func DefaultConfig() *Config {
 					EverySec:    30 * 60,
 					AckMaxChars: 64,
 					PromptTemplate: "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+				},
+				Autonomy: AutonomyConfig{
+					Enabled:               false,
+					TickIntervalSec:       30,
+					MinRunIntervalSec:     20,
+					MaxPendingDurationSec: 180,
+					MaxConsecutiveStalls:  3,
+					MaxDispatchPerTick:    2,
+					NotifyChannel:         "",
+					NotifyChatID:          "",
 				},
 				Texts: AgentTextConfig{
 					NoResponseFallback:    "I've completed processing but have no response to give.",
