@@ -161,6 +161,12 @@ deps:
 run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
+## test: Build and compile-check in Docker (Dockerfile.test)
+test:
+	@echo "Running Docker compile test..."
+	docker build -f Dockerfile.test -t clawgo:test .
+	@echo "Docker compile test passed"
+
 ## help: Show this help message
 help:
 	@echo "clawgo Makefile"
