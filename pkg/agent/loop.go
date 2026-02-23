@@ -259,6 +259,24 @@ type StartupSelfCheckReport struct {
 	CompactedSessions int
 }
 
+type loopPromptTemplates struct {
+	autonomyFollowUpReportNoFocus   string
+	autonomyFollowUpSilentNoFocus   string
+	autonomyFollowUpReportWithFocus string
+	autonomyFollowUpSilentWithFocus string
+	autonomyFocusBootstrap          string
+	autoLearnRound                  string
+	autonomyTaskWrapper             string
+	progressStart                   string
+	progressAnalysis                string
+	progressExecutionStart          string
+	progressExecutionRound          string
+	progressToolDone                string
+	progressToolFailed              string
+	progressFinalization            string
+	progressDone                    string
+}
+
 type tokenUsageTotals struct {
 	input  int
 	output int
@@ -575,7 +593,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		model:             defaultModel,
 		maxIterations:     cfg.Agents.Defaults.MaxToolIterations,
 		sessions:          sessionsManager,
-		contextBuilder:    NewContextBuilder(workspace, cfg.Memory, func() []string { return toolsRegistry.GetSummaries() }),
+		contextBuilder:    NewContextBuilder(workspace, cfg.Memory, cfg.Agents.Defaults.RuntimeControl.SystemSummary, func() []string { return toolsRegistry.GetSummaries() }),
 		tools:             toolsRegistry,
 		orchestrator:      orchestrator,
 		compactionCfg:     cfg.Agents.Defaults.ContextCompaction,
@@ -942,7 +960,7 @@ func (al *AgentLoop) startAutonomy(ctx context.Context, msg bus.InboundMessage, 
 			SenderID:   "autonomy",
 			ChatID:     msg.ChatID,
 			SessionKey: msg.SessionKey,
-			Content:    buildAutonomyFocusPrompt(s.focus),
+			Content:    al.buildAutonomyFocusPrompt(s.focus),
 			Metadata: map[string]string{
 				"source": "autonomy",
 				"round":  "0",
@@ -1077,7 +1095,7 @@ func (al *AgentLoop) maybeRunAutonomyRound(msg bus.InboundMessage) bool {
 		SenderID:   "autonomy",
 		ChatID:     msg.ChatID,
 		SessionKey: msg.SessionKey,
-		Content:    buildAutonomyFollowUpPrompt(round, focus, reportDue),
+		Content:    al.buildAutonomyFollowUpPrompt(round, focus, reportDue),
 		Metadata: map[string]string{
 			"source":     "autonomy",
 			"round":      strconv.Itoa(round),
@@ -1098,23 +1116,37 @@ func (al *AgentLoop) finishAutonomyRound(sessionKey string) {
 	}
 }
 
-func buildAutonomyFollowUpPrompt(round int, focus string, reportDue bool) string {
+func (al *AgentLoop) buildAutonomyFollowUpPrompt(round int, focus string, reportDue bool) string {
+	prompts := al.loadLoopPromptTemplates()
 	focus = strings.TrimSpace(focus)
 	if focus == "" && reportDue {
-		return fmt.Sprintf("Autonomy round %d: the user has not provided new input yet. Based on the current session context and completed work, autonomously complete one high-value next step and report progress or results in natural language.", round)
+		return renderLoopPromptTemplate(prompts.autonomyFollowUpReportNoFocus, map[string]string{
+			"round": strconv.Itoa(round),
+		})
 	}
 	if focus == "" && !reportDue {
-		return fmt.Sprintf("Autonomy round %d: the user has not provided new input yet. Based on the current session context and completed work, autonomously complete one high-value next step. This round is execution-only; do not send an external reply.", round)
+		return renderLoopPromptTemplate(prompts.autonomyFollowUpSilentNoFocus, map[string]string{
+			"round": strconv.Itoa(round),
+		})
 	}
 	if reportDue {
-		return fmt.Sprintf("Autonomy round %d: the user has not provided new input yet. Prioritize progress around the focus \"%s\"; if that focus is complete, explain and move to another high-value next step. After completion, report progress or results in natural language.", round, focus)
+		return renderLoopPromptTemplate(prompts.autonomyFollowUpReportWithFocus, map[string]string{
+			"round": strconv.Itoa(round),
+			"focus": focus,
+		})
 	}
-	return fmt.Sprintf("Autonomy round %d: the user has not provided new input yet. Prioritize progress around the focus \"%s\"; if that focus is complete, explain and move to another high-value next step. This round is execution-only; do not send an external reply.", round, focus)
+	return renderLoopPromptTemplate(prompts.autonomyFollowUpSilentWithFocus, map[string]string{
+		"round": strconv.Itoa(round),
+		"focus": focus,
+	})
 }
 
-func buildAutonomyFocusPrompt(focus string) string {
+func (al *AgentLoop) buildAutonomyFocusPrompt(focus string) string {
+	prompts := al.loadLoopPromptTemplates()
 	focus = strings.TrimSpace(focus)
-	return fmt.Sprintf("Autonomy mode started. For this round, prioritize the focus \"%s\": clarify the round goal first, then execute and report progress and results.", focus)
+	return renderLoopPromptTemplate(prompts.autonomyFocusBootstrap, map[string]string{
+		"focus": focus,
+	})
 }
 
 func (al *AgentLoop) startAutoLearner(ctx context.Context, msg bus.InboundMessage, interval time.Duration) {
@@ -1164,7 +1196,7 @@ func (al *AgentLoop) runAutoLearnerLoop(ctx context.Context, msg bus.InboundMess
 			SenderID:   "autolearn",
 			ChatID:     msg.ChatID,
 			SessionKey: msg.SessionKey,
-			Content:    buildAutoLearnPrompt(round),
+			Content:    al.buildAutoLearnPrompt(round),
 			Metadata: map[string]string{
 				"source": "autolearn",
 				"round":  strconv.Itoa(round),
@@ -1230,12 +1262,134 @@ func (al *AgentLoop) stopAutoLearner(sessionKey string) bool {
 	return true
 }
 
-func buildAutoLearnPrompt(round int) string {
-	return fmt.Sprintf("Auto-learn round %d: no user task is required. Based on current session and project context, choose and complete one high-value small task autonomously. Requirements: 1) define the learning goal for this round; 2) call tools when needed; 3) write key conclusions to memory/MEMORY.md; 4) output a concise progress report.", round)
+func (al *AgentLoop) buildAutoLearnPrompt(round int) string {
+	prompts := al.loadLoopPromptTemplates()
+	return renderLoopPromptTemplate(prompts.autoLearnRound, map[string]string{
+		"round": strconv.Itoa(round),
+	})
 }
 
-func buildAutonomyTaskPrompt(task string) string {
-	return fmt.Sprintf("Enable autonomous execution strategy. Proceed with the task directly, report progress naturally at key points, and finally provide results plus next-step suggestions.\n\nUser task: %s", strings.TrimSpace(task))
+func (al *AgentLoop) buildAutonomyTaskPrompt(task string) string {
+	prompts := al.loadLoopPromptTemplates()
+	return renderLoopPromptTemplate(prompts.autonomyTaskWrapper, map[string]string{
+		"task": strings.TrimSpace(task),
+	})
+}
+
+func defaultLoopPromptTemplates() loopPromptTemplates {
+	return loopPromptTemplates{
+		autonomyFollowUpReportNoFocus:   "Autonomy round {round}: first complete the current active task. After it is complete, you may continue with one closely related next step and report progress.",
+		autonomyFollowUpSilentNoFocus:   "Autonomy round {round}: first complete the current active task. After it is complete, you may continue with one closely related next step. If blocked, stop this round without external reply.",
+		autonomyFollowUpReportWithFocus: "Autonomy round {round}: first complete focus \"{focus}\". After that focus is complete, you may extend with one closely related next step; avoid unrelated branches. If blocked, report blocker and pause.",
+		autonomyFollowUpSilentWithFocus: "Autonomy round {round}: first complete focus \"{focus}\". After that focus is complete, you may extend with one closely related next step; avoid unrelated branches. If blocked, stop this round without external reply.",
+		autonomyFocusBootstrap:          "Autonomy mode started. Prioritize focus \"{focus}\" first. Once complete, extension is allowed only to directly related next steps.",
+		autoLearnRound:                  "Auto-learn round {round}: choose one small bounded task and complete it. If finished with remaining capacity, you may do one directly related extension step, then stop.",
+		autonomyTaskWrapper:             "Execute the user task below first. After completion, you may continue with directly related improvements. Avoid unrelated side tasks.\n\nUser task: {task}",
+		progressStart:                   "I received your task and will clarify the goal and constraints first.",
+		progressAnalysis:                "I am building the context needed for execution.",
+		progressExecutionStart:          "I am starting step-by-step execution.",
+		progressExecutionRound:          "Starting another execution round.",
+		progressToolDone:                "Tool execution completed.",
+		progressToolFailed:              "Tool execution failed.",
+		progressFinalization:            "Final response is ready.",
+		progressDone:                    "Task completed.",
+	}
+}
+
+func (al *AgentLoop) loadLoopPromptTemplates() loopPromptTemplates {
+	prompts := defaultLoopPromptTemplates()
+	if al == nil || strings.TrimSpace(al.workspace) == "" {
+		return prompts
+	}
+
+	for _, filename := range []string{"AGENTS.md", "USER.md"} {
+		filePath := filepath.Join(al.workspace, filename)
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+		applyLoopPromptOverrides(&prompts, string(data))
+	}
+	return prompts
+}
+
+func applyLoopPromptOverrides(dst *loopPromptTemplates, content string) {
+	if dst == nil {
+		return
+	}
+	const sectionHeader = "## CLAWGO_LOOP_PROMPTS"
+	lines := strings.Split(content, "\n")
+	inSection := false
+
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "## ") {
+			if strings.EqualFold(line, sectionHeader) {
+				inSection = true
+				continue
+			}
+			if inSection {
+				break
+			}
+		}
+		if !inSection || line == "" || strings.HasPrefix(line, "<!--") {
+			continue
+		}
+		if strings.HasPrefix(line, "- ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "- "))
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.ToLower(strings.TrimSpace(key))
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		value = strings.ReplaceAll(value, `\n`, "\n")
+		switch key {
+		case "autonomy_followup_report_no_focus":
+			dst.autonomyFollowUpReportNoFocus = value
+		case "autonomy_followup_silent_no_focus":
+			dst.autonomyFollowUpSilentNoFocus = value
+		case "autonomy_followup_report_with_focus":
+			dst.autonomyFollowUpReportWithFocus = value
+		case "autonomy_followup_silent_with_focus":
+			dst.autonomyFollowUpSilentWithFocus = value
+		case "autonomy_focus_bootstrap":
+			dst.autonomyFocusBootstrap = value
+		case "autolearn_round":
+			dst.autoLearnRound = value
+		case "autonomy_task_wrapper":
+			dst.autonomyTaskWrapper = value
+		case "progress_start":
+			dst.progressStart = value
+		case "progress_analysis":
+			dst.progressAnalysis = value
+		case "progress_execution_start":
+			dst.progressExecutionStart = value
+		case "progress_execution_round":
+			dst.progressExecutionRound = value
+		case "progress_tool_done":
+			dst.progressToolDone = value
+		case "progress_tool_failed":
+			dst.progressToolFailed = value
+		case "progress_finalization":
+			dst.progressFinalization = value
+		case "progress_done":
+			dst.progressDone = value
+		}
+	}
+}
+
+func renderLoopPromptTemplate(template string, vars map[string]string) string {
+	text := strings.TrimSpace(template)
+	for key, value := range vars {
+		placeholder := "{" + strings.TrimSpace(key) + "}"
+		text = strings.ReplaceAll(text, placeholder, value)
+	}
+	return strings.TrimSpace(text)
 }
 
 func isSyntheticMessage(msg bus.InboundMessage) bool {
@@ -1878,8 +2032,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if strings.TrimSpace(userPrompt) == "" {
 		userPrompt = msg.Content
 	}
+	loopPrompts := al.loadLoopPromptTemplates()
 	if al.isAutonomyEnabled(msg.SessionKey) && run.controlEligible {
-		userPrompt = buildAutonomyTaskPrompt(userPrompt)
+		userPrompt = al.buildAutonomyTaskPrompt(userPrompt)
 	}
 
 	var progress *stageReporter
@@ -1896,8 +2051,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				})
 			},
 		}
-		progress.Publish(1, 5, "start", "I received your task and will clarify the goal and constraints first.")
-		progress.Publish(2, 5, "analysis", "I am building the context needed for execution.")
+		progress.Publish(1, 5, "start", loopPrompts.progressStart)
+		progress.Publish(2, 5, "analysis", loopPrompts.progressAnalysis)
 	}
 
 	// Update tool contexts
@@ -1912,7 +2067,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	history := al.sessions.GetHistory(msg.SessionKey)
+	history := pruneControlHistoryMessages(al.sessions.GetHistory(msg.SessionKey))
 	summary := al.sessions.GetSummary(msg.SessionKey)
 
 	messages := al.contextBuilder.BuildMessages(
@@ -1925,10 +2080,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	)
 
 	if progress != nil {
-		progress.Publish(3, 5, "execution", "I am starting step-by-step execution.")
+		progress.Publish(3, 5, "execution", loopPrompts.progressExecutionStart)
 	}
 
-	finalContent, iteration, err := al.runLLMToolLoop(ctx, messages, msg.SessionKey, false, progress)
+	finalContent, iteration, err := al.runLLMToolLoop(ctx, messages, msg.SessionKey, false, !isSyntheticMessage(msg), progress)
 	if err != nil {
 		if progress != nil {
 			progress.Publish(5, 5, "failure", err.Error())
@@ -1953,13 +2108,17 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
+	if !isSyntheticMessage(msg) {
+		al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
+	}
 
-	// Use AddMessageFull to persist the complete assistant message, including thoughts/tool calls.
-	al.sessions.AddMessageFull(msg.SessionKey, providers.Message{
-		Role:    "assistant",
-		Content: userContent,
-	})
+	if !isSyntheticMessage(msg) {
+		// Use AddMessageFull to persist the complete assistant message, including thoughts/tool calls.
+		al.sessions.AddMessageFull(msg.SessionKey, providers.Message{
+			Role:    "assistant",
+			Content: userContent,
+		})
+	}
 
 	if err := al.persistSessionWithCompaction(ctx, msg.SessionKey); err != nil {
 		logger.WarnCF("agent", "Failed to save session metadata", map[string]interface{}{
@@ -1978,8 +2137,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		})
 
 	if progress != nil {
-		progress.Publish(4, 5, "finalization", "Final response is ready.")
-		progress.Publish(5, 5, "done", "Task completed.")
+		progress.Publish(4, 5, "finalization", loopPrompts.progressFinalization)
+		progress.Publish(5, 5, "done", loopPrompts.progressDone)
 	}
 
 	return userContent, nil
@@ -2024,7 +2183,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	}
 
 	// Build messages with the announce content
-	history := al.sessions.GetHistory(sessionKey)
+	history := pruneControlHistoryMessages(al.sessions.GetHistory(sessionKey))
 	summary := al.sessions.GetSummary(sessionKey)
 	messages := al.contextBuilder.BuildMessages(
 		history,
@@ -2035,7 +2194,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		originChatID,
 	)
 
-	finalContent, iteration, err := al.runLLMToolLoop(ctx, messages, sessionKey, true, nil)
+	finalContent, iteration, err := al.runLLMToolLoop(ctx, messages, sessionKey, true, false, nil)
 	if err != nil {
 		return "", err
 	}
@@ -2044,16 +2203,13 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		finalContent = "Background task completed."
 	}
 
-	// Save to session with system message marker
-	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
-
-	// If finalContent has no tool calls (i.e., the final LLM output),
-	// earlier steps were already stored via AddMessageFull in the loop.
-	// This AddMessageFull stores the final reply.
-	al.sessions.AddMessageFull(sessionKey, providers.Message{
-		Role:    "assistant",
-		Content: finalContent,
-	})
+	systemSummary := al.summarizeSystemTaskResult(ctx, msg.Content, finalContent)
+	if strings.TrimSpace(systemSummary) != "" {
+		al.sessions.AddMessageFull(sessionKey, providers.Message{
+			Role:    "assistant",
+			Content: systemSummary,
+		})
+	}
 
 	if err := al.persistSessionWithCompaction(ctx, sessionKey); err != nil {
 		logger.WarnCF("agent", "Failed to save session metadata", map[string]interface{}{
@@ -2071,14 +2227,122 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	return finalContent, nil
 }
 
+func (al *AgentLoop) summarizeSystemTaskResult(ctx context.Context, task, result string) string {
+	task = strings.TrimSpace(task)
+	result = strings.TrimSpace(result)
+	if result == "" {
+		return ""
+	}
+	policy := al.systemSummaryPolicy()
+
+	systemPrompt := al.withBootstrapPolicy(`Summarize a background/system task result for future context reuse.
+Return concise markdown with these sections only:
+` + strings.TrimSpace(policy.marker) + `
+` + strings.TrimSpace(policy.completedPrefix) + ` ...
+` + strings.TrimSpace(policy.changesPrefix) + ` ...
+` + strings.TrimSpace(policy.outcomePrefix) + ` ...
+Rules: <= 700 characters; one line per bullet; keep concrete facts only.`)
+
+	userPrompt := fmt.Sprintf("System task:\n%s\n\nExecution result:\n%s", truncate(task, 1200), truncate(result, 2600))
+	summaryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	resp, err := al.callLLMWithModelFallback(summaryCtx, []providers.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}, nil, map[string]interface{}{
+		"max_tokens":  260,
+		"temperature": 0.1,
+	})
+	if err == nil && resp != nil && strings.TrimSpace(resp.Content) != "" {
+		return truncate(strings.TrimSpace(resp.Content), 900)
+	}
+
+	return buildSystemTaskSummaryFallback(task, result, policy)
+}
+
+func buildSystemTaskSummaryFallback(task, result string, policy systemSummaryPolicy) string {
+	task = strings.TrimSpace(task)
+	result = strings.TrimSpace(result)
+	if result == "" {
+		return ""
+	}
+
+	lines := strings.Split(result, "\n")
+	completed := ""
+	changes := make([]string, 0, 3)
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		if completed == "" {
+			completed = line
+		}
+		lower := strings.ToLower(line)
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || isNumberedSummaryLine(line) ||
+			strings.Contains(lower, "modified") || strings.Contains(lower, "updated") ||
+			strings.Contains(lower, "added") || strings.Contains(lower, "removed") ||
+			strings.Contains(lower, "changed") || strings.Contains(lower, "新增") ||
+			strings.Contains(lower, "修改") || strings.Contains(lower, "删除") {
+			changes = append(changes, line)
+		}
+		if len(changes) >= 3 {
+			break
+		}
+	}
+	if completed == "" {
+		completed = "Task executed."
+	}
+	changesText := "No explicit file-level changes detected."
+	if len(changes) > 0 {
+		changesText = strings.Join(changes, " | ")
+	}
+	outcome := truncate(result, 220)
+
+	return fmt.Sprintf("%s\n%s %s\n%s %s\n%s %s",
+		policy.marker,
+		policy.completedPrefix, truncate(completed, 220),
+		policy.changesPrefix, truncate(changesText, 320),
+		policy.outcomePrefix, outcome)
+}
+
+func isNumberedSummaryLine(line string) bool {
+	dot := strings.Index(line, ".")
+	if dot <= 0 || dot >= len(line)-1 {
+		return false
+	}
+	for i := 0; i < dot; i++ {
+		if line[i] < '0' || line[i] > '9' {
+			return false
+		}
+	}
+	return line[dot+1] == ' '
+}
+
+func (al *AgentLoop) systemSummaryPolicy() systemSummaryPolicy {
+	if al == nil || al.contextBuilder == nil {
+		return defaultSystemSummaryPolicy()
+	}
+	p := al.contextBuilder.summaryPolicy
+	if strings.TrimSpace(p.marker) == "" ||
+		strings.TrimSpace(p.completedPrefix) == "" ||
+		strings.TrimSpace(p.changesPrefix) == "" ||
+		strings.TrimSpace(p.outcomePrefix) == "" {
+		return defaultSystemSummaryPolicy()
+	}
+	return p
+}
+
 func (al *AgentLoop) runLLMToolLoop(
 	ctx context.Context,
 	messages []providers.Message,
 	sessionKey string,
 	systemMode bool,
+	persistHistory bool,
 	progress *stageReporter,
 ) (string, int, error) {
 	messages = sanitizeMessagesForToolCalling(messages)
+	loopPrompts := al.loadLoopPromptTemplates()
 
 	state := toolLoopState{}
 
@@ -2086,7 +2350,7 @@ func (al *AgentLoop) runLLMToolLoop(
 		state.iteration++
 		iteration := state.iteration
 		if progress != nil {
-			progress.Publish(3, 5, "execution", "正在执行下一轮。")
+			progress.Publish(3, 5, "execution", loopPrompts.progressExecutionRound)
 		}
 
 		providerToolDefs, err := buildProviderToolDefs(al.tools.GetDefinitions())
@@ -2153,7 +2417,7 @@ func (al *AgentLoop) runLLMToolLoop(
 			})
 
 		budget := al.computeToolLoopBudget(state)
-		outcome := al.actToolCalls(ctx, response.Content, response.ToolCalls, &messages, sessionKey, iteration, budget, systemMode, progress)
+		outcome := al.actToolCalls(ctx, response.Content, response.ToolCalls, &messages, sessionKey, iteration, budget, systemMode, progress, persistHistory)
 		state.lastToolResult = outcome.lastToolResult
 		if outcome.executedCalls > 0 && outcome.roundToolErrors == outcome.executedCalls {
 			state.consecutiveAllToolErrorRounds++
@@ -2330,6 +2594,7 @@ func (al *AgentLoop) actToolCalls(
 	budget toolLoopBudget,
 	systemMode bool,
 	progress *stageReporter,
+	persistHistory bool,
 ) toolActOutcome {
 	outcome := toolActOutcome{}
 	if len(toolCalls) == 0 {
@@ -2362,7 +2627,9 @@ func (al *AgentLoop) actToolCalls(
 		})
 	}
 	*messages = append(*messages, assistantMsg)
-	al.sessions.AddMessageFull(sessionKey, assistantMsg)
+	if persistHistory {
+		al.sessions.AddMessageFull(sessionKey, assistantMsg)
+	}
 
 	start := time.Now()
 	maxActDuration := budget.maxActDuration
@@ -2382,6 +2649,7 @@ func (al *AgentLoop) actToolCalls(
 		outcome.truncated = true
 		outcome.droppedCalls += len(execCalls) - len(results)
 	}
+	loopPrompts := al.loadLoopPromptTemplates()
 
 	for i, execRes := range results {
 		tc := execRes.call
@@ -2408,9 +2676,9 @@ func (al *AgentLoop) actToolCalls(
 		}
 		if progress != nil {
 			if err != nil {
-				progress.Publish(3, 5, "execution", "工具执行失败。")
+				progress.Publish(3, 5, "execution", loopPrompts.progressToolFailed)
 			} else {
-				progress.Publish(3, 5, "execution", "工具执行完成。")
+				progress.Publish(3, 5, "execution", loopPrompts.progressToolDone)
 			}
 		}
 		outcome.lastToolResult = result
@@ -2421,7 +2689,7 @@ func (al *AgentLoop) actToolCalls(
 			ToolCallID: tc.ID,
 		}
 		*messages = append(*messages, toolResultMsg)
-		if shouldPersistToolResultRecord(record, i, len(results)) {
+		if persistHistory && shouldPersistToolResultRecord(record, i, len(results)) {
 			al.sessions.AddMessageFull(sessionKey, toolResultMsg)
 		}
 		outcome.executedCalls++
@@ -2442,7 +2710,7 @@ func (al *AgentLoop) executeToolCalls(
 	if parallel {
 		return al.executeToolCallsBatchedParallel(ctx, execCalls, iteration, singleTimeout, systemMode, progress)
 	}
-	return al.executeToolCallsSerial(ctx, execCalls, iteration, singleTimeout, systemMode, progress)
+	return al.executeToolCallsSerial(ctx, execCalls, iteration, singleTimeout, systemMode)
 }
 
 func (al *AgentLoop) executeToolCallsBatchedParallel(
@@ -2463,7 +2731,7 @@ func (al *AgentLoop) executeToolCallsBatchedParallel(
 		}
 		if len(batch) <= 1 {
 			if len(batch) == 1 {
-				results = append(results, al.executeSingleToolCall(ctx, len(results), batch[0], iteration, singleTimeout, systemMode, progress))
+				results = append(results, al.executeSingleToolCall(ctx, len(results), batch[0], iteration, singleTimeout, systemMode))
 			}
 			continue
 		}
@@ -2479,7 +2747,6 @@ func (al *AgentLoop) executeToolCallsSerial(
 	iteration int,
 	singleTimeout time.Duration,
 	systemMode bool,
-	progress *stageReporter,
 ) []toolCallExecResult {
 	results := make([]toolCallExecResult, 0, len(execCalls))
 	for i, tc := range execCalls {
@@ -2488,7 +2755,7 @@ func (al *AgentLoop) executeToolCallsSerial(
 			return results
 		default:
 		}
-		res := al.executeSingleToolCall(ctx, i, tc, iteration, singleTimeout, systemMode, progress)
+		res := al.executeSingleToolCall(ctx, i, tc, iteration, singleTimeout, systemMode)
 		results = append(results, res)
 	}
 	return results
@@ -2505,7 +2772,7 @@ func (al *AgentLoop) executeToolCallsParallel(
 	results := make([]toolCallExecResult, len(execCalls))
 	limit := al.maxToolParallelCalls()
 	if limit <= 1 {
-		return al.executeToolCallsSerial(ctx, execCalls, iteration, singleTimeout, systemMode, progress)
+		return al.executeToolCallsSerial(ctx, execCalls, iteration, singleTimeout, systemMode)
 	}
 	if len(execCalls) < limit {
 		limit = len(execCalls)
@@ -2523,7 +2790,7 @@ func (al *AgentLoop) executeToolCallsParallel(
 		go func(i int, tc providers.ToolCall) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			results[i] = al.executeSingleToolCall(ctx, i, tc, iteration, singleTimeout, systemMode, progress)
+			results[i] = al.executeSingleToolCall(ctx, i, tc, iteration, singleTimeout, systemMode)
 		}(i, tc)
 	}
 wait:
@@ -2629,7 +2896,6 @@ func (al *AgentLoop) executeSingleToolCall(
 	iteration int,
 	singleTimeout time.Duration,
 	systemMode bool,
-	progress *stageReporter,
 ) toolCallExecResult {
 	if !systemMode {
 		safeArgs := sanitizeSensitiveToolArgs(tc.Arguments)
@@ -2646,13 +2912,6 @@ func (al *AgentLoop) executeSingleToolCall(
 	result, err := al.tools.Execute(toolCtx, tc.Name, tc.Arguments)
 	if err != nil {
 		result = fmt.Sprintf("Error: %v", err)
-	}
-	if progress != nil {
-		if err != nil {
-			progress.Publish(3, 5, "execution", "工具执行失败。")
-		} else {
-			progress.Publish(3, 5, "execution", "工具执行完成。")
-		}
 	}
 	return toolCallExecResult{
 		index:  index,
@@ -3905,8 +4164,38 @@ func normalizeCompactionMode(raw string) string {
 	}
 }
 
+func isSyntheticUserPromptContent(content string) bool {
+	text := strings.ToLower(strings.TrimSpace(content))
+	if text == "" {
+		return false
+	}
+	if strings.HasPrefix(text, "[system:") {
+		return true
+	}
+	return false
+}
+
+func pruneControlHistoryMessages(messages []providers.Message) []providers.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	pruned := make([]providers.Message, 0, len(messages))
+	for _, msg := range messages {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		if role == "user" && isSyntheticUserPromptContent(msg.Content) {
+			continue
+		}
+		pruned = append(pruned, msg)
+	}
+	return pruned
+}
+
 func formatCompactionTranscript(messages []providers.Message, maxChars int) string {
 	if maxChars <= 0 || len(messages) == 0 {
+		return ""
+	}
+	messages = pruneControlHistoryMessages(messages)
+	if len(messages) == 0 {
 		return ""
 	}
 
@@ -3991,6 +4280,7 @@ func shouldCompactBySize(summary string, history []providers.Message, maxTranscr
 }
 
 func estimateCompactionChars(summary string, history []providers.Message) int {
+	history = pruneControlHistoryMessages(history)
 	total := len(strings.TrimSpace(summary))
 	for _, msg := range history {
 		total += len(strings.TrimSpace(msg.Role)) + len(strings.TrimSpace(msg.Content)) + 6

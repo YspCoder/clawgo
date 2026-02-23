@@ -52,6 +52,27 @@ func Validate(cfg *Config) []error {
 	if rc.ToolMaxParallelCalls <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.tool_max_parallel_calls must be > 0"))
 	}
+	if strings.TrimSpace(rc.SystemSummary.Marker) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.marker must be non-empty"))
+	}
+	if strings.TrimSpace(rc.SystemSummary.CompletedPrefix) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.completed_prefix must be non-empty"))
+	}
+	if strings.TrimSpace(rc.SystemSummary.ChangesPrefix) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.changes_prefix must be non-empty"))
+	}
+	if strings.TrimSpace(rc.SystemSummary.OutcomePrefix) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.outcome_prefix must be non-empty"))
+	}
+	if strings.TrimSpace(rc.SystemSummary.CompletedTitle) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.completed_title must be non-empty"))
+	}
+	if strings.TrimSpace(rc.SystemSummary.ChangesTitle) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.changes_title must be non-empty"))
+	}
+	if strings.TrimSpace(rc.SystemSummary.OutcomesTitle) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.outcomes_title must be non-empty"))
+	}
 	if cfg.Agents.Defaults.ContextCompaction.Enabled {
 		cc := cfg.Agents.Defaults.ContextCompaction
 		if cc.Mode != "" {

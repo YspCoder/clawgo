@@ -17,15 +17,18 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace    string
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
-	toolsSummary func() []string // Function to get tool summaries dynamically
+	workspace     string
+	skillsLoader  *skills.SkillsLoader
+	memory        *MemoryStore
+	toolsSummary  func() []string // Function to get tool summaries dynamically
+	summaryPolicy systemSummaryPolicy
 }
 
 const (
-	maxInlineMediaFileBytes  int64 = 5 * 1024 * 1024
-	maxInlineMediaTotalBytes int64 = 12 * 1024 * 1024
+	maxInlineMediaFileBytes     int64 = 5 * 1024 * 1024
+	maxInlineMediaTotalBytes    int64 = 12 * 1024 * 1024
+	maxSystemTaskSummaries            = 4
+	maxSystemTaskSummariesChars       = 2400
 )
 
 func getGlobalConfigDir() string {
@@ -36,7 +39,7 @@ func getGlobalConfigDir() string {
 	return filepath.Join(home, ".clawgo")
 }
 
-func NewContextBuilder(workspace string, memCfg config.MemoryConfig, toolsSummaryFunc func() []string) *ContextBuilder {
+func NewContextBuilder(workspace string, memCfg config.MemoryConfig, summaryCfg config.SystemSummaryPolicyConfig, toolsSummaryFunc func() []string) *ContextBuilder {
 	// Built-in skills: the current project's skills directory.
 	// Use the skills/ directory under the current working directory.
 	wd, _ := os.Getwd()
@@ -44,10 +47,11 @@ func NewContextBuilder(workspace string, memCfg config.MemoryConfig, toolsSummar
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
-		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace, memCfg),
-		toolsSummary: toolsSummaryFunc,
+		workspace:     workspace,
+		skillsLoader:  skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
+		memory:        NewMemoryStore(workspace, memCfg),
+		toolsSummary:  toolsSummaryFunc,
+		summaryPolicy: systemSummaryPolicyFromConfig(summaryCfg),
 	}
 }
 
@@ -83,7 +87,7 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
+3. **Memory** - When remembering something, write to %s/memory/MEMORY.md. Prompt memory context is digest-only; use memory_search to retrieve detailed notes when needed.`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
 }
 
@@ -133,7 +137,7 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 	// Memory context
 	memoryContext := cb.memory.GetMemoryContext()
 	if memoryContext != "" {
-		parts = append(parts, "# Memory\n\n"+memoryContext)
+		parts = append(parts, memoryContext)
 	}
 
 	// Join with "---" separator
@@ -163,6 +167,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	messages := []providers.Message{}
 
 	systemPrompt := cb.BuildSystemPrompt()
+	filteredHistory, systemSummaries := extractSystemTaskSummariesFromHistoryWithPolicy(history, cb.summaryPolicy)
 
 	// Add Current Session info if provided
 	if channel != "" && chatID != "" {
@@ -188,7 +193,13 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		})
 
 	if summary != "" {
-		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
+		summary = sanitizeSummaryForPrompt(summary)
+		if summary != "" {
+			systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
+		}
+	}
+	if len(systemSummaries) > 0 {
+		systemPrompt += "\n\n## Recent System Task Summaries\n\n" + formatSystemTaskSummariesWithPolicy(systemSummaries, cb.summaryPolicy)
 	}
 
 	messages = append(messages, providers.Message{
@@ -196,7 +207,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		Content: systemPrompt,
 	})
 
-	messages = append(messages, history...)
+	messages = append(messages, filteredHistory...)
 
 	userMsg := providers.Message{
 		Role:    "user",
@@ -208,6 +219,235 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	messages = append(messages, userMsg)
 
 	return messages
+}
+
+func sanitizeSummaryForPrompt(summary string) string {
+	text := strings.TrimSpace(summary)
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		lower := strings.ToLower(strings.TrimSpace(line))
+		if strings.Contains(lower, "autonomy round ") ||
+			strings.Contains(lower, "auto-learn round ") ||
+			strings.Contains(lower, "autonomy mode started.") ||
+			strings.Contains(lower, "[system:") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.TrimSpace(strings.Join(filtered, "\n"))
+}
+
+func extractSystemTaskSummariesFromHistory(history []providers.Message) ([]providers.Message, []string) {
+	return extractSystemTaskSummariesFromHistoryWithPolicy(history, defaultSystemSummaryPolicy())
+}
+
+func extractSystemTaskSummariesFromHistoryWithPolicy(history []providers.Message, policy systemSummaryPolicy) ([]providers.Message, []string) {
+	if len(history) == 0 {
+		return nil, nil
+	}
+	filtered := make([]providers.Message, 0, len(history))
+	summaries := make([]string, 0, maxSystemTaskSummaries)
+	for _, msg := range history {
+		if strings.EqualFold(strings.TrimSpace(msg.Role), "assistant") && isSystemTaskSummaryMessageWithPolicy(msg.Content, policy) {
+			summaries = append(summaries, strings.TrimSpace(msg.Content))
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	if len(summaries) > maxSystemTaskSummaries {
+		summaries = summaries[len(summaries)-maxSystemTaskSummaries:]
+	}
+	return filtered, summaries
+}
+
+func isSystemTaskSummaryMessage(content string) bool {
+	return isSystemTaskSummaryMessageWithPolicy(content, defaultSystemSummaryPolicy())
+}
+
+func isSystemTaskSummaryMessageWithPolicy(content string, policy systemSummaryPolicy) bool {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	marker := strings.ToLower(strings.TrimSpace(policy.marker))
+	completed := strings.ToLower(strings.TrimSpace(policy.completedPrefix))
+	outcome := strings.ToLower(strings.TrimSpace(policy.outcomePrefix))
+	return strings.HasPrefix(lower, marker) ||
+		(strings.Contains(lower, marker) && strings.Contains(lower, completed) && strings.Contains(lower, outcome))
+}
+
+func formatSystemTaskSummaries(summaries []string) string {
+	return formatSystemTaskSummariesWithPolicy(summaries, defaultSystemSummaryPolicy())
+}
+
+func formatSystemTaskSummariesWithPolicy(summaries []string, policy systemSummaryPolicy) string {
+	if len(summaries) == 0 {
+		return ""
+	}
+
+	completedItems := make([]string, 0, len(summaries))
+	changeItems := make([]string, 0, len(summaries))
+	outcomeItems := make([]string, 0, len(summaries))
+	for _, raw := range summaries {
+		entry := parseSystemTaskSummaryWithPolicy(raw, policy)
+		if entry.completed != "" {
+			completedItems = append(completedItems, entry.completed)
+		}
+		if entry.changes != "" {
+			changeItems = append(changeItems, entry.changes)
+		}
+		if entry.outcome != "" {
+			outcomeItems = append(outcomeItems, entry.outcome)
+		}
+	}
+
+	var sb strings.Builder
+	writeSection := func(title string, items []string) {
+		if len(items) == 0 {
+			return
+		}
+		if sb.Len() > 0 {
+			sb.WriteString("\n\n")
+		}
+		sb.WriteString("### " + title + "\n")
+		for i, item := range items {
+			sb.WriteString(fmt.Sprintf("- %d. %s\n", i+1, truncateString(item, maxSystemTaskSummariesChars)))
+		}
+	}
+
+	writeSection(policy.completedSectionTitle, completedItems)
+	writeSection(policy.changesSectionTitle, changeItems)
+	writeSection(policy.outcomesSectionTitle, outcomeItems)
+
+	if sb.Len() == 0 {
+		for i, s := range summaries {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(fmt.Sprintf("- %d. %s\n", i+1, truncateString(strings.TrimSpace(s), maxSystemTaskSummariesChars)))
+		}
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+type systemTaskSummaryEntry struct {
+	completed string
+	changes   string
+	outcome   string
+}
+
+func parseSystemTaskSummary(raw string) systemTaskSummaryEntry {
+	return parseSystemTaskSummaryWithPolicy(raw, defaultSystemSummaryPolicy())
+}
+
+func parseSystemTaskSummaryWithPolicy(raw string, policy systemSummaryPolicy) systemTaskSummaryEntry {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return systemTaskSummaryEntry{}
+	}
+	lines := strings.Split(text, "\n")
+	entry := systemTaskSummaryEntry{}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		switch {
+		case strings.HasPrefix(lower, strings.ToLower(policy.completedPrefix)):
+			entry.completed = strings.TrimSpace(trimmed[len(policy.completedPrefix):])
+		case strings.HasPrefix(lower, strings.ToLower(policy.changesPrefix)):
+			entry.changes = strings.TrimSpace(trimmed[len(policy.changesPrefix):])
+		case strings.HasPrefix(lower, strings.ToLower(policy.outcomePrefix)):
+			entry.outcome = strings.TrimSpace(trimmed[len(policy.outcomePrefix):])
+		}
+	}
+
+	firstUsefulLine := ""
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(trimmed), strings.ToLower(policy.completedPrefix)) ||
+			strings.HasPrefix(strings.ToLower(trimmed), strings.ToLower(policy.changesPrefix)) ||
+			strings.HasPrefix(strings.ToLower(trimmed), strings.ToLower(policy.outcomePrefix)) {
+			continue
+		}
+		firstUsefulLine = trimmed
+		break
+	}
+	if firstUsefulLine == "" {
+		firstUsefulLine = truncateString(text, 160)
+	}
+	if entry.completed == "" {
+		entry.completed = firstUsefulLine
+	}
+	if entry.changes == "" {
+		entry.changes = "No explicit file-level changes noted."
+	}
+	if entry.outcome == "" {
+		entry.outcome = firstUsefulLine
+	}
+	return entry
+}
+
+type systemSummaryPolicy struct {
+	marker                string
+	completedPrefix       string
+	changesPrefix         string
+	outcomePrefix         string
+	completedSectionTitle string
+	changesSectionTitle   string
+	outcomesSectionTitle  string
+}
+
+func defaultSystemSummaryPolicy() systemSummaryPolicy {
+	return systemSummaryPolicy{
+		marker:                "## System Task Summary",
+		completedPrefix:       "- Completed:",
+		changesPrefix:         "- Changes:",
+		outcomePrefix:         "- Outcome:",
+		completedSectionTitle: "Completed Actions",
+		changesSectionTitle:   "Change Summaries",
+		outcomesSectionTitle:  "Execution Outcomes",
+	}
+}
+
+func systemSummaryPolicyFromConfig(cfg config.SystemSummaryPolicyConfig) systemSummaryPolicy {
+	p := defaultSystemSummaryPolicy()
+	p.marker = strings.TrimSpace(cfg.Marker)
+	p.completedPrefix = strings.TrimSpace(cfg.CompletedPrefix)
+	p.changesPrefix = strings.TrimSpace(cfg.ChangesPrefix)
+	p.outcomePrefix = strings.TrimSpace(cfg.OutcomePrefix)
+	p.completedSectionTitle = strings.TrimSpace(cfg.CompletedTitle)
+	p.changesSectionTitle = strings.TrimSpace(cfg.ChangesTitle)
+	p.outcomesSectionTitle = strings.TrimSpace(cfg.OutcomesTitle)
+	if strings.TrimSpace(p.marker) == "" {
+		p.marker = defaultSystemSummaryPolicy().marker
+	}
+	if strings.TrimSpace(p.completedPrefix) == "" {
+		p.completedPrefix = defaultSystemSummaryPolicy().completedPrefix
+	}
+	if strings.TrimSpace(p.changesPrefix) == "" {
+		p.changesPrefix = defaultSystemSummaryPolicy().changesPrefix
+	}
+	if strings.TrimSpace(p.outcomePrefix) == "" {
+		p.outcomePrefix = defaultSystemSummaryPolicy().outcomePrefix
+	}
+	if strings.TrimSpace(p.completedSectionTitle) == "" {
+		p.completedSectionTitle = defaultSystemSummaryPolicy().completedSectionTitle
+	}
+	if strings.TrimSpace(p.changesSectionTitle) == "" {
+		p.changesSectionTitle = defaultSystemSummaryPolicy().changesSectionTitle
+	}
+	if strings.TrimSpace(p.outcomesSectionTitle) == "" {
+		p.outcomesSectionTitle = defaultSystemSummaryPolicy().outcomesSectionTitle
+	}
+	return p
 }
 
 func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID, toolName, result string) []providers.Message {

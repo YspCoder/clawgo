@@ -42,18 +42,29 @@ type AgentDefaults struct {
 }
 
 type RuntimeControlConfig struct {
-	IntentMaxInputChars           int      `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
-	AutonomyTickIntervalSec       int      `json:"autonomy_tick_interval_sec" env:"CLAWGO_AUTONOMY_TICK_INTERVAL_SEC"`
-	AutonomyMinRunIntervalSec     int      `json:"autonomy_min_run_interval_sec" env:"CLAWGO_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
-	AutonomyIdleThresholdSec      int      `json:"autonomy_idle_threshold_sec" env:"CLAWGO_AUTONOMY_IDLE_THRESHOLD_SEC"`
-	AutonomyMaxRoundsWithoutUser  int      `json:"autonomy_max_rounds_without_user" env:"CLAWGO_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
-	AutonomyMaxPendingDurationSec int      `json:"autonomy_max_pending_duration_sec" env:"CLAWGO_AUTONOMY_MAX_PENDING_DURATION_SEC"`
-	AutonomyMaxConsecutiveStalls  int      `json:"autonomy_max_consecutive_stalls" env:"CLAWGO_AUTONOMY_MAX_STALLS"`
-	AutoLearnMaxRoundsWithoutUser int      `json:"autolearn_max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
-	RunStateTTLSeconds            int      `json:"run_state_ttl_seconds" env:"CLAWGO_RUN_STATE_TTL_SECONDS"`
-	RunStateMax                   int      `json:"run_state_max" env:"CLAWGO_RUN_STATE_MAX"`
-	ToolParallelSafeNames         []string `json:"tool_parallel_safe_names"`
-	ToolMaxParallelCalls          int      `json:"tool_max_parallel_calls"`
+	IntentMaxInputChars           int                       `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
+	AutonomyTickIntervalSec       int                       `json:"autonomy_tick_interval_sec" env:"CLAWGO_AUTONOMY_TICK_INTERVAL_SEC"`
+	AutonomyMinRunIntervalSec     int                       `json:"autonomy_min_run_interval_sec" env:"CLAWGO_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
+	AutonomyIdleThresholdSec      int                       `json:"autonomy_idle_threshold_sec" env:"CLAWGO_AUTONOMY_IDLE_THRESHOLD_SEC"`
+	AutonomyMaxRoundsWithoutUser  int                       `json:"autonomy_max_rounds_without_user" env:"CLAWGO_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
+	AutonomyMaxPendingDurationSec int                       `json:"autonomy_max_pending_duration_sec" env:"CLAWGO_AUTONOMY_MAX_PENDING_DURATION_SEC"`
+	AutonomyMaxConsecutiveStalls  int                       `json:"autonomy_max_consecutive_stalls" env:"CLAWGO_AUTONOMY_MAX_STALLS"`
+	AutoLearnMaxRoundsWithoutUser int                       `json:"autolearn_max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
+	RunStateTTLSeconds            int                       `json:"run_state_ttl_seconds" env:"CLAWGO_RUN_STATE_TTL_SECONDS"`
+	RunStateMax                   int                       `json:"run_state_max" env:"CLAWGO_RUN_STATE_MAX"`
+	ToolParallelSafeNames         []string                  `json:"tool_parallel_safe_names"`
+	ToolMaxParallelCalls          int                       `json:"tool_max_parallel_calls"`
+	SystemSummary                 SystemSummaryPolicyConfig `json:"system_summary"`
+}
+
+type SystemSummaryPolicyConfig struct {
+	Marker          string `json:"marker"`
+	CompletedPrefix string `json:"completed_prefix"`
+	ChangesPrefix   string `json:"changes_prefix"`
+	OutcomePrefix   string `json:"outcome_prefix"`
+	CompletedTitle  string `json:"completed_title"`
+	ChangesTitle    string `json:"changes_title"`
+	OutcomesTitle   string `json:"outcomes_title"`
 }
 
 type ContextCompactionConfig struct {
@@ -264,6 +275,15 @@ func DefaultConfig() *Config {
 					RunStateMax:                   500,
 					ToolParallelSafeNames:         []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"},
 					ToolMaxParallelCalls:          2,
+					SystemSummary: SystemSummaryPolicyConfig{
+						Marker:          "## System Task Summary",
+						CompletedPrefix: "- Completed:",
+						ChangesPrefix:   "- Changes:",
+						OutcomePrefix:   "- Outcome:",
+						CompletedTitle:  "Completed Actions",
+						ChangesTitle:    "Change Summaries",
+						OutcomesTitle:   "Execution Outcomes",
+					},
 				},
 			},
 		},

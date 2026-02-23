@@ -119,7 +119,7 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file"
+	return "Write content to a file. Supports overwrite (default) and append mode."
 }
 
 func (t *WriteFileTool) Parameters() map[string]interface{} {
@@ -133,6 +133,11 @@ func (t *WriteFileTool) Parameters() map[string]interface{} {
 			"content": map[string]interface{}{
 				"type":        "string",
 				"description": "Content to write to the file",
+			},
+			"append": map[string]interface{}{
+				"type":        "boolean",
+				"description": "If true, append content to the file instead of overwriting it",
+				"default":     false,
 			},
 		},
 		"required": []string{"path", "content"},
@@ -149,16 +154,31 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 	if !ok {
 		return "", fmt.Errorf("content is required")
 	}
+	appendMode, _ := args["append"].(bool)
 
 	resolvedPath, err := resolveToolPath(t.allowedDir, path)
 	if err != nil {
 		return "", err
 	}
+	if err := os.MkdirAll(filepath.Dir(resolvedPath), 0755); err != nil {
+		return "", err
+	}
+
+	if appendMode {
+		f, err := os.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return "", err
+		}
+		defer f.Close()
+		if _, err := f.WriteString(content); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("File appended successfully: %s", path), nil
+	}
 
 	if err := os.WriteFile(resolvedPath, []byte(content), 0644); err != nil {
 		return "", err
 	}
-
 	return fmt.Sprintf("File written successfully: %s", path), nil
 }
 
