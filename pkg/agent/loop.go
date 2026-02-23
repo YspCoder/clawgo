@@ -51,6 +51,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	workspace := cfg.WorkspacePath()
 	os.MkdirAll(workspace, 0755)
 
+	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
+
 	toolsRegistry := tools.NewToolRegistry()
 	toolsRegistry.Register(&tools.ReadFileTool{})
 	toolsRegistry.Register(&tools.WriteFileTool{})
@@ -98,6 +100,19 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
 	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager))
+	toolsRegistry.Register(tools.NewSessionsTool(
+		func(limit int) []tools.SessionInfo {
+			sessions := alSessionListForTool(sessionsManager, limit)
+			return sessions
+		},
+		func(key string, limit int) []providers.Message {
+			h := sessionsManager.GetHistory(key)
+			if limit > 0 && len(h) > limit {
+				return h[len(h)-limit:]
+			}
+			return h
+		},
+	))
 
 	// Register edit file tool
 	editFileTool := tools.NewEditFileTool(workspace)
@@ -119,8 +134,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewCameraTool(workspace))
 	// Register system info tool
 	toolsRegistry.Register(tools.NewSystemInfoTool())
-
-	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
 
 	loop := &AgentLoop{
 		bus:                  msgBus,
@@ -791,4 +804,18 @@ func truncateString(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func alSessionListForTool(sm *session.SessionManager, limit int) []tools.SessionInfo {
+	items := sm.List(limit)
+	out := make([]tools.SessionInfo, 0, len(items))
+	for _, s := range items {
+		out = append(out, tools.SessionInfo{
+			Key:       s.Key,
+			Kind:      s.Kind,
+			Summary:   s.Summary,
+			UpdatedAt: s.Updated,
+		})
+	}
+	return out
 }

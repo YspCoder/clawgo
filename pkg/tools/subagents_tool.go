@@ -17,15 +17,16 @@ func NewSubagentsTool(m *SubagentManager) *SubagentsTool {
 func (t *SubagentsTool) Name() string { return "subagents" }
 
 func (t *SubagentsTool) Description() string {
-	return "Manage subagent runs in current process: list, info, kill"
+	return "Manage subagent runs in current process: list, info, kill, steer"
 }
 
 func (t *SubagentsTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action": map[string]interface{}{"type": "string", "description": "list|info|kill"},
-			"id":     map[string]interface{}{"type": "string", "description": "subagent id for info/kill"},
+			"action":  map[string]interface{}{"type": "string", "description": "list|info|kill|steer"},
+			"id":      map[string]interface{}{"type": "string", "description": "subagent id for info/kill/steer"},
+			"message": map[string]interface{}{"type": "string", "description": "steering message for steer action"},
 		},
 		"required": []string{"action"},
 	}
@@ -40,6 +41,8 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 	action = strings.ToLower(strings.TrimSpace(action))
 	id, _ := args["id"].(string)
 	id = strings.TrimSpace(id)
+	message, _ := args["message"].(string)
+	message = strings.TrimSpace(message)
 
 	switch action {
 	case "list":
@@ -70,6 +73,14 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 			return "subagent not found", nil
 		}
 		return "subagent kill requested", nil
+	case "steer":
+		if id == "" || message == "" {
+			return "id and message are required for steer", nil
+		}
+		if !t.manager.SteerTask(id, message) {
+			return "subagent not found", nil
+		}
+		return "steering message accepted", nil
 	default:
 		return "unsupported action", nil
 	}

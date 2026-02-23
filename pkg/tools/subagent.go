@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ type SubagentTask struct {
 	OriginChatID  string
 	Status        string
 	Result        string
+	Steering      []string
 	Created       int64
 	Updated       int64
 }
@@ -228,5 +230,21 @@ func (sm *SubagentManager) KillTask(taskID string) bool {
 		t.Status = "killed"
 		t.Updated = time.Now().UnixMilli()
 	}
+	return true
+}
+
+func (sm *SubagentManager) SteerTask(taskID, message string) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	t, ok := sm.tasks[taskID]
+	if !ok {
+		return false
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return false
+	}
+	t.Steering = append(t.Steering, message)
+	t.Updated = time.Now().UnixMilli()
 	return true
 }

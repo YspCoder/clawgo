@@ -250,6 +250,29 @@ func (sm *SessionManager) Keys() []string {
 	return keys
 }
 
+func (sm *SessionManager) List(limit int) []Session {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	items := make([]Session, 0, len(sm.sessions))
+	for _, s := range sm.sessions {
+		s.mu.RLock()
+		items = append(items, Session{
+			Key:               s.Key,
+			Kind:              s.Kind,
+			Summary:           s.Summary,
+			LastLanguage:      s.LastLanguage,
+			PreferredLanguage: s.PreferredLanguage,
+			Created:           s.Created,
+			Updated:           s.Updated,
+		})
+		s.mu.RUnlock()
+	}
+	if limit > 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
 func detectSessionKind(key string) string {
 	k := strings.TrimSpace(strings.ToLower(key))
 	switch {
