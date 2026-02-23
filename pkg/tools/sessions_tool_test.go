@@ -50,3 +50,25 @@ func TestSessionsToolHistoryWithoutTools(t *testing.T) {
 		t.Fatalf("tool message should be filtered: %s", out)
 	}
 }
+
+func TestSessionsToolHistoryFromMe(t *testing.T) {
+	tool := NewSessionsTool(nil, func(key string, limit int) []providers.Message {
+		return []providers.Message{
+			{Role: "user", Content: "u1"},
+			{Role: "assistant", Content: "a1"},
+			{Role: "assistant", Content: "a2"},
+		}
+	})
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":  "history",
+		"key":     "telegram:1",
+		"from_me": true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "u1") || !strings.Contains(out, "a1") {
+		t.Fatalf("unexpected filtered output: %s", out)
+	}
+}

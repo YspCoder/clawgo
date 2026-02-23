@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type SubagentsTool struct {
@@ -26,9 +27,10 @@ func (t *SubagentsTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action":  map[string]interface{}{"type": "string", "description": "list|info|kill|steer|send|log"},
-			"id":      map[string]interface{}{"type": "string", "description": "subagent id/#index/all for info/kill/steer/send/log"},
-			"message": map[string]interface{}{"type": "string", "description": "steering message for steer/send action"},
+			"action":         map[string]interface{}{"type": "string", "description": "list|info|kill|steer|send|log"},
+			"id":             map[string]interface{}{"type": "string", "description": "subagent id/#index/all for info/kill/steer/send/log"},
+			"message":        map[string]interface{}{"type": "string", "description": "steering message for steer/send action"},
+			"recent_minutes": map[string]interface{}{"type": "integer", "description": "optional list/info all filter by recent updated minutes"},
 		},
 		"required": []string{"action"},
 	}
@@ -45,10 +47,14 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 	id = strings.TrimSpace(id)
 	message, _ := args["message"].(string)
 	message = strings.TrimSpace(message)
+	recentMinutes := 0
+	if v, ok := args["recent_minutes"].(float64); ok && int(v) > 0 {
+		recentMinutes = int(v)
+	}
 
 	switch action {
 	case "list":
-		tasks := t.manager.ListTasks()
+		tasks := t.filterRecent(t.manager.ListTasks(), recentMinutes)
 		if len(tasks) == 0 {
 			return "No subagents.", nil
 		}
@@ -61,7 +67,7 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		return strings.TrimSpace(sb.String()), nil
 	case "info":
 		if strings.EqualFold(strings.TrimSpace(id), "all") {
-			tasks := t.manager.ListTasks()
+			tasks := t.filterRecent(t.manager.ListTasks(), recentMinutes)
 			if len(tasks) == 0 {
 				return "No subagents.", nil
 			}
@@ -84,7 +90,7 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		return fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nCreated: %d\nUpdated: %d\nSteering Count: %d\nTask: %s\nResult:\n%s", task.ID, task.Status, task.Label, task.Created, task.Updated, len(task.Steering), task.Task, task.Result), nil
 	case "kill":
 		if strings.EqualFold(strings.TrimSpace(id), "all") {
-			tasks := t.manager.ListTasks()
+			tasks := t.filterRecent(t.manager.ListTasks(), recentMinutes)
 			if len(tasks) == 0 {
 				return "No subagents.", nil
 			}
@@ -168,4 +174,18 @@ func (t *SubagentsTool) resolveTaskID(idOrIndex string) (string, error) {
 		return tasks[n-1].ID, nil
 	}
 	return idOrIndex, nil
+}
+
+func (t *SubagentsTool) filterRecent(tasks []*SubagentTask, recentMinutes int) []*SubagentTask {
+	if recentMinutes <= 0 {
+		return tasks
+	}
+	cutoff := time.Now().Add(-time.Duration(recentMinutes) * time.Minute).UnixMilli()
+	out := make([]*SubagentTask, 0, len(tasks))
+	for _, task := range tasks {
+		if task.Updated >= cutoff {
+			out = append(out, task)
+		}
+	}
+	return out
 }

@@ -43,6 +43,8 @@ func (t *SessionsTool) Parameters() map[string]interface{} {
 			"kinds":          map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional session kinds filter for list"},
 			"query":          map[string]interface{}{"type": "string", "description": "optional text query for list or history"},
 			"include_tools":  map[string]interface{}{"type": "boolean", "description": "include tool role messages in history", "default": false},
+			"from_me":        map[string]interface{}{"type": "boolean", "description": "history only: filter assistant messages when true, user messages when false"},
+			"role":           map[string]interface{}{"type": "string", "description": "history only: filter by role, e.g. user|assistant|tool|system"},
 			"around":         map[string]interface{}{"type": "integer", "description": "1-indexed message index center for history window"},
 			"before":         map[string]interface{}{"type": "integer", "description": "1-indexed message index upper bound (exclusive)"},
 			"after":          map[string]interface{}{"type": "integer", "description": "1-indexed message index lower bound (exclusive)"},
@@ -81,6 +83,14 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 	query, _ := args["query"].(string)
 	query = strings.ToLower(strings.TrimSpace(query))
+	roleFilter, _ := args["role"].(string)
+	roleFilter = strings.ToLower(strings.TrimSpace(roleFilter))
+	fromMeSet := false
+	fromMe := false
+	if v, ok := args["from_me"].(bool); ok {
+		fromMeSet = true
+		fromMe = v
+	}
 	kindFilter := map[string]struct{}{}
 	if rawKinds, ok := args["kinds"].([]interface{}); ok {
 		for _, it := range rawKinds {
@@ -212,6 +222,28 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 					continue
 				}
 				filtered = append(filtered, m)
+			}
+			h = filtered
+		}
+		if roleFilter != "" {
+			filtered := make([]providers.Message, 0, len(h))
+			for _, m := range h {
+				if strings.ToLower(strings.TrimSpace(m.Role)) == roleFilter {
+					filtered = append(filtered, m)
+				}
+			}
+			h = filtered
+		}
+		if fromMeSet {
+			targetRole := "user"
+			if fromMe {
+				targetRole = "assistant"
+			}
+			filtered := make([]providers.Message, 0, len(h))
+			for _, m := range h {
+				if strings.ToLower(strings.TrimSpace(m.Role)) == targetRole {
+					filtered = append(filtered, m)
+				}
 			}
 			h = filtered
 		}

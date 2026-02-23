@@ -93,10 +93,22 @@ func statusCmd() {
 		if data, err := os.ReadFile(triggerStats); err == nil {
 			fmt.Printf("Trigger Stats: %s\n", strings.TrimSpace(string(data)))
 		}
-		if errs, err := collectRecentTriggerErrors(filepath.Join(workspace, "memory", "trigger-audit.jsonl"), 5); err == nil && len(errs) > 0 {
+		auditPath := filepath.Join(workspace, "memory", "trigger-audit.jsonl")
+		if errs, err := collectRecentTriggerErrors(auditPath, 5); err == nil && len(errs) > 0 {
 			fmt.Println("Recent Trigger Errors:")
 			for _, e := range errs {
 				fmt.Printf("  - %s\n", e)
+			}
+		}
+		if agg, err := collectTriggerErrorCounts(auditPath); err == nil && len(agg) > 0 {
+			fmt.Println("Trigger Error Counts:")
+			keys := make([]string, 0, len(agg))
+			for k := range agg {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, trigger := range keys {
+				fmt.Printf("  %s: %d\n", trigger, agg[trigger])
 			}
 		}
 
@@ -180,6 +192,37 @@ func collectRecentTriggerErrors(path string, limit int) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+func collectTriggerErrorCounts(path string) (map[string]int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	counts := map[string]int{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var row struct {
+			Trigger string `json:"trigger"`
+			Error   string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			continue
+		}
+		if strings.TrimSpace(row.Error) == "" {
+			continue
+		}
+		trigger := strings.ToLower(strings.TrimSpace(row.Trigger))
+		if trigger == "" {
+			trigger = "unknown"
+		}
+		counts[trigger]++
+	}
+	return counts, nil
 }
 
 func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {
