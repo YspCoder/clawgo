@@ -203,14 +203,19 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			trigger := al.getTrigger(msg)
 			suppressed := false
 			if response != "" {
-				if al.shouldSuppressOutbound(msg, response) {
+				if shouldDropNoReply(response) {
 					suppressed = true
 				} else {
-					al.bus.PublishOutbound(bus.OutboundMessage{
-						Channel: msg.Channel,
-						ChatID:  msg.ChatID,
-						Content: response,
-					})
+					clean := stripReplyTags(response)
+					if al.shouldSuppressOutbound(msg, clean) {
+						suppressed = true
+					} else {
+						al.bus.PublishOutbound(bus.OutboundMessage{
+							Channel: msg.Channel,
+							ChatID:  msg.ChatID,
+							Content: clean,
+						})
+					}
 				}
 			}
 			al.audit.Record(trigger, msg.Channel, msg.SessionKey, suppressed, err)
@@ -558,6 +563,8 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			"sender_id": msg.SenderID,
 			"chat_id":   msg.ChatID,
 		})
+
+	msg.Content = rewriteSystemMessageContent(msg.Content)
 
 	// Parse origin from chat_id (format: "channel:chat_id")
 	var originChannel, originChatID string
@@ -917,6 +924,39 @@ func extractFirstSourceLine(text string) string {
 		}
 	}
 	return ""
+}
+
+func shouldDropNoReply(text string) bool {
+	t := strings.TrimSpace(text)
+	return strings.EqualFold(t, "NO_REPLY")
+}
+
+func stripReplyTags(text string) string {
+	t := strings.TrimSpace(text)
+	if !strings.HasPrefix(t, "[[") {
+		return text
+	}
+	end := strings.Index(t, "]]")
+	if end <= 0 {
+		return text
+	}
+	tag := strings.ToLower(strings.TrimSpace(t[2:end]))
+	if strings.HasPrefix(tag, "reply_to_current") || strings.HasPrefix(tag, "reply_to:") || strings.HasPrefix(tag, "reply_to") {
+		return strings.TrimSpace(t[end+2:])
+	}
+	return text
+}
+
+func rewriteSystemMessageContent(content string) string {
+	c := strings.TrimSpace(content)
+	if !strings.HasPrefix(c, "[System Message]") {
+		return content
+	}
+	body := strings.TrimSpace(strings.TrimPrefix(c, "[System Message]"))
+	if body == "" {
+		return "Please summarize the system event in concise user-facing language."
+	}
+	return "Rewrite the following internal system update in concise user-facing language:\n\n" + body
 }
 
 func alSessionListForTool(sm *session.SessionManager, limit int) []tools.SessionInfo {
