@@ -25,15 +25,18 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	provider       providers.LLMProvider
-	workspace      string
-	model          string
-	maxIterations  int
-	sessions       *session.SessionManager
-	contextBuilder *ContextBuilder
-	tools          *tools.ToolRegistry
-	running        bool
+	bus                    *bus.MessageBus
+	provider               providers.LLMProvider
+	workspace              string
+	model                  string
+	maxIterations          int
+	sessions               *session.SessionManager
+	contextBuilder         *ContextBuilder
+	tools                  *tools.ToolRegistry
+	compactionEnabled      bool
+	compactionTrigger      int
+	compactionKeepRecent   int
+	running                bool
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -117,15 +120,18 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
 
 	loop := &AgentLoop{
-		bus:            msgBus,
-		provider:       provider,
-		workspace:      workspace,
-		model:          provider.GetDefaultModel(),
-		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
-		sessions:       sessionsManager,
-		contextBuilder: NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
-		tools:          toolsRegistry,
-		running:        false,
+		bus:                  msgBus,
+		provider:             provider,
+		workspace:            workspace,
+		model:                provider.GetDefaultModel(),
+		maxIterations:        cfg.Agents.Defaults.MaxToolIterations,
+		sessions:             sessionsManager,
+		contextBuilder:       NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
+		tools:                toolsRegistry,
+		compactionEnabled:    cfg.Agents.Defaults.ContextCompaction.Enabled,
+		compactionTrigger:    cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
+		compactionKeepRecent: cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
+		running:              false,
 	}
 
 	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
@@ -587,14 +593,52 @@ func truncate(s string, maxLen int) string {
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
-// RunStartupSelfCheckAllSessions runs a lightweight startup check.
-// Current implementation reports loaded session counts and leaves compaction as no-op.
+// RunStartupSelfCheckAllSessions runs startup compaction checks across loaded sessions.
 func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) StartupCompactionReport {
-	_ = ctx
-	return StartupCompactionReport{
-		TotalSessions:     al.sessions.Count(),
-		CompactedSessions: 0,
+	report := StartupCompactionReport{TotalSessions: al.sessions.Count()}
+	if !al.compactionEnabled {
+		return report
 	}
+
+	trigger := al.compactionTrigger
+	if trigger <= 0 {
+		trigger = 60
+	}
+	keepRecent := al.compactionKeepRecent
+	if keepRecent <= 0 || keepRecent >= trigger {
+		keepRecent = trigger / 2
+		if keepRecent < 10 {
+			keepRecent = 10
+		}
+	}
+
+	for _, key := range al.sessions.Keys() {
+		select {
+		case <-ctx.Done():
+			return report
+		default:
+		}
+
+		history := al.sessions.GetHistory(key)
+		if len(history) <= trigger {
+			continue
+		}
+
+		removed := len(history) - keepRecent
+		summary := al.sessions.GetSummary(key)
+		note := fmt.Sprintf("[startup-compaction] removed %d old messages, kept %d recent messages", removed, keepRecent)
+		if strings.TrimSpace(summary) == "" {
+			al.sessions.SetSummary(key, note)
+		} else {
+			al.sessions.SetSummary(key, summary+"\n"+note)
+		}
+
+		al.sessions.TruncateHistory(key, keepRecent)
+		al.sessions.Save(al.sessions.GetOrCreate(key))
+		report.CompactedSessions++
+	}
+
+	return report
 }
 
 func (al *AgentLoop) GetStartupInfo() map[string]interface{} {

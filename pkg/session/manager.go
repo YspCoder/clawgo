@@ -237,6 +237,16 @@ func (sm *SessionManager) Count() int {
 	return len(sm.sessions)
 }
 
+func (sm *SessionManager) Keys() []string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	keys := make([]string, 0, len(sm.sessions))
+	for k := range sm.sessions {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (sm *SessionManager) loadSessions() error {
 	files, err := os.ReadDir(sm.storage)
 	if err != nil {
