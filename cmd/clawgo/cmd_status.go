@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
+	"clawgo/pkg/config"
 	"clawgo/pkg/providers"
 )
 func statusCmd() {
@@ -73,6 +73,7 @@ func statusCmd() {
 			cfg.Agents.Defaults.Heartbeat.EverySec,
 			cfg.Agents.Defaults.Heartbeat.AckMaxChars,
 		)
+		printTemplateStatus(cfg)
 		fmt.Printf("Cron Runtime: workers=%d sleep=%d-%ds\n",
 			cfg.Cron.MaxWorkers,
 			cfg.Cron.MinSleepSec,
@@ -130,28 +131,43 @@ func statusCmd() {
 	}
 }
 
+func printTemplateStatus(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	defaults := config.DefaultConfig().Agents.Defaults.Texts
+	cur := cfg.Agents.Defaults.Texts
+	fmt.Println("Dialog Templates:")
+	printTemplateField("system_rewrite_template", cur.SystemRewriteTemplate, defaults.SystemRewriteTemplate)
+	printTemplateField("lang_usage", cur.LangUsage, defaults.LangUsage)
+	printTemplateField("lang_invalid", cur.LangInvalid, defaults.LangInvalid)
+	printTemplateField("runtime_compaction_note", cur.RuntimeCompactionNote, defaults.RuntimeCompactionNote)
+	printTemplateField("startup_compaction_note", cur.StartupCompactionNote, defaults.StartupCompactionNote)
+}
+
+func printTemplateField(name, current, def string) {
+	state := "custom"
+	if strings.TrimSpace(current) == strings.TrimSpace(def) {
+		state = "default"
+	}
+	fmt.Printf("  %s: %s\n", name, state)
+}
+
 func collectSessionKindCounts(sessionsDir string) (map[string]int, error) {
-	entries, err := os.ReadDir(sessionsDir)
+	indexPath := filepath.Join(sessionsDir, "sessions.json")
+	data, err := os.ReadFile(indexPath)
 	if err != nil {
 		return nil, err
 	}
+	var index map[string]struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(data, &index); err != nil {
+		return nil, err
+	}
 	counts := map[string]int{}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".meta") {
-			continue
-		}
-		metaPath := filepath.Join(sessionsDir, e.Name())
-		data, err := os.ReadFile(metaPath)
-		if err != nil {
-			continue
-		}
-		var meta struct {
-			Kind string `json:"kind"`
-		}
-		if err := json.Unmarshal(data, &meta); err != nil {
-			continue
-		}
-		kind := strings.TrimSpace(strings.ToLower(meta.Kind))
+	for _, row := range index {
+		kind := strings.TrimSpace(strings.ToLower(row.Kind))
 		if kind == "" {
 			kind = "other"
 		}
@@ -226,8 +242,16 @@ func collectTriggerErrorCounts(path string) (map[string]int, error) {
 }
 
 func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {
-	entries, err := os.ReadDir(sessionsDir)
+	indexPath := filepath.Join(sessionsDir, "sessions.json")
+	data, err := os.ReadFile(indexPath)
 	if err != nil {
+		return nil, err
+	}
+	var index map[string]struct {
+		Kind      string `json:"kind"`
+		UpdatedAt int64  `json:"updatedAt"`
+	}
+	if err := json.Unmarshal(data, &index); err != nil {
 		return nil, err
 	}
 	type item struct {
@@ -235,30 +259,11 @@ func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, err
 		updated int64
 	}
 	items := make([]item, 0)
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".meta") {
+	for key, row := range index {
+		if strings.ToLower(strings.TrimSpace(row.Kind)) != "subagent" {
 			continue
 		}
-		metaPath := filepath.Join(sessionsDir, e.Name())
-		data, err := os.ReadFile(metaPath)
-		if err != nil {
-			continue
-		}
-		var meta struct {
-			Kind    string `json:"kind"`
-			Updated string `json:"updated"`
-		}
-		if err := json.Unmarshal(data, &meta); err != nil {
-			continue
-		}
-		if strings.ToLower(strings.TrimSpace(meta.Kind)) != "subagent" {
-			continue
-		}
-		t, err := time.Parse(time.RFC3339Nano, meta.Updated)
-		if err != nil {
-			t, _ = time.Parse(time.RFC3339, meta.Updated)
-		}
-		items = append(items, item{key: strings.TrimSuffix(e.Name(), ".meta"), updated: t.UnixMilli()})
+		items = append(items, item{key: key, updated: row.UpdatedAt})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].updated > items[j].updated })
 	if limit > 0 && len(items) > limit {
