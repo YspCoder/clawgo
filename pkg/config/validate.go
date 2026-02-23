@@ -73,6 +73,39 @@ func Validate(cfg *Config) []error {
 	if strings.TrimSpace(rc.SystemSummary.OutcomesTitle) == "" {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.outcomes_title must be non-empty"))
 	}
+	hb := cfg.Agents.Defaults.Heartbeat
+	if hb.Enabled {
+		if hb.EverySec <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.heartbeat.every_sec must be > 0 when enabled=true"))
+		}
+		if hb.AckMaxChars <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.heartbeat.ack_max_chars must be > 0 when enabled=true"))
+		}
+	}
+	texts := cfg.Agents.Defaults.Texts
+	if strings.TrimSpace(texts.NoResponseFallback) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.texts.no_response_fallback must be non-empty"))
+	}
+	if strings.TrimSpace(texts.ThinkOnlyFallback) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.texts.think_only_fallback must be non-empty"))
+	}
+	if len(texts.MemoryRecallKeywords) == 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.texts.memory_recall_keywords must contain at least one keyword"))
+	}
+	if strings.TrimSpace(texts.LangUpdatedTemplate) != "" && !strings.Contains(texts.LangUpdatedTemplate, "%s") {
+		errs = append(errs, fmt.Errorf("agents.defaults.texts.lang_updated_template must contain %%s placeholder"))
+	}
+	if strings.TrimSpace(texts.RuntimeCompactionNote) != "" {
+		if strings.Count(texts.RuntimeCompactionNote, "%d") < 2 {
+			errs = append(errs, fmt.Errorf("agents.defaults.texts.runtime_compaction_note must contain two %%d placeholders"))
+		}
+	}
+	if strings.TrimSpace(texts.StartupCompactionNote) != "" {
+		if strings.Count(texts.StartupCompactionNote, "%d") < 2 {
+			errs = append(errs, fmt.Errorf("agents.defaults.texts.startup_compaction_note must contain two %%d placeholders"))
+		}
+	}
+
 	if cfg.Agents.Defaults.ContextCompaction.Enabled {
 		cc := cfg.Agents.Defaults.ContextCompaction
 		if cc.Mode != "" {

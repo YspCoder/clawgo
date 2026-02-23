@@ -156,7 +156,16 @@ Heartbeat + context compaction config example:
     "texts": {
       "no_response_fallback": "I've completed processing but have no response to give.",
       "think_only_fallback": "Thinking process completed.",
-      "memory_recall_keywords": ["remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision"]
+      "memory_recall_keywords": ["remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision"],
+      "lang_usage": "Usage: /lang <code>",
+      "lang_invalid": "Invalid language code.",
+      "lang_updated_template": "Language preference updated to %s",
+      "subagents_none": "No subagents.",
+      "sessions_none": "No sessions.",
+      "unsupported_action": "unsupported action",
+      "system_rewrite_template": "Rewrite the following internal system update in concise user-facing language:\n\n%s",
+      "runtime_compaction_note": "[runtime-compaction] removed %d old messages, kept %d recent messages",
+      "startup_compaction_note": "[startup-compaction] removed %d old messages, kept %d recent messages"
     },
     "context_compaction": {
       "enabled": true,
