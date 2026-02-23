@@ -289,6 +289,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	if markup != nil {
 		sendParams.WithReplyMarkup(markup)
 	}
+	_ = strings.TrimSpace(msg.ReplyToID) // reserved for provider-level reply threading support
 
 	sendCtx, cancelSend := withTelegramAPITimeout(ctx)
 	_, err = c.bot.SendMessage(sendCtx, sendParams)

@@ -205,7 +205,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				if shouldDropNoReply(response) {
 					suppressed = true
 				} else {
-					clean, replyToID := parseReplyTag(response)
+					clean, replyToID := parseReplyTag(response, msg.Metadata["message_id"])
 					if al.shouldSuppressOutbound(msg, clean) {
 						suppressed = true
 					} else {
@@ -931,7 +931,7 @@ func shouldDropNoReply(text string) bool {
 	return strings.EqualFold(t, "NO_REPLY")
 }
 
-func parseReplyTag(text string) (content string, replyToID string) {
+func parseReplyTag(text string, currentMessageID string) (content string, replyToID string) {
 	t := strings.TrimSpace(text)
 	if !strings.HasPrefix(t, "[[") {
 		return text, ""
@@ -946,6 +946,8 @@ func parseReplyTag(text string) (content string, replyToID string) {
 		content = strings.TrimSpace(t[end+2:])
 		if strings.HasPrefix(tag, "reply_to:") {
 			replyToID = strings.TrimSpace(rawTag[len("reply_to:"):])
+		} else if strings.HasPrefix(tag, "reply_to_current") {
+			replyToID = strings.TrimSpace(currentMessageID)
 		}
 		return content, replyToID
 	}
