@@ -42,6 +42,9 @@ func (t *SessionsTool) Parameters() map[string]interface{} {
 			"active_minutes": map[string]interface{}{"type": "integer", "description": "only sessions updated in recent N minutes (list action)"},
 			"kinds":          map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional session kinds filter for list"},
 			"include_tools":  map[string]interface{}{"type": "boolean", "description": "include tool role messages in history", "default": false},
+			"around":         map[string]interface{}{"type": "integer", "description": "1-indexed message index center for history window"},
+			"before":         map[string]interface{}{"type": "integer", "description": "1-indexed message index upper bound (exclusive)"},
+			"after":          map[string]interface{}{"type": "integer", "description": "1-indexed message index lower bound (exclusive)"},
 		},
 		"required": []string{"action"},
 	}
@@ -58,6 +61,18 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 	includeTools := false
 	if v, ok := args["include_tools"].(bool); ok {
 		includeTools = v
+	}
+	around := 0
+	if v, ok := args["around"].(float64); ok && int(v) > 0 {
+		around = int(v)
+	}
+	before := 0
+	if v, ok := args["before"].(float64); ok && int(v) > 0 {
+		before = int(v)
+	}
+	after := 0
+	if v, ok := args["after"].(float64); ok && int(v) > 0 {
+		after = int(v)
 	}
 	activeMinutes := 0
 	if v, ok := args["active_minutes"].(float64); ok && int(v) > 0 {
@@ -126,10 +141,57 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		if key == "" {
 			return "key is required for history", nil
 		}
-		h := t.historyFn(key, limit*3)
+		h := t.historyFn(key, 0)
 		if len(h) == 0 {
 			return "No history.", nil
 		}
+
+		// Window selectors are 1-indexed (human-friendly)
+		if around > 0 {
+			center := around - 1
+			if center < 0 {
+				center = 0
+			}
+			if center >= len(h) {
+				center = len(h) - 1
+			}
+			half := limit / 2
+			if half < 1 {
+				half = 1
+			}
+			start := center - half
+			if start < 0 {
+				start = 0
+			}
+			end := center + half + 1
+			if end > len(h) {
+				end = len(h)
+			}
+			h = h[start:end]
+		} else {
+			start := 0
+			end := len(h)
+			if after > 0 {
+				start = after
+				if start > len(h) {
+					start = len(h)
+				}
+			}
+			if before > 0 {
+				end = before - 1
+				if end < 0 {
+					end = 0
+				}
+				if end > len(h) {
+					end = len(h)
+				}
+			}
+			if start > end {
+				start = end
+			}
+			h = h[start:end]
+		}
+
 		if !includeTools {
 			filtered := make([]providers.Message, 0, len(h))
 			for _, m := range h {

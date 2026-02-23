@@ -27,7 +27,7 @@ func (t *SubagentsTool) Parameters() map[string]interface{} {
 		"type": "object",
 		"properties": map[string]interface{}{
 			"action":  map[string]interface{}{"type": "string", "description": "list|info|kill|steer|send|log"},
-			"id":      map[string]interface{}{"type": "string", "description": "subagent id for info/kill/steer/send/log"},
+			"id":      map[string]interface{}{"type": "string", "description": "subagent id/#index/all for info/kill/steer/send/log"},
 			"message": map[string]interface{}{"type": "string", "description": "steering message for steer/send action"},
 		},
 		"required": []string{"action"},
@@ -70,6 +70,19 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		}
 		return fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nCreated: %d\nUpdated: %d\nSteering Count: %d\nTask: %s\nResult:\n%s", task.ID, task.Status, task.Label, task.Created, task.Updated, len(task.Steering), task.Task, task.Result), nil
 	case "kill":
+		if strings.EqualFold(strings.TrimSpace(id), "all") {
+			tasks := t.manager.ListTasks()
+			if len(tasks) == 0 {
+				return "No subagents.", nil
+			}
+			killed := 0
+			for _, task := range tasks {
+				if t.manager.KillTask(task.ID) {
+					killed++
+				}
+			}
+			return fmt.Sprintf("subagent kill requested for %d tasks", killed), nil
+		}
 		resolvedID, err := t.resolveTaskID(id)
 		if err != nil {
 			return err.Error(), nil
