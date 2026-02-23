@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,5 +91,45 @@ func statusCmd() {
 		if data, err := os.ReadFile(triggerStats); err == nil {
 			fmt.Printf("Trigger Stats: %s\n", strings.TrimSpace(string(data)))
 		}
+
+		sessionsDir := filepath.Join(filepath.Dir(configPath), "sessions")
+		if kinds, err := collectSessionKindCounts(sessionsDir); err == nil && len(kinds) > 0 {
+			fmt.Println("Session Kinds:")
+			for _, k := range []string{"main", "cron", "subagent", "hook", "node", "other"} {
+				if v, ok := kinds[k]; ok {
+					fmt.Printf("  %s: %d\n", k, v)
+				}
+			}
+		}
 	}
+}
+
+func collectSessionKindCounts(sessionsDir string) (map[string]int, error) {
+	entries, err := os.ReadDir(sessionsDir)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".meta") {
+			continue
+		}
+		metaPath := filepath.Join(sessionsDir, e.Name())
+		data, err := os.ReadFile(metaPath)
+		if err != nil {
+			continue
+		}
+		var meta struct {
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		kind := strings.TrimSpace(strings.ToLower(meta.Kind))
+		if kind == "" {
+			kind = "other"
+		}
+		counts[kind]++
+	}
+	return counts, nil
 }

@@ -97,6 +97,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus, orchestrator)
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
+	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager))
 
 	// Register edit file tool
 	editFileTool := tools.NewEditFileTool(workspace)

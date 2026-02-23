@@ -23,27 +23,30 @@ type SubagentTask struct {
 	Status        string
 	Result        string
 	Created       int64
+	Updated       int64
 }
 
 type SubagentManager struct {
-	tasks     map[string]*SubagentTask
-	mu        sync.RWMutex
-	provider  providers.LLMProvider
-	bus       *bus.MessageBus
-	orc       *Orchestrator
-	workspace string
-	nextID    int
-	runFunc   SubagentRunFunc
+	tasks       map[string]*SubagentTask
+	cancelFuncs map[string]context.CancelFunc
+	mu          sync.RWMutex
+	provider    providers.LLMProvider
+	bus         *bus.MessageBus
+	orc         *Orchestrator
+	workspace   string
+	nextID      int
+	runFunc     SubagentRunFunc
 }
 
 func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *bus.MessageBus, orc *Orchestrator) *SubagentManager {
 	return &SubagentManager{
-		tasks:     make(map[string]*SubagentTask),
-		provider:  provider,
-		bus:       bus,
-		orc:       orc,
-		workspace: workspace,
-		nextID:    1,
+		tasks:       make(map[string]*SubagentTask),
+		cancelFuncs: make(map[string]context.CancelFunc),
+		provider:    provider,
+		bus:         bus,
+		orc:         orc,
+		workspace:   workspace,
+		nextID:      1,
 	}
 }
 
@@ -54,6 +57,7 @@ func (sm *SubagentManager) Spawn(ctx context.Context, task, label, originChannel
 	taskID := fmt.Sprintf("subagent-%d", sm.nextID)
 	sm.nextID++
 
+	now := time.Now().UnixMilli()
 	subagentTask := &SubagentTask{
 		ID:            taskID,
 		Task:          task,
@@ -63,11 +67,14 @@ func (sm *SubagentManager) Spawn(ctx context.Context, task, label, originChannel
 		OriginChannel: originChannel,
 		OriginChatID:  originChatID,
 		Status:        "running",
-		Created:       time.Now().UnixMilli(),
+		Created:       now,
+		Updated:       now,
 	}
+	taskCtx, cancel := context.WithCancel(ctx)
 	sm.tasks[taskID] = subagentTask
+	sm.cancelFuncs[taskID] = cancel
 
-	go sm.runTask(ctx, subagentTask)
+	go sm.runTask(taskCtx, subagentTask)
 
 	desc := fmt.Sprintf("Spawned subagent for task: %s", task)
 	if label != "" {
@@ -80,9 +87,16 @@ func (sm *SubagentManager) Spawn(ctx context.Context, task, label, originChannel
 }
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
+	defer func() {
+		sm.mu.Lock()
+		delete(sm.cancelFuncs, task.ID)
+		sm.mu.Unlock()
+	}()
+
 	sm.mu.Lock()
 	task.Status = "running"
 	task.Created = time.Now().UnixMilli()
+	task.Updated = task.Created
 	sm.mu.Unlock()
 
 	if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
@@ -100,12 +114,14 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 		if err != nil {
 			task.Status = "failed"
 			task.Result = fmt.Sprintf("Error: %v", err)
+			task.Updated = time.Now().UnixMilli()
 			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
 				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, err)
 			}
 		} else {
 			task.Status = "completed"
 			task.Result = result
+			task.Updated = time.Now().UnixMilli()
 			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
 				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, nil)
 			}
@@ -132,12 +148,14 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 		if err != nil {
 			task.Status = "failed"
 			task.Result = fmt.Sprintf("Error: %v", err)
+			task.Updated = time.Now().UnixMilli()
 			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
 				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, err)
 			}
 		} else {
 			task.Status = "completed"
 			task.Result = response.Content
+			task.Updated = time.Now().UnixMilli()
 			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
 				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, nil)
 			}
@@ -193,4 +211,22 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 		tasks = append(tasks, task)
 	}
 	return tasks
+}
+
+func (sm *SubagentManager) KillTask(taskID string) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	t, ok := sm.tasks[taskID]
+	if !ok {
+		return false
+	}
+	if cancel, ok := sm.cancelFuncs[taskID]; ok {
+		cancel()
+		delete(sm.cancelFuncs, taskID)
+	}
+	if t.Status == "running" {
+		t.Status = "killed"
+		t.Updated = time.Now().UnixMilli()
+	}
+	return true
 }
