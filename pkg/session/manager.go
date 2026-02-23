@@ -236,25 +236,10 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 }
 
 func (sm *SessionManager) Save(session *Session) error {
-	// 现已通过 AddMessageFull 实时增量持久化
-	// 这里保留 Save 方法用于更新 Summary 等元数据
+	// Messages are persisted incrementally via AddMessageFull.
+	// Metadata is now centralized in sessions.json (OpenClaw-style index).
 	if sm.storage == "" {
 		return nil
-	}
-
-	metaPath := filepath.Join(sm.storage, session.Key+".meta")
-	meta := map[string]interface{}{
-		"session_id":         session.SessionID,
-		"kind":               session.Kind,
-		"summary":            session.Summary,
-		"last_language":      session.LastLanguage,
-		"preferred_language": session.PreferredLanguage,
-		"updated":            session.Updated,
-		"created":            session.Created,
-	}
-	data, _ := json.MarshalIndent(meta, "", "  ")
-	if err := os.WriteFile(metaPath, data, 0644); err != nil {
-		return err
 	}
 	return sm.writeOpenClawSessionsIndex()
 }
@@ -412,7 +397,18 @@ func (sm *SessionManager) writeOpenClawSessionsIndex() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(sm.storage, "sessions.json"), data, 0644)
+	if err := os.WriteFile(filepath.Join(sm.storage, "sessions.json"), data, 0644); err != nil {
+		return err
+	}
+	// Cleanup legacy .meta files: sessions.json is source of truth now.
+	entries, _ := os.ReadDir(sm.storage)
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".meta" {
+			continue
+		}
+		_ = os.Remove(filepath.Join(sm.storage, e.Name()))
+	}
+	return nil
 }
 
 func mapKindToChatType(kind string) string {
@@ -427,71 +423,59 @@ func mapKindToChatType(kind string) string {
 }
 
 func (sm *SessionManager) loadSessions() error {
+	// 1) Load sessions index first (sessions.json as source of truth)
+	indexPath := filepath.Join(sm.storage, "sessions.json")
+	if data, err := os.ReadFile(indexPath); err == nil {
+		var index map[string]struct {
+			SessionID string `json:"sessionId"`
+			SessionKey string `json:"sessionKey"`
+			UpdatedAt int64 `json:"updatedAt"`
+			Kind string `json:"kind"`
+		}
+		if err := json.Unmarshal(data, &index); err == nil {
+			for key, row := range index {
+				session := sm.GetOrCreate(key)
+				session.mu.Lock()
+				if strings.TrimSpace(row.SessionID) != "" {
+					session.SessionID = row.SessionID
+				}
+				if strings.TrimSpace(row.Kind) != "" {
+					session.Kind = row.Kind
+				}
+				if row.UpdatedAt > 0 {
+					session.Updated = time.UnixMilli(row.UpdatedAt)
+				}
+				session.mu.Unlock()
+			}
+		}
+	}
+
+	// 2) Load JSONL histories
 	files, err := os.ReadDir(sm.storage)
 	if err != nil {
 		return err
 	}
-
 	for _, file := range files {
-		if file.IsDir() {
+		if file.IsDir() || filepath.Ext(file.Name()) != ".jsonl" {
 			continue
 		}
+		sessionKey := strings.TrimSuffix(file.Name(), ".jsonl")
+		session := sm.GetOrCreate(sessionKey)
 
-		// 处理 JSONL 历史消息
-		if filepath.Ext(file.Name()) == ".jsonl" {
-			sessionKey := strings.TrimSuffix(file.Name(), ".jsonl")
-			session := sm.GetOrCreate(sessionKey)
-
-			f, err := os.Open(filepath.Join(sm.storage, file.Name()))
-			if err != nil {
-				continue
-			}
-			
-			scanner := bufio.NewScanner(f)
-			session.mu.Lock()
-			for scanner.Scan() {
-				if msg, ok := fromJSONLLine(scanner.Bytes()); ok {
-					session.Messages = append(session.Messages, msg)
-				}
-			}
-			session.mu.Unlock()
-			f.Close()
+		f, err := os.Open(filepath.Join(sm.storage, file.Name()))
+		if err != nil {
+			continue
 		}
-
-		// 处理元数据
-		if filepath.Ext(file.Name()) == ".meta" {
-			sessionKey := strings.TrimSuffix(file.Name(), ".meta")
-			session := sm.GetOrCreate(sessionKey)
-
-			data, err := os.ReadFile(filepath.Join(sm.storage, file.Name()))
-			if err == nil {
-				var meta struct {
-					SessionID         string    `json:"session_id"`
-					Kind              string    `json:"kind"`
-					Summary           string    `json:"summary"`
-					LastLanguage      string    `json:"last_language"`
-					PreferredLanguage string    `json:"preferred_language"`
-					Updated           time.Time `json:"updated"`
-					Created           time.Time `json:"created"`
-				}
-				if err := json.Unmarshal(data, &meta); err == nil {
-					session.SessionID = strings.TrimSpace(meta.SessionID)
-					if session.SessionID == "" {
-						session.SessionID = deriveSessionID(session.Key)
-					}
-					session.Kind = meta.Kind
-					if strings.TrimSpace(session.Kind) == "" {
-						session.Kind = detectSessionKind(session.Key)
-					}
-					session.Summary = meta.Summary
-					session.LastLanguage = meta.LastLanguage
-					session.PreferredLanguage = meta.PreferredLanguage
-					session.Updated = meta.Updated
-					session.Created = meta.Created
-				}
+		scanner := bufio.NewScanner(f)
+		session.mu.Lock()
+		for scanner.Scan() {
+			if msg, ok := fromJSONLLine(scanner.Bytes()); ok {
+				session.Messages = append(session.Messages, msg)
 			}
 		}
+		session.mu.Unlock()
+		f.Close()
 	}
 
-	return nil
+	return sm.writeOpenClawSessionsIndex()
 }
