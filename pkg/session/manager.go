@@ -383,12 +383,15 @@ func (sm *SessionManager) writeOpenClawSessionsIndex() error {
 			sid = deriveSessionID(key)
 		}
 		entry := map[string]interface{}{
-			"sessionId":   sid,
-			"sessionKey":  key,
-			"updatedAt":   s.Updated.UnixMilli(),
-			"chatType":    mapKindToChatType(s.Kind),
-			"sessionFile": sessionFile,
-			"kind":        s.Kind,
+			"sessionId":       sid,
+			"sessionKey":      key,
+			"updatedAt":       s.Updated.UnixMilli(),
+			"systemSent":      true,
+			"abortedLastRun":  false,
+			"compactionCount": 0,
+			"chatType":        mapKindToChatType(s.Kind),
+			"sessionFile":     sessionFile,
+			"kind":            s.Kind,
 		}
 		s.mu.RUnlock()
 		index[key] = entry
@@ -427,10 +430,11 @@ func (sm *SessionManager) loadSessions() error {
 	indexPath := filepath.Join(sm.storage, "sessions.json")
 	if data, err := os.ReadFile(indexPath); err == nil {
 		var index map[string]struct {
-			SessionID string `json:"sessionId"`
+			SessionID  string `json:"sessionId"`
 			SessionKey string `json:"sessionKey"`
-			UpdatedAt int64 `json:"updatedAt"`
-			Kind string `json:"kind"`
+			UpdatedAt  int64  `json:"updatedAt"`
+			Kind       string `json:"kind"`
+			ChatType   string `json:"chatType"`
 		}
 		if err := json.Unmarshal(data, &index); err == nil {
 			for key, row := range index {
@@ -441,6 +445,8 @@ func (sm *SessionManager) loadSessions() error {
 				}
 				if strings.TrimSpace(row.Kind) != "" {
 					session.Kind = row.Kind
+				} else if strings.TrimSpace(row.ChatType) == "direct" {
+					session.Kind = "main"
 				}
 				if row.UpdatedAt > 0 {
 					session.Updated = time.UnixMilli(row.UpdatedAt)
