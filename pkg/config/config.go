@@ -53,6 +53,7 @@ type AgentTextConfig struct {
 	SubagentsNone           string   `json:"subagents_none"`
 	SessionsNone            string   `json:"sessions_none"`
 	UnsupportedAction       string   `json:"unsupported_action"`
+	SystemRewriteTemplate   string   `json:"system_rewrite_template"`
 	RuntimeCompactionNote   string   `json:"runtime_compaction_note"`
 	StartupCompactionNote   string   `json:"startup_compaction_note"`
 }
@@ -293,6 +294,7 @@ func DefaultConfig() *Config {
 					SubagentsNone:         "No subagents.",
 					SessionsNone:          "No sessions.",
 					UnsupportedAction:     "unsupported action",
+					SystemRewriteTemplate: "Rewrite the following internal system update in concise user-facing language:\n\n%s",
 					RuntimeCompactionNote: "[runtime-compaction] removed %d old messages, kept %d recent messages",
 					StartupCompactionNote: "[startup-compaction] removed %d old messages, kept %d recent messages",
 				},

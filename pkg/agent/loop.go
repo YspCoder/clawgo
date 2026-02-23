@@ -45,9 +45,7 @@ type AgentLoop struct {
 	langUpdatedTemplate     string
 	runtimeCompactionNote   string
 	startupCompactionNote   string
-	toolNoSubagents         string
-	toolNoSessions          string
-	toolUnsupportedAction   string
+	systemRewriteTemplate   string
 	audit                   *triggerAudit
 	running                 bool
 }
@@ -169,6 +167,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		langUpdatedTemplate:   cfg.Agents.Defaults.Texts.LangUpdatedTemplate,
 		runtimeCompactionNote: cfg.Agents.Defaults.Texts.RuntimeCompactionNote,
 		startupCompactionNote: cfg.Agents.Defaults.Texts.StartupCompactionNote,
+		systemRewriteTemplate: cfg.Agents.Defaults.Texts.SystemRewriteTemplate,
 		audit:                 newTriggerAudit(workspace),
 		running:               false,
 	}
@@ -206,14 +205,15 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				if shouldDropNoReply(response) {
 					suppressed = true
 				} else {
-					clean := stripReplyTags(response)
+					clean, replyToID := parseReplyTag(response)
 					if al.shouldSuppressOutbound(msg, clean) {
 						suppressed = true
 					} else {
 						al.bus.PublishOutbound(bus.OutboundMessage{
-							Channel: msg.Channel,
-							ChatID:  msg.ChatID,
-							Content: clean,
+							Channel:   msg.Channel,
+							ChatID:    msg.ChatID,
+							Content:   clean,
+							ReplyToID: replyToID,
 						})
 					}
 				}
@@ -564,7 +564,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			"chat_id":   msg.ChatID,
 		})
 
-	msg.Content = rewriteSystemMessageContent(msg.Content)
+	msg.Content = rewriteSystemMessageContent(msg.Content, al.systemRewriteTemplate)
 
 	// Parse origin from chat_id (format: "channel:chat_id")
 	var originChannel, originChatID string
@@ -931,23 +931,28 @@ func shouldDropNoReply(text string) bool {
 	return strings.EqualFold(t, "NO_REPLY")
 }
 
-func stripReplyTags(text string) string {
+func parseReplyTag(text string) (content string, replyToID string) {
 	t := strings.TrimSpace(text)
 	if !strings.HasPrefix(t, "[[") {
-		return text
+		return text, ""
 	}
 	end := strings.Index(t, "]]")
 	if end <= 0 {
-		return text
+		return text, ""
 	}
-	tag := strings.ToLower(strings.TrimSpace(t[2:end]))
-	if strings.HasPrefix(tag, "reply_to_current") || strings.HasPrefix(tag, "reply_to:") || strings.HasPrefix(tag, "reply_to") {
-		return strings.TrimSpace(t[end+2:])
+	rawTag := strings.TrimSpace(t[2:end])
+	tag := strings.ToLower(rawTag)
+	if strings.HasPrefix(tag, "reply_to_current") || strings.HasPrefix(tag, "reply_to") {
+		content = strings.TrimSpace(t[end+2:])
+		if strings.HasPrefix(tag, "reply_to:") {
+			replyToID = strings.TrimSpace(rawTag[len("reply_to:"):])
+		}
+		return content, replyToID
 	}
-	return text
+	return text, ""
 }
 
-func rewriteSystemMessageContent(content string) string {
+func rewriteSystemMessageContent(content, template string) string {
 	c := strings.TrimSpace(content)
 	if !strings.HasPrefix(c, "[System Message]") {
 		return content
@@ -956,7 +961,14 @@ func rewriteSystemMessageContent(content string) string {
 	if body == "" {
 		return "Please summarize the system event in concise user-facing language."
 	}
-	return "Rewrite the following internal system update in concise user-facing language:\n\n" + body
+	tpl := strings.TrimSpace(template)
+	if tpl == "" {
+		tpl = "Rewrite the following internal system update in concise user-facing language:\n\n%s"
+	}
+	if strings.Contains(tpl, "%s") {
+		return fmt.Sprintf(tpl, body)
+	}
+	return tpl + "\n\n" + body
 }
 
 func alSessionListForTool(sm *session.SessionManager, limit int) []tools.SessionInfo {

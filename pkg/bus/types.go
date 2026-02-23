@@ -16,10 +16,11 @@ type Button struct {
 }
 
 type OutboundMessage struct {
-	Channel string     `json:"channel"`
-	ChatID  string     `json:"chat_id"`
-	Content string     `json:"content"`
-	Buttons [][]Button `json:"buttons,omitempty"`
+	Channel   string     `json:"channel"`
+	ChatID    string     `json:"chat_id"`
+	Content   string     `json:"content"`
+	ReplyToID string     `json:"reply_to_id,omitempty"`
+	Buttons   [][]Button `json:"buttons,omitempty"`
 }
 
 type MessageHandler func(InboundMessage) error

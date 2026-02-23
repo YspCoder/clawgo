@@ -23,6 +23,7 @@
         "subagents_none": "No subagents.",
         "sessions_none": "No sessions.",
         "unsupported_action": "unsupported action",
+        "system_rewrite_template": "Rewrite the following internal system update in concise user-facing language:\n\n%s",
         "runtime_compaction_note": "[runtime-compaction] removed %d old messages, kept %d recent messages",
         "startup_compaction_note": "[startup-compaction] removed %d old messages, kept %d recent messages"
       },
