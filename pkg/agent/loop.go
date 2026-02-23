@@ -77,9 +77,10 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	editFileTool := tools.NewEditFileTool(workspace)
 	toolsRegistry.Register(editFileTool)
 
-	// Register memory search tool
+	// Register memory tools
 	memorySearchTool := tools.NewMemorySearchTool(workspace)
 	toolsRegistry.Register(memorySearchTool)
+	toolsRegistry.Register(tools.NewMemoryWriteTool(workspace))
 
 	// Register parallel execution tool (leveraging Go's concurrency)
 	toolsRegistry.Register(tools.NewParallelTool(toolsRegistry))
