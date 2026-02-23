@@ -64,7 +64,7 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		if !ok {
 			return "subagent not found", nil
 		}
-		return fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nTask: %s\nResult:\n%s", task.ID, task.Status, task.Label, task.Task, task.Result), nil
+		return fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nCreated: %d\nUpdated: %d\nSteering Count: %d\nTask: %s\nResult:\n%s", task.ID, task.Status, task.Label, task.Created, task.Updated, len(task.Steering), task.Task, task.Result), nil
 	case "kill":
 		if id == "" {
 			return "id is required for kill", nil

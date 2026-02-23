@@ -29,26 +29,28 @@ type SubagentTask struct {
 }
 
 type SubagentManager struct {
-	tasks       map[string]*SubagentTask
-	cancelFuncs map[string]context.CancelFunc
-	mu          sync.RWMutex
-	provider    providers.LLMProvider
-	bus         *bus.MessageBus
-	orc         *Orchestrator
-	workspace   string
-	nextID      int
-	runFunc     SubagentRunFunc
+	tasks              map[string]*SubagentTask
+	cancelFuncs        map[string]context.CancelFunc
+	archiveAfterMinute int64
+	mu                 sync.RWMutex
+	provider           providers.LLMProvider
+	bus                *bus.MessageBus
+	orc                *Orchestrator
+	workspace          string
+	nextID             int
+	runFunc            SubagentRunFunc
 }
 
 func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *bus.MessageBus, orc *Orchestrator) *SubagentManager {
 	return &SubagentManager{
-		tasks:       make(map[string]*SubagentTask),
-		cancelFuncs: make(map[string]context.CancelFunc),
-		provider:    provider,
-		bus:         bus,
-		orc:         orc,
-		workspace:   workspace,
-		nextID:      1,
+		tasks:              make(map[string]*SubagentTask),
+		cancelFuncs:        make(map[string]context.CancelFunc),
+		archiveAfterMinute: 60,
+		provider:           provider,
+		bus:                bus,
+		orc:                orc,
+		workspace:          workspace,
+		nextID:             1,
 	}
 }
 
@@ -198,15 +200,17 @@ func (sm *SubagentManager) SetRunFunc(f SubagentRunFunc) {
 }
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.pruneArchivedLocked()
 	task, ok := sm.tasks[taskID]
 	return task, ok
 }
 
 func (sm *SubagentManager) ListTasks() []*SubagentTask {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.pruneArchivedLocked()
 
 	tasks := make([]*SubagentTask, 0, len(sm.tasks))
 	for _, task := range sm.tasks {
@@ -247,4 +251,20 @@ func (sm *SubagentManager) SteerTask(taskID, message string) bool {
 	t.Steering = append(t.Steering, message)
 	t.Updated = time.Now().UnixMilli()
 	return true
+}
+
+func (sm *SubagentManager) pruneArchivedLocked() {
+	if sm.archiveAfterMinute <= 0 {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(sm.archiveAfterMinute) * time.Minute).UnixMilli()
+	for id, t := range sm.tasks {
+		if t.Status == "running" {
+			continue
+		}
+		if t.Updated > 0 && t.Updated < cutoff {
+			delete(sm.tasks, id)
+			delete(sm.cancelFuncs, id)
+		}
+	}
 }

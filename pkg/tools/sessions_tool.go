@@ -36,9 +36,10 @@ func (t *SessionsTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action": map[string]interface{}{"type": "string", "description": "list|history"},
-			"key":    map[string]interface{}{"type": "string", "description": "session key for history"},
-			"limit":  map[string]interface{}{"type": "integer", "description": "max items", "default": 20},
+			"action":       map[string]interface{}{"type": "string", "description": "list|history"},
+			"key":          map[string]interface{}{"type": "string", "description": "session key for history"},
+			"limit":        map[string]interface{}{"type": "integer", "description": "max items", "default": 20},
+			"include_tools": map[string]interface{}{"type": "boolean", "description": "include tool role messages in history", "default": false},
 		},
 		"required": []string{"action"},
 	}
@@ -51,6 +52,10 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 	limit := 20
 	if v, ok := args["limit"].(float64); ok && int(v) > 0 {
 		limit = int(v)
+	}
+	includeTools := false
+	if v, ok := args["include_tools"].(bool); ok {
+		includeTools = v
 	}
 
 	switch action {
@@ -78,9 +83,22 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		if key == "" {
 			return "key is required for history", nil
 		}
-		h := t.historyFn(key, limit)
+		h := t.historyFn(key, limit*3)
 		if len(h) == 0 {
 			return "No history.", nil
+		}
+		if !includeTools {
+			filtered := make([]providers.Message, 0, len(h))
+			for _, m := range h {
+				if strings.TrimSpace(strings.ToLower(m.Role)) == "tool" {
+					continue
+				}
+				filtered = append(filtered, m)
+			}
+			h = filtered
+		}
+		if len(h) == 0 {
+			return "No history (after filters).", nil
 		}
 		if len(h) > limit {
 			h = h[len(h)-limit:]
