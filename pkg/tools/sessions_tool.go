@@ -11,10 +11,11 @@ import (
 )
 
 type SessionInfo struct {
-	Key       string
-	Kind      string
-	Summary   string
-	UpdatedAt time.Time
+	Key             string
+	Kind            string
+	Summary         string
+	CompactionCount int
+	UpdatedAt       time.Time
 }
 
 type SessionsTool struct {
@@ -152,7 +153,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		var sb strings.Builder
 		sb.WriteString("Sessions:\n")
 		for _, s := range items {
-			sb.WriteString(fmt.Sprintf("- %s kind=%s updated=%s\n", s.Key, s.Kind, s.UpdatedAt.Format(time.RFC3339)))
+			sb.WriteString(fmt.Sprintf("- %s kind=%s compactions=%d updated=%s\n", s.Key, s.Kind, s.CompactionCount, s.UpdatedAt.Format(time.RFC3339)))
 		}
 		return strings.TrimSpace(sb.String()), nil
 	case "history":

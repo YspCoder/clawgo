@@ -137,16 +137,21 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
 ## 🧠 记忆、自主与上下文压缩
 
 - 启动会读取 `AGENTS.md`、`SOUL.md`、`USER.md` 作为行为约束与语义上下文。
-- 网关启动后会执行一次自检任务，结合历史会话与 `memory/HEARTBEAT.md` 判断是否继续未完成任务。
+- 网关启动后会执行一次自检任务，结合历史会话与 `HEARTBEAT.md` 判断是否继续未完成任务。
 - 上下文压缩同时按消息数量阈值和上下文体积阈值触发，控制 token 成本与长会话稳定性。
 - 上下文压缩模式支持 `summary`、`responses_compact`、`hybrid`；`responses_compact` 需要代理配置 `protocol=responses` 且 `supports_responses_compact=true`。
 - 分层记忆支持 `profile / project / procedures / recent notes`。
 
-上下文压缩配置示例：
+心跳与上下文压缩配置示例：
 
 ```json
 "agents": {
   "defaults": {
+    "heartbeat": {
+      "enabled": true,
+      "every_sec": 1800,
+      "ack_max_chars": 64
+    },
     "context_compaction": {
       "enabled": true,
       "mode": "summary",

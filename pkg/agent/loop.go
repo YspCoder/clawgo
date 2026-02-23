@@ -833,10 +833,11 @@ func alSessionListForTool(sm *session.SessionManager, limit int) []tools.Session
 	out := make([]tools.SessionInfo, 0, len(items))
 	for _, s := range items {
 		out = append(out, tools.SessionInfo{
-			Key:       s.Key,
-			Kind:      s.Kind,
-			Summary:   s.Summary,
-			UpdatedAt: s.Updated,
+			Key:             s.Key,
+			Kind:            s.Kind,
+			Summary:         s.Summary,
+			CompactionCount: s.CompactionCount,
+			UpdatedAt:       s.Updated,
 		})
 	}
 	return out

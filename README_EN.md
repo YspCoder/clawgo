@@ -137,16 +137,21 @@ clawgo channel test --channel telegram --to <chat_id> -m "ping"
 ## 🧠 Memory, Autonomy, and Context Compaction
 
 - On startup, the agent loads `AGENTS.md`, `SOUL.md`, and `USER.md` as behavior and semantic constraints.
-- Gateway startup triggers a self-check task using history and `memory/HEARTBEAT.md` to decide whether unfinished tasks should continue.
+- Gateway startup triggers a self-check task using history and `HEARTBEAT.md` to decide whether unfinished tasks should continue.
 - Context compaction is triggered by both message-count and transcript-size thresholds.
 - Compaction modes are `summary`, `responses_compact`, and `hybrid`; `responses_compact` requires `protocol=responses` and `supports_responses_compact=true` on the active proxy.
 - Layered memory supports `profile / project / procedures / recent notes`.
 
-Context compaction config example:
+Heartbeat + context compaction config example:
 
 ```json
 "agents": {
   "defaults": {
+    "heartbeat": {
+      "enabled": true,
+      "every_sec": 1800,
+      "ack_max_chars": 64
+    },
     "context_compaction": {
       "enabled": true,
       "mode": "summary",
