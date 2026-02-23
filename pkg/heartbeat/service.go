@@ -11,20 +11,22 @@ import (
 )
 
 type HeartbeatService struct {
-	workspace   string
-	onHeartbeat func(string) (string, error)
-	interval    time.Duration
-	enabled     bool
-	runner      *lifecycle.LoopRunner
+	workspace      string
+	onHeartbeat    func(string) (string, error)
+	interval       time.Duration
+	enabled        bool
+	promptTemplate string
+	runner         *lifecycle.LoopRunner
 }
 
-func NewHeartbeatService(workspace string, onHeartbeat func(string) (string, error), intervalS int, enabled bool) *HeartbeatService {
+func NewHeartbeatService(workspace string, onHeartbeat func(string) (string, error), intervalS int, enabled bool, promptTemplate string) *HeartbeatService {
 	return &HeartbeatService{
-		workspace:   workspace,
-		onHeartbeat: onHeartbeat,
-		interval:    time.Duration(intervalS) * time.Second,
-		enabled:     enabled,
-		runner:      lifecycle.NewLoopRunner(),
+		workspace:      workspace,
+		onHeartbeat:    onHeartbeat,
+		interval:       time.Duration(intervalS) * time.Second,
+		enabled:        enabled,
+		promptTemplate: strings.TrimSpace(promptTemplate),
+		runner:         lifecycle.NewLoopRunner(),
 	}
 }
 
@@ -86,12 +88,11 @@ func (hs *HeartbeatService) buildPrompt() string {
 
 	now := time.Now().Format("2006-01-02 15:04")
 
-	prompt := fmt.Sprintf(`Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.
-
-Current time: %s
-
-%s
-`, now, notes)
+	tpl := hs.promptTemplate
+	if strings.TrimSpace(tpl) == "" {
+		tpl = "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK."
+	}
+	prompt := fmt.Sprintf("%s\n\nCurrent time: %s\n\n%s\n", tpl, now, notes)
 
 	return prompt
 }

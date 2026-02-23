@@ -37,6 +37,9 @@ type AgentLoop struct {
 	compactionTrigger      int
 	compactionKeepRecent   int
 	heartbeatAckMaxChars   int
+	memoryRecallKeywords   []string
+	noResponseFallback     string
+	thinkOnlyFallback      string
 	audit                  *triggerAudit
 	running                bool
 }
@@ -148,6 +151,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		compactionTrigger:    cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
 		compactionKeepRecent: cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
 		heartbeatAckMaxChars: cfg.Agents.Defaults.Heartbeat.AckMaxChars,
+		memoryRecallKeywords: cfg.Agents.Defaults.Texts.MemoryRecallKeywords,
+		noResponseFallback:   cfg.Agents.Defaults.Texts.NoResponseFallback,
+		thinkOnlyFallback:    cfg.Agents.Defaults.Texts.ThinkOnlyFallback,
 		audit:                newTriggerAudit(workspace),
 		running:              false,
 	}
@@ -309,7 +315,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	summary := al.sessions.GetSummary(msg.SessionKey)
 	memoryRecallUsed := false
 	memoryRecallText := ""
-	if shouldRecallMemory(msg.Content) {
+	if shouldRecallMemory(msg.Content, al.memoryRecallKeywords) {
 		if recall, err := al.tools.Execute(ctx, "memory_search", map[string]interface{}{"query": msg.Content, "maxResults": 3}); err == nil && strings.TrimSpace(recall) != "" {
 			memoryRecallUsed = true
 			memoryRecallText = strings.TrimSpace(recall)
@@ -459,7 +465,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	if finalContent == "" {
-		finalContent = "I've completed processing but have no response to give."
+		fallback := strings.TrimSpace(al.noResponseFallback)
+		if fallback == "" {
+			fallback = "I've completed processing but have no response to give."
+		}
+		finalContent = fallback
 	}
 
 	// Filter out <think>...</think> content from user-facing response
@@ -472,7 +482,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		// For now, let's assume thoughts are auxiliary and empty response is okay if tools did work.
 		// If no tools ran and only thoughts, user might be confused.
 		if iteration == 1 {
-			userContent = "Thinking process completed."
+			fallback := strings.TrimSpace(al.thinkOnlyFallback)
+			if fallback == "" {
+				fallback = "Thinking process completed."
+			}
+			userContent = fallback
 		}
 	}
 
@@ -843,14 +857,17 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-func shouldRecallMemory(text string) bool {
+func shouldRecallMemory(text string, keywords []string) bool {
 	s := strings.ToLower(strings.TrimSpace(text))
 	if s == "" {
 		return false
 	}
-	keywords := []string{"remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision", "日期", "when did", "what did we"}
+	if len(keywords) == 0 {
+		keywords = []string{"remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision", "日期", "when did", "what did we"}
+	}
 	for _, k := range keywords {
-		if strings.Contains(s, k) {
+		kk := strings.ToLower(strings.TrimSpace(k))
+		if kk != "" && strings.Contains(s, kk) {
 			return true
 		}
 	}

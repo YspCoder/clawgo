@@ -150,7 +150,13 @@ Heartbeat + context compaction config example:
     "heartbeat": {
       "enabled": true,
       "every_sec": 1800,
-      "ack_max_chars": 64
+      "ack_max_chars": 64,
+      "prompt_template": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK."
+    },
+    "texts": {
+      "no_response_fallback": "I've completed processing but have no response to give.",
+      "think_only_fallback": "Thinking process completed.",
+      "memory_recall_keywords": ["remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision"]
     },
     "context_compaction": {
       "enabled": true,

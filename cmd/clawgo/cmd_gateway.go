@@ -587,5 +587,5 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 			},
 		})
 		return "queued", nil
-	}, hbInterval, cfg.Agents.Defaults.Heartbeat.Enabled)
+	}, hbInterval, cfg.Agents.Defaults.Heartbeat.Enabled, cfg.Agents.Defaults.Heartbeat.PromptTemplate)
 }

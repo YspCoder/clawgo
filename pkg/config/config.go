@@ -38,14 +38,22 @@ type AgentDefaults struct {
 	Temperature       float64                 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	Heartbeat         HeartbeatConfig         `json:"heartbeat"`
+	Texts             AgentTextConfig         `json:"texts"`
 	ContextCompaction ContextCompactionConfig `json:"context_compaction"`
 	RuntimeControl    RuntimeControlConfig    `json:"runtime_control"`
 }
 
+type AgentTextConfig struct {
+	NoResponseFallback string   `json:"no_response_fallback"`
+	ThinkOnlyFallback  string   `json:"think_only_fallback"`
+	MemoryRecallKeywords []string `json:"memory_recall_keywords"`
+}
+
 type HeartbeatConfig struct {
-	Enabled     bool `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_ENABLED"`
-	EverySec    int  `json:"every_sec" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_EVERY_SEC"`
-	AckMaxChars int  `json:"ack_max_chars" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_ACK_MAX_CHARS"`
+	Enabled        bool   `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_ENABLED"`
+	EverySec       int    `json:"every_sec" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_EVERY_SEC"`
+	AckMaxChars    int    `json:"ack_max_chars" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_ACK_MAX_CHARS"`
+	PromptTemplate string `json:"prompt_template" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_PROMPT_TEMPLATE"`
 }
 
 type RuntimeControlConfig struct {
@@ -265,6 +273,12 @@ func DefaultConfig() *Config {
 					Enabled:     true,
 					EverySec:    30 * 60,
 					AckMaxChars: 64,
+					PromptTemplate: "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+				},
+				Texts: AgentTextConfig{
+					NoResponseFallback: "I've completed processing but have no response to give.",
+					ThinkOnlyFallback:  "Thinking process completed.",
+					MemoryRecallKeywords: []string{"remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision", "日期", "when did", "what did we"},
 				},
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,
