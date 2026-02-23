@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"clawgo/pkg/logger"
-	
 )
 
 const (
@@ -142,6 +141,10 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 
 type WebFetchTool struct {
 	maxChars int
+}
+
+func (t *WebFetchTool) ParallelSafe() bool {
+	return true
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {

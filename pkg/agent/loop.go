@@ -479,7 +479,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewWebSearchTool(braveAPIKey, cfg.Tools.Web.Search.MaxResults))
 	webFetchTool := tools.NewWebFetchTool(50000)
 	toolsRegistry.Register(webFetchTool)
-	toolsRegistry.Register(tools.NewParallelFetchTool(webFetchTool))
 
 	// Register message tool
 	messageTool := tools.NewMessageTool()
@@ -513,9 +512,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(memorySearchTool)
 	toolsRegistry.Register(tools.NewRepoMapTool(workspace))
 	toolsRegistry.Register(tools.NewSkillExecTool(workspace))
-
-	// Register parallel execution tool (leveraging Go's concurrency)
-	toolsRegistry.Register(tools.NewParallelTool(toolsRegistry))
 
 	// Register browser tool (integrated Chromium support)
 	toolsRegistry.Register(tools.NewBrowserTool())
@@ -555,6 +551,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	policy := loadControlPolicyFromConfig(defaultControlPolicy(), cfg.Agents.Defaults.RuntimeControl)
 	policy = applyLegacyControlPolicyEnvOverrides(policy)
 	parallelSafeTools, maxParallelCalls := loadToolParallelPolicyFromConfig(cfg.Agents.Defaults.RuntimeControl)
+	toolsRegistry.Register(tools.NewParallelTool(toolsRegistry, maxParallelCalls, parallelSafeTools))
+	toolsRegistry.Register(tools.NewParallelFetchTool(webFetchTool, maxParallelCalls, parallelSafeTools))
 	runStateTTL, runStateMax := loadRunStatePolicyFromConfig(cfg.Agents.Defaults.RuntimeControl)
 	// Keep compatibility with older env names.
 	runStateTTL = envDuration("CLAWGO_RUN_STATE_TTL", runStateTTL)
