@@ -231,6 +231,12 @@ func (sm *SessionManager) Save(session *Session) error {
 	return os.WriteFile(metaPath, data, 0644)
 }
 
+func (sm *SessionManager) Count() int {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return len(sm.sessions)
+}
+
 func (sm *SessionManager) loadSessions() error {
 	files, err := os.ReadDir(sm.storage)
 	if err != nil {

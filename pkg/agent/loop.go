@@ -36,6 +36,12 @@ type AgentLoop struct {
 	running        bool
 }
 
+// StartupCompactionReport provides startup memory/session maintenance stats.
+type StartupCompactionReport struct {
+	TotalSessions     int `json:"total_sessions"`
+	CompactedSessions int `json:"compacted_sessions"`
+}
+
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider, cs *cron.CronService) *AgentLoop {
 	workspace := cfg.WorkspacePath()
 	os.MkdirAll(workspace, 0755)
@@ -50,26 +56,40 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		toolsRegistry.Register(tools.NewRemindTool(cs))
 	}
 
+	maxParallelCalls := cfg.Agents.Defaults.RuntimeControl.ToolMaxParallelCalls
+	if maxParallelCalls <= 0 {
+		maxParallelCalls = 4
+	}
+	parallelSafe := make(map[string]struct{})
+	for _, name := range cfg.Agents.Defaults.RuntimeControl.ToolParallelSafeNames {
+		trimmed := strings.TrimSpace(name)
+		if trimmed != "" {
+			parallelSafe[trimmed] = struct{}{}
+		}
+	}
+
 	braveAPIKey := cfg.Tools.Web.Search.APIKey
 	toolsRegistry.Register(tools.NewWebSearchTool(braveAPIKey, cfg.Tools.Web.Search.MaxResults))
 	webFetchTool := tools.NewWebFetchTool(50000)
 	toolsRegistry.Register(webFetchTool)
-	toolsRegistry.Register(tools.NewParallelFetchTool(webFetchTool))
+	toolsRegistry.Register(tools.NewParallelFetchTool(webFetchTool, maxParallelCalls, parallelSafe))
 
 	// Register message tool
 	messageTool := tools.NewMessageTool()
-	messageTool.SetSendCallback(func(channel, chatID, content string) error {
+	messageTool.SetSendCallback(func(channel, chatID, content string, buttons [][]bus.Button) error {
 		msgBus.PublishOutbound(bus.OutboundMessage{
 			Channel: channel,
 			ChatID:  chatID,
 			Content: content,
+			Buttons: buttons,
 		})
 		return nil
 	})
 	toolsRegistry.Register(messageTool)
 
 	// Register spawn tool
-	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus)
+	orchestrator := tools.NewOrchestrator()
+	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus, orchestrator)
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
 
@@ -84,7 +104,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewMemoryWriteTool(workspace))
 
 	// Register parallel execution tool (leveraging Go's concurrency)
-	toolsRegistry.Register(tools.NewParallelTool(toolsRegistry))
+	toolsRegistry.Register(tools.NewParallelTool(toolsRegistry, maxParallelCalls, parallelSafe))
 
 	// Register browser tool (integrated Chromium support)
 	toolsRegistry.Register(tools.NewBrowserTool())
@@ -100,7 +120,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		bus:            msgBus,
 		provider:       provider,
 		workspace:      workspace,
-		model:          cfg.Agents.Defaults.Model,
+		model:          provider.GetDefaultModel(),
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
 		contextBuilder: NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
@@ -567,6 +587,16 @@ func truncate(s string, maxLen int) string {
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
+// RunStartupSelfCheckAllSessions runs a lightweight startup check.
+// Current implementation reports loaded session counts and leaves compaction as no-op.
+func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) StartupCompactionReport {
+	_ = ctx
+	return StartupCompactionReport{
+		TotalSessions:     al.sessions.Count(),
+		CompactedSessions: 0,
+	}
+}
+
 func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	info := make(map[string]interface{})
 
