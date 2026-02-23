@@ -36,9 +36,10 @@ func (t *SessionsTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action":       map[string]interface{}{"type": "string", "description": "list|history"},
-			"key":          map[string]interface{}{"type": "string", "description": "session key for history"},
-			"limit":        map[string]interface{}{"type": "integer", "description": "max items", "default": 20},
+			"action":        map[string]interface{}{"type": "string", "description": "list|history"},
+			"key":           map[string]interface{}{"type": "string", "description": "session key for history"},
+			"limit":         map[string]interface{}{"type": "integer", "description": "max items", "default": 20},
+			"kinds":         map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional session kinds filter for list"},
 			"include_tools": map[string]interface{}{"type": "boolean", "description": "include tool role messages in history", "default": false},
 		},
 		"required": []string{"action"},
@@ -57,17 +58,44 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 	if v, ok := args["include_tools"].(bool); ok {
 		includeTools = v
 	}
+	kindFilter := map[string]struct{}{}
+	if rawKinds, ok := args["kinds"].([]interface{}); ok {
+		for _, it := range rawKinds {
+			if s, ok := it.(string); ok {
+				s = strings.ToLower(strings.TrimSpace(s))
+				if s != "" {
+					kindFilter[s] = struct{}{}
+				}
+			}
+		}
+	}
 
 	switch action {
 	case "list":
 		if t.listFn == nil {
 			return "sessions list unavailable", nil
 		}
-		items := t.listFn(limit)
+		items := t.listFn(limit * 3)
 		if len(items) == 0 {
 			return "No sessions.", nil
 		}
+		if len(kindFilter) > 0 {
+			filtered := make([]SessionInfo, 0, len(items))
+			for _, s := range items {
+				k := strings.ToLower(strings.TrimSpace(s.Kind))
+				if _, ok := kindFilter[k]; ok {
+					filtered = append(filtered, s)
+				}
+			}
+			items = filtered
+		}
+		if len(items) == 0 {
+			return "No sessions (after filters).", nil
+		}
 		sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+		if len(items) > limit {
+			items = items[:limit]
+		}
 		var sb strings.Builder
 		sb.WriteString("Sessions:\n")
 		for _, s := range items {

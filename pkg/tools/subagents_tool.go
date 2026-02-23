@@ -24,9 +24,9 @@ func (t *SubagentsTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action":  map[string]interface{}{"type": "string", "description": "list|info|kill|steer"},
-			"id":      map[string]interface{}{"type": "string", "description": "subagent id for info/kill/steer"},
-			"message": map[string]interface{}{"type": "string", "description": "steering message for steer action"},
+			"action":  map[string]interface{}{"type": "string", "description": "list|info|kill|steer|send|log"},
+			"id":      map[string]interface{}{"type": "string", "description": "subagent id for info/kill/steer/send/log"},
+			"message": map[string]interface{}{"type": "string", "description": "steering message for steer/send action"},
 		},
 		"required": []string{"action"},
 	}
@@ -73,14 +73,39 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 			return "subagent not found", nil
 		}
 		return "subagent kill requested", nil
-	case "steer":
+	case "steer", "send":
 		if id == "" || message == "" {
-			return "id and message are required for steer", nil
+			return "id and message are required for steer/send", nil
 		}
 		if !t.manager.SteerTask(id, message) {
 			return "subagent not found", nil
 		}
 		return "steering message accepted", nil
+	case "log":
+		if id == "" {
+			return "id is required for log", nil
+		}
+		task, ok := t.manager.GetTask(id)
+		if !ok {
+			return "subagent not found", nil
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Subagent %s Log\n", task.ID))
+		sb.WriteString(fmt.Sprintf("Status: %s\n", task.Status))
+		if len(task.Steering) > 0 {
+			sb.WriteString("Steering Messages:\n")
+			for _, m := range task.Steering {
+				sb.WriteString("- " + m + "\n")
+			}
+		}
+		if strings.TrimSpace(task.Result) != "" {
+			result := strings.TrimSpace(task.Result)
+			if len(result) > 500 {
+				result = result[:500] + "..."
+			}
+			sb.WriteString("Result Preview:\n" + result)
+		}
+		return strings.TrimSpace(sb.String()), nil
 	default:
 		return "unsupported action", nil
 	}
