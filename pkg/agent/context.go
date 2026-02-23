@@ -163,7 +163,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	return result
 }
 
-func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string) []providers.Message {
+func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID, responseLanguage string) []providers.Message {
 	messages := []providers.Message{}
 
 	systemPrompt := cb.BuildSystemPrompt()
@@ -172,6 +172,9 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	// Add Current Session info if provided
 	if channel != "" && chatID != "" {
 		systemPrompt += fmt.Sprintf("\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+	}
+	if responseLanguage != "" {
+		systemPrompt += fmt.Sprintf("\n\n## Response Language\nReply in %s unless user explicitly asks to switch language. Keep code identifiers and CLI commands unchanged.", responseLanguage)
 	}
 
 	// Log system prompt summary for debugging (debug mode only)

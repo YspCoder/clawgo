@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -55,12 +53,6 @@ type searchResult struct {
 	score   int
 }
 
-type fileSearchOutcome struct {
-	matches []searchResult
-	err     error
-	file    string
-}
-
 func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	query, ok := args["query"].(string)
 	if !ok || query == "" {
@@ -68,14 +60,8 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	}
 
 	maxResults := 5
-	if m, ok := parseIntArg(args["maxResults"]); ok {
-		maxResults = m
-	}
-	if maxResults < 1 {
-		maxResults = 1
-	}
-	if maxResults > 50 {
-		maxResults = 50
+	if m, ok := args["maxResults"].(float64); ok {
+		maxResults = int(m)
 	}
 
 	keywords := strings.Fields(strings.ToLower(query))
@@ -84,118 +70,48 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	}
 
 	files := t.getMemoryFiles()
-	if len(files) == 0 {
-		return fmt.Sprintf("No memory files found for query: %s", query), nil
-	}
-
-	// Fast path: structured memory index.
-	if idx, err := t.loadOrBuildIndex(files); err == nil && idx != nil {
-		// If index has entries, use it. Otherwise fallback to file scan so parser/read warnings are visible.
-		if len(idx.Entries) > 0 {
-			results := t.searchInIndex(idx, keywords)
-			return t.renderSearchResults(query, results, maxResults), nil
-		}
-	}
-
-	resultsChan := make(chan fileSearchOutcome, len(files))
+	
+	resultsChan := make(chan []searchResult, len(files))
 	var wg sync.WaitGroup
 
-	// Search all files concurrently
+	// 并发搜索所有文件
 	for _, file := range files {
 		wg.Add(1)
 		go func(f string) {
 			defer wg.Done()
 			matches, err := t.searchFile(f, keywords)
-			resultsChan <- fileSearchOutcome{matches: matches, err: err, file: f}
+			if err == nil {
+				resultsChan <- matches
+			}
 		}(file)
 	}
 
-	// Close channel asynchronously
+	// 异步关闭通道
 	go func() {
 		wg.Wait()
 		close(resultsChan)
 	}()
 
 	var allResults []searchResult
-	var failedFiles []string
-	for outcome := range resultsChan {
-		if outcome.err != nil {
-			relPath, _ := filepath.Rel(t.workspace, outcome.file)
-			if relPath == "" {
-				relPath = outcome.file
+	for matches := range resultsChan {
+		allResults = append(allResults, matches...)
+	}
+
+	// Simple ranking: sort by score (number of keyword matches) desc
+	for i := 0; i < len(allResults); i++ {
+		for j := i + 1; j < len(allResults); j++ {
+			if allResults[j].score > allResults[i].score {
+				allResults[i], allResults[j] = allResults[j], allResults[i]
 			}
-			failedFiles = append(failedFiles, relPath)
-			continue
-		}
-		allResults = append(allResults, outcome.matches...)
-	}
-
-	output := t.renderSearchResults(query, allResults, maxResults)
-	if len(failedFiles) > 0 {
-		suffix := formatSearchWarningSuffix(failedFiles)
-		if strings.HasPrefix(output, "No memory found for query:") {
-			return output + suffix, nil
-		}
-		return output + "\n" + suffix, nil
-	}
-	return output, nil
-}
-
-func (t *MemorySearchTool) searchInIndex(idx *memoryIndex, keywords []string) []searchResult {
-	type scoreItem struct {
-		entry memoryIndexEntry
-		score int
-	}
-	acc := make(map[int]int)
-	for _, kw := range keywords {
-		token := strings.ToLower(strings.TrimSpace(kw))
-		for _, entryID := range idx.Inverted[token] {
-			acc[entryID]++
 		}
 	}
-
-	out := make([]scoreItem, 0, len(acc))
-	for entryID, score := range acc {
-		if entryID < 0 || entryID >= len(idx.Entries) || score <= 0 {
-			continue
-		}
-		out = append(out, scoreItem{
-			entry: idx.Entries[entryID],
-			score: score,
-		})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].score == out[j].score {
-			return out[i].entry.LineNum < out[j].entry.LineNum
-		}
-		return out[i].score > out[j].score
-	})
-
-	results := make([]searchResult, 0, len(out))
-	for _, item := range out {
-		results = append(results, searchResult{
-			file:    item.entry.File,
-			lineNum: item.entry.LineNum,
-			content: item.entry.Content,
-			score:   item.score,
-		})
-	}
-	return results
-}
-
-func (t *MemorySearchTool) renderSearchResults(query string, allResults []searchResult, maxResults int) string {
-	sort.Slice(allResults, func(i, j int) bool {
-		if allResults[i].score == allResults[j].score {
-			return allResults[i].lineNum < allResults[j].lineNum
-		}
-		return allResults[i].score > allResults[j].score
-	})
 
 	if len(allResults) > maxResults {
 		allResults = allResults[:maxResults]
 	}
+
 	if len(allResults) == 0 {
-		return fmt.Sprintf("No memory found for query: %s", query)
+		return fmt.Sprintf("No memory found for query: %s", query), nil
 	}
 
 	var sb strings.Builder
@@ -204,46 +120,51 @@ func (t *MemorySearchTool) renderSearchResults(query string, allResults []search
 		relPath, _ := filepath.Rel(t.workspace, res.file)
 		sb.WriteString(fmt.Sprintf("--- Source: %s:%d ---\n%s\n\n", relPath, res.lineNum, res.content))
 	}
-	return sb.String()
+
+	return sb.String(), nil
 }
 
 func (t *MemorySearchTool) getMemoryFiles() []string {
 	var files []string
-	seen := map[string]struct{}{}
 
-	addIfExists := func(path string) {
-		if _, ok := seen[path]; ok {
-			return
-		}
-		if _, err := os.Stat(path); err == nil {
-			files = append(files, path)
-			seen[path] = struct{}{}
-		}
+	// Check workspace MEMORY.md first
+	mainMem := filepath.Join(t.workspace, "MEMORY.md")
+	if _, err := os.Stat(mainMem); err == nil {
+		files = append(files, mainMem)
 	}
 
-	// Prefer canonical long-term memory path.
-	canonical := filepath.Join(t.workspace, "memory", "MEMORY.md")
-	addIfExists(canonical)
-	// Legacy path fallback only when canonical file is absent.
-	if _, err := os.Stat(canonical); err != nil {
-		addIfExists(filepath.Join(t.workspace, "MEMORY.md"))
+	// Backward-compatible location: memory/MEMORY.md
+	legacyMem := filepath.Join(t.workspace, "memory", "MEMORY.md")
+	if _, err := os.Stat(legacyMem); err == nil {
+		files = append(files, legacyMem)
 	}
 
-	// Check memory/ directory recursively (e.g., memory/YYYYMM/YYYYMMDD.md).
+	// Recursively include memory/**/*.md
 	memDir := filepath.Join(t.workspace, "memory")
-	_ = filepath.Walk(memDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info == nil || info.IsDir() {
+	_ = filepath.WalkDir(memDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
 			return nil
 		}
-		if strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
-			if _, ok := seen[path]; !ok {
-				files = append(files, path)
-				seen[path] = struct{}{}
-			}
+		if strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
+			files = append(files, path)
 		}
 		return nil
 	})
-	return files
+
+	return dedupeStrings(files)
+}
+
+func dedupeStrings(items []string) []string {
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, v := range items {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 // searchFile parses the markdown file into blocks (paragraphs/list items) and searches them
@@ -256,7 +177,6 @@ func (t *MemorySearchTool) searchFile(path string, keywords []string) ([]searchR
 
 	var results []searchResult
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	var currentBlock strings.Builder
 	var blockStartLine int = 1
@@ -289,12 +209,7 @@ func (t *MemorySearchTool) searchFile(path string, keywords []string) ([]searchR
 				}
 			}
 
-			// Keep all blocks when keywords are empty (index build).
-			if len(keywords) == 0 {
-				score = 1
-			}
-
-			// Only keep if at least one keyword matched.
+			// Only keep if at least one keyword matched
 			if score > 0 {
 				results = append(results, searchResult{
 					file:    path,
@@ -316,7 +231,7 @@ func (t *MemorySearchTool) searchFile(path string, keywords []string) ([]searchR
 		// 1. Headers start new blocks
 		// 2. Empty lines separate blocks
 		// 3. List items start new blocks (optional, but good for logs)
-
+		
 		isHeader := strings.HasPrefix(trimmed, "#")
 		isEmpty := trimmed == ""
 		isList := strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") || (len(trimmed) > 3 && trimmed[1] == '.' && trimmed[2] == ' ')
@@ -348,41 +263,5 @@ func (t *MemorySearchTool) searchFile(path string, keywords []string) ([]searchR
 	}
 
 	processBlock() // Flush last block
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
 	return results, nil
-}
-
-func parseIntArg(value interface{}) (int, bool) {
-	switch v := value.(type) {
-	case float64:
-		return int(v), true
-	case int:
-		return v, true
-	case int64:
-		return int(v), true
-	case string:
-		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err == nil {
-			return n, true
-		}
-	}
-	return 0, false
-}
-
-func formatSearchWarningSuffix(failedFiles []string) string {
-	if len(failedFiles) == 0 {
-		return ""
-	}
-	maxShown := 3
-	shown := failedFiles
-	if len(shown) > maxShown {
-		shown = shown[:maxShown]
-	}
-	msg := fmt.Sprintf("Warning: memory_search skipped %d file(s) due to read/parse errors: %s", len(failedFiles), strings.Join(shown, ", "))
-	if len(failedFiles) > maxShown {
-		msg += ", ..."
-	}
-	return msg
 }
