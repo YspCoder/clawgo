@@ -196,6 +196,8 @@ func gatewayCmd() {
 				reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
 				reflect.DeepEqual(cfg.Channels, newCfg.Channels)
 
+			changes := summarizeDialogTemplateChanges(cfg, newCfg)
+
 			if runtimeSame {
 				configureLogging(newCfg)
 				sentinelService.Stop()
@@ -219,6 +221,9 @@ func gatewayCmd() {
 					sentinelService.Start()
 				}
 				cfg = newCfg
+				if len(changes) > 0 {
+					fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(changes, ", "))
+				}
 				fmt.Println("✓ Config hot-reload applied (logging/metadata only)")
 				continue
 			}
@@ -261,6 +266,9 @@ func gatewayCmd() {
 				continue
 			}
 			go agentLoop.Run(ctx)
+			if len(changes) > 0 {
+				fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(changes, ", "))
+			}
 			fmt.Println("✓ Config hot-reload applied")
 		default:
 			fmt.Println("\nShutting down...")
@@ -274,6 +282,37 @@ func gatewayCmd() {
 			return
 		}
 	}
+}
+
+func summarizeDialogTemplateChanges(oldCfg, newCfg *config.Config) []string {
+	if oldCfg == nil || newCfg == nil {
+		return nil
+	}
+	type pair struct {
+		name string
+		a    string
+		b    string
+	}
+	oldT := oldCfg.Agents.Defaults.Texts
+	newT := newCfg.Agents.Defaults.Texts
+	checks := []pair{
+		{name: "system_rewrite_template", a: oldT.SystemRewriteTemplate, b: newT.SystemRewriteTemplate},
+		{name: "lang_usage", a: oldT.LangUsage, b: newT.LangUsage},
+		{name: "lang_invalid", a: oldT.LangInvalid, b: newT.LangInvalid},
+		{name: "lang_updated_template", a: oldT.LangUpdatedTemplate, b: newT.LangUpdatedTemplate},
+		{name: "runtime_compaction_note", a: oldT.RuntimeCompactionNote, b: newT.RuntimeCompactionNote},
+		{name: "startup_compaction_note", a: oldT.StartupCompactionNote, b: newT.StartupCompactionNote},
+	}
+	out := make([]string, 0)
+	for _, c := range checks {
+		if strings.TrimSpace(c.a) != strings.TrimSpace(c.b) {
+			out = append(out, c.name)
+		}
+	}
+	if oldCfg.Agents.Defaults.Heartbeat.PromptTemplate != newCfg.Agents.Defaults.Heartbeat.PromptTemplate {
+		out = append(out, "heartbeat.prompt_template")
+	}
+	return out
 }
 
 func runGatewayStartupCompactionCheck(parent context.Context, agentLoop *agent.AgentLoop) {
