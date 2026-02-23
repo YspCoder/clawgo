@@ -164,9 +164,17 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		if key == "" {
 			return "key is required for history", nil
 		}
-		h := t.historyFn(key, 0)
-		if len(h) == 0 {
+		raw := t.historyFn(key, 0)
+		if len(raw) == 0 {
 			return "No history.", nil
+		}
+		type indexedMsg struct {
+			idx int
+			msg providers.Message
+		}
+		window := make([]indexedMsg, 0, len(raw))
+		for i, m := range raw {
+			window = append(window, indexedMsg{idx: i + 1, msg: m})
 		}
 
 		// Window selectors are 1-indexed (human-friendly)
@@ -175,8 +183,8 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 			if center < 0 {
 				center = 0
 			}
-			if center >= len(h) {
-				center = len(h) - 1
+			if center >= len(window) {
+				center = len(window) - 1
 			}
 			half := limit / 2
 			if half < 1 {
@@ -187,17 +195,17 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 				start = 0
 			}
 			end := center + half + 1
-			if end > len(h) {
-				end = len(h)
+			if end > len(window) {
+				end = len(window)
 			}
-			h = h[start:end]
+			window = window[start:end]
 		} else {
 			start := 0
-			end := len(h)
+			end := len(window)
 			if after > 0 {
 				start = after
-				if start > len(h) {
-					start = len(h)
+				if start > len(window) {
+					start = len(window)
 				}
 			}
 			if before > 0 {
@@ -205,72 +213,72 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 				if end < 0 {
 					end = 0
 				}
-				if end > len(h) {
-					end = len(h)
+				if end > len(window) {
+					end = len(window)
 				}
 			}
 			if start > end {
 				start = end
 			}
-			h = h[start:end]
+			window = window[start:end]
 		}
 
 		if !includeTools {
-			filtered := make([]providers.Message, 0, len(h))
-			for _, m := range h {
-				if strings.TrimSpace(strings.ToLower(m.Role)) == "tool" {
+			filtered := make([]indexedMsg, 0, len(window))
+			for _, m := range window {
+				if strings.TrimSpace(strings.ToLower(m.msg.Role)) == "tool" {
 					continue
 				}
 				filtered = append(filtered, m)
 			}
-			h = filtered
+			window = filtered
 		}
 		if roleFilter != "" {
-			filtered := make([]providers.Message, 0, len(h))
-			for _, m := range h {
-				if strings.ToLower(strings.TrimSpace(m.Role)) == roleFilter {
+			filtered := make([]indexedMsg, 0, len(window))
+			for _, m := range window {
+				if strings.ToLower(strings.TrimSpace(m.msg.Role)) == roleFilter {
 					filtered = append(filtered, m)
 				}
 			}
-			h = filtered
+			window = filtered
 		}
 		if fromMeSet {
 			targetRole := "user"
 			if fromMe {
 				targetRole = "assistant"
 			}
-			filtered := make([]providers.Message, 0, len(h))
-			for _, m := range h {
-				if strings.ToLower(strings.TrimSpace(m.Role)) == targetRole {
+			filtered := make([]indexedMsg, 0, len(window))
+			for _, m := range window {
+				if strings.ToLower(strings.TrimSpace(m.msg.Role)) == targetRole {
 					filtered = append(filtered, m)
 				}
 			}
-			h = filtered
+			window = filtered
 		}
 		if query != "" {
-			filtered := make([]providers.Message, 0, len(h))
-			for _, m := range h {
-				blob := strings.ToLower(strings.TrimSpace(m.Role + "\n" + m.Content))
+			filtered := make([]indexedMsg, 0, len(window))
+			for _, m := range window {
+				blob := strings.ToLower(strings.TrimSpace(m.msg.Role + "\n" + m.msg.Content))
 				if strings.Contains(blob, query) {
 					filtered = append(filtered, m)
 				}
 			}
-			h = filtered
+			window = filtered
 		}
-		if len(h) == 0 {
+		if len(window) == 0 {
 			return "No history (after filters).", nil
 		}
-		if len(h) > limit {
-			h = h[len(h)-limit:]
+		if len(window) > limit {
+			window = window[len(window)-limit:]
 		}
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("History for %s:\n", key))
-		for _, m := range h {
-			content := strings.TrimSpace(m.Content)
+		for _, item := range window {
+			content := strings.TrimSpace(item.msg.Content)
 			if len(content) > 180 {
 				content = content[:180] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("- [%s] %s\n", m.Role, content))
+			sb.WriteString(fmt.Sprintf("- [#%d][%s] %s\n", item.idx, item.msg.Role, content))
 		}
 		return strings.TrimSpace(sb.String()), nil
 	default:

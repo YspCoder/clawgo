@@ -27,7 +27,7 @@ func (t *SubagentsTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action":         map[string]interface{}{"type": "string", "description": "list|info|kill|steer|send|log"},
+			"action":         map[string]interface{}{"type": "string", "description": "list|info|kill|steer|send|log|resume"},
 			"id":             map[string]interface{}{"type": "string", "description": "subagent id/#index/all for info/kill/steer/send/log"},
 			"message":        map[string]interface{}{"type": "string", "description": "steering message for steer/send action"},
 			"recent_minutes": map[string]interface{}{"type": "integer", "description": "optional list/info all filter by recent updated minutes"},
@@ -148,6 +148,16 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 			sb.WriteString("Result Preview:\n" + result)
 		}
 		return strings.TrimSpace(sb.String()), nil
+	case "resume":
+		resolvedID, err := t.resolveTaskID(id)
+		if err != nil {
+			return err.Error(), nil
+		}
+		label, ok := t.manager.ResumeTask(ctx, resolvedID)
+		if !ok {
+			return "subagent resume failed", nil
+		}
+		return fmt.Sprintf("subagent resumed as %s", label), nil
 	default:
 		return "unsupported action", nil
 	}

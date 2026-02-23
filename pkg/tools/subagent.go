@@ -253,6 +253,29 @@ func (sm *SubagentManager) SteerTask(taskID, message string) bool {
 	return true
 }
 
+func (sm *SubagentManager) ResumeTask(ctx context.Context, taskID string) (string, bool) {
+	sm.mu.RLock()
+	t, ok := sm.tasks[taskID]
+	sm.mu.RUnlock()
+	if !ok {
+		return "", false
+	}
+	if strings.TrimSpace(t.Task) == "" {
+		return "", false
+	}
+	label := strings.TrimSpace(t.Label)
+	if label == "" {
+		label = "resumed"
+	} else {
+		label = label + "-resumed"
+	}
+	_, err := sm.Spawn(ctx, t.Task, label, t.OriginChannel, t.OriginChatID, t.PipelineID, t.PipelineTask)
+	if err != nil {
+		return "", false
+	}
+	return label, true
+}
+
 func (sm *SubagentManager) pruneArchivedLocked() {
 	if sm.archiveAfterMinute <= 0 {
 		return
