@@ -2,6 +2,8 @@ package session
 
 import (
 	"bufio"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 
 type Session struct {
 	Key               string              `json:"key"`
+	SessionID         string              `json:"session_id,omitempty"`
 	Kind              string              `json:"kind,omitempty"`
 	Messages          []providers.Message `json:"messages"`
 	Summary           string              `json:"summary,omitempty"`
@@ -76,11 +79,12 @@ func (sm *SessionManager) GetOrCreate(key string) *Session {
 	}
 
 	session = &Session{
-		Key:      key,
-		Kind:     detectSessionKind(key),
-		Messages: []providers.Message{},
-		Created:  time.Now(),
-		Updated:  time.Now(),
+		Key:       key,
+		SessionID: deriveSessionID(key),
+		Kind:      detectSessionKind(key),
+		Messages:  []providers.Message{},
+		Created:   time.Now(),
+		Updated:   time.Now(),
 	}
 	sm.sessions[key] = session
 
@@ -240,6 +244,7 @@ func (sm *SessionManager) Save(session *Session) error {
 
 	metaPath := filepath.Join(sm.storage, session.Key+".meta")
 	meta := map[string]interface{}{
+		"session_id":         session.SessionID,
 		"kind":               session.Kind,
 		"summary":            session.Summary,
 		"last_language":      session.LastLanguage,
@@ -278,6 +283,7 @@ func (sm *SessionManager) List(limit int) []Session {
 		s.mu.RLock()
 		items = append(items, Session{
 			Key:               s.Key,
+			SessionID:         s.SessionID,
 			Kind:              s.Kind,
 			Summary:           s.Summary,
 			LastLanguage:      s.LastLanguage,
@@ -352,6 +358,13 @@ func fromJSONLLine(line []byte) (providers.Message, bool) {
 	return providers.Message{Role: role, Content: content, ToolCallID: event.Message.ToolCallID}, true
 }
 
+func deriveSessionID(key string) string {
+	sum := sha1.Sum([]byte("clawgo-session:" + key))
+	h := hex.EncodeToString(sum[:])
+	// UUID-like deterministic id
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
 func detectSessionKind(key string) string {
 	k := strings.TrimSpace(strings.ToLower(key))
 	switch {
@@ -380,11 +393,17 @@ func (sm *SessionManager) writeOpenClawSessionsIndex() error {
 	for key, s := range sm.sessions {
 		s.mu.RLock()
 		sessionFile := filepath.Join(sm.storage, key+".jsonl")
+		sid := strings.TrimSpace(s.SessionID)
+		if sid == "" {
+			sid = deriveSessionID(key)
+		}
 		entry := map[string]interface{}{
-			"sessionId":  key,
-			"updatedAt":  s.Updated.UnixMilli(),
-			"chatType":   mapKindToChatType(s.Kind),
+			"sessionId":   sid,
+			"sessionKey":  key,
+			"updatedAt":   s.Updated.UnixMilli(),
+			"chatType":    mapKindToChatType(s.Kind),
 			"sessionFile": sessionFile,
+			"kind":        s.Kind,
 		}
 		s.mu.RUnlock()
 		index[key] = entry
@@ -447,6 +466,7 @@ func (sm *SessionManager) loadSessions() error {
 			data, err := os.ReadFile(filepath.Join(sm.storage, file.Name()))
 			if err == nil {
 				var meta struct {
+					SessionID         string    `json:"session_id"`
 					Kind              string    `json:"kind"`
 					Summary           string    `json:"summary"`
 					LastLanguage      string    `json:"last_language"`
@@ -455,6 +475,10 @@ func (sm *SessionManager) loadSessions() error {
 					Created           time.Time `json:"created"`
 				}
 				if err := json.Unmarshal(data, &meta); err == nil {
+					session.SessionID = strings.TrimSpace(meta.SessionID)
+					if session.SessionID == "" {
+						session.SessionID = deriveSessionID(session.Key)
+					}
 					session.Kind = meta.Kind
 					if strings.TrimSpace(session.Kind) == "" {
 						session.Kind = detectSessionKind(session.Key)
