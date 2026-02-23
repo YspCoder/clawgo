@@ -206,6 +206,28 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
+	// Explicit language command: /lang <code>
+	if strings.HasPrefix(strings.TrimSpace(msg.Content), "/lang") {
+		parts := strings.Fields(strings.TrimSpace(msg.Content))
+		if len(parts) < 2 {
+			preferred, last := al.sessions.GetLanguagePreferences(msg.SessionKey)
+			if preferred == "" {
+				preferred = "(auto)"
+			}
+			if last == "" {
+				last = "(none)"
+			}
+			return fmt.Sprintf("Usage: /lang <code>\nCurrent preferred: %s\nLast detected: %s", preferred, last), nil
+		}
+		lang := normalizeLang(parts[1])
+		if lang == "" {
+			return "Invalid language code.", nil
+		}
+		al.sessions.SetPreferredLanguage(msg.SessionKey, lang)
+		al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey))
+		return fmt.Sprintf("Language preference updated to %s", lang), nil
+	}
+
 	// Update tool contexts
 	if tool, ok := al.tools.Get("message"); ok {
 		if mt, ok := tool.(*tools.MessageTool); ok {

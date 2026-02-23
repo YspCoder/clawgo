@@ -38,6 +38,21 @@ func (t *MemoryWriteTool) Parameters() map[string]interface{} {
 				"description": "Target memory kind: longterm or daily",
 				"default":     "daily",
 			},
+			"importance": map[string]interface{}{
+				"type":        "string",
+				"description": "low|medium|high. high is recommended for longterm",
+				"default":     "medium",
+			},
+			"source": map[string]interface{}{
+				"type":        "string",
+				"description": "Source/context for this memory, e.g. user, system, tool",
+				"default":     "user",
+			},
+			"tags": map[string]interface{}{
+				"type":        "array",
+				"items":       map[string]interface{}{"type": "string"},
+				"description": "Optional tags for filtering/search, e.g. preference,todo,decision",
+			},
 			"append": map[string]interface{}{
 				"type":        "boolean",
 				"description": "Append mode (default true)",
@@ -61,18 +76,31 @@ func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface
 		kind = "daily"
 	}
 
+	importance, _ := args["importance"].(string)
+	importance = normalizeImportance(importance)
+
+	source, _ := args["source"].(string)
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "user"
+	}
+
+	tags := parseTags(args["tags"])
+
 	appendMode := true
 	if v, ok := args["append"].(bool); ok {
 		appendMode = v
 	}
 
+	formatted := formatMemoryLine(content, importance, source, tags)
+
 	switch kind {
 	case "longterm", "memory", "permanent":
 		path := filepath.Join(t.workspace, "MEMORY.md")
 		if appendMode {
-			return t.appendWithTimestamp(path, content)
+			return t.appendWithTimestamp(path, formatted)
 		}
-		if err := os.WriteFile(path, []byte(content+"\n"), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(formatted+"\n"), 0644); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Wrote long-term memory: %s", path), nil
@@ -83,9 +111,9 @@ func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface
 		}
 		path := filepath.Join(memDir, time.Now().Format("2006-01-02")+".md")
 		if appendMode {
-			return t.appendWithTimestamp(path, content)
+			return t.appendWithTimestamp(path, formatted)
 		}
-		if err := os.WriteFile(path, []byte(content+"\n"), 0644); err != nil {
+		if err := os.WriteFile(path, []byte(formatted+"\n"), 0644); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("Wrote daily memory: %s", path), nil
@@ -108,4 +136,46 @@ func (t *MemoryWriteTool) appendWithTimestamp(path, content string) (string, err
 		return "", err
 	}
 	return fmt.Sprintf("Appended memory to %s", path), nil
+}
+
+func normalizeImportance(v string) string {
+	s := strings.ToLower(strings.TrimSpace(v))
+	switch s {
+	case "high", "medium", "low":
+		return s
+	default:
+		return "medium"
+	}
+}
+
+func parseTags(raw interface{}) []string {
+	items, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, it := range items {
+		s, _ := it.(string)
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" {
+			continue
+		}
+		if _, exists := seen[s]; exists {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+func formatMemoryLine(content, importance, source string, tags []string) string {
+	var meta []string
+	meta = append(meta, "importance="+importance)
+	meta = append(meta, "source="+source)
+	if len(tags) > 0 {
+		meta = append(meta, "tags="+strings.Join(tags, ","))
+	}
+	return fmt.Sprintf("[%s] %s", strings.Join(meta, " | "), content)
 }
