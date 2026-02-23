@@ -30,6 +30,20 @@ type SessionManager struct {
 	storage  string
 }
 
+type openClawEvent struct {
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp,omitempty"`
+	Message   *struct {
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text,omitempty"`
+		} `json:"content,omitempty"`
+		ToolCallID string `json:"toolCallId,omitempty"`
+		ToolName   string `json:"toolName,omitempty"`
+	} `json:"message,omitempty"`
+}
+
 func NewSessionManager(storage string) *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
@@ -104,13 +118,16 @@ func (sm *SessionManager) appendMessage(sessionKey string, msg providers.Message
 	}
 	defer f.Close()
 
-	data, err := json.Marshal(msg)
+	event := toOpenClawMessageEvent(msg)
+	data, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
 
-	_, err = f.Write(append(data, '\n'))
-	return err
+	if _, err = f.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return sm.writeOpenClawSessionsIndex()
 }
 
 func (sm *SessionManager) GetHistory(key string) []providers.Message {
@@ -231,7 +248,10 @@ func (sm *SessionManager) Save(session *Session) error {
 		"created":            session.Created,
 	}
 	data, _ := json.MarshalIndent(meta, "", "  ")
-	return os.WriteFile(metaPath, data, 0644)
+	if err := os.WriteFile(metaPath, data, 0644); err != nil {
+		return err
+	}
+	return sm.writeOpenClawSessionsIndex()
 }
 
 func (sm *SessionManager) Count() int {
@@ -273,6 +293,65 @@ func (sm *SessionManager) List(limit int) []Session {
 	return items
 }
 
+func toOpenClawMessageEvent(msg providers.Message) openClawEvent {
+	role := strings.TrimSpace(strings.ToLower(msg.Role))
+	mappedRole := role
+	if role == "tool" {
+		mappedRole = "toolResult"
+	}
+	e := openClawEvent{
+		Type:      "message",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Message: &struct {
+			Role       string `json:"role"`
+			Content    []struct {
+				Type string `json:"type"`
+				Text string `json:"text,omitempty"`
+			} `json:"content,omitempty"`
+			ToolCallID string `json:"toolCallId,omitempty"`
+			ToolName   string `json:"toolName,omitempty"`
+		}{
+			Role: mappedRole,
+			Content: []struct {
+				Type string `json:"type"`
+				Text string `json:"text,omitempty"`
+			}{
+				{Type: "text", Text: msg.Content},
+			},
+			ToolCallID: msg.ToolCallID,
+		},
+	}
+	return e
+}
+
+func fromJSONLLine(line []byte) (providers.Message, bool) {
+	var raw providers.Message
+	if err := json.Unmarshal(line, &raw); err == nil && strings.TrimSpace(raw.Role) != "" {
+		return raw, true
+	}
+	var event openClawEvent
+	if err := json.Unmarshal(line, &event); err != nil {
+		return providers.Message{}, false
+	}
+	if event.Type != "message" || event.Message == nil {
+		return providers.Message{}, false
+	}
+	role := strings.TrimSpace(strings.ToLower(event.Message.Role))
+	if role == "toolresult" {
+		role = "tool"
+	}
+	var content string
+	for _, part := range event.Message.Content {
+		if strings.TrimSpace(strings.ToLower(part.Type)) == "text" {
+			if content != "" {
+				content += "\n"
+			}
+			content += part.Text
+		}
+	}
+	return providers.Message{Role: role, Content: content, ToolCallID: event.Message.ToolCallID}, true
+}
+
 func detectSessionKind(key string) string {
 	k := strings.TrimSpace(strings.ToLower(key))
 	switch {
@@ -288,6 +367,43 @@ func detectSessionKind(key string) string {
 		return "main"
 	default:
 		return "other"
+	}
+}
+
+func (sm *SessionManager) writeOpenClawSessionsIndex() error {
+	if sm.storage == "" {
+		return nil
+	}
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	index := map[string]map[string]interface{}{}
+	for key, s := range sm.sessions {
+		s.mu.RLock()
+		sessionFile := filepath.Join(sm.storage, key+".jsonl")
+		entry := map[string]interface{}{
+			"sessionId":  key,
+			"updatedAt":  s.Updated.UnixMilli(),
+			"chatType":   mapKindToChatType(s.Kind),
+			"sessionFile": sessionFile,
+		}
+		s.mu.RUnlock()
+		index[key] = entry
+	}
+	data, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(sm.storage, "sessions.json"), data, 0644)
+}
+
+func mapKindToChatType(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "main":
+		return "direct"
+	case "cron", "subagent", "hook", "node":
+		return "internal"
+	default:
+		return "unknown"
 	}
 }
 
@@ -315,8 +431,7 @@ func (sm *SessionManager) loadSessions() error {
 			scanner := bufio.NewScanner(f)
 			session.mu.Lock()
 			for scanner.Scan() {
-				var msg providers.Message
-				if err := json.Unmarshal(scanner.Bytes(), &msg); err == nil {
+				if msg, ok := fromJSONLLine(scanner.Bytes()); ok {
 					session.Messages = append(session.Messages, msg)
 				}
 			}
