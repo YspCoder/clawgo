@@ -202,20 +202,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			trigger := al.getTrigger(msg)
 			suppressed := false
 			if response != "" {
-				if shouldDropNoReply(response) {
-					suppressed = true
+				if outbound, ok := al.prepareOutbound(msg, response); ok {
+					al.bus.PublishOutbound(outbound)
 				} else {
-					clean, replyToID := parseReplyTag(response, msg.Metadata["message_id"])
-					if al.shouldSuppressOutbound(msg, clean) {
-						suppressed = true
-					} else {
-						al.bus.PublishOutbound(bus.OutboundMessage{
-							Channel:   msg.Channel,
-							ChatID:    msg.ChatID,
-							Content:   clean,
-							ReplyToID: replyToID,
-						})
-					}
+					suppressed = true
 				}
 			}
 			al.audit.Record(trigger, msg.Channel, msg.SessionKey, suppressed, err)
@@ -267,6 +257,30 @@ func (al *AgentLoop) shouldSuppressOutbound(msg bus.InboundMessage, response str
 		maxChars = 64
 	}
 	return len(r) <= maxChars
+}
+
+func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (bus.OutboundMessage, bool) {
+	if shouldDropNoReply(response) {
+		return bus.OutboundMessage{}, false
+	}
+	currentMsgID := ""
+	if msg.Metadata != nil {
+		currentMsgID = msg.Metadata["message_id"]
+	}
+	clean, replyToID := parseReplyTag(response, currentMsgID)
+	clean = strings.TrimSpace(clean)
+	if clean == "" {
+		return bus.OutboundMessage{}, false
+	}
+	if al.shouldSuppressOutbound(msg, clean) {
+		return bus.OutboundMessage{}, false
+	}
+	return bus.OutboundMessage{
+		Channel:   msg.Channel,
+		ChatID:    msg.ChatID,
+		Content:   clean,
+		ReplyToID: strings.TrimSpace(replyToID),
+	}, true
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
