@@ -41,6 +41,7 @@ func (t *SessionsTool) Parameters() map[string]interface{} {
 			"limit":          map[string]interface{}{"type": "integer", "description": "max items", "default": 20},
 			"active_minutes": map[string]interface{}{"type": "integer", "description": "only sessions updated in recent N minutes (list action)"},
 			"kinds":          map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional session kinds filter for list"},
+			"query":          map[string]interface{}{"type": "string", "description": "optional text query for list or history"},
 			"include_tools":  map[string]interface{}{"type": "boolean", "description": "include tool role messages in history", "default": false},
 			"around":         map[string]interface{}{"type": "integer", "description": "1-indexed message index center for history window"},
 			"before":         map[string]interface{}{"type": "integer", "description": "1-indexed message index upper bound (exclusive)"},
@@ -78,6 +79,8 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 	if v, ok := args["active_minutes"].(float64); ok && int(v) > 0 {
 		activeMinutes = int(v)
 	}
+	query, _ := args["query"].(string)
+	query = strings.ToLower(strings.TrimSpace(query))
 	kindFilter := map[string]struct{}{}
 	if rawKinds, ok := args["kinds"].([]interface{}); ok {
 		for _, it := range rawKinds {
@@ -114,6 +117,16 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 			filtered := make([]SessionInfo, 0, len(items))
 			for _, s := range items {
 				if s.UpdatedAt.After(cutoff) {
+					filtered = append(filtered, s)
+				}
+			}
+			items = filtered
+		}
+		if query != "" {
+			filtered := make([]SessionInfo, 0, len(items))
+			for _, s := range items {
+				blob := strings.ToLower(strings.TrimSpace(s.Key + "\n" + s.Kind + "\n" + s.Summary))
+				if strings.Contains(blob, query) {
 					filtered = append(filtered, s)
 				}
 			}
@@ -199,6 +212,16 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 					continue
 				}
 				filtered = append(filtered, m)
+			}
+			h = filtered
+		}
+		if query != "" {
+			filtered := make([]providers.Message, 0, len(h))
+			for _, m := range h {
+				blob := strings.ToLower(strings.TrimSpace(m.Role + "\n" + m.Content))
+				if strings.Contains(blob, query) {
+					filtered = append(filtered, m)
+				}
 			}
 			h = filtered
 		}

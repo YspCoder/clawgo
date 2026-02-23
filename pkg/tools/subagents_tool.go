@@ -60,6 +60,19 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		}
 		return strings.TrimSpace(sb.String()), nil
 	case "info":
+		if strings.EqualFold(strings.TrimSpace(id), "all") {
+			tasks := t.manager.ListTasks()
+			if len(tasks) == 0 {
+				return "No subagents.", nil
+			}
+			sort.Slice(tasks, func(i, j int) bool { return tasks[i].Created > tasks[j].Created })
+			var sb strings.Builder
+			sb.WriteString("Subagents Summary:\n")
+			for i, task := range tasks {
+				sb.WriteString(fmt.Sprintf("- #%d %s [%s] label=%s steering=%d\n", i+1, task.ID, task.Status, task.Label, len(task.Steering)))
+			}
+			return strings.TrimSpace(sb.String()), nil
+		}
 		resolvedID, err := t.resolveTaskID(id)
 		if err != nil {
 			return err.Error(), nil
