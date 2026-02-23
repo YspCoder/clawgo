@@ -475,6 +475,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Content: userContent,
 	})
 	al.sessions.SetLastLanguage(msg.SessionKey, responseLang)
+	al.compactSessionIfNeeded(msg.SessionKey)
 
 	al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey))
 
@@ -653,6 +654,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		Content: finalContent,
 	})
 	al.sessions.SetLastLanguage(sessionKey, responseLang)
+	al.compactSessionIfNeeded(sessionKey)
 
 	al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
 
@@ -680,6 +682,32 @@ func truncate(s string, maxLen int) string {
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
+func (al *AgentLoop) compactSessionIfNeeded(sessionKey string) {
+	if !al.compactionEnabled {
+		return
+	}
+	trigger := al.compactionTrigger
+	if trigger <= 0 {
+		trigger = 60
+	}
+	keepRecent := al.compactionKeepRecent
+	if keepRecent <= 0 || keepRecent >= trigger {
+		keepRecent = trigger / 2
+		if keepRecent < 10 {
+			keepRecent = 10
+		}
+	}
+	h := al.sessions.GetHistory(sessionKey)
+	if len(h) <= trigger {
+		return
+	}
+	removed := len(h) - keepRecent
+	note := fmt.Sprintf("[runtime-compaction] removed %d old messages, kept %d recent messages", removed, keepRecent)
+	if al.sessions.CompactSession(sessionKey, keepRecent, note) {
+		al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+	}
+}
+
 // RunStartupSelfCheckAllSessions runs startup compaction checks across loaded sessions.
 func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) StartupCompactionReport {
 	report := StartupCompactionReport{TotalSessions: al.sessions.Count()}
@@ -712,17 +740,11 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) Startup
 		}
 
 		removed := len(history) - keepRecent
-		summary := al.sessions.GetSummary(key)
 		note := fmt.Sprintf("[startup-compaction] removed %d old messages, kept %d recent messages", removed, keepRecent)
-		if strings.TrimSpace(summary) == "" {
-			al.sessions.SetSummary(key, note)
-		} else {
-			al.sessions.SetSummary(key, summary+"\n"+note)
+		if al.sessions.CompactSession(key, keepRecent, note) {
+			al.sessions.Save(al.sessions.GetOrCreate(key))
+			report.CompactedSessions++
 		}
-
-		al.sessions.TruncateHistory(key, keepRecent)
-		al.sessions.Save(al.sessions.GetOrCreate(key))
-		report.CompactedSessions++
 	}
 
 	return report

@@ -20,6 +20,7 @@ type Session struct {
 	Kind              string              `json:"kind,omitempty"`
 	Messages          []providers.Message `json:"messages"`
 	Summary           string              `json:"summary,omitempty"`
+	CompactionCount   int                 `json:"compaction_count,omitempty"`
 	LastLanguage      string              `json:"last_language,omitempty"`
 	PreferredLanguage string              `json:"preferred_language,omitempty"`
 	Created           time.Time           `json:"created"`
@@ -180,6 +181,32 @@ func (sm *SessionManager) SetSummary(key string, summary string) {
 	}
 }
 
+func (sm *SessionManager) CompactSession(key string, keepLast int, note string) bool {
+	sm.mu.RLock()
+	session, ok := sm.sessions[key]
+	sm.mu.RUnlock()
+	if !ok {
+		return false
+	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if keepLast <= 0 || len(session.Messages) <= keepLast {
+		return false
+	}
+	session.Messages = session.Messages[len(session.Messages)-keepLast:]
+	session.CompactionCount++
+	if strings.TrimSpace(note) != "" {
+		if strings.TrimSpace(session.Summary) == "" {
+			session.Summary = note
+		} else {
+			session.Summary += "\n" + note
+		}
+	}
+	session.Updated = time.Now()
+	return true
+}
+
 func (sm *SessionManager) GetLanguagePreferences(key string) (preferred string, last string) {
 	sm.mu.RLock()
 	session, ok := sm.sessions[key]
@@ -271,6 +298,7 @@ func (sm *SessionManager) List(limit int) []Session {
 			SessionID:         s.SessionID,
 			Kind:              s.Kind,
 			Summary:           s.Summary,
+			CompactionCount:   s.CompactionCount,
 			LastLanguage:      s.LastLanguage,
 			PreferredLanguage: s.PreferredLanguage,
 			Created:           s.Created,
@@ -388,7 +416,7 @@ func (sm *SessionManager) writeOpenClawSessionsIndex() error {
 			"updatedAt":       s.Updated.UnixMilli(),
 			"systemSent":      true,
 			"abortedLastRun":  false,
-			"compactionCount": 0,
+			"compactionCount": s.CompactionCount,
 			"chatType":        mapKindToChatType(s.Kind),
 			"sessionFile":     sessionFile,
 			"kind":            s.Kind,
@@ -430,11 +458,12 @@ func (sm *SessionManager) loadSessions() error {
 	indexPath := filepath.Join(sm.storage, "sessions.json")
 	if data, err := os.ReadFile(indexPath); err == nil {
 		var index map[string]struct {
-			SessionID  string `json:"sessionId"`
-			SessionKey string `json:"sessionKey"`
-			UpdatedAt  int64  `json:"updatedAt"`
-			Kind       string `json:"kind"`
-			ChatType   string `json:"chatType"`
+			SessionID       string `json:"sessionId"`
+			SessionKey      string `json:"sessionKey"`
+			UpdatedAt       int64  `json:"updatedAt"`
+			Kind            string `json:"kind"`
+			ChatType        string `json:"chatType"`
+			CompactionCount int    `json:"compactionCount"`
 		}
 		if err := json.Unmarshal(data, &index); err == nil {
 			for key, row := range index {
@@ -451,6 +480,7 @@ func (sm *SessionManager) loadSessions() error {
 				if row.UpdatedAt > 0 {
 					session.Updated = time.UnixMilli(row.UpdatedAt)
 				}
+				session.CompactionCount = row.CompactionCount
 				session.mu.Unlock()
 			}
 		}
