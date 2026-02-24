@@ -6,7 +6,7 @@ import (
 	"clawgo/pkg/bus"
 )
 
-type SendCallback func(channel, chatID, content string, buttons [][]bus.Button) error
+type SendCallback func(channel, chatID, action, content, messageID, emoji string, buttons [][]bus.Button) error
 
 type MessageTool struct {
 	sendCallback   SendCallback
@@ -32,7 +32,7 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"action": map[string]interface{}{
 				"type":        "string",
-				"description": "Action type: send (supported), edit/delete/react (reserved)",
+				"description": "Action type: send|edit|delete|react",
 			},
 			"message": map[string]interface{}{
 				"type":        "string",
@@ -53,6 +53,14 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 			"chat_id": map[string]interface{}{
 				"type":        "string",
 				"description": "Optional: target chat/user ID",
+			},
+			"message_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Target message id for edit/delete/react",
+			},
+			"emoji": map[string]interface{}{
+				"type":        "string",
+				"description": "Emoji for react action",
 			},
 			"buttons": map[string]interface{}{
 				"type":        "array",
@@ -88,16 +96,32 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	if action == "" {
 		action = "send"
 	}
-	if action != "send" {
-		return fmt.Sprintf("Unsupported action: %s (currently only send is implemented)", action), nil
-	}
-
 	content, _ := args["content"].(string)
 	if msg, _ := args["message"].(string); msg != "" {
 		content = msg
 	}
-	if content == "" {
-		return "", fmt.Errorf("message/content is required for action=send")
+	messageID, _ := args["message_id"].(string)
+	emoji, _ := args["emoji"].(string)
+
+	switch action {
+	case "send":
+		if content == "" {
+			return "", fmt.Errorf("message/content is required for action=send")
+		}
+	case "edit":
+		if messageID == "" || content == "" {
+			return "", fmt.Errorf("message_id and message/content are required for action=edit")
+		}
+	case "delete":
+		if messageID == "" {
+			return "", fmt.Errorf("message_id is required for action=delete")
+		}
+	case "react":
+		if messageID == "" || emoji == "" {
+			return "", fmt.Errorf("message_id and emoji are required for action=react")
+		}
+	default:
+		return fmt.Sprintf("Unsupported action: %s", action), nil
 	}
 
 	channel, _ := args["channel"].(string)
@@ -142,9 +166,9 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 		}
 	}
 
-	if err := t.sendCallback(channel, chatID, content, buttons); err != nil {
+	if err := t.sendCallback(channel, chatID, action, content, messageID, emoji, buttons); err != nil {
 		return fmt.Sprintf("Error sending message: %v", err), nil
 	}
 
-	return fmt.Sprintf("Message sent to %s:%s", channel, chatID), nil
+	return fmt.Sprintf("Message action=%s sent to %s:%s", action, channel, chatID), nil
 }

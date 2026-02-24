@@ -25,6 +25,7 @@ type processSession struct {
 	done      chan struct{}
 	mu        sync.RWMutex
 	log       bytes.Buffer
+	logPath   string
 }
 
 type ProcessManager struct {
@@ -60,6 +61,9 @@ func (m *ProcessManager) Start(command, cwd string) (string, error) {
 		return "", err
 	}
 	s := &processSession{ID: id, Command: command, StartedAt: time.Now().UTC(), cmd: cmd, done: make(chan struct{})}
+	if m.metaPath != "" {
+		s.logPath = filepath.Join(filepath.Dir(m.metaPath), "process-"+id+".log")
+	}
 
 	m.mu.Lock()
 	m.sessions[id] = s
@@ -102,7 +106,15 @@ func (m *ProcessManager) capture(s *processSession, r interface{ Read([]byte) (i
 		n, err := r.Read(buf)
 		if n > 0 {
 			s.mu.Lock()
-			_, _ = s.log.Write(buf[:n])
+			chunk := buf[:n]
+			_, _ = s.log.Write(chunk)
+			if s.logPath != "" {
+				f, err := os.OpenFile(s.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+				if err == nil {
+					_, _ = f.Write(chunk)
+					_ = f.Close()
+				}
+			}
 			s.mu.Unlock()
 		}
 		if err != nil {
@@ -148,6 +160,11 @@ func (m *ProcessManager) Log(id string, offset, limit int) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	b := s.log.Bytes()
+	if len(b) == 0 && s.logPath != "" {
+		if data, err := os.ReadFile(s.logPath); err == nil {
+			b = data
+		}
+	}
 	if offset < 0 {
 		offset = 0
 	}
@@ -188,6 +205,7 @@ type processSessionMeta struct {
 	EndedAt   string `json:"ended_at,omitempty"`
 	ExitCode  *int   `json:"exit_code,omitempty"`
 	Recovered bool   `json:"recovered"`
+	LogPath   string `json:"log_path,omitempty"`
 }
 
 func (m *ProcessManager) persist() {
@@ -203,6 +221,7 @@ func (m *ProcessManager) persist() {
 			Command:   s.Command,
 			StartedAt: s.StartedAt.Format(time.RFC3339),
 			Recovered: s.cmd == nil,
+			LogPath:   s.logPath,
 		}
 		if !s.EndedAt.IsZero() {
 			row.EndedAt = s.EndedAt.Format(time.RFC3339)
@@ -236,7 +255,10 @@ func (m *ProcessManager) load() {
 	}
 	maxSeq := uint64(0)
 	for _, it := range items {
-		s := &processSession{ID: it.ID, Command: it.Command, done: make(chan struct{})}
+		s := &processSession{ID: it.ID, Command: it.Command, done: make(chan struct{}), logPath: it.LogPath}
+		if s.logPath == "" && m.metaPath != "" {
+			s.logPath = filepath.Join(filepath.Dir(m.metaPath), "process-"+s.ID+".log")
+		}
 		if t, err := time.Parse(time.RFC3339, it.StartedAt); err == nil {
 			s.StartedAt = t
 		}

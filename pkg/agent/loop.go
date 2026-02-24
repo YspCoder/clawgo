@@ -101,12 +101,15 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	// Register message tool
 	messageTool := tools.NewMessageTool()
-	messageTool.SetSendCallback(func(channel, chatID, content string, buttons [][]bus.Button) error {
+	messageTool.SetSendCallback(func(channel, chatID, action, content, messageID, emoji string, buttons [][]bus.Button) error {
 		msgBus.PublishOutbound(bus.OutboundMessage{
-			Channel: channel,
-			ChatID:  chatID,
-			Content: content,
-			Buttons: buttons,
+			Channel:   channel,
+			ChatID:    chatID,
+			Content:   content,
+			Buttons:   buttons,
+			Action:    action,
+			MessageID: messageID,
+			Emoji:     emoji,
 		})
 		return nil
 	})

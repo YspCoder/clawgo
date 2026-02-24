@@ -248,6 +248,14 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		safeCloseSignal(stop)
 	}
 
+	action := strings.ToLower(strings.TrimSpace(msg.Action))
+	if action == "" {
+		action = "send"
+	}
+	if action != "send" {
+		return c.handleAction(ctx, chatIDInt, action, msg)
+	}
+
 	htmlContent := sanitizeTelegramHTML(markdownToTelegramHTML(msg.Content))
 
 	var markup *telego.InlineKeyboardMarkup
@@ -505,6 +513,33 @@ func parseChatID(chatIDStr string) (int64, error) {
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
 	return id, err
+}
+
+func (c *TelegramChannel) handleAction(ctx context.Context, chatID int64, action string, msg bus.OutboundMessage) error {
+	messageID, ok := parseTelegramMessageID(msg.MessageID)
+	if !ok && action != "send" {
+		return fmt.Errorf("message_id required for action=%s", action)
+	}
+	switch action {
+	case "edit":
+		htmlContent := sanitizeTelegramHTML(markdownToTelegramHTML(msg.Content))
+		editCtx, cancel := withTelegramAPITimeout(ctx)
+		defer cancel()
+		_, err := c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{ChatID: telegoutil.ID(chatID), MessageID: messageID, Text: htmlContent, ParseMode: telego.ModeHTML})
+		return err
+	case "delete":
+		delCtx, cancel := withTelegramAPITimeout(ctx)
+		defer cancel()
+		return c.bot.DeleteMessage(delCtx, &telego.DeleteMessageParams{ChatID: telegoutil.ID(chatID), MessageID: messageID})
+	case "react":
+		emoji := strings.TrimSpace(msg.Emoji)
+		if emoji == "" {
+			return fmt.Errorf("emoji required for react action")
+		}
+		return fmt.Errorf("telegram react action not supported by current telego version")
+	default:
+		return fmt.Errorf("unsupported telegram action: %s", action)
+	}
 }
 
 func parseTelegramMessageID(raw string) (int, bool) {
