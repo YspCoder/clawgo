@@ -21,11 +21,13 @@
 
 1. **Actor 化关键路径（process）**
    - process 元数据持久化改为异步队列（`persistQ`）串行落盘。
+   - channel 启停编排使用 `errgroup.WithContext` 并发+统一取消。
 2. **Typed Events 事件总线**
    - 新增 `pkg/events/typed_bus.go` 泛型事件总线。
    - process 生命周期事件（start/exit/kill）可发布订阅。
 3. **日志批量刷盘**
    - process 日志由 `logWriter` 批量 flush（时间片 + 大小阈值），减少高频 I/O。
+   - outbound 分发增加 `rate.Limiter`（令牌桶）平滑突发流量。
 4. **Context 分层取消传播**
    - 后台进程改为 `exec.CommandContext`，通过父 `ctx` 统一取消。
 5. **原子配置快照**
