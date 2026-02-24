@@ -143,16 +143,16 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 func (ms *MemoryStore) GetMemoryContext() string {
 	var parts []string
 
+	// Recent daily notes first (today + yesterday), to prioritize fresh context
+	recentNotes := ms.GetRecentDailyNotes(2)
+	if recentNotes != "" {
+		parts = append(parts, "## Recent Daily Notes\n\n"+recentNotes)
+	}
+
 	// Long-term memory
 	longTerm := ms.ReadLongTerm()
 	if longTerm != "" {
 		parts = append(parts, "## Long-term Memory\n\n"+longTerm)
-	}
-
-	// Recent daily notes (last 3 days)
-	recentNotes := ms.GetRecentDailyNotes(3)
-	if recentNotes != "" {
-		parts = append(parts, "## Recent Daily Notes\n\n"+recentNotes)
 	}
 
 	if len(parts) == 0 {
