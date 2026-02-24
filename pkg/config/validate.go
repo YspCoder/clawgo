@@ -102,6 +102,12 @@ func Validate(cfg *Config) []error {
 		if aut.NotifyCooldownSec <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.notify_cooldown_sec must be > 0 when enabled=true"))
 		}
+		if qh := strings.TrimSpace(aut.QuietHours); qh != "" {
+			parts := strings.Split(qh, "-")
+			if len(parts) != 2 {
+				errs = append(errs, fmt.Errorf("agents.defaults.autonomy.quiet_hours must be HH:MM-HH:MM"))
+			}
+		}
 	}
 	texts := cfg.Agents.Defaults.Texts
 	if strings.TrimSpace(texts.NoResponseFallback) == "" {

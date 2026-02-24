@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ type Options struct {
 	DefaultNotifyChannel    string
 	DefaultNotifyChatID     string
 	NotifyCooldownSec       int
+	QuietHours              string
 }
 
 type taskState struct {
@@ -168,6 +170,7 @@ func (e *Engine) tick() {
 		st.Status = "running"
 		st.LastRunAt = now
 		st.LastAutonomyAt = now
+		e.writeReflectLog("dispatch", st, "task dispatched to agent loop")
 		dispatched++
 	}
 	e.persistStateLocked()
@@ -231,6 +234,7 @@ func (e *Engine) dispatchTask(st *taskState) {
 }
 
 func (e *Engine) sendCompletionNotification(st *taskState) {
+	e.writeReflectLog("complete", st, "task marked completed")
 	if !e.shouldNotify("done:" + st.ID) {
 		return
 	}
@@ -242,6 +246,7 @@ func (e *Engine) sendCompletionNotification(st *taskState) {
 }
 
 func (e *Engine) sendFailureNotification(st *taskState, reason string) {
+	e.writeReflectLog("blocked", st, reason)
 	if !e.shouldNotify("blocked:" + st.ID) {
 		return
 	}
@@ -257,6 +262,9 @@ func (e *Engine) shouldNotify(key string) bool {
 		return false
 	}
 	now := time.Now()
+	if inQuietHours(now, e.opts.QuietHours) {
+		return false
+	}
 	if last, ok := e.lastNotify[key]; ok {
 		if now.Sub(last) < time.Duration(e.opts.NotifyCooldownSec)*time.Second {
 			return false
@@ -264,6 +272,55 @@ func (e *Engine) shouldNotify(key string) bool {
 	}
 	e.lastNotify[key] = now
 	return true
+}
+
+func (e *Engine) writeReflectLog(stage string, st *taskState, outcome string) {
+	if strings.TrimSpace(e.opts.Workspace) == "" || st == nil {
+		return
+	}
+	memDir := filepath.Join(e.opts.Workspace, "memory")
+	_ = os.MkdirAll(memDir, 0755)
+	path := filepath.Join(memDir, time.Now().Format("2006-01-02")+".md")
+	line := fmt.Sprintf("- [%s] [autonomy][%s] task=%s status=%s outcome=%s\n", time.Now().Format("15:04"), stage, st.Content, st.Status, outcome)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(line)
+}
+
+func inQuietHours(now time.Time, spec string) bool {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return false
+	}
+	parts := strings.Split(spec, "-")
+	if len(parts) != 2 {
+		return false
+	}
+	parseHM := func(v string) (int, bool) {
+		hm := strings.Split(strings.TrimSpace(v), ":")
+		if len(hm) != 2 {
+			return 0, false
+		}
+		h, err1 := strconv.Atoi(hm[0])
+		m, err2 := strconv.Atoi(hm[1])
+		if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+			return 0, false
+		}
+		return h*60 + m, true
+	}
+	start, ok1 := parseHM(parts[0])
+	end, ok2 := parseHM(parts[1])
+	if !ok1 || !ok2 {
+		return false
+	}
+	nowMin := now.Hour()*60 + now.Minute()
+	if start <= end {
+		return nowMin >= start && nowMin <= end
+	}
+	return nowMin >= start || nowMin <= end
 }
 
 func (e *Engine) persistStateLocked() {

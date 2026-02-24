@@ -649,6 +649,7 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		MaxConsecutiveStalls:  a.MaxConsecutiveStalls,
 		MaxDispatchPerTick:    a.MaxDispatchPerTick,
 		NotifyCooldownSec:     a.NotifyCooldownSec,
+		QuietHours:            a.QuietHours,
 		Workspace:             cfg.WorkspacePath(),
 		DefaultNotifyChannel:  a.NotifyChannel,
 		DefaultNotifyChatID:   a.NotifyChatID,
