@@ -129,9 +129,12 @@ func statusCmd() {
 				fmt.Printf("  - %s\n", key)
 			}
 		}
-		if summary, prio, nextRetry, dedupeHits, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
+		if summary, prio, reasons, nextRetry, dedupeHits, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
 			fmt.Printf("Autonomy Tasks: todo=%d doing=%d waiting=%d blocked=%d done=%d dedupe_hits=%d\n", summary["todo"], summary["doing"], summary["waiting"], summary["blocked"], summary["done"], dedupeHits)
 			fmt.Printf("Autonomy Priority: high=%d normal=%d low=%d\n", prio["high"], prio["normal"], prio["low"])
+			if reasons["active_user"] > 0 || reasons["manual_pause"] > 0 || reasons["max_consecutive_stalls"] > 0 {
+				fmt.Printf("Autonomy Block Reasons: active_user=%d manual_pause=%d max_stalls=%d\n", reasons["active_user"], reasons["manual_pause"], reasons["max_consecutive_stalls"])
+			}
 			if nextRetry != "" {
 				fmt.Printf("Autonomy Next Retry: %s\n", nextRetry)
 			}
@@ -249,25 +252,27 @@ func collectTriggerErrorCounts(path string) (map[string]int, error) {
 	return counts, nil
 }
 
-func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, string, int, error) {
+func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, map[string]int, string, int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}, map[string]int{"high": 0, "normal": 0, "low": 0}, "", 0, nil
+			return map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}, map[string]int{"high": 0, "normal": 0, "low": 0}, map[string]int{"active_user": 0, "manual_pause": 0, "max_consecutive_stalls": 0}, "", 0, nil
 		}
-		return nil, nil, "", 0, err
+		return nil, nil, nil, "", 0, err
 	}
 	var items []struct {
-		Status     string `json:"status"`
-		Priority   string `json:"priority"`
-		RetryAfter string `json:"retry_after"`
-		DedupeHits int    `json:"dedupe_hits"`
+		Status      string `json:"status"`
+		Priority    string `json:"priority"`
+		BlockReason string `json:"block_reason"`
+		RetryAfter  string `json:"retry_after"`
+		DedupeHits  int    `json:"dedupe_hits"`
 	}
 	if err := json.Unmarshal(data, &items); err != nil {
-		return nil, nil, "", 0, err
+		return nil, nil, nil, "", 0, err
 	}
 	summary := map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}
 	priorities := map[string]int{"high": 0, "normal": 0, "low": 0}
+	reasons := map[string]int{"active_user": 0, "manual_pause": 0, "max_consecutive_stalls": 0}
 	nextRetry := ""
 	nextRetryAt := time.Time{}
 	totalDedupe := 0
@@ -277,6 +282,10 @@ func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, st
 			summary[s]++
 		}
 		totalDedupe += it.DedupeHits
+		r := strings.ToLower(strings.TrimSpace(it.BlockReason))
+		if _, ok := reasons[r]; ok {
+			reasons[r]++
+		}
 		p := strings.ToLower(strings.TrimSpace(it.Priority))
 		if _, ok := priorities[p]; ok {
 			priorities[p]++
@@ -292,7 +301,7 @@ func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, st
 			}
 		}
 	}
-	return summary, priorities, nextRetry, totalDedupe, nil
+	return summary, priorities, reasons, nextRetry, totalDedupe, nil
 }
 
 func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {

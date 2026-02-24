@@ -127,6 +127,7 @@ func (e *Engine) tick() {
 				st.Status = "waiting"
 				st.BlockReason = "manual_pause"
 				e.writeReflectLog("waiting", st, "paused by manual switch")
+				e.writeTriggerAudit("waiting", st, "manual_pause")
 			}
 		}
 		e.persistStateLocked()
@@ -137,7 +138,9 @@ func (e *Engine) tick() {
 		for _, st := range e.state {
 			if st.Status == "running" {
 				st.Status = "waiting"
+				st.BlockReason = "active_user"
 				e.writeReflectLog("waiting", st, "paused due to active user conversation")
+				e.writeTriggerAudit("waiting", st, "active_user")
 			}
 		}
 		e.persistStateLocked()
@@ -220,9 +223,11 @@ func (e *Engine) tick() {
 			continue
 		}
 		if st.Status == "waiting" {
+			reason := st.BlockReason
 			st.Status = "idle"
 			st.BlockReason = ""
-			e.writeReflectLog("resume", st, "user conversation idle, autonomy resumed")
+			e.writeReflectLog("resume", st, "autonomy resumed from waiting")
+			e.writeTriggerAudit("resume", st, reason)
 		}
 		if st.Status == "blocked" {
 			if !st.RetryAfter.IsZero() && now.Before(st.RetryAfter) {
@@ -578,13 +583,37 @@ func (e *Engine) pauseFilePath() string {
 	return filepath.Join(e.opts.Workspace, "memory", "autonomy.pause")
 }
 
+func (e *Engine) controlFilePath() string {
+	if strings.TrimSpace(e.opts.Workspace) == "" {
+		return ""
+	}
+	return filepath.Join(e.opts.Workspace, "memory", "autonomy.control.json")
+}
+
 func (e *Engine) hasManualPause() bool {
 	p := e.pauseFilePath()
 	if p == "" {
 		return false
 	}
 	_, err := os.Stat(p)
-	return err == nil
+	if err == nil {
+		return true
+	}
+	ctrl := e.controlFilePath()
+	if ctrl == "" {
+		return false
+	}
+	data, rErr := os.ReadFile(ctrl)
+	if rErr != nil {
+		return false
+	}
+	var c struct {
+		Enabled bool `json:"enabled"`
+	}
+	if jErr := json.Unmarshal(data, &c); jErr != nil {
+		return false
+	}
+	return !c.Enabled
 }
 
 func (e *Engine) hasRecentUserActivity(now time.Time) bool {
