@@ -1,6 +1,7 @@
 package autonomy
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -529,15 +530,14 @@ func (e *Engine) hasRecentUserActivity(now time.Time) bool {
 	if e.opts.UserIdleResumeSec <= 0 || strings.TrimSpace(e.opts.Workspace) == "" {
 		return false
 	}
-	// sessions are stored next to workspace directory in clawgo runtime
 	sessionsPath := filepath.Join(filepath.Dir(e.opts.Workspace), "sessions", "sessions.json")
 	data, err := os.ReadFile(sessionsPath)
 	if err != nil {
 		return false
 	}
 	var index map[string]struct {
-		Kind      string `json:"kind"`
-		UpdatedAt int64  `json:"updatedAt"`
+		Kind        string `json:"kind"`
+		SessionFile string `json:"sessionFile"`
 	}
 	if err := json.Unmarshal(data, &index); err != nil {
 		return false
@@ -547,14 +547,58 @@ func (e *Engine) hasRecentUserActivity(now time.Time) bool {
 		if strings.ToLower(strings.TrimSpace(row.Kind)) != "main" {
 			continue
 		}
-		if row.UpdatedAt <= 0 {
+		if strings.TrimSpace(row.SessionFile) == "" {
 			continue
 		}
-		if time.UnixMilli(row.UpdatedAt).After(cutoff) {
+		if ts := latestUserMessageTime(row.SessionFile); !ts.IsZero() && ts.After(cutoff) {
 			return true
 		}
 	}
 	return false
+}
+
+func latestUserMessageTime(path string) time.Time {
+	f, err := os.Open(path)
+	if err != nil {
+		return time.Time{}
+	}
+	defer f.Close()
+
+	var latest time.Time
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := s.Bytes()
+
+		// OpenClaw-like event line
+		var ev struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			Message   *struct {
+				Role string `json:"role"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(line, &ev); err == nil && ev.Message != nil {
+			if strings.ToLower(strings.TrimSpace(ev.Message.Role)) == "user" {
+				if t, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(ev.Timestamp)); err == nil && t.After(latest) {
+					latest = t
+				} else if t, err := time.Parse(time.RFC3339, strings.TrimSpace(ev.Timestamp)); err == nil && t.After(latest) {
+					latest = t
+				}
+			}
+			continue
+		}
+
+		// Legacy line
+		var msg struct {
+			Role string `json:"role"`
+		}
+		if err := json.Unmarshal(line, &msg); err == nil {
+			if strings.ToLower(strings.TrimSpace(msg.Role)) == "user" {
+				latest = time.Now().UTC()
+			}
+		}
+	}
+	return latest
 }
 
 func blockedRetryBackoff(stalls int, minRunIntervalSec int) time.Duration {
