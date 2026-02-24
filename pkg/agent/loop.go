@@ -78,9 +78,24 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
 	toolsRegistry.Register(tools.NewProcessTool(processManager))
 	nodesManager := nodes.NewManager()
-	nodesManager.Upsert(nodes.NodeInfo{ID: "local", Name: "local", Capabilities: nodes.Capabilities{Run: true, Invoke: true}, Online: true})
+	nodesManager.Upsert(nodes.NodeInfo{ID: "local", Name: "local", Capabilities: nodes.Capabilities{Run: true, Invoke: true, Camera: true, Screen: true, Location: true, Canvas: true}, Online: true})
 	nodesManager.RegisterHandler("local", func(req nodes.Request) nodes.Response {
-		return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: map[string]interface{}{"echo": req.Args, "transport": "relay-local"}}
+		switch req.Action {
+		case "run":
+			payload := map[string]interface{}{"transport": "relay-local"}
+			if cmdRaw, ok := req.Args["command"].([]interface{}); ok && len(cmdRaw) > 0 {
+				parts := make([]string, 0, len(cmdRaw))
+				for _, x := range cmdRaw {
+					parts = append(parts, fmt.Sprint(x))
+				}
+				payload["command"] = parts
+			}
+			return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: payload}
+		case "camera_snap", "camera_clip", "screen_record", "screen_snapshot", "location_get", "canvas_snapshot", "canvas_action":
+			return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "simulated": true, "args": req.Args}}
+		default:
+			return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: map[string]interface{}{"echo": req.Args, "transport": "relay-local"}}
+		}
 	})
 	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.HTTPRelayTransport{Manager: nodesManager}}
 	toolsRegistry.Register(tools.NewNodesTool(nodesManager, nodesRouter))

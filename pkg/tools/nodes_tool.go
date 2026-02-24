@@ -18,14 +18,17 @@ type NodesTool struct {
 func NewNodesTool(m *nodes.Manager, r *nodes.Router) *NodesTool { return &NodesTool{manager: m, router: r} }
 func (t *NodesTool) Name() string              { return "nodes" }
 func (t *NodesTool) Description() string {
-	return "Manage paired nodes (status/describe/run/invoke/camera/screen/location)."
+	return "Manage paired nodes (status/describe/run/invoke/camera/screen/location/canvas)."
 }
 func (t *NodesTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
-		"action": map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|camera_snap|screen_record|location_get"},
+		"action": map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|camera_snap|camera_clip|screen_record|screen_snapshot|location_get|canvas_snapshot|canvas_action"},
 		"node":   map[string]interface{}{"type": "string", "description": "target node id"},
 		"mode":   map[string]interface{}{"type": "string", "description": "auto|p2p|relay (default auto)"},
 		"args":   map[string]interface{}{"type": "object", "description": "action args"},
+		"command": map[string]interface{}{"type": "array", "description": "run command array shortcut"},
+		"facing":  map[string]interface{}{"type": "string", "description": "camera facing: front|back|both"},
+		"duration_ms": map[string]interface{}{"type": "integer", "description": "clip/record duration"},
 	}, "required": []string{"action"}}
 }
 
@@ -66,9 +69,20 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		if t.router == nil {
 			return "", fmt.Errorf("nodes transport router not configured")
 		}
-		var reqArgs map[string]interface{}
+		reqArgs := map[string]interface{}{}
 		if raw, ok := args["args"].(map[string]interface{}); ok {
-			reqArgs = raw
+			for k, v := range raw {
+				reqArgs[k] = v
+			}
+		}
+		if cmd, ok := args["command"].([]interface{}); ok && len(cmd) > 0 {
+			reqArgs["command"] = cmd
+		}
+		if facing, _ := args["facing"].(string); strings.TrimSpace(facing) != "" {
+			reqArgs["facing"] = strings.TrimSpace(facing)
+		}
+		if d, ok := args["duration_ms"].(float64); ok && d > 0 {
+			reqArgs["duration_ms"] = int(d)
 		}
 		resp, err := t.router.Dispatch(ctx, nodes.Request{Action: action, Node: nodeID, Args: reqArgs}, mode)
 		if err != nil {

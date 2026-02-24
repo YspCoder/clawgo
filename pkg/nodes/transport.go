@@ -68,6 +68,32 @@ type HTTPRelayTransport struct {
 }
 
 func (s *HTTPRelayTransport) Name() string { return "relay" }
+
+func actionHTTPPath(action string) string {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "run":
+		return "/run"
+	case "invoke":
+		return "/invoke"
+	case "camera_snap":
+		return "/camera/snap"
+	case "camera_clip":
+		return "/camera/clip"
+	case "screen_record":
+		return "/screen/record"
+	case "screen_snapshot":
+		return "/screen/snapshot"
+	case "location_get":
+		return "/location/get"
+	case "canvas_snapshot":
+		return "/canvas/snapshot"
+	case "canvas_action":
+		return "/canvas/action"
+	default:
+		return "/invoke"
+	}
+}
+
 func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, error) {
 	if s.Manager == nil {
 		return Response{OK: false, Node: req.Node, Action: req.Action, Error: "relay manager not configured"}, nil
@@ -88,7 +114,8 @@ func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, e
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
 	body, _ := json.Marshal(req)
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/invoke", bytes.NewReader(body))
+	path := actionHTTPPath(req.Action)
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+path, bytes.NewReader(body))
 	if err != nil {
 		return Response{}, err
 	}
