@@ -3,6 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
+
 	"clawgo/pkg/bus"
 )
 
@@ -13,6 +16,8 @@ type MessageTool struct {
 	defaultChannel string
 	defaultChatID  string
 }
+
+var buttonRowPool = sync.Pool{New: func() interface{} { return make([]bus.Button, 0, 8) }}
 
 func NewMessageTool() *MessageTool {
 	return &MessageTool{}
@@ -93,6 +98,7 @@ func (t *MessageTool) SetSendCallback(callback SendCallback) {
 
 func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	action, _ := args["action"].(string)
+	action = strings.ToLower(strings.TrimSpace(action))
 	if action == "" {
 		action = "send"
 	}
@@ -106,22 +112,22 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	switch action {
 	case "send":
 		if content == "" {
-			return "", fmt.Errorf("message/content is required for action=send")
+			return "", fmt.Errorf("%w: message/content for action=send", ErrMissingField)
 		}
 	case "edit":
 		if messageID == "" || content == "" {
-			return "", fmt.Errorf("message_id and message/content are required for action=edit")
+			return "", fmt.Errorf("%w: message_id and message/content for action=edit", ErrMissingField)
 		}
 	case "delete":
 		if messageID == "" {
-			return "", fmt.Errorf("message_id is required for action=delete")
+			return "", fmt.Errorf("%w: message_id for action=delete", ErrMissingField)
 		}
 	case "react":
 		if messageID == "" || emoji == "" {
-			return "", fmt.Errorf("message_id and emoji are required for action=react")
+			return "", fmt.Errorf("%w: message_id and emoji for action=react", ErrMissingField)
 		}
 	default:
-		return fmt.Sprintf("Unsupported action: %s", action), nil
+		return "", fmt.Errorf("%w: %s", ErrUnsupportedAction, action)
 	}
 
 	channel, _ := args["channel"].(string)
@@ -149,7 +155,8 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	if btns, ok := args["buttons"].([]interface{}); ok {
 		for _, row := range btns {
 			if rowArr, ok := row.([]interface{}); ok {
-				var buttonRow []bus.Button
+				pooled := buttonRowPool.Get().([]bus.Button)
+				buttonRow := pooled[:0]
 				for _, b := range rowArr {
 					if bMap, ok := b.(map[string]interface{}); ok {
 						text, _ := bMap["text"].(string)
@@ -160,8 +167,10 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 					}
 				}
 				if len(buttonRow) > 0 {
-					buttons = append(buttons, buttonRow)
+					copied := append([]bus.Button(nil), buttonRow...)
+					buttons = append(buttons, copied)
 				}
+				buttonRowPool.Put(buttonRow[:0])
 			}
 		}
 	}

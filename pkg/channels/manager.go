@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -27,6 +28,7 @@ type Manager struct {
 	dispatchSem   chan struct{}
 	outboundLimit *rate.Limiter
 	mu            sync.RWMutex
+	snapshot      atomic.Value // map[string]Channel
 }
 
 type asyncTask struct {
@@ -42,6 +44,7 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus) (*Manager, error
 		dispatchSem:   make(chan struct{}, 32),
 		outboundLimit: rate.NewLimiter(rate.Limit(40), 80),
 	}
+	m.snapshot.Store(map[string]Channel{})
 
 	if err := m.initChannels(); err != nil {
 		return nil, err
@@ -159,8 +162,17 @@ func (m *Manager) initChannels() error {
 	logger.InfoCF("channels", "Channel initialization completed", map[string]interface{}{
 		"enabled_channels": len(m.channels),
 	})
+	m.refreshSnapshot()
 
 	return nil
+}
+
+func (m *Manager) refreshSnapshot() {
+	next := make(map[string]Channel, len(m.channels))
+	for k, v := range m.channels {
+		next[k] = v
+	}
+	m.snapshot.Store(next)
 }
 
 func (m *Manager) StartAll(ctx context.Context) error {
@@ -276,9 +288,8 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				return
 			}
 
-			m.mu.RLock()
-			channel, exists := m.channels[msg.Channel]
-			m.mu.RUnlock()
+			cur, _ := m.snapshot.Load().(map[string]Channel)
+			channel, exists := cur[msg.Channel]
 
 			if !exists {
 				logger.WarnCF("channels", "Unknown channel for outbound message", map[string]interface{}{
@@ -323,29 +334,24 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 }
 
 func (m *Manager) GetChannel(name string) (Channel, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	channel, ok := m.channels[name]
+	cur, _ := m.snapshot.Load().(map[string]Channel)
+	channel, ok := cur[name]
 	return channel, ok
 }
 
 func (m *Manager) GetStatus() map[string]interface{} {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	status := make(map[string]interface{})
-	for name := range m.channels {
+	cur, _ := m.snapshot.Load().(map[string]Channel)
+	status := make(map[string]interface{}, len(cur))
+	for name := range cur {
 		status[name] = map[string]interface{}{}
 	}
 	return status
 }
 
 func (m *Manager) GetEnabledChannels() []string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	names := make([]string, 0, len(m.channels))
-	for name := range m.channels {
+	cur, _ := m.snapshot.Load().(map[string]Channel)
+	names := make([]string, 0, len(cur))
+	for name := range cur {
 		names = append(names, name)
 	}
 	return names
@@ -355,12 +361,14 @@ func (m *Manager) RegisterChannel(name string, channel Channel) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.channels[name] = channel
+	m.refreshSnapshot()
 }
 
 func (m *Manager) UnregisterChannel(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.channels, name)
+	m.refreshSnapshot()
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

@@ -4,32 +4,38 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"clawgo/pkg/logger"
 )
 
 type ToolRegistry struct {
-	tools map[string]Tool
-	mu    sync.RWMutex
+	tools    map[string]Tool
+	mu       sync.RWMutex
+	snapshot atomic.Value // map[string]Tool (copy-on-write)
 }
 
 func NewToolRegistry() *ToolRegistry {
-	return &ToolRegistry{
-		tools: make(map[string]Tool),
-	}
+	r := &ToolRegistry{tools: make(map[string]Tool)}
+	r.snapshot.Store(map[string]Tool{})
+	return r
 }
 
 func (r *ToolRegistry) Register(tool Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.tools[tool.Name()] = tool
+	next := make(map[string]Tool, len(r.tools))
+	for k, v := range r.tools {
+		next[k] = v
+	}
+	r.snapshot.Store(next)
 }
 
 func (r *ToolRegistry) Get(name string) (Tool, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	tool, ok := r.tools[name]
+	cur, _ := r.snapshot.Load().(map[string]Tool)
+	tool, ok := cur[name]
 	return tool, ok
 }
 
@@ -73,11 +79,9 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 }
 
 func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	definitions := make([]map[string]interface{}, 0, len(r.tools))
-	for _, tool := range r.tools {
+	cur, _ := r.snapshot.Load().(map[string]Tool)
+	definitions := make([]map[string]interface{}, 0, len(cur))
+	for _, tool := range cur {
 		definitions = append(definitions, ToolToSchema(tool))
 	}
 	return definitions
@@ -85,11 +89,9 @@ func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
 
 // List returns a list of all registered tool names.
 func (r *ToolRegistry) List() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	names := make([]string, 0, len(r.tools))
-	for name := range r.tools {
+	cur, _ := r.snapshot.Load().(map[string]Tool)
+	names := make([]string, 0, len(cur))
+	for name := range cur {
 		names = append(names, name)
 	}
 	return names
@@ -97,19 +99,16 @@ func (r *ToolRegistry) List() []string {
 
 // Count returns the number of registered tools.
 func (r *ToolRegistry) Count() int {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return len(r.tools)
+	cur, _ := r.snapshot.Load().(map[string]Tool)
+	return len(cur)
 }
 
 // GetSummaries returns human-readable summaries of all registered tools.
 // Returns a slice of "name - description" strings.
 func (r *ToolRegistry) GetSummaries() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	summaries := make([]string, 0, len(r.tools))
-	for _, tool := range r.tools {
+	cur, _ := r.snapshot.Load().(map[string]Tool)
+	summaries := make([]string, 0, len(cur))
+	for _, tool := range cur {
 		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", tool.Name(), tool.Description()))
 	}
 	return summaries
