@@ -60,18 +60,21 @@ type AutonomyConfig struct {
 }
 
 type AgentTextConfig struct {
-	NoResponseFallback      string   `json:"no_response_fallback"`
-	ThinkOnlyFallback       string   `json:"think_only_fallback"`
-	MemoryRecallKeywords    []string `json:"memory_recall_keywords"`
-	LangUsage               string   `json:"lang_usage"`
-	LangInvalid             string   `json:"lang_invalid"`
-	LangUpdatedTemplate     string   `json:"lang_updated_template"`
-	SubagentsNone           string   `json:"subagents_none"`
-	SessionsNone            string   `json:"sessions_none"`
-	UnsupportedAction       string   `json:"unsupported_action"`
-	SystemRewriteTemplate   string   `json:"system_rewrite_template"`
-	RuntimeCompactionNote   string   `json:"runtime_compaction_note"`
-	StartupCompactionNote   string   `json:"startup_compaction_note"`
+	NoResponseFallback         string   `json:"no_response_fallback"`
+	ThinkOnlyFallback          string   `json:"think_only_fallback"`
+	MemoryRecallKeywords       []string `json:"memory_recall_keywords"`
+	LangUsage                  string   `json:"lang_usage"`
+	LangInvalid                string   `json:"lang_invalid"`
+	LangUpdatedTemplate        string   `json:"lang_updated_template"`
+	SubagentsNone              string   `json:"subagents_none"`
+	SessionsNone               string   `json:"sessions_none"`
+	UnsupportedAction          string   `json:"unsupported_action"`
+	SystemRewriteTemplate      string   `json:"system_rewrite_template"`
+	RuntimeCompactionNote      string   `json:"runtime_compaction_note"`
+	StartupCompactionNote      string   `json:"startup_compaction_note"`
+	AutonomyImportantKeywords  []string `json:"autonomy_important_keywords"`
+	AutonomyCompletionTemplate string   `json:"autonomy_completion_template"`
+	AutonomyBlockedTemplate    string   `json:"autonomy_blocked_template"`
 }
 
 type HeartbeatConfig struct {
@@ -324,9 +327,12 @@ func DefaultConfig() *Config {
 					SubagentsNone:         "No subagents.",
 					SessionsNone:          "No sessions.",
 					UnsupportedAction:     "unsupported action",
-					SystemRewriteTemplate: "Rewrite the following internal system update in concise user-facing language:\n\n%s",
-					RuntimeCompactionNote: "[runtime-compaction] removed %d old messages, kept %d recent messages",
-					StartupCompactionNote: "[startup-compaction] removed %d old messages, kept %d recent messages",
+					SystemRewriteTemplate:      "Rewrite the following internal system update in concise user-facing language:\n\n%s",
+					RuntimeCompactionNote:      "[runtime-compaction] removed %d old messages, kept %d recent messages",
+					StartupCompactionNote:      "[startup-compaction] removed %d old messages, kept %d recent messages",
+					AutonomyImportantKeywords:  []string{"urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"},
+					AutonomyCompletionTemplate: "✅ 已完成：%s\n下一步：如需我继续处理后续，直接回复“继续 %s”",
+					AutonomyBlockedTemplate:    "⚠️ 任务受阻：%s\n原因：%s\n建议：回复“继续 %s”我会按当前状态重试。",
 				},
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,

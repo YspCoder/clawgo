@@ -33,6 +33,9 @@ type Options struct {
 	QuietHours               string
 	UserIdleResumeSec        int
 	WaitingResumeDebounceSec int
+	ImportantKeywords        []string
+	CompletionTemplate       string
+	BlockedTemplate          string
 }
 
 type taskState struct {
@@ -385,16 +388,20 @@ func (e *Engine) dispatchTask(st *taskState) {
 func (e *Engine) sendCompletionNotification(st *taskState) {
 	e.writeReflectLog("complete", st, "task marked completed")
 	e.writeTriggerAudit("complete", st, "")
-	if !isHighValueCompletion(st) {
+	if !e.isHighValueCompletion(st) {
 		return
 	}
 	if !e.shouldNotify("done:" + st.ID) {
 		return
 	}
+	tpl := strings.TrimSpace(e.opts.CompletionTemplate)
+	if tpl == "" {
+		tpl = "✅ 已完成：%s\n下一步：如需我继续处理后续，直接回复“继续 %s”"
+	}
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
 		ChatID:  e.opts.DefaultNotifyChatID,
-		Content: fmt.Sprintf("✅ 已完成：%s\n下一步：如需我继续处理后续，直接回复“继续 %s”", shortTask(st.Content), shortTask(st.Content)),
+		Content: fmt.Sprintf(tpl, shortTask(st.Content), shortTask(st.Content)),
 	})
 }
 
@@ -404,10 +411,14 @@ func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 	if !e.shouldNotify("blocked:" + st.ID) {
 		return
 	}
+	tpl := strings.TrimSpace(e.opts.BlockedTemplate)
+	if tpl == "" {
+		tpl = "⚠️ 任务受阻：%s\n原因：%s\n建议：回复“继续 %s”我会按当前状态重试。"
+	}
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
 		ChatID:  e.opts.DefaultNotifyChatID,
-		Content: fmt.Sprintf("⚠️ 任务受阻：%s\n原因：%s\n建议：回复“继续 %s”我会按当前状态重试。", shortTask(st.Content), strings.TrimSpace(reason), shortTask(st.Content)),
+		Content: fmt.Sprintf(tpl, shortTask(st.Content), strings.TrimSpace(reason), shortTask(st.Content)),
 	})
 }
 
@@ -754,7 +765,7 @@ func min(a, b int) int {
 	return b
 }
 
-func isHighValueCompletion(st *taskState) bool {
+func (e *Engine) isHighValueCompletion(st *taskState) bool {
 	if st == nil {
 		return false
 	}
@@ -765,8 +776,13 @@ func isHighValueCompletion(st *taskState) bool {
 		return true
 	}
 	s := strings.ToLower(strings.TrimSpace(st.Content))
-	for _, k := range []string{"urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"} {
-		if strings.Contains(s, k) {
+	keywords := e.opts.ImportantKeywords
+	if len(keywords) == 0 {
+		keywords = []string{"urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"}
+	}
+	for _, k := range keywords {
+		kk := strings.ToLower(strings.TrimSpace(k))
+		if kk != "" && strings.Contains(s, kk) {
 			return true
 		}
 	}

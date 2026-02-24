@@ -138,6 +138,15 @@ func Validate(cfg *Config) []error {
 			errs = append(errs, fmt.Errorf("agents.defaults.texts.startup_compaction_note must contain two %%d placeholders"))
 		}
 	}
+	if len(texts.AutonomyImportantKeywords) == 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.texts.autonomy_important_keywords must contain at least one keyword"))
+	}
+	if strings.Count(strings.TrimSpace(texts.AutonomyCompletionTemplate), "%s") < 2 {
+		errs = append(errs, fmt.Errorf("agents.defaults.texts.autonomy_completion_template must contain two %%s placeholders"))
+	}
+	if strings.Count(strings.TrimSpace(texts.AutonomyBlockedTemplate), "%s") < 3 {
+		errs = append(errs, fmt.Errorf("agents.defaults.texts.autonomy_blocked_template must contain three %%s placeholders"))
+	}
 
 	if cfg.Agents.Defaults.ContextCompaction.Enabled {
 		cc := cfg.Agents.Defaults.ContextCompaction

@@ -770,18 +770,21 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
 	a := cfg.Agents.Defaults.Autonomy
 	return autonomy.NewEngine(autonomy.Options{
-		Enabled:               a.Enabled,
-		TickIntervalSec:       a.TickIntervalSec,
-		MinRunIntervalSec:     a.MinRunIntervalSec,
-		MaxPendingDurationSec: a.MaxPendingDurationSec,
-		MaxConsecutiveStalls:  a.MaxConsecutiveStalls,
-		MaxDispatchPerTick:    a.MaxDispatchPerTick,
-		NotifyCooldownSec:     a.NotifyCooldownSec,
-		QuietHours:            a.QuietHours,
-		UserIdleResumeSec:     a.UserIdleResumeSec,
+		Enabled:                  a.Enabled,
+		TickIntervalSec:          a.TickIntervalSec,
+		MinRunIntervalSec:        a.MinRunIntervalSec,
+		MaxPendingDurationSec:    a.MaxPendingDurationSec,
+		MaxConsecutiveStalls:     a.MaxConsecutiveStalls,
+		MaxDispatchPerTick:       a.MaxDispatchPerTick,
+		NotifyCooldownSec:        a.NotifyCooldownSec,
+		QuietHours:               a.QuietHours,
+		UserIdleResumeSec:        a.UserIdleResumeSec,
 		WaitingResumeDebounceSec: a.WaitingResumeDebounceSec,
-		Workspace:             cfg.WorkspacePath(),
-		DefaultNotifyChannel:  a.NotifyChannel,
-		DefaultNotifyChatID:   a.NotifyChatID,
+		ImportantKeywords:        cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
+		CompletionTemplate:       cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
+		BlockedTemplate:          cfg.Agents.Defaults.Texts.AutonomyBlockedTemplate,
+		Workspace:                cfg.WorkspacePath(),
+		DefaultNotifyChannel:     a.NotifyChannel,
+		DefaultNotifyChatID:      a.NotifyChatID,
 	}, msgBus)
 }
