@@ -37,6 +37,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/nodes/register", s.handleRegister)
+	mux.HandleFunc("/nodes/heartbeat", s.handleHeartbeat)
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
 	go func() {
 		<-ctx.Done()
@@ -53,12 +54,9 @@ func (s *RegistryServer) handleRegister(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.token != "" {
-		auth := strings.TrimSpace(r.Header.Get("Authorization"))
-		if auth != "Bearer "+s.token {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
 	var n NodeInfo
 	if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
@@ -72,4 +70,38 @@ func (s *RegistryServer) handleRegister(w http.ResponseWriter, r *http.Request) 
 	s.mgr.Upsert(n)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": n.ID})
+}
+
+func (s *RegistryServer) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct{ ID string `json:"id"` }
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ID) == "" {
+		http.Error(w, "id required", http.StatusBadRequest)
+		return
+	}
+	n, ok := s.mgr.Get(body.ID)
+	if !ok {
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
+	n.LastSeenAt = time.Now().UTC()
+	n.Online = true
+	s.mgr.Upsert(n)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": body.ID})
+}
+
+func (s *RegistryServer) checkAuth(r *http.Request) bool {
+	if s.token == "" {
+		return true
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	return auth == "Bearer "+s.token
 }

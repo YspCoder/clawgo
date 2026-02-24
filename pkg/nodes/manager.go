@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const defaultNodeTTL = 60 * time.Second
+
 // Manager keeps paired node metadata and basic routing helpers.
 type Handler func(req Request) Response
 
@@ -14,6 +16,7 @@ type Manager struct {
 	mu       sync.RWMutex
 	nodes    map[string]NodeInfo
 	handlers map[string]Handler
+	ttl      time.Duration
 }
 
 var defaultManager = NewManager()
@@ -21,7 +24,9 @@ var defaultManager = NewManager()
 func DefaultManager() *Manager { return defaultManager }
 
 func NewManager() *Manager {
-	return &Manager{nodes: map[string]NodeInfo{}, handlers: map[string]Handler{}}
+	m := &Manager{nodes: map[string]NodeInfo{}, handlers: map[string]Handler{}, ttl: defaultNodeTTL}
+	go m.reaperLoop()
+	return m
 }
 
 func (m *Manager) Upsert(info NodeInfo) {
@@ -85,6 +90,27 @@ func (m *Manager) Invoke(req Request) (Response, bool) {
 	return resp, true
 }
 
+func (m *Manager) SupportsAction(nodeID, action string) bool {
+	n, ok := m.Get(nodeID)
+	if !ok || !n.Online {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "run":
+		return n.Capabilities.Run
+	case "camera_snap", "camera_clip":
+		return n.Capabilities.Camera
+	case "screen_record", "screen_snapshot":
+		return n.Capabilities.Screen
+	case "location_get":
+		return n.Capabilities.Location
+	case "canvas_snapshot", "canvas_action":
+		return n.Capabilities.Canvas
+	default:
+		return n.Capabilities.Invoke
+	}
+}
+
 func (m *Manager) PickFor(action string) (NodeInfo, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -92,7 +118,7 @@ func (m *Manager) PickFor(action string) (NodeInfo, bool) {
 		if !n.Online {
 			continue
 		}
-		switch action {
+		switch strings.ToLower(strings.TrimSpace(action)) {
 		case "run":
 			if n.Capabilities.Run {
 				return n, true
@@ -101,7 +127,7 @@ func (m *Manager) PickFor(action string) (NodeInfo, bool) {
 			if n.Capabilities.Camera {
 				return n, true
 			}
-		case "screen_record":
+		case "screen_record", "screen_snapshot":
 			if n.Capabilities.Screen {
 				return n, true
 			}
@@ -120,4 +146,20 @@ func (m *Manager) PickFor(action string) (NodeInfo, bool) {
 		}
 	}
 	return NodeInfo{}, false
+}
+
+func (m *Manager) reaperLoop() {
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		cutoff := time.Now().UTC().Add(-m.ttl)
+		m.mu.Lock()
+		for id, n := range m.nodes {
+			if n.Online && !n.LastSeenAt.IsZero() && n.LastSeenAt.Before(cutoff) {
+				n.Online = false
+				m.nodes[id] = n
+			}
+		}
+		m.mu.Unlock()
+	}
 }

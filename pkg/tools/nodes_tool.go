@@ -66,6 +66,9 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		if nodeID == "" {
 			return "", fmt.Errorf("no eligible node found for action=%s", action)
 		}
+		if !t.manager.SupportsAction(nodeID, action) {
+			return "", fmt.Errorf("node %s does not support action=%s", nodeID, action)
+		}
 		if t.router == nil {
 			return "", fmt.Errorf("nodes transport router not configured")
 		}

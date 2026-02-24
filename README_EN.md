@@ -44,7 +44,8 @@ A `nodes` tool control-plane PoC is now available:
 - `mode=auto|p2p|relay`: default `auto` (prefer p2p, fallback to relay)
 - relay now supports HTTP node bridging with action-specific routes: `/run`, `/camera/snap`, `/screen/record`, `/location/get`, `/canvas/*` (unknown action falls back to `/invoke`)
 - gateway supports node registration: `POST http://<gateway_host>:<gateway_port>/nodes/register`
-- configure `gateway.token` as registration token; child nodes must send `Authorization: Bearer <token>`
+- supports node lease renew: `POST /nodes/heartbeat` (TTL-based offline marking)
+- configure `gateway.token` as registration token; child nodes must send `Authorization: Bearer <token>` for register/heartbeat
 - `NodeInfo.token` is supported; relay automatically sets `Authorization: Bearer <token>`
 - `nodes` tool supports device shortcuts: `facing`, `duration_ms`, `command`
 
