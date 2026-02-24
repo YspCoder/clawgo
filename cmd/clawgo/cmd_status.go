@@ -128,6 +128,9 @@ func statusCmd() {
 				fmt.Printf("  - %s\n", key)
 			}
 		}
+		if summary, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
+			fmt.Printf("Autonomy Tasks: todo=%d doing=%d blocked=%d done=%d\n", summary["todo"], summary["doing"], summary["blocked"], summary["done"])
+		}
 	}
 }
 
@@ -239,6 +242,30 @@ func collectTriggerErrorCounts(path string) (map[string]int, error) {
 		counts[trigger]++
 	}
 	return counts, nil
+}
+
+func collectAutonomyTaskSummary(path string) (map[string]int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]int{"todo": 0, "doing": 0, "blocked": 0, "done": 0}, nil
+		}
+		return nil, err
+	}
+	var items []struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, err
+	}
+	summary := map[string]int{"todo": 0, "doing": 0, "blocked": 0, "done": 0}
+	for _, it := range items {
+		s := strings.ToLower(strings.TrimSpace(it.Status))
+		if _, ok := summary[s]; ok {
+			summary[s]++
+		}
+	}
+	return summary, nil
 }
 
 func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {

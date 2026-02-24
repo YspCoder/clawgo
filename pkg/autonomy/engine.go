@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +34,8 @@ type Options struct {
 type taskState struct {
 	ID               string
 	Content          string
+	Priority         string
+	DueAt            string
 	Status           string // idle|running|waiting|blocked|completed
 	LastRunAt        time.Time
 	LastAutonomyAt   time.Time
@@ -127,10 +130,12 @@ func (e *Engine) tick() {
 					status = "blocked"
 				}
 			}
-			e.state[t.ID] = &taskState{ID: t.ID, Content: t.Content, Status: status}
+			e.state[t.ID] = &taskState{ID: t.ID, Content: t.Content, Priority: t.Priority, DueAt: t.DueAt, Status: status}
 			continue
 		}
 		st.Content = t.Content
+		st.Priority = t.Priority
+		st.DueAt = t.DueAt
 		if st.Status == "completed" {
 			st.Status = "idle"
 		}
@@ -146,13 +151,38 @@ func (e *Engine) tick() {
 		}
 	}
 
-	dispatched := 0
+	ordered := make([]*taskState, 0, len(e.state))
 	for _, st := range e.state {
+		ordered = append(ordered, st)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		pi := priorityWeight(ordered[i].Priority)
+		pj := priorityWeight(ordered[j].Priority)
+		if pi != pj {
+			return pi > pj
+		}
+		di := dueWeight(ordered[i].DueAt)
+		dj := dueWeight(ordered[j].DueAt)
+		if di != dj {
+			return di > dj
+		}
+		return ordered[i].ID < ordered[j].ID
+	})
+
+	dispatched := 0
+	for _, st := range ordered {
 		if dispatched >= e.opts.MaxDispatchPerTick {
 			break
 		}
-		if st.Status == "completed" || st.Status == "blocked" {
+		if st.Status == "completed" {
 			continue
+		}
+		if st.Status == "blocked" {
+			if now.Sub(st.LastRunAt) >= blockedRetryBackoff(st.ConsecutiveStall, e.opts.MinRunIntervalSec) {
+				st.Status = "idle"
+			} else {
+				continue
+			}
 		}
 		if !st.LastRunAt.IsZero() && now.Sub(st.LastRunAt) < time.Duration(e.opts.MinRunIntervalSec)*time.Second {
 			continue
@@ -177,8 +207,10 @@ func (e *Engine) tick() {
 }
 
 type todoItem struct {
-	ID      string
-	Content string
+	ID       string
+	Content  string
+	Priority string
+	DueAt    string
 }
 
 func (e *Engine) scanTodos() []todoItem {
@@ -202,7 +234,8 @@ func (e *Engine) scanTodos() []todoItem {
 				if content == "" {
 					continue
 				}
-				out = append(out, todoItem{ID: hashID(content), Content: content})
+				priority, dueAt, normalized := parseTodoAttributes(content)
+				out = append(out, todoItem{ID: hashID(normalized), Content: normalized, Priority: priority, DueAt: dueAt})
 				continue
 			}
 			if strings.HasPrefix(strings.ToLower(t), "todo:") {
@@ -210,7 +243,8 @@ func (e *Engine) scanTodos() []todoItem {
 				if content == "" {
 					continue
 				}
-				out = append(out, todoItem{ID: hashID(content), Content: content})
+				priority, dueAt, normalized := parseTodoAttributes(content)
+				out = append(out, todoItem{ID: hashID(normalized), Content: normalized, Priority: priority, DueAt: dueAt})
 			}
 		}
 	}
@@ -340,13 +374,88 @@ func (e *Engine) persistStateLocked() {
 		items = append(items, TaskItem{
 			ID:        st.ID,
 			Content:   st.Content,
-			Priority:  "normal",
+			Priority:  st.Priority,
+			DueAt:     st.DueAt,
 			Status:    status,
 			Source:    "memory_todo",
 			UpdatedAt: nowRFC3339(),
 		})
 	}
 	_ = e.taskStore.Save(items)
+}
+
+func parseTodoAttributes(content string) (priority, dueAt, normalized string) {
+	priority = "normal"
+	normalized = strings.TrimSpace(content)
+	l := strings.ToLower(normalized)
+	if strings.HasPrefix(l, "[high]") || strings.HasPrefix(l, "p1:") {
+		priority = "high"
+		normalized = strings.TrimSpace(normalized[6:])
+	} else if strings.HasPrefix(l, "[low]") || strings.HasPrefix(l, "p3:") {
+		priority = "low"
+		normalized = strings.TrimSpace(normalized[5:])
+	} else if strings.HasPrefix(l, "[medium]") || strings.HasPrefix(l, "p2:") {
+		priority = "normal"
+		if strings.HasPrefix(l, "[medium]") {
+			normalized = strings.TrimSpace(normalized[8:])
+		} else {
+			normalized = strings.TrimSpace(normalized[3:])
+		}
+	}
+	if idx := strings.Index(strings.ToLower(normalized), " due:"); idx > 0 {
+		dueAt = strings.TrimSpace(normalized[idx+5:])
+		normalized = strings.TrimSpace(normalized[:idx])
+	}
+	if normalized == "" {
+		normalized = strings.TrimSpace(content)
+	}
+	return priority, dueAt, normalized
+}
+
+func priorityWeight(p string) int {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case "high":
+		return 3
+	case "normal", "medium":
+		return 2
+	case "low":
+		return 1
+	default:
+		return 2
+	}
+}
+
+func dueWeight(dueAt string) int64 {
+	dueAt = strings.TrimSpace(dueAt)
+	if dueAt == "" {
+		return 0
+	}
+	layouts := []string{"2006-01-02", time.RFC3339, time.RFC3339Nano}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, dueAt); err == nil {
+			return -t.Unix() // earlier due => bigger score after descending sort
+		}
+	}
+	return 0
+}
+
+func blockedRetryBackoff(stalls int, minRunIntervalSec int) time.Duration {
+	if minRunIntervalSec <= 0 {
+		minRunIntervalSec = 20
+	}
+	if stalls < 1 {
+		stalls = 1
+	}
+	base := time.Duration(minRunIntervalSec) * time.Second
+	factor := 1 << min(stalls, 5)
+	return time.Duration(factor) * base
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func hashID(s string) string {
