@@ -58,9 +58,18 @@ func (t *ProcessTool) Execute(ctx context.Context, args map[string]interface{}) 
 			case <-ctx.Done():
 			}
 		}
+		off := toInt(args["offset"])
+		lim := toInt(args["limit"])
+		if lim <= 0 {
+			lim = 1200
+		}
+		if off < 0 {
+			off = 0
+		}
+		chunk, _ := t.m.Log(sid, off, lim)
 		s.mu.RLock()
 		defer s.mu.RUnlock()
-		resp := map[string]interface{}{"id": s.ID, "running": s.ExitCode == nil, "started_at": s.StartedAt.Format(time.RFC3339)}
+		resp := map[string]interface{}{"id": s.ID, "running": s.ExitCode == nil, "started_at": s.StartedAt.Format(time.RFC3339), "log": chunk, "next_offset": off + len(chunk)}
 		if s.ExitCode != nil {
 			resp["exit_code"] = *s.ExitCode
 			resp["ended_at"] = s.EndedAt.Format(time.RFC3339)

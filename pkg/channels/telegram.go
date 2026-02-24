@@ -532,11 +532,17 @@ func (c *TelegramChannel) handleAction(ctx context.Context, chatID int64, action
 		defer cancel()
 		return c.bot.DeleteMessage(delCtx, &telego.DeleteMessageParams{ChatID: telegoutil.ID(chatID), MessageID: messageID})
 	case "react":
+		reactCtx, cancel := withTelegramAPITimeout(ctx)
+		defer cancel()
 		emoji := strings.TrimSpace(msg.Emoji)
 		if emoji == "" {
 			return fmt.Errorf("emoji required for react action")
 		}
-		return fmt.Errorf("telegram react action not supported by current telego version")
+		return c.bot.SetMessageReaction(reactCtx, &telego.SetMessageReactionParams{
+			ChatID:    telegoutil.ID(chatID),
+			MessageID: messageID,
+			Reaction:  []telego.ReactionType{&telego.ReactionTypeEmoji{Emoji: emoji}},
+		})
 	default:
 		return fmt.Errorf("unsupported telegram action: %s", action)
 	}
