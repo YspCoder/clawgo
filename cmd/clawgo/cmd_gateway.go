@@ -419,6 +419,9 @@ func summarizeAutonomyChanges(oldCfg, newCfg *config.Config) []string {
 	if o.NotifyCooldownSec != n.NotifyCooldownSec {
 		changes = append(changes, "notify_cooldown_sec")
 	}
+	if o.NotifySameReasonCooldownSec != n.NotifySameReasonCooldownSec {
+		changes = append(changes, "notify_same_reason_cooldown_sec")
+	}
 	return changes
 }
 
@@ -440,12 +443,17 @@ func summarizeDialogTemplateChanges(oldCfg, newCfg *config.Config) []string {
 		{name: "lang_updated_template", a: oldT.LangUpdatedTemplate, b: newT.LangUpdatedTemplate},
 		{name: "runtime_compaction_note", a: oldT.RuntimeCompactionNote, b: newT.RuntimeCompactionNote},
 		{name: "startup_compaction_note", a: oldT.StartupCompactionNote, b: newT.StartupCompactionNote},
+		{name: "autonomy_completion_template", a: oldT.AutonomyCompletionTemplate, b: newT.AutonomyCompletionTemplate},
+		{name: "autonomy_blocked_template", a: oldT.AutonomyBlockedTemplate, b: newT.AutonomyBlockedTemplate},
 	}
 	out := make([]string, 0)
 	for _, c := range checks {
 		if strings.TrimSpace(c.a) != strings.TrimSpace(c.b) {
 			out = append(out, c.name)
 		}
+	}
+	if strings.Join(oldT.AutonomyImportantKeywords, "|") != strings.Join(newT.AutonomyImportantKeywords, "|") {
+		out = append(out, "autonomy_important_keywords")
 	}
 	if oldCfg.Agents.Defaults.Heartbeat.PromptTemplate != newCfg.Agents.Defaults.Heartbeat.PromptTemplate {
 		out = append(out, "heartbeat.prompt_template")
