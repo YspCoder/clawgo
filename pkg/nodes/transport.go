@@ -96,18 +96,18 @@ func actionHTTPPath(action string) string {
 
 func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, error) {
 	if s.Manager == nil {
-		return Response{OK: false, Node: req.Node, Action: req.Action, Error: "relay manager not configured"}, nil
+		return Response{OK: false, Code: "relay_unavailable", Node: req.Node, Action: req.Action, Error: "relay manager not configured"}, nil
 	}
 	if resp, ok := s.Manager.Invoke(req); ok {
 		return resp, nil
 	}
 	n, ok := s.Manager.Get(req.Node)
 	if !ok {
-		return Response{OK: false, Node: req.Node, Action: req.Action, Error: "node not found"}, nil
+		return Response{OK: false, Code: "node_not_found", Node: req.Node, Action: req.Action, Error: "node not found"}, nil
 	}
 	endpoint := strings.TrimRight(strings.TrimSpace(n.Endpoint), "/")
 	if endpoint == "" {
-		return Response{OK: false, Node: req.Node, Action: req.Action, Error: "node endpoint not configured"}, nil
+		return Response{OK: false, Code: "endpoint_missing", Node: req.Node, Action: req.Action, Error: "node endpoint not configured"}, nil
 	}
 	client := s.Client
 	if client == nil {
@@ -125,19 +125,26 @@ func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, e
 	}
 	hresp, err := client.Do(hreq)
 	if err != nil {
-		return Response{OK: false, Node: req.Node, Action: req.Action, Error: err.Error()}, nil
+		return Response{OK: false, Code: "transport_error", Node: req.Node, Action: req.Action, Error: err.Error()}, nil
 	}
 	defer hresp.Body.Close()
 	payload, _ := io.ReadAll(io.LimitReader(hresp.Body, 1<<20))
 	var resp Response
 	if err := json.Unmarshal(payload, &resp); err != nil {
-		return Response{OK: false, Node: req.Node, Action: req.Action, Error: fmt.Sprintf("invalid node response: %s", strings.TrimSpace(string(payload)))}, nil
+		return Response{OK: false, Code: "invalid_response", Node: req.Node, Action: req.Action, Error: fmt.Sprintf("invalid node response: %s", strings.TrimSpace(string(payload)))}, nil
 	}
 	if strings.TrimSpace(resp.Node) == "" {
 		resp.Node = req.Node
 	}
 	if strings.TrimSpace(resp.Action) == "" {
 		resp.Action = req.Action
+	}
+	if strings.TrimSpace(resp.Code) == "" {
+		if resp.OK {
+			resp.Code = "ok"
+		} else {
+			resp.Code = "remote_error"
+		}
 	}
 	return resp, nil
 }

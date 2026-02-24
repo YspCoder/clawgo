@@ -82,7 +82,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	nodesManager.RegisterHandler("local", func(req nodes.Request) nodes.Response {
 		switch req.Action {
 		case "run":
-			payload := map[string]interface{}{"transport": "relay-local"}
+			payload := map[string]interface{}{"transport": "relay-local", "simulated": true}
 			if cmdRaw, ok := req.Args["command"].([]interface{}); ok && len(cmdRaw) > 0 {
 				parts := make([]string, 0, len(cmdRaw))
 				for _, x := range cmdRaw {
@@ -90,11 +90,23 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 				}
 				payload["command"] = parts
 			}
-			return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: payload}
-		case "camera_snap", "camera_clip", "screen_record", "screen_snapshot", "location_get", "canvas_snapshot", "canvas_action":
-			return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "simulated": true, "args": req.Args}}
+			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: payload}
+		case "camera_snap":
+			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "media_type": "image", "facing": req.Args["facing"], "simulated": true}}
+		case "camera_clip":
+			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "media_type": "video", "duration_ms": req.Args["duration_ms"], "simulated": true}}
+		case "screen_snapshot":
+			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "media_type": "image", "simulated": true}}
+		case "screen_record":
+			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "media_type": "video", "duration_ms": req.Args["duration_ms"], "simulated": true}}
+		case "location_get":
+			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "lat": 0.0, "lng": 0.0, "accuracy": "simulated"}}
+		case "canvas_snapshot":
+			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "image": "data:image/png;base64,<simulated>", "simulated": true}}
+		case "canvas_action":
+			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "applied": true, "simulated": true, "args": req.Args}}
 		default:
-			return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: map[string]interface{}{"echo": req.Args, "transport": "relay-local"}}
+			return nodes.Response{OK: false, Code: "unsupported_action", Node: "local", Action: req.Action, Error: "unsupported local simulated action"}
 		}
 	})
 	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.HTTPRelayTransport{Manager: nodesManager}}

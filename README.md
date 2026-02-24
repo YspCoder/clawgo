@@ -48,6 +48,7 @@
 - 可在 `gateway.token` 配置网关注册令牌；子节点注册/续租需带 `Authorization: Bearer <token>`
 - 可在 `NodeInfo` 中配置 `token`，relay 会自动附加 `Authorization: Bearer <token>`
 - `nodes` 工具支持设备快捷参数：`facing`、`duration_ms`、`command`
+- 设备动作响应统一：`ok/code/error/payload`（code 示例：`ok` `unsupported_action` `transport_error`）
 
 实现位置：
 - `pkg/nodes/types.go`

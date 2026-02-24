@@ -36,6 +36,7 @@ type Request struct {
 // Envelope for node responses.
 type Response struct {
 	OK      bool                   `json:"ok"`
+	Code    string                 `json:"code,omitempty"`
 	Error   string                 `json:"error,omitempty"`
 	Node    string                 `json:"node,omitempty"`
 	Action  string                 `json:"action,omitempty"`

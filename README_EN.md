@@ -48,6 +48,7 @@ A `nodes` tool control-plane PoC is now available:
 - configure `gateway.token` as registration token; child nodes must send `Authorization: Bearer <token>` for register/heartbeat
 - `NodeInfo.token` is supported; relay automatically sets `Authorization: Bearer <token>`
 - `nodes` tool supports device shortcuts: `facing`, `duration_ms`, `command`
+- unified device response envelope: `ok/code/error/payload` (code examples: `ok`, `unsupported_action`, `transport_error`)
 
 Implementation:
 - `pkg/nodes/types.go`
