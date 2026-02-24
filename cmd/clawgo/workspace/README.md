@@ -1,3 +1,10 @@
-# Embedded workspace assets
+# Workspace Templates
 
-This file ensures the `//go:embed workspace` directive has at least one match during containerized builds.
+These files are copied during `clawgo onboard` if missing:
+- `AGENTS.md`
+- `SOUL.md`
+- `USER.md`
+- `HEARTBEAT.md`
+- `MEMORY.md`
+
+You can customize them after onboarding.
