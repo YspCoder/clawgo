@@ -20,18 +20,19 @@ import (
 )
 
 type Options struct {
-	Enabled                 bool
-	TickIntervalSec         int
-	MinRunIntervalSec       int
-	MaxPendingDurationSec   int
-	MaxConsecutiveStalls    int
-	MaxDispatchPerTick      int
-	Workspace               string
-	DefaultNotifyChannel    string
-	DefaultNotifyChatID     string
-	NotifyCooldownSec       int
-	QuietHours              string
-	UserIdleResumeSec       int
+	Enabled                  bool
+	TickIntervalSec          int
+	MinRunIntervalSec        int
+	MaxPendingDurationSec    int
+	MaxConsecutiveStalls     int
+	MaxDispatchPerTick       int
+	Workspace                string
+	DefaultNotifyChannel     string
+	DefaultNotifyChatID      string
+	NotifyCooldownSec        int
+	QuietHours               string
+	UserIdleResumeSec        int
+	WaitingResumeDebounceSec int
 }
 
 type taskState struct {
@@ -81,6 +82,9 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	}
 	if opts.UserIdleResumeSec <= 0 {
 		opts.UserIdleResumeSec = 20
+	}
+	if opts.WaitingResumeDebounceSec <= 0 {
+		opts.WaitingResumeDebounceSec = 5
 	}
 	return &Engine{
 		opts:       opts,
@@ -227,7 +231,7 @@ func (e *Engine) tick() {
 		}
 		if st.Status == "waiting" {
 			// Debounce waiting/resume flapping
-			if !st.WaitingSince.IsZero() && now.Sub(st.WaitingSince) < 5*time.Second {
+			if !st.WaitingSince.IsZero() && now.Sub(st.WaitingSince) < time.Duration(e.opts.WaitingResumeDebounceSec)*time.Second {
 				continue
 			}
 			reason := st.BlockReason

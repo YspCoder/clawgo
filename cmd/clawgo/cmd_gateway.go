@@ -384,6 +384,9 @@ func summarizeAutonomyChanges(oldCfg, newCfg *config.Config) []string {
 	if o.UserIdleResumeSec != n.UserIdleResumeSec {
 		changes = append(changes, "user_idle_resume_sec")
 	}
+	if o.WaitingResumeDebounceSec != n.WaitingResumeDebounceSec {
+		changes = append(changes, "waiting_resume_debounce_sec")
+	}
 	if strings.TrimSpace(o.QuietHours) != strings.TrimSpace(n.QuietHours) {
 		changes = append(changes, "quiet_hours")
 	}
@@ -750,6 +753,7 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		NotifyCooldownSec:     a.NotifyCooldownSec,
 		QuietHours:            a.QuietHours,
 		UserIdleResumeSec:     a.UserIdleResumeSec,
+		WaitingResumeDebounceSec: a.WaitingResumeDebounceSec,
 		Workspace:             cfg.WorkspacePath(),
 		DefaultNotifyChannel:  a.NotifyChannel,
 		DefaultNotifyChatID:   a.NotifyChatID,

@@ -132,6 +132,7 @@ func statusCmd() {
 				fmt.Printf("  - %s\n", key)
 			}
 		}
+		fmt.Printf("Autonomy Config: idle_resume=%ds waiting_debounce=%ds\n", cfg.Agents.Defaults.Autonomy.UserIdleResumeSec, cfg.Agents.Defaults.Autonomy.WaitingResumeDebounceSec)
 		if summary, prio, reasons, nextRetry, dedupeHits, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
 			fmt.Printf("Autonomy Tasks: todo=%d doing=%d waiting=%d blocked=%d done=%d dedupe_hits=%d\n", summary["todo"], summary["doing"], summary["waiting"], summary["blocked"], summary["done"], dedupeHits)
 			fmt.Printf("Autonomy Priority: high=%d normal=%d low=%d\n", prio["high"], prio["normal"], prio["low"])
