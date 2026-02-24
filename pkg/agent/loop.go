@@ -82,7 +82,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	nodesManager.RegisterHandler("local", func(req nodes.Request) nodes.Response {
 		return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: map[string]interface{}{"echo": req.Args, "transport": "relay-local"}}
 	})
-	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.StubRelayTransport{Manager: nodesManager}}
+	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.HTTPRelayTransport{Manager: nodesManager}}
 	toolsRegistry.Register(tools.NewNodesTool(nodesManager, nodesRouter))
 
 	if cs != nil {

@@ -42,7 +42,8 @@
 - `action=status|describe`：查看已配对节点状态与能力矩阵
 - `action=run|invoke|camera_snap|screen_record|location_get`：已接入路由框架
 - `mode=auto|p2p|relay`：默认 `auto`（优先 p2p，失败回退 relay）
-- relay 已接入本地 handler 调用链，便于逐步替换为真实跨节点传输
+- relay 已支持 HTTP 节点桥接：当节点配置 `endpoint` 后，调用 `POST {endpoint}/invoke` 并透传 `Request`
+- 可在 `NodeInfo` 中配置 `token`，relay 会自动附加 `Authorization: Bearer <token>`
 
 实现位置：
 - `pkg/nodes/types.go`

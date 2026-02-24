@@ -19,6 +19,8 @@ type NodeInfo struct {
 	OS           string       `json:"os,omitempty"`
 	Arch         string       `json:"arch,omitempty"`
 	Version      string       `json:"version,omitempty"`
+	Endpoint     string       `json:"endpoint,omitempty"`
+	Token        string       `json:"token,omitempty"`
 	Capabilities Capabilities `json:"capabilities"`
 	LastSeenAt   time.Time    `json:"last_seen_at"`
 	Online       bool         `json:"online"`
