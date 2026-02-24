@@ -289,7 +289,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	if markup != nil {
 		sendParams.WithReplyMarkup(markup)
 	}
-	_ = strings.TrimSpace(msg.ReplyToID) // reserved for provider-level reply threading support
+	if replyID, ok := parseTelegramMessageID(msg.ReplyToID); ok {
+		sendParams.ReplyParameters = &telego.ReplyParameters{MessageID: replyID}
+	}
 
 	sendCtx, cancelSend := withTelegramAPITimeout(ctx)
 	_, err = c.bot.SendMessage(sendCtx, sendParams)
@@ -503,6 +505,18 @@ func parseChatID(chatIDStr string) (int64, error) {
 	var id int64
 	_, err := fmt.Sscanf(chatIDStr, "%d", &id)
 	return id, err
+}
+
+func parseTelegramMessageID(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	var id int
+	if _, err := fmt.Sscanf(raw, "%d", &id); err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
 }
 
 func markdownToTelegramHTML(text string) string {
