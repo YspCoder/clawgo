@@ -12,9 +12,10 @@ import (
 // NodesTool provides an OpenClaw-style control surface for paired nodes.
 type NodesTool struct {
 	manager *nodes.Manager
+	router  *nodes.Router
 }
 
-func NewNodesTool(m *nodes.Manager) *NodesTool { return &NodesTool{manager: m} }
+func NewNodesTool(m *nodes.Manager, r *nodes.Router) *NodesTool { return &NodesTool{manager: m, router: r} }
 func (t *NodesTool) Name() string              { return "nodes" }
 func (t *NodesTool) Description() string {
 	return "Manage paired nodes (status/describe/run/invoke/camera/screen/location)."
@@ -23,6 +24,7 @@ func (t *NodesTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
 		"action": map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|camera_snap|screen_record|location_get"},
 		"node":   map[string]interface{}{"type": "string", "description": "target node id"},
+		"mode":   map[string]interface{}{"type": "string", "description": "auto|p2p|relay (default auto)"},
 		"args":   map[string]interface{}{"type": "object", "description": "action args"},
 	}, "required": []string{"action"}}
 }
@@ -35,6 +37,7 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		return "", fmt.Errorf("action is required")
 	}
 	nodeID, _ := args["node"].(string)
+	mode, _ := args["mode"].(string)
 	if t.manager == nil {
 		return "", fmt.Errorf("nodes manager not configured")
 	}
@@ -52,7 +55,6 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		b, _ := json.Marshal(t.manager.List())
 		return string(b), nil
 	default:
-		// Phase-1: control-plane exists, data-plane RPC bridge lands in next step.
 		if nodeID == "" {
 			if picked, ok := t.manager.PickFor(action); ok {
 				nodeID = picked.ID
@@ -61,7 +63,17 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		if nodeID == "" {
 			return "", fmt.Errorf("no eligible node found for action=%s", action)
 		}
-		resp := nodes.Response{OK: false, Node: nodeID, Action: action, Error: "node transport bridge not implemented yet"}
+		if t.router == nil {
+			return "", fmt.Errorf("nodes transport router not configured")
+		}
+		var reqArgs map[string]interface{}
+		if raw, ok := args["args"].(map[string]interface{}); ok {
+			reqArgs = raw
+		}
+		resp, err := t.router.Dispatch(ctx, nodes.Request{Action: action, Node: nodeID, Args: reqArgs}, mode)
+		if err != nil {
+			return "", err
+		}
 		b, _ := json.Marshal(resp)
 		return string(b), nil
 	}

@@ -40,7 +40,8 @@
 已新增 `nodes` 工具控制平面（PoC）：
 
 - `action=status|describe`：查看已配对节点状态与能力矩阵
-- `action=run|invoke|camera_snap|screen_record|location_get`：已接入路由框架（下一阶段接数据平面传输）
+- `action=run|invoke|camera_snap|screen_record|location_get`：已接入路由框架
+- `mode=auto|p2p|relay`：默认 `auto`（优先 p2p，失败回退 relay）
 
 实现位置：
 - `pkg/nodes/types.go`

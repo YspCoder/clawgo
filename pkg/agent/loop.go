@@ -78,7 +78,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
 	toolsRegistry.Register(tools.NewProcessTool(processManager))
 	nodesManager := nodes.NewManager()
-	toolsRegistry.Register(tools.NewNodesTool(nodesManager))
+	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.StubRelayTransport{}}
+	toolsRegistry.Register(tools.NewNodesTool(nodesManager, nodesRouter))
 
 	if cs != nil {
 		toolsRegistry.Register(tools.NewRemindTool(cs))
