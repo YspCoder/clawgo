@@ -99,6 +99,9 @@ func Validate(cfg *Config) []error {
 		if aut.MaxDispatchPerTick <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_dispatch_per_tick must be > 0 when enabled=true"))
 		}
+		if aut.NotifyCooldownSec <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.notify_cooldown_sec must be > 0 when enabled=true"))
+		}
 	}
 	texts := cfg.Agents.Defaults.Texts
 	if strings.TrimSpace(texts.NoResponseFallback) == "" {

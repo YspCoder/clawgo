@@ -51,6 +51,7 @@ type AutonomyConfig struct {
 	MaxPendingDurationSec int   `json:"max_pending_duration_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_PENDING_DURATION_SEC"`
 	MaxConsecutiveStalls int    `json:"max_consecutive_stalls" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_CONSECUTIVE_STALLS"`
 	MaxDispatchPerTick   int    `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
+	NotifyCooldownSec    int    `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
 	NotifyChannel        string `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
 	NotifyChatID         string `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
 }
@@ -303,6 +304,7 @@ func DefaultConfig() *Config {
 					MaxPendingDurationSec: 180,
 					MaxConsecutiveStalls:  3,
 					MaxDispatchPerTick:    2,
+					NotifyCooldownSec:     300,
 					NotifyChannel:         "",
 					NotifyChatID:          "",
 				},

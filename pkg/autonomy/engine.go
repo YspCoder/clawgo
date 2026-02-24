@@ -25,6 +25,7 @@ type Options struct {
 	Workspace               string
 	DefaultNotifyChannel    string
 	DefaultNotifyChatID     string
+	NotifyCooldownSec       int
 }
 
 type taskState struct {
@@ -37,12 +38,14 @@ type taskState struct {
 }
 
 type Engine struct {
-	opts   Options
-	bus    *bus.MessageBus
-	runner *lifecycle.LoopRunner
+	opts      Options
+	bus       *bus.MessageBus
+	runner    *lifecycle.LoopRunner
+	taskStore *TaskStore
 
-	mu    sync.Mutex
-	state map[string]*taskState
+	mu         sync.Mutex
+	state      map[string]*taskState
+	lastNotify map[string]time.Time
 }
 
 func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
@@ -61,11 +64,16 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	if opts.MaxDispatchPerTick <= 0 {
 		opts.MaxDispatchPerTick = 2
 	}
+	if opts.NotifyCooldownSec <= 0 {
+		opts.NotifyCooldownSec = 300
+	}
 	return &Engine{
-		opts:   opts,
-		bus:    msgBus,
-		runner: lifecycle.NewLoopRunner(),
-		state:  map[string]*taskState{},
+		opts:       opts,
+		bus:        msgBus,
+		runner:     lifecycle.NewLoopRunner(),
+		taskStore:  NewTaskStore(opts.Workspace),
+		state:      map[string]*taskState{},
+		lastNotify: map[string]time.Time{},
 	}
 }
 
@@ -96,16 +104,28 @@ func (e *Engine) runLoop(stopCh <-chan struct{}) {
 func (e *Engine) tick() {
 	todos := e.scanTodos()
 	now := time.Now()
+	stored, _ := e.taskStore.Load()
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	storedMap := map[string]TaskItem{}
+	for _, it := range stored {
+		storedMap[it.ID] = it
+	}
 
 	known := map[string]struct{}{}
 	for _, t := range todos {
 		known[t.ID] = struct{}{}
 		st, ok := e.state[t.ID]
 		if !ok {
-			e.state[t.ID] = &taskState{ID: t.ID, Content: t.Content, Status: "idle"}
+			status := "idle"
+			if old, ok := storedMap[t.ID]; ok {
+				if old.Status == "blocked" {
+					status = "blocked"
+				}
+			}
+			e.state[t.ID] = &taskState{ID: t.ID, Content: t.Content, Status: status}
 			continue
 		}
 		st.Content = t.Content
@@ -150,6 +170,7 @@ func (e *Engine) tick() {
 		st.LastAutonomyAt = now
 		dispatched++
 	}
+	e.persistStateLocked()
 }
 
 type todoItem struct {
@@ -210,7 +231,7 @@ func (e *Engine) dispatchTask(st *taskState) {
 }
 
 func (e *Engine) sendCompletionNotification(st *taskState) {
-	if strings.TrimSpace(e.opts.DefaultNotifyChannel) == "" || strings.TrimSpace(e.opts.DefaultNotifyChatID) == "" {
+	if !e.shouldNotify("done:" + st.ID) {
 		return
 	}
 	e.bus.PublishOutbound(bus.OutboundMessage{
@@ -221,7 +242,7 @@ func (e *Engine) sendCompletionNotification(st *taskState) {
 }
 
 func (e *Engine) sendFailureNotification(st *taskState, reason string) {
-	if strings.TrimSpace(e.opts.DefaultNotifyChannel) == "" || strings.TrimSpace(e.opts.DefaultNotifyChatID) == "" {
+	if !e.shouldNotify("blocked:" + st.ID) {
 		return
 	}
 	e.bus.PublishOutbound(bus.OutboundMessage{
@@ -229,6 +250,46 @@ func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 		ChatID:  e.opts.DefaultNotifyChatID,
 		Content: fmt.Sprintf("[Autonomy] Task blocked: %s (%s)", st.Content, reason),
 	})
+}
+
+func (e *Engine) shouldNotify(key string) bool {
+	if strings.TrimSpace(e.opts.DefaultNotifyChannel) == "" || strings.TrimSpace(e.opts.DefaultNotifyChatID) == "" {
+		return false
+	}
+	now := time.Now()
+	if last, ok := e.lastNotify[key]; ok {
+		if now.Sub(last) < time.Duration(e.opts.NotifyCooldownSec)*time.Second {
+			return false
+		}
+	}
+	e.lastNotify[key] = now
+	return true
+}
+
+func (e *Engine) persistStateLocked() {
+	items := make([]TaskItem, 0, len(e.state))
+	for _, st := range e.state {
+		status := "todo"
+		switch st.Status {
+		case "running":
+			status = "doing"
+		case "blocked":
+			status = "blocked"
+		case "completed":
+			status = "done"
+		default:
+			status = "todo"
+		}
+		items = append(items, TaskItem{
+			ID:        st.ID,
+			Content:   st.Content,
+			Priority:  "normal",
+			Status:    status,
+			Source:    "memory_todo",
+			UpdatedAt: nowRFC3339(),
+		})
+	}
+	_ = e.taskStore.Save(items)
 }
 
 func hashID(s string) string {
