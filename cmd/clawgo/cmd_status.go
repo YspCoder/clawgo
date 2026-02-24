@@ -132,7 +132,12 @@ func statusCmd() {
 				fmt.Printf("  - %s\n", key)
 			}
 		}
-		fmt.Printf("Autonomy Config: idle_resume=%ds waiting_debounce=%ds\n", cfg.Agents.Defaults.Autonomy.UserIdleResumeSec, cfg.Agents.Defaults.Autonomy.WaitingResumeDebounceSec)
+		fmt.Printf("Autonomy Config: idle_resume=%ds waiting_debounce=%ds notify_cooldown=%ds same_reason_cooldown=%ds\n",
+			cfg.Agents.Defaults.Autonomy.UserIdleResumeSec,
+			cfg.Agents.Defaults.Autonomy.WaitingResumeDebounceSec,
+			cfg.Agents.Defaults.Autonomy.NotifyCooldownSec,
+			cfg.Agents.Defaults.Autonomy.NotifySameReasonCooldownSec,
+		)
 		if summary, prio, reasons, nextRetry, dedupeHits, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
 			fmt.Printf("Autonomy Tasks: todo=%d doing=%d waiting=%d blocked=%d done=%d dedupe_hits=%d\n", summary["todo"], summary["doing"], summary["waiting"], summary["blocked"], summary["done"], dedupeHits)
 			fmt.Printf("Autonomy Priority: high=%d normal=%d low=%d\n", prio["high"], prio["normal"], prio["low"])
@@ -159,6 +164,8 @@ func printTemplateStatus(cfg *config.Config) {
 	printTemplateField("lang_invalid", cur.LangInvalid, defaults.LangInvalid)
 	printTemplateField("runtime_compaction_note", cur.RuntimeCompactionNote, defaults.RuntimeCompactionNote)
 	printTemplateField("startup_compaction_note", cur.StartupCompactionNote, defaults.StartupCompactionNote)
+	printTemplateField("autonomy_completion_template", cur.AutonomyCompletionTemplate, defaults.AutonomyCompletionTemplate)
+	printTemplateField("autonomy_blocked_template", cur.AutonomyBlockedTemplate, defaults.AutonomyBlockedTemplate)
 }
 
 func printTemplateField(name, current, def string) {
@@ -197,8 +204,30 @@ func summarizeAutonomyActions(statsJSON []byte) string {
 	rm := payload.Counts["autonomy:resume:manual_pause"]
 	if wa+wm+ra+rm > 0 {
 		parts = append(parts, fmt.Sprintf("wait_resume(active_user=%d/%d manual_pause=%d/%d)", wa, ra, wm, rm))
+		waitTotal := wa + wm
+		resumeTotal := ra + rm
+		if waitTotal >= 8 {
+			parts = append(parts, fmt.Sprintf("flap_risk=%s", flapRisk(waitTotal, resumeTotal)))
+		}
 	}
 	return strings.Join(parts, " ")
+}
+
+func flapRisk(waitTotal, resumeTotal int) string {
+	if waitTotal <= 0 {
+		return "low"
+	}
+	if resumeTotal == 0 {
+		return "high(no_resume)"
+	}
+	ratio := float64(waitTotal) / float64(resumeTotal)
+	if ratio >= 2.0 || ratio <= 0.5 {
+		return "high"
+	}
+	if ratio >= 1.5 || ratio <= 0.67 {
+		return "medium"
+	}
+	return "low"
 }
 
 func autonomyControlState(workspace string) string {
