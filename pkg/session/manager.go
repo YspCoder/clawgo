@@ -43,8 +43,9 @@ type openClawEvent struct {
 			Type string `json:"type"`
 			Text string `json:"text,omitempty"`
 		} `json:"content,omitempty"`
-		ToolCallID string `json:"toolCallId,omitempty"`
-		ToolName   string `json:"toolName,omitempty"`
+		ToolCallID string               `json:"toolCallId,omitempty"`
+		ToolName   string               `json:"toolName,omitempty"`
+		ToolCalls  []providers.ToolCall `json:"toolCalls,omitempty"`
 	} `json:"message,omitempty"`
 }
 
@@ -322,13 +323,14 @@ func toOpenClawMessageEvent(msg providers.Message) openClawEvent {
 		Type:      "message",
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		Message: &struct {
-			Role       string `json:"role"`
+			Role       string               `json:"role"`
 			Content    []struct {
 				Type string `json:"type"`
 				Text string `json:"text,omitempty"`
 			} `json:"content,omitempty"`
-			ToolCallID string `json:"toolCallId,omitempty"`
-			ToolName   string `json:"toolName,omitempty"`
+			ToolCallID string               `json:"toolCallId,omitempty"`
+			ToolName   string               `json:"toolName,omitempty"`
+			ToolCalls  []providers.ToolCall `json:"toolCalls,omitempty"`
 		}{
 			Role: mappedRole,
 			Content: []struct {
@@ -338,6 +340,7 @@ func toOpenClawMessageEvent(msg providers.Message) openClawEvent {
 				{Type: "text", Text: msg.Content},
 			},
 			ToolCallID: msg.ToolCallID,
+			ToolCalls:  msg.ToolCalls,
 		},
 	}
 	return e
@@ -368,7 +371,7 @@ func fromJSONLLine(line []byte) (providers.Message, bool) {
 			content += part.Text
 		}
 	}
-	return providers.Message{Role: role, Content: content, ToolCallID: event.Message.ToolCallID}, true
+	return providers.Message{Role: role, Content: content, ToolCallID: event.Message.ToolCallID, ToolCalls: event.Message.ToolCalls}, true
 }
 
 func deriveSessionID(key string) string {
