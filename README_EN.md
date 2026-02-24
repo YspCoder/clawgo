@@ -21,11 +21,13 @@ A recent architecture pass leveraged core Go strengths:
 
 1. **Actor-style process path**
    - Process metadata persistence is serialized via async queue (`persistQ`).
+   - Channel start/stop orchestration uses `errgroup.WithContext` for concurrent + unified cancellation.
 2. **Typed Events bus**
    - Added generic typed pub/sub bus (`pkg/events/typed_bus.go`).
    - Process lifecycle events (start/exit/kill) are now publishable.
 3. **Batched log flushing**
    - Process logs are flushed by `logWriter` with time/size thresholds to reduce I/O churn.
+   - Outbound dispatch adds a token-bucket `rate.Limiter` for burst smoothing.
 4. **Context hierarchy + cancellation propagation**
    - Background exec now uses `exec.CommandContext` with parent `ctx` propagation.
 5. **Atomic runtime config snapshot**
