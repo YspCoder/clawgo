@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"clawgo/pkg/config"
 	"clawgo/pkg/providers"
@@ -128,8 +129,11 @@ func statusCmd() {
 				fmt.Printf("  - %s\n", key)
 			}
 		}
-		if summary, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
-			fmt.Printf("Autonomy Tasks: todo=%d doing=%d blocked=%d done=%d\n", summary["todo"], summary["doing"], summary["blocked"], summary["done"])
+		if summary, nextRetry, dedupeHits, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
+			fmt.Printf("Autonomy Tasks: todo=%d doing=%d blocked=%d done=%d dedupe_hits=%d\n", summary["todo"], summary["doing"], summary["blocked"], summary["done"], dedupeHits)
+			if nextRetry != "" {
+				fmt.Printf("Autonomy Next Retry: %s\n", nextRetry)
+			}
 		}
 	}
 }
@@ -244,28 +248,42 @@ func collectTriggerErrorCounts(path string) (map[string]int, error) {
 	return counts, nil
 }
 
-func collectAutonomyTaskSummary(path string) (map[string]int, error) {
+func collectAutonomyTaskSummary(path string) (map[string]int, string, int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]int{"todo": 0, "doing": 0, "blocked": 0, "done": 0}, nil
+			return map[string]int{"todo": 0, "doing": 0, "blocked": 0, "done": 0}, "", 0, nil
 		}
-		return nil, err
+		return nil, "", 0, err
 	}
 	var items []struct {
-		Status string `json:"status"`
+		Status     string `json:"status"`
+		RetryAfter string `json:"retry_after"`
+		DedupeHits int    `json:"dedupe_hits"`
 	}
 	if err := json.Unmarshal(data, &items); err != nil {
-		return nil, err
+		return nil, "", 0, err
 	}
 	summary := map[string]int{"todo": 0, "doing": 0, "blocked": 0, "done": 0}
+	nextRetry := ""
+	nextRetryAt := time.Time{}
+	totalDedupe := 0
 	for _, it := range items {
 		s := strings.ToLower(strings.TrimSpace(it.Status))
 		if _, ok := summary[s]; ok {
 			summary[s]++
 		}
+		totalDedupe += it.DedupeHits
+		if strings.TrimSpace(it.RetryAfter) != "" {
+			if t, err := time.Parse(time.RFC3339, it.RetryAfter); err == nil {
+				if nextRetryAt.IsZero() || t.Before(nextRetryAt) {
+					nextRetryAt = t
+					nextRetry = t.Format(time.RFC3339)
+				}
+			}
+		}
 	}
-	return summary, nil
+	return summary, nextRetry, totalDedupe, nil
 }
 
 func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {

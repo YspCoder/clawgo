@@ -10,13 +10,15 @@ import (
 )
 
 type TaskItem struct {
-	ID        string `json:"id"`
-	Content   string `json:"content"`
-	Priority  string `json:"priority"`
-	DueAt     string `json:"due_at,omitempty"`
-	Status    string `json:"status"` // todo|doing|blocked|done
-	Source    string `json:"source"`
-	UpdatedAt string `json:"updated_at"`
+	ID          string `json:"id"`
+	Content     string `json:"content"`
+	Priority    string `json:"priority"`
+	DueAt       string `json:"due_at,omitempty"`
+	Status      string `json:"status"` // todo|doing|blocked|done
+	RetryAfter  string `json:"retry_after,omitempty"`
+	Source      string `json:"source"`
+	DedupeHits  int    `json:"dedupe_hits,omitempty"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 type TaskStore struct {
