@@ -464,6 +464,12 @@ func (e *Engine) writeTriggerAudit(action string, st *taskState, errText string)
 	act := strings.ToLower(strings.TrimSpace(action))
 	if act != "" {
 		stats.Counts["autonomy:"+act]++
+		reason := strings.ToLower(strings.TrimSpace(errText))
+		if reason != "" {
+			reason = strings.ReplaceAll(reason, " ", "_")
+			reason = strings.ReplaceAll(reason, ":", "_")
+			stats.Counts["autonomy:"+act+":"+reason]++
+		}
 	}
 	stats.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if raw, mErr := json.MarshalIndent(stats, "", "  "); mErr == nil {

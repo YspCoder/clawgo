@@ -323,16 +323,31 @@ func gatewayAutonomyControlCmd(args []string) error {
 	pausePath := filepath.Join(memDir, "autonomy.pause")
 	ctrlPath := filepath.Join(memDir, "autonomy.control.json")
 
+	type autonomyControl struct {
+		Enabled   bool   `json:"enabled"`
+		UpdatedAt string `json:"updated_at"`
+		Source    string `json:"source"`
+	}
+
+	writeControl := func(enabled bool) error {
+		c := autonomyControl{Enabled: enabled, UpdatedAt: time.Now().UTC().Format(time.RFC3339), Source: "manual_cli"}
+		data, err := json.MarshalIndent(c, "", "  ")
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(ctrlPath, append(data, '\n'), 0644)
+	}
+
 	switch strings.ToLower(strings.TrimSpace(args[0])) {
 	case "on":
 		_ = os.Remove(pausePath)
-		if err := os.WriteFile(ctrlPath, []byte("{\n  \"enabled\": true\n}\n"), 0644); err != nil {
+		if err := writeControl(true); err != nil {
 			return err
 		}
 		fmt.Println("✓ Autonomy enabled")
 		return nil
 	case "off":
-		if err := os.WriteFile(ctrlPath, []byte("{\n  \"enabled\": false\n}\n"), 0644); err != nil {
+		if err := writeControl(false); err != nil {
 			return err
 		}
 		if err := os.WriteFile(pausePath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0644); err != nil {
@@ -343,10 +358,14 @@ func gatewayAutonomyControlCmd(args []string) error {
 	case "status":
 		enabled := true
 		reason := "default"
+		updatedAt := ""
+		source := ""
 		if data, err := os.ReadFile(ctrlPath); err == nil {
-			var c struct{ Enabled bool `json:"enabled"` }
+			var c autonomyControl
 			if json.Unmarshal(data, &c) == nil {
 				enabled = c.Enabled
+				updatedAt = c.UpdatedAt
+				source = c.Source
 				if !c.Enabled {
 					reason = "control_file"
 				}
@@ -357,6 +376,13 @@ func gatewayAutonomyControlCmd(args []string) error {
 			reason = "pause_file"
 		}
 		fmt.Printf("Autonomy status: %v (%s)\n", enabled, reason)
+		if strings.TrimSpace(updatedAt) != "" {
+			fmt.Printf("Last switch: %s", updatedAt)
+			if strings.TrimSpace(source) != "" {
+				fmt.Printf(" via %s", source)
+			}
+			fmt.Println()
+		}
 		fmt.Printf("Control file: %s\n", ctrlPath)
 		fmt.Printf("Pause file: %s\n", pausePath)
 		return nil

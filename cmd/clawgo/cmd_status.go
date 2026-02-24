@@ -191,6 +191,13 @@ func summarizeAutonomyActions(statsJSON []byte) string {
 		b := payload.Counts["autonomy:blocked"]
 		parts = append(parts, fmt.Sprintf("ratios(dispatch/waiting/blocked)=%.2f/%.2f/%.2f", float64(d)/float64(total), float64(w)/float64(total), float64(b)/float64(total)))
 	}
+	wa := payload.Counts["autonomy:waiting:active_user"]
+	wm := payload.Counts["autonomy:waiting:manual_pause"]
+	ra := payload.Counts["autonomy:resume:active_user"]
+	rm := payload.Counts["autonomy:resume:manual_pause"]
+	if wa+wm+ra+rm > 0 {
+		parts = append(parts, fmt.Sprintf("wait_resume(active_user=%d/%d manual_pause=%d/%d)", wa, ra, wm, rm))
+	}
 	return strings.Join(parts, " ")
 }
 
