@@ -353,10 +353,14 @@ func schedulingScore(st *taskState, now time.Time) int {
 }
 
 func deriveResourceKeys(content string) []string {
-	content = strings.TrimSpace(strings.ToLower(content))
-	if content == "" {
+	raw := strings.TrimSpace(content)
+	if raw == "" {
 		return nil
 	}
+	if explicit := parseExplicitResourceKeys(raw); len(explicit) > 0 {
+		return explicit
+	}
+	content = strings.ToLower(raw)
 	keys := make([]string, 0, 8)
 	hasRepo := false
 	for _, token := range strings.Fields(content) {
@@ -380,10 +384,51 @@ func deriveResourceKeys(content string) []string {
 	if len(keys) == 0 {
 		keys = append(keys, "scope:general")
 	}
+	return normalizeResourceKeys(keys)
+}
+
+func parseExplicitResourceKeys(content string) []string {
+	lower := strings.ToLower(content)
+	start := strings.Index(lower, "[keys:")
+	if start < 0 {
+		return nil
+	}
+	rest := content[start+6:]
+	end := strings.Index(rest, "]")
+	if end < 0 {
+		return nil
+	}
+	body := strings.TrimSpace(rest[:end])
+	if body == "" {
+		return nil
+	}
+	parts := strings.Split(body, ",")
+	keys := make([]string, 0, len(parts))
+	for _, p := range parts {
+		k := strings.ToLower(strings.TrimSpace(p))
+		if k == "" {
+			continue
+		}
+		if !strings.Contains(k, ":") {
+			k = "file:" + k
+		}
+		keys = append(keys, k)
+	}
+	return normalizeResourceKeys(keys)
+}
+
+func normalizeResourceKeys(keys []string) []string {
+	if len(keys) == 0 {
+		return nil
+	}
 	sort.Strings(keys)
 	uniq := keys[:0]
-	for i, k := range keys {
-		if i == 0 || k != keys[i-1] {
+	for _, k := range keys {
+		k = strings.TrimSpace(strings.ToLower(k))
+		if k == "" {
+			continue
+		}
+		if len(uniq) == 0 || k != uniq[len(uniq)-1] {
 			uniq = append(uniq, k)
 		}
 	}

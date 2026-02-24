@@ -35,6 +35,14 @@ A recent architecture pass leveraged core Go strengths:
 
 These changes improve stability, observability, and maintainability under concurrency.
 
+### Parallel task conflict control (Autonomy)
+
+Autonomy now supports lock scheduling via `resource_keys`. You can explicitly declare keys in task text for precise conflict detection:
+
+- Example: `[keys: repo:clawgo, file:pkg/agent/loop.go, branch:main] fix dialog flow`
+- Without explicit keys, the engine derives keys from task text heuristically.
+- Conflicting tasks enter `resource_lock` waiting, retry lock acquisition after 30s, and use fairness weighting (longer wait => higher scheduling priority).
+
 ## 🏁 Quick Start
 
 1. Initialize config and workspace
