@@ -57,6 +57,11 @@ clawgo gateway status
 
 # 前台运行
 clawgo gateway run
+
+# 自治开关（运行态）
+clawgo gateway autonomy status
+clawgo gateway autonomy on
+clawgo gateway autonomy off
 ```
 
 ## 📌 命令总览

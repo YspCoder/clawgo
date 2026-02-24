@@ -57,6 +57,11 @@ clawgo gateway status
 
 # foreground run
 clawgo gateway run
+
+# runtime autonomy switches
+clawgo gateway autonomy status
+clawgo gateway autonomy on
+clawgo gateway autonomy off
 ```
 
 ## 📌 Command Reference

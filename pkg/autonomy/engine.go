@@ -41,6 +41,7 @@ type taskState struct {
 	DueAt            string
 	Status           string // idle|running|waiting|blocked|completed
 	BlockReason      string
+	WaitingSince     time.Time
 	LastRunAt        time.Time
 	LastAutonomyAt   time.Time
 	RetryAfter       time.Time
@@ -126,6 +127,7 @@ func (e *Engine) tick() {
 			if st.Status == "running" {
 				st.Status = "waiting"
 				st.BlockReason = "manual_pause"
+				st.WaitingSince = now
 				e.writeReflectLog("waiting", st, "paused by manual switch")
 				e.writeTriggerAudit("waiting", st, "manual_pause")
 			}
@@ -139,6 +141,7 @@ func (e *Engine) tick() {
 			if st.Status == "running" {
 				st.Status = "waiting"
 				st.BlockReason = "active_user"
+				st.WaitingSince = now
 				e.writeReflectLog("waiting", st, "paused due to active user conversation")
 				e.writeTriggerAudit("waiting", st, "active_user")
 			}
@@ -223,9 +226,14 @@ func (e *Engine) tick() {
 			continue
 		}
 		if st.Status == "waiting" {
+			// Debounce waiting/resume flapping
+			if !st.WaitingSince.IsZero() && now.Sub(st.WaitingSince) < 5*time.Second {
+				continue
+			}
 			reason := st.BlockReason
 			st.Status = "idle"
 			st.BlockReason = ""
+			st.WaitingSince = time.Time{}
 			e.writeReflectLog("resume", st, "autonomy resumed from waiting")
 			e.writeTriggerAudit("resume", st, reason)
 		}
@@ -257,6 +265,7 @@ func (e *Engine) tick() {
 		e.dispatchTask(st)
 		st.Status = "running"
 		st.BlockReason = ""
+		st.WaitingSince = time.Time{}
 		st.LastRunAt = now
 		st.LastAutonomyAt = now
 		e.writeReflectLog("dispatch", st, "task dispatched to agent loop")
