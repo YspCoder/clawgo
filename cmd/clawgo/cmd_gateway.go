@@ -178,6 +178,7 @@ func gatewayCmd() {
 
 	go agentLoop.Run(ctx)
 	go runGatewayStartupCompactionCheck(ctx, agentLoop)
+	go runGatewayBootstrapInit(ctx, cfg, agentLoop)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -478,6 +479,35 @@ func runGatewayStartupCompactionCheck(parent context.Context, agentLoop *agent.A
 		"sessions_total":     report.TotalSessions,
 		"sessions_compacted": report.CompactedSessions,
 	})
+}
+
+func runGatewayBootstrapInit(parent context.Context, cfg *config.Config, agentLoop *agent.AgentLoop) {
+	if agentLoop == nil || cfg == nil {
+		return
+	}
+	workspace := cfg.WorkspacePath()
+	bootstrapPath := filepath.Join(workspace, "BOOTSTRAP.md")
+	if _, err := os.Stat(bootstrapPath); err != nil {
+		return
+	}
+	memDir := filepath.Join(workspace, "memory")
+	_ = os.MkdirAll(memDir, 0755)
+	markerPath := filepath.Join(memDir, "bootstrap.init.done")
+	if _, err := os.Stat(markerPath); err == nil {
+		return
+	}
+
+	initCtx, cancel := context.WithTimeout(parent, 90*time.Second)
+	defer cancel()
+	prompt := "System startup bootstrap: read BOOTSTRAP.md and perform one-time self-initialization checks now. If already initialized, return concise status only."
+	resp, err := agentLoop.ProcessDirect(initCtx, prompt, "system:bootstrap:init")
+	if err != nil {
+		logger.ErrorCF("gateway", "Bootstrap init model call failed", map[string]interface{}{logger.FieldError: err.Error()})
+		return
+	}
+	line := fmt.Sprintf("%s\n%s\n", time.Now().UTC().Format(time.RFC3339), strings.TrimSpace(resp))
+	_ = os.WriteFile(markerPath, []byte(line), 0644)
+	logger.InfoC("gateway", "Bootstrap init model call completed")
 }
 
 func maybePromptAndEscalateRoot(command string) {
