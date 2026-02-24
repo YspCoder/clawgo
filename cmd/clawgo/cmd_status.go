@@ -177,11 +177,19 @@ func summarizeAutonomyActions(statsJSON []byte) string {
 		return ""
 	}
 	keys := []string{"autonomy:dispatch", "autonomy:waiting", "autonomy:resume", "autonomy:blocked", "autonomy:complete"}
-	parts := make([]string, 0, len(keys))
+	parts := make([]string, 0, len(keys)+1)
+	total := 0
 	for _, k := range keys {
 		if v, ok := payload.Counts[k]; ok {
 			parts = append(parts, fmt.Sprintf("%s=%d", strings.TrimPrefix(k, "autonomy:"), v))
+			total += v
 		}
+	}
+	if total > 0 {
+		d := payload.Counts["autonomy:dispatch"]
+		w := payload.Counts["autonomy:waiting"]
+		b := payload.Counts["autonomy:blocked"]
+		parts = append(parts, fmt.Sprintf("ratios(dispatch/waiting/blocked)=%.2f/%.2f/%.2f", float64(d)/float64(total), float64(w)/float64(total), float64(b)/float64(total)))
 	}
 	return strings.Join(parts, " ")
 }
