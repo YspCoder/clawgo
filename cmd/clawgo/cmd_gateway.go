@@ -342,16 +342,21 @@ func gatewayAutonomyControlCmd(args []string) error {
 		return nil
 	case "status":
 		enabled := true
+		reason := "default"
 		if data, err := os.ReadFile(ctrlPath); err == nil {
 			var c struct{ Enabled bool `json:"enabled"` }
 			if json.Unmarshal(data, &c) == nil {
 				enabled = c.Enabled
+				if !c.Enabled {
+					reason = "control_file"
+				}
 			}
 		}
 		if _, err := os.Stat(pausePath); err == nil {
 			enabled = false
+			reason = "pause_file"
 		}
-		fmt.Printf("Autonomy status: %v\n", enabled)
+		fmt.Printf("Autonomy status: %v (%s)\n", enabled, reason)
 		fmt.Printf("Control file: %s\n", ctrlPath)
 		fmt.Printf("Pause file: %s\n", pausePath)
 		return nil

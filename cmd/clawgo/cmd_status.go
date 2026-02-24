@@ -94,6 +94,9 @@ func statusCmd() {
 		triggerStats := filepath.Join(workspace, "memory", "trigger-stats.json")
 		if data, err := os.ReadFile(triggerStats); err == nil {
 			fmt.Printf("Trigger Stats: %s\n", strings.TrimSpace(string(data)))
+			if summary := summarizeAutonomyActions(data); summary != "" {
+				fmt.Printf("Autonomy Action Stats: %s\n", summary)
+			}
 		}
 		auditPath := filepath.Join(workspace, "memory", "trigger-audit.jsonl")
 		if errs, err := collectRecentTriggerErrors(auditPath, 5); err == nil && len(errs) > 0 {
@@ -163,6 +166,23 @@ func printTemplateField(name, current, def string) {
 		state = "default"
 	}
 	fmt.Printf("  %s: %s\n", name, state)
+}
+
+func summarizeAutonomyActions(statsJSON []byte) string {
+	var payload struct {
+		Counts map[string]int `json:"counts"`
+	}
+	if err := json.Unmarshal(statsJSON, &payload); err != nil || payload.Counts == nil {
+		return ""
+	}
+	keys := []string{"autonomy:dispatch", "autonomy:waiting", "autonomy:resume", "autonomy:blocked", "autonomy:complete"}
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if v, ok := payload.Counts[k]; ok {
+			parts = append(parts, fmt.Sprintf("%s=%d", strings.TrimPrefix(k, "autonomy:"), v))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func autonomyControlState(workspace string) string {
