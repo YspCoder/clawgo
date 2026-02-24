@@ -67,20 +67,32 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 
 	skillDir, err := t.resolveSkillDir(skill)
 	if err != nil {
+		t.writeAudit(skill, script, false, err.Error())
+		return "", err
+	}
+	if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); err != nil {
+		err = fmt.Errorf("SKILL.md missing for skill: %s", skill)
+		t.writeAudit(skill, script, false, err.Error())
 		return "", err
 	}
 
 	relScript := filepath.Clean(script)
 	if strings.Contains(relScript, "..") || filepath.IsAbs(relScript) {
-		return "", fmt.Errorf("script must be relative path inside skill directory")
+		err := fmt.Errorf("script must be relative path inside skill directory")
+		t.writeAudit(skill, script, false, err.Error())
+		return "", err
 	}
 	if !strings.HasPrefix(relScript, "scripts"+string(os.PathSeparator)) {
-		return "", fmt.Errorf("script must be under scripts/ directory")
+		err := fmt.Errorf("script must be under scripts/ directory")
+		t.writeAudit(skill, script, false, err.Error())
+		return "", err
 	}
 
 	scriptPath := filepath.Join(skillDir, relScript)
 	if _, err := os.Stat(scriptPath); err != nil {
-		return "", fmt.Errorf("script not found: %s", scriptPath)
+		err = fmt.Errorf("script not found: %s", scriptPath)
+		t.writeAudit(skill, script, false, err.Error())
+		return "", err
 	}
 
 	cmdArgs := []string{}
@@ -97,11 +109,13 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 
 	cmd, err := buildSkillCommand(runCtx, scriptPath, cmdArgs)
 	if err != nil {
+		t.writeAudit(skill, script, false, err.Error())
 		return "", err
 	}
 	cmd.Dir = skillDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		t.writeAudit(skill, script, false, err.Error())
 		return "", fmt.Errorf("skill execution failed: %w\n%s", err, string(output))
 	}
 
@@ -109,7 +123,29 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 	if out == "" {
 		out = "(no output)"
 	}
+	t.writeAudit(skill, script, true, "")
 	return out, nil
+}
+
+func (t *SkillExecTool) writeAudit(skill, script string, ok bool, errText string) {
+	if strings.TrimSpace(t.workspace) == "" {
+		return
+	}
+	memDir := filepath.Join(t.workspace, "memory")
+	_ = os.MkdirAll(memDir, 0755)
+	row := fmt.Sprintf("{\"time\":%q,\"skill\":%q,\"script\":%q,\"ok\":%t,\"error\":%q}\n",
+		time.Now().UTC().Format(time.RFC3339),
+		strings.TrimSpace(skill),
+		strings.TrimSpace(script),
+		ok,
+		strings.TrimSpace(errText),
+	)
+	f, err := os.OpenFile(filepath.Join(memDir, "skill-audit.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(row)
 }
 
 func (t *SkillExecTool) resolveSkillDir(skill string) (string, error) {

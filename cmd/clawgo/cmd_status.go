@@ -116,6 +116,12 @@ func statusCmd() {
 				fmt.Printf("  %s: %d\n", trigger, agg[trigger])
 			}
 		}
+		if total, okCnt, failCnt, top, err := collectSkillExecStats(filepath.Join(workspace, "memory", "skill-audit.jsonl")); err == nil && total > 0 {
+			fmt.Printf("Skill Exec: total=%d ok=%d fail=%d\n", total, okCnt, failCnt)
+			if top != "" {
+				fmt.Printf("Skill Exec Top: %s\n", top)
+			}
+		}
 
 		sessionsDir := filepath.Join(filepath.Dir(configPath), "sessions")
 		if kinds, err := collectSessionKindCounts(sessionsDir); err == nil && len(kinds) > 0 {
@@ -387,6 +393,52 @@ func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, ma
 		}
 	}
 	return summary, priorities, reasons, nextRetry, totalDedupe, nil
+}
+
+func collectSkillExecStats(path string) (int, int, int, string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, 0, "", err
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	total, okCnt, failCnt := 0, 0, 0
+	skillCounts := map[string]int{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var row struct {
+			Skill string `json:"skill"`
+			OK    bool   `json:"ok"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			continue
+		}
+		total++
+		if row.OK {
+			okCnt++
+		} else {
+			failCnt++
+		}
+		s := strings.TrimSpace(row.Skill)
+		if s == "" {
+			s = "unknown"
+		}
+		skillCounts[s]++
+	}
+	topSkill := ""
+	topN := 0
+	for k, v := range skillCounts {
+		if v > topN {
+			topN = v
+			topSkill = k
+		}
+	}
+	if topSkill != "" {
+		topSkill = fmt.Sprintf("%s(%d)", topSkill, topN)
+	}
+	return total, okCnt, failCnt, topSkill, nil
 }
 
 func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {
