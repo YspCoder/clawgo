@@ -53,6 +53,7 @@ type taskState struct {
 	ConsecutiveStall int
 	DedupeHits       int
 	ResourceKeys     []string
+	WaitAttempts     int
 }
 
 type Engine struct {
@@ -222,15 +223,10 @@ func (e *Engine) tick() {
 		ordered = append(ordered, st)
 	}
 	sort.Slice(ordered, func(i, j int) bool {
-		pi := priorityWeight(ordered[i].Priority)
-		pj := priorityWeight(ordered[j].Priority)
-		if pi != pj {
-			return pi > pj
-		}
-		di := dueWeight(ordered[i].DueAt)
-		dj := dueWeight(ordered[j].DueAt)
-		if di != dj {
-			return di > dj
+		si := schedulingScore(ordered[i], now)
+		sj := schedulingScore(ordered[j], now)
+		if si != sj {
+			return si > sj
 		}
 		return ordered[i].ID < ordered[j].ID
 	})
@@ -289,11 +285,13 @@ func (e *Engine) tick() {
 			st.BlockReason = "resource_lock"
 			st.WaitingSince = now
 			st.RetryAfter = now.Add(30 * time.Second)
+			st.WaitAttempts++
 			e.writeTriggerAudit("waiting", st, "resource_lock")
 			continue
 		}
 		e.dispatchTask(st)
 		st.Status = "running"
+		st.WaitAttempts = 0
 		st.BlockReason = ""
 		st.WaitingSince = time.Time{}
 		st.LastRunAt = now
@@ -335,17 +333,45 @@ func (e *Engine) releaseLocksLocked(taskID string) {
 	}
 }
 
+func schedulingScore(st *taskState, now time.Time) int {
+	if st == nil {
+		return 0
+	}
+	score := priorityWeight(st.Priority)*100 + int(dueWeight(st.DueAt))*10
+	if st.Status == "waiting" && st.BlockReason == "resource_lock" && !st.WaitingSince.IsZero() {
+		waitSec := int(now.Sub(st.WaitingSince).Seconds())
+		if waitSec > 0 {
+			score += waitSec / 10
+		}
+		score += st.WaitAttempts * 5
+	}
+	return score
+}
+
 func deriveResourceKeys(content string) []string {
 	content = strings.TrimSpace(strings.ToLower(content))
 	if content == "" {
 		return nil
 	}
-	keys := make([]string, 0, 4)
+	keys := make([]string, 0, 8)
+	hasRepo := false
 	for _, token := range strings.Fields(content) {
 		t := strings.Trim(token, "`'\"()[]{}:;,，。！？")
+		if strings.Contains(t, "gitea.") || strings.Contains(t, "github.com") || strings.Count(t, "/") >= 1 {
+			if strings.Contains(t, "github.com/") || strings.Contains(t, "gitea.") {
+				keys = append(keys, "repo:"+t)
+				hasRepo = true
+			}
+		}
 		if strings.Contains(t, "/") || strings.HasSuffix(t, ".go") || strings.HasSuffix(t, ".md") || strings.HasSuffix(t, ".json") || strings.HasSuffix(t, ".yaml") || strings.HasSuffix(t, ".yml") {
 			keys = append(keys, "file:"+t)
 		}
+		if t == "main" || strings.HasPrefix(t, "branch:") {
+			keys = append(keys, "branch:"+strings.TrimPrefix(t, "branch:"))
+		}
+	}
+	if !hasRepo {
+		keys = append(keys, "repo:default")
 	}
 	if len(keys) == 0 {
 		keys = append(keys, "scope:general")
