@@ -130,7 +130,7 @@ func statusCmd() {
 			}
 		}
 		if summary, nextRetry, dedupeHits, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
-			fmt.Printf("Autonomy Tasks: todo=%d doing=%d blocked=%d done=%d dedupe_hits=%d\n", summary["todo"], summary["doing"], summary["blocked"], summary["done"], dedupeHits)
+			fmt.Printf("Autonomy Tasks: todo=%d doing=%d waiting=%d blocked=%d done=%d dedupe_hits=%d\n", summary["todo"], summary["doing"], summary["waiting"], summary["blocked"], summary["done"], dedupeHits)
 			if nextRetry != "" {
 				fmt.Printf("Autonomy Next Retry: %s\n", nextRetry)
 			}
@@ -252,7 +252,7 @@ func collectAutonomyTaskSummary(path string) (map[string]int, string, int, error
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]int{"todo": 0, "doing": 0, "blocked": 0, "done": 0}, "", 0, nil
+			return map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}, "", 0, nil
 		}
 		return nil, "", 0, err
 	}
@@ -264,7 +264,7 @@ func collectAutonomyTaskSummary(path string) (map[string]int, string, int, error
 	if err := json.Unmarshal(data, &items); err != nil {
 		return nil, "", 0, err
 	}
-	summary := map[string]int{"todo": 0, "doing": 0, "blocked": 0, "done": 0}
+	summary := map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}
 	nextRetry := ""
 	nextRetryAt := time.Time{}
 	totalDedupe := 0

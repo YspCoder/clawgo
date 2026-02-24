@@ -123,6 +123,7 @@ func (e *Engine) tick() {
 		for _, st := range e.state {
 			if st.Status == "running" {
 				st.Status = "waiting"
+				e.writeReflectLog("waiting", st, "paused due to active user conversation")
 			}
 		}
 		e.persistStateLocked()
@@ -203,6 +204,10 @@ func (e *Engine) tick() {
 		}
 		if st.Status == "completed" {
 			continue
+		}
+		if st.Status == "waiting" {
+			st.Status = "idle"
+			e.writeReflectLog("resume", st, "user conversation idle, autonomy resumed")
 		}
 		if st.Status == "blocked" {
 			if !st.RetryAfter.IsZero() && now.Before(st.RetryAfter) {
@@ -437,6 +442,8 @@ func (e *Engine) persistStateLocked() {
 		switch st.Status {
 		case "running":
 			status = "doing"
+		case "waiting":
+			status = "waiting"
 		case "blocked":
 			status = "blocked"
 		case "completed":

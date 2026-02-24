@@ -205,7 +205,8 @@ func gatewayCmd() {
 				reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
 				reflect.DeepEqual(cfg.Channels, newCfg.Channels)
 
-			changes := summarizeDialogTemplateChanges(cfg, newCfg)
+			templateChanges := summarizeDialogTemplateChanges(cfg, newCfg)
+			autonomyChanges := summarizeAutonomyChanges(cfg, newCfg)
 
 			if runtimeSame {
 				configureLogging(newCfg)
@@ -230,8 +231,11 @@ func gatewayCmd() {
 					sentinelService.Start()
 				}
 				cfg = newCfg
-				if len(changes) > 0 {
-					fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(changes, ", "))
+				if len(templateChanges) > 0 {
+					fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(templateChanges, ", "))
+				}
+				if len(autonomyChanges) > 0 {
+					fmt.Printf("↻ Autonomy changes: %s\n", strings.Join(autonomyChanges, ", "))
 				}
 				fmt.Println("✓ Config hot-reload applied (logging/metadata only)")
 				continue
@@ -275,8 +279,11 @@ func gatewayCmd() {
 				continue
 			}
 			go agentLoop.Run(ctx)
-			if len(changes) > 0 {
-				fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(changes, ", "))
+			if len(templateChanges) > 0 {
+				fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(templateChanges, ", "))
+			}
+			if len(autonomyChanges) > 0 {
+				fmt.Printf("↻ Autonomy changes: %s\n", strings.Join(autonomyChanges, ", "))
 			}
 			fmt.Println("✓ Config hot-reload applied")
 		default:
@@ -292,6 +299,34 @@ func gatewayCmd() {
 			return
 		}
 	}
+}
+
+func summarizeAutonomyChanges(oldCfg, newCfg *config.Config) []string {
+	if oldCfg == nil || newCfg == nil {
+		return nil
+	}
+	o := oldCfg.Agents.Defaults.Autonomy
+	n := newCfg.Agents.Defaults.Autonomy
+	changes := make([]string, 0)
+	if o.Enabled != n.Enabled {
+		changes = append(changes, "enabled")
+	}
+	if o.TickIntervalSec != n.TickIntervalSec {
+		changes = append(changes, "tick_interval_sec")
+	}
+	if o.MinRunIntervalSec != n.MinRunIntervalSec {
+		changes = append(changes, "min_run_interval_sec")
+	}
+	if o.UserIdleResumeSec != n.UserIdleResumeSec {
+		changes = append(changes, "user_idle_resume_sec")
+	}
+	if strings.TrimSpace(o.QuietHours) != strings.TrimSpace(n.QuietHours) {
+		changes = append(changes, "quiet_hours")
+	}
+	if o.NotifyCooldownSec != n.NotifyCooldownSec {
+		changes = append(changes, "notify_cooldown_sec")
+	}
+	return changes
 }
 
 func summarizeDialogTemplateChanges(oldCfg, newCfg *config.Config) []string {
