@@ -63,9 +63,16 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.Register(&tools.ReadFileTool{})
-	toolsRegistry.Register(&tools.WriteFileTool{})
-	toolsRegistry.Register(&tools.ListDirTool{})
+	readTool := tools.NewReadFileTool(workspace)
+	writeTool := tools.NewWriteFileTool(workspace)
+	listTool := tools.NewListDirTool(workspace)
+	toolsRegistry.Register(readTool)
+	toolsRegistry.Register(writeTool)
+	toolsRegistry.Register(listTool)
+	// OpenClaw-compatible aliases
+	toolsRegistry.Register(tools.NewAliasTool("read", "Read file content (OpenClaw-compatible alias of read_file)", readTool, map[string]string{"file_path": "path"}))
+	toolsRegistry.Register(tools.NewAliasTool("write", "Write file content (OpenClaw-compatible alias of write_file)", writeTool, map[string]string{"file_path": "path"}))
+	toolsRegistry.Register(tools.NewAliasTool("edit", "Edit file content (OpenClaw-compatible alias of edit_file)", tools.NewEditFileTool(workspace), map[string]string{"file_path": "path", "old_string": "oldText", "new_string": "newText"}))
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace))
 
 	if cs != nil {
