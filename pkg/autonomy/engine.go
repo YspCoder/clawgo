@@ -30,6 +30,7 @@ type Options struct {
 	DefaultNotifyChannel     string
 	DefaultNotifyChatID      string
 	NotifyCooldownSec        int
+	NotifySameReasonCooldownSec int
 	QuietHours               string
 	UserIdleResumeSec        int
 	WaitingResumeDebounceSec int
@@ -85,6 +86,9 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	}
 	if opts.UserIdleResumeSec <= 0 {
 		opts.UserIdleResumeSec = 20
+	}
+	if opts.NotifySameReasonCooldownSec <= 0 {
+		opts.NotifySameReasonCooldownSec = 900
 	}
 	if opts.WaitingResumeDebounceSec <= 0 {
 		opts.WaitingResumeDebounceSec = 5
@@ -391,7 +395,7 @@ func (e *Engine) sendCompletionNotification(st *taskState) {
 	if !e.isHighValueCompletion(st) {
 		return
 	}
-	if !e.shouldNotify("done:" + st.ID) {
+	if !e.shouldNotify("done:"+st.ID, "") {
 		return
 	}
 	tpl := strings.TrimSpace(e.opts.CompletionTemplate)
@@ -408,7 +412,7 @@ func (e *Engine) sendCompletionNotification(st *taskState) {
 func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 	e.writeReflectLog("blocked", st, reason)
 	e.writeTriggerAudit("blocked", st, reason)
-	if !e.shouldNotify("blocked:" + st.ID) {
+	if !e.shouldNotify("blocked:"+st.ID, reason) {
 		return
 	}
 	tpl := strings.TrimSpace(e.opts.BlockedTemplate)
@@ -422,7 +426,7 @@ func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 	})
 }
 
-func (e *Engine) shouldNotify(key string) bool {
+func (e *Engine) shouldNotify(key string, reason string) bool {
 	if strings.TrimSpace(e.opts.DefaultNotifyChannel) == "" || strings.TrimSpace(e.opts.DefaultNotifyChatID) == "" {
 		return false
 	}
@@ -434,6 +438,16 @@ func (e *Engine) shouldNotify(key string) bool {
 		if now.Sub(last) < time.Duration(e.opts.NotifyCooldownSec)*time.Second {
 			return false
 		}
+	}
+	r := strings.ToLower(strings.TrimSpace(reason))
+	if r != "" {
+		rk := key + ":reason:" + strings.ReplaceAll(r, " ", "_")
+		if last, ok := e.lastNotify[rk]; ok {
+			if now.Sub(last) < time.Duration(e.opts.NotifySameReasonCooldownSec)*time.Second {
+				return false
+			}
+		}
+		e.lastNotify[rk] = now
 	}
 	e.lastNotify[key] = now
 	return true

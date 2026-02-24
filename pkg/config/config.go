@@ -52,6 +52,7 @@ type AutonomyConfig struct {
 	MaxConsecutiveStalls     int    `json:"max_consecutive_stalls" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_CONSECUTIVE_STALLS"`
 	MaxDispatchPerTick       int    `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
 	NotifyCooldownSec        int    `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
+	NotifySameReasonCooldownSec int `json:"notify_same_reason_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_SAME_REASON_COOLDOWN_SEC"`
 	QuietHours               string `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
 	UserIdleResumeSec        int    `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
 	WaitingResumeDebounceSec int    `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
@@ -311,6 +312,7 @@ func DefaultConfig() *Config {
 					MaxConsecutiveStalls:  3,
 					MaxDispatchPerTick:    2,
 					NotifyCooldownSec:     300,
+					NotifySameReasonCooldownSec: 900,
 					QuietHours:            "23:00-08:00",
 					UserIdleResumeSec:     20,
 					WaitingResumeDebounceSec: 5,
@@ -331,8 +333,8 @@ func DefaultConfig() *Config {
 					RuntimeCompactionNote:      "[runtime-compaction] removed %d old messages, kept %d recent messages",
 					StartupCompactionNote:      "[startup-compaction] removed %d old messages, kept %d recent messages",
 					AutonomyImportantKeywords:  []string{"urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"},
-					AutonomyCompletionTemplate: "✅ 已完成：%s\n下一步：如需我继续处理后续，直接回复“继续 %s”",
-					AutonomyBlockedTemplate:    "⚠️ 任务受阻：%s\n原因：%s\n建议：回复“继续 %s”我会按当前状态重试。",
+					AutonomyCompletionTemplate: "✅ 已完成：%s\n回复“继续 %s”可继续下一步。",
+					AutonomyBlockedTemplate:    "⚠️ 任务受阻：%s（%s）\n回复“继续 %s”我会重试。",
 				},
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,

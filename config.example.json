@@ -21,6 +21,7 @@
         "max_consecutive_stalls": 3,
         "max_dispatch_per_tick": 2,
         "notify_cooldown_sec": 300,
+        "notify_same_reason_cooldown_sec": 900,
         "quiet_hours": "23:00-08:00",
         "user_idle_resume_sec": 20,
         "waiting_resume_debounce_sec": 5,
@@ -41,8 +42,8 @@
         "runtime_compaction_note": "[runtime-compaction] removed %d old messages, kept %d recent messages",
         "startup_compaction_note": "[startup-compaction] removed %d old messages, kept %d recent messages",
         "autonomy_important_keywords": ["urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"],
-        "autonomy_completion_template": "✅ 已完成：%s\n下一步：如需我继续处理后续，直接回复“继续 %s”",
-        "autonomy_blocked_template": "⚠️ 任务受阻：%s\n原因：%s\n建议：回复“继续 %s”我会按当前状态重试。"
+        "autonomy_completion_template": "✅ 已完成：%s\n回复“继续 %s”可继续下一步。",
+        "autonomy_blocked_template": "⚠️ 任务受阻：%s（%s）\n回复“继续 %s”我会重试。"
       },
       "context_compaction": {
         "enabled": true,

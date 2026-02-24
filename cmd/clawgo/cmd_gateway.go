@@ -777,6 +777,7 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		MaxConsecutiveStalls:     a.MaxConsecutiveStalls,
 		MaxDispatchPerTick:       a.MaxDispatchPerTick,
 		NotifyCooldownSec:        a.NotifyCooldownSec,
+		NotifySameReasonCooldownSec: a.NotifySameReasonCooldownSec,
 		QuietHours:               a.QuietHours,
 		UserIdleResumeSec:        a.UserIdleResumeSec,
 		WaitingResumeDebounceSec: a.WaitingResumeDebounceSec,
