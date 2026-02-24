@@ -107,12 +107,18 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 		parts = append(parts, bootstrapContent)
 	}
 
-	// Skills - show summary, AI can read full content with read_file tool
+	// Skills - OpenClaw-aligned selection protocol + available skill catalog
 	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
 	if skillsSummary != "" {
-		parts = append(parts, fmt.Sprintf(`# Skills
+		parts = append(parts, fmt.Sprintf(`# Skills (mandatory protocol)
 
-The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
+Before replying: scan <skill><description> entries in <skills>.
+- If exactly one skill clearly applies: read its SKILL.md (via read tool) and follow it.
+- If multiple could apply: choose the most specific one, then read/follow it.
+- If none clearly apply: do not read any SKILL.md.
+Constraints:
+- Never read more than one skill up front.
+- If SKILL.md references relative paths, resolve against the skill directory.
 
 %s`, skillsSummary))
 	}
