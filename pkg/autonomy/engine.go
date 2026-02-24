@@ -214,10 +214,28 @@ type todoItem struct {
 }
 
 func (e *Engine) scanTodos() []todoItem {
-	var out []todoItem
 	if strings.TrimSpace(e.opts.Workspace) == "" {
-		return out
+		return nil
 	}
+	merged := map[string]todoItem{}
+	merge := func(it todoItem) {
+		if strings.TrimSpace(it.ID) == "" || strings.TrimSpace(it.Content) == "" {
+			return
+		}
+		if cur, ok := merged[it.ID]; ok {
+			if priorityWeight(it.Priority) > priorityWeight(cur.Priority) {
+				cur.Priority = it.Priority
+			}
+			if cur.DueAt == "" && it.DueAt != "" {
+				cur.DueAt = it.DueAt
+			}
+			merged[it.ID] = cur
+			return
+		}
+		merged[it.ID] = it
+	}
+
+	// 1) Parse markdown todos from MEMORY + today's daily memory.
 	paths := []string{
 		filepath.Join(e.opts.Workspace, "MEMORY.md"),
 		filepath.Join(e.opts.Workspace, "memory", time.Now().Format("2006-01-02")+".md"),
@@ -231,22 +249,44 @@ func (e *Engine) scanTodos() []todoItem {
 			t := strings.TrimSpace(line)
 			if strings.HasPrefix(t, "- [ ]") {
 				content := strings.TrimSpace(strings.TrimPrefix(t, "- [ ]"))
-				if content == "" {
-					continue
-				}
 				priority, dueAt, normalized := parseTodoAttributes(content)
-				out = append(out, todoItem{ID: hashID(normalized), Content: normalized, Priority: priority, DueAt: dueAt})
+				merge(todoItem{ID: hashID(normalized), Content: normalized, Priority: priority, DueAt: dueAt})
 				continue
 			}
 			if strings.HasPrefix(strings.ToLower(t), "todo:") {
 				content := strings.TrimSpace(t[5:])
-				if content == "" {
-					continue
-				}
 				priority, dueAt, normalized := parseTodoAttributes(content)
-				out = append(out, todoItem{ID: hashID(normalized), Content: normalized, Priority: priority, DueAt: dueAt})
+				merge(todoItem{ID: hashID(normalized), Content: normalized, Priority: priority, DueAt: dueAt})
 			}
 		}
+	}
+
+	// 2) Merge structured tasks.json items (manual injections / prior state).
+	if items, err := e.taskStore.Load(); err == nil {
+		for _, it := range items {
+			status := strings.ToLower(strings.TrimSpace(it.Status))
+			if status == "done" {
+				continue
+			}
+			content := strings.TrimSpace(it.Content)
+			if content == "" {
+				continue
+			}
+			id := strings.TrimSpace(it.ID)
+			if id == "" {
+				id = hashID(content)
+			}
+			priority := strings.TrimSpace(it.Priority)
+			if priority == "" {
+				priority = "normal"
+			}
+			merge(todoItem{ID: id, Content: content, Priority: priority, DueAt: strings.TrimSpace(it.DueAt)})
+		}
+	}
+
+	out := make([]todoItem, 0, len(merged))
+	for _, it := range merged {
+		out = append(out, it)
 	}
 	return out
 }
