@@ -26,8 +26,9 @@ type memoryBlock struct {
 }
 
 type cachedMemoryFile struct {
-	modTime time.Time
-	blocks  []memoryBlock
+	modTime    time.Time
+	blocks     []memoryBlock
+	tokenIndex map[string][]int
 }
 
 func NewMemorySearchTool(workspace string) *MemorySearchTool {
@@ -206,12 +207,17 @@ func dedupeStrings(items []string) []string {
 
 // searchFile searches parsed markdown blocks with cache by file modtime.
 func (t *MemorySearchTool) searchFile(path string, keywords []string) ([]searchResult, error) {
-	blocks, err := t.getOrParseBlocks(path)
+	blocks, tokenIndex, err := t.getOrParseBlocks(path)
 	if err != nil {
 		return nil, err
 	}
+	candidate := candidateBlockIndexes(tokenIndex, keywords, len(blocks))
 	results := make([]searchResult, 0, 8)
-	for _, b := range blocks {
+	for _, idx := range candidate {
+		if idx < 0 || idx >= len(blocks) {
+			continue
+		}
+		b := blocks[idx]
 		score := 0
 		for _, kw := range keywords {
 			if strings.Contains(b.lower, kw) {
@@ -233,34 +239,35 @@ func (t *MemorySearchTool) searchFile(path string, keywords []string) ([]searchR
 	return results, nil
 }
 
-func (t *MemorySearchTool) getOrParseBlocks(path string) ([]memoryBlock, error) {
+func (t *MemorySearchTool) getOrParseBlocks(path string) ([]memoryBlock, map[string][]int, error) {
 	st, err := os.Stat(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	mod := st.ModTime()
 	t.mu.RLock()
 	if c, ok := t.cache[path]; ok && c.modTime.Equal(mod) {
 		blocks := c.blocks
+		idx := c.tokenIndex
 		t.mu.RUnlock()
-		return blocks, nil
+		return blocks, idx, nil
 	}
 	t.mu.RUnlock()
 
-	blocks, err := parseMarkdownBlocks(path)
+	blocks, tokenIndex, err := parseMarkdownBlocks(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	t.mu.Lock()
-	t.cache[path] = cachedMemoryFile{modTime: mod, blocks: blocks}
+	t.cache[path] = cachedMemoryFile{modTime: mod, blocks: blocks, tokenIndex: tokenIndex}
 	t.mu.Unlock()
-	return blocks, nil
+	return blocks, tokenIndex, nil
 }
 
-func parseMarkdownBlocks(path string) ([]memoryBlock, error) {
+func parseMarkdownBlocks(path string) ([]memoryBlock, map[string][]int, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer file.Close()
 
@@ -312,5 +319,78 @@ func parseMarkdownBlocks(path string) ([]memoryBlock, error) {
 		current.WriteString(line + "\n")
 	}
 	flush()
-	return blocks, nil
+	tokenIndex := buildTokenIndex(blocks)
+	return blocks, tokenIndex, nil
+}
+
+func buildTokenIndex(blocks []memoryBlock) map[string][]int {
+	idx := make(map[string][]int, 256)
+	for i, b := range blocks {
+		seen := map[string]struct{}{}
+		for _, tok := range tokenizeForIndex(b.lower + " " + strings.ToLower(b.heading)) {
+			if _, ok := seen[tok]; ok {
+				continue
+			}
+			seen[tok] = struct{}{}
+			idx[tok] = append(idx[tok], i)
+		}
+	}
+	return idx
+}
+
+func tokenizeForIndex(s string) []string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return nil
+	}
+	s = strings.NewReplacer("\n", " ", "\t", " ", ",", " ", ".", " ", ":", " ", ";", " ", "(", " ", ")", " ", "[", " ", "]", " ", "{", " ", "}", " ", "`", " ", "\"", " ", "'", " ").Replace(s)
+	parts := strings.Fields(s)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if len(p) < 2 {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func candidateBlockIndexes(tokenIndex map[string][]int, keywords []string, total int) []int {
+	if total <= 0 {
+		return nil
+	}
+	if len(keywords) == 0 || len(tokenIndex) == 0 {
+		out := make([]int, 0, total)
+		for i := 0; i < total; i++ {
+			out = append(out, i)
+		}
+		return out
+	}
+	candMap := map[int]int{}
+	for _, kw := range keywords {
+		kw = strings.TrimSpace(strings.ToLower(kw))
+		if kw == "" {
+			continue
+		}
+		for tok, ids := range tokenIndex {
+			if strings.Contains(tok, kw) {
+				for _, id := range ids {
+					candMap[id]++
+				}
+			}
+		}
+	}
+	if len(candMap) == 0 {
+		out := make([]int, 0, total)
+		for i := 0; i < total; i++ {
+			out = append(out, i)
+		}
+		return out
+	}
+	out := make([]int, 0, len(candMap))
+	for id := range candMap {
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool { return candMap[out[i]] > candMap[out[j]] })
+	return out
 }

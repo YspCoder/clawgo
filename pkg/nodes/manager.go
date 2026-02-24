@@ -2,18 +2,22 @@ package nodes
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Manager keeps paired node metadata and basic routing helpers.
+type Handler func(req Request) Response
+
 type Manager struct {
-	mu    sync.RWMutex
-	nodes map[string]NodeInfo
+	mu       sync.RWMutex
+	nodes    map[string]NodeInfo
+	handlers map[string]Handler
 }
 
 func NewManager() *Manager {
-	return &Manager{nodes: map[string]NodeInfo{}}
+	return &Manager{nodes: map[string]NodeInfo{}, handlers: map[string]Handler{}}
 }
 
 func (m *Manager) Upsert(info NodeInfo) {
@@ -49,6 +53,32 @@ func (m *Manager) List() []NodeInfo {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].LastSeenAt.After(out[j].LastSeenAt) })
 	return out
+}
+
+func (m *Manager) RegisterHandler(nodeID string, h Handler) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if strings.TrimSpace(nodeID) == "" || h == nil {
+		return
+	}
+	m.handlers[nodeID] = h
+}
+
+func (m *Manager) Invoke(req Request) (Response, bool) {
+	m.mu.RLock()
+	h, ok := m.handlers[req.Node]
+	m.mu.RUnlock()
+	if !ok {
+		return Response{}, false
+	}
+	resp := h(req)
+	if strings.TrimSpace(resp.Node) == "" {
+		resp.Node = req.Node
+	}
+	if strings.TrimSpace(resp.Action) == "" {
+		resp.Action = req.Action
+	}
+	return resp, true
 }
 
 func (m *Manager) PickFor(action string) (NodeInfo, bool) {

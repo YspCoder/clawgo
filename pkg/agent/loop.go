@@ -78,7 +78,11 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
 	toolsRegistry.Register(tools.NewProcessTool(processManager))
 	nodesManager := nodes.NewManager()
-	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.StubRelayTransport{}}
+	nodesManager.Upsert(nodes.NodeInfo{ID: "local", Name: "local", Capabilities: nodes.Capabilities{Run: true, Invoke: true}, Online: true})
+	nodesManager.RegisterHandler("local", func(req nodes.Request) nodes.Response {
+		return nodes.Response{OK: true, Node: "local", Action: req.Action, Payload: map[string]interface{}{"echo": req.Args, "transport": "relay-local"}}
+	})
+	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.StubRelayTransport{Manager: nodesManager}}
 	toolsRegistry.Register(tools.NewNodesTool(nodesManager, nodesRouter))
 
 	if cs != nil {

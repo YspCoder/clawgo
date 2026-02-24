@@ -42,6 +42,7 @@ A `nodes` tool control-plane PoC is now available:
 - `action=status|describe`: inspect paired node status and capability matrix
 - `action=run|invoke|camera_snap|screen_record|location_get`: routing framework is in place
 - `mode=auto|p2p|relay`: default `auto` (prefer p2p, fallback to relay)
+- relay now uses local handler invocation path, ready for real cross-node transport replacement
 
 Implementation:
 - `pkg/nodes/types.go`

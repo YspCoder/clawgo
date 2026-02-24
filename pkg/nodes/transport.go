@@ -57,10 +57,16 @@ func (s *StubP2PTransport) Send(ctx context.Context, req Request) (Response, err
 }
 
 // StubRelayTransport provides executable placeholder until real bridge lands.
-type StubRelayTransport struct{}
+type StubRelayTransport struct{ Manager *Manager }
 
 func (s *StubRelayTransport) Name() string { return "relay" }
 func (s *StubRelayTransport) Send(ctx context.Context, req Request) (Response, error) {
 	_ = ctx
-	return Response{OK: false, Node: req.Node, Action: req.Action, Error: "relay bridge not implemented yet"}, nil
+	if s.Manager == nil {
+		return Response{OK: false, Node: req.Node, Action: req.Action, Error: "relay manager not configured"}, nil
+	}
+	if resp, ok := s.Manager.Invoke(req); ok {
+		return resp, nil
+	}
+	return Response{OK: false, Node: req.Node, Action: req.Action, Error: "relay handler not found for node"}, nil
 }
