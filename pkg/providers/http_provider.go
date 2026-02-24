@@ -106,9 +106,9 @@ func (p *HTTPProvider) callChatCompletions(ctx context.Context, messages []Messa
 
 func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) ([]byte, int, string, error) {
 	input := make([]map[string]interface{}, 0, len(messages))
-	seenCalls := map[string]struct{}{}
+	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItemsWithState(msg, seenCalls)...)
+		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls)...)
 	}
 	requestBody := map[string]interface{}{
 		"model": model,
@@ -211,7 +211,7 @@ func toResponsesInputItems(msg Message) []map[string]interface{} {
 	return toResponsesInputItemsWithState(msg, nil)
 }
 
-func toResponsesInputItemsWithState(msg Message, seenCalls map[string]struct{}) []map[string]interface{} {
+func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{}) []map[string]interface{} {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
 	case "system", "developer", "user":
@@ -252,8 +252,8 @@ func toResponsesInputItemsWithState(msg Message, seenCalls map[string]struct{}) 
 					argsRaw = string(argsJSON)
 				}
 			}
-			if seenCalls != nil {
-				seenCalls[callID] = struct{}{}
+			if pendingCalls != nil {
+				pendingCalls[callID] = struct{}{}
 			}
 			items = append(items, map[string]interface{}{
 				"type":      "function_call",
@@ -271,11 +271,12 @@ func toResponsesInputItemsWithState(msg Message, seenCalls map[string]struct{}) 
 		if callID == "" {
 			return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
 		}
-		if seenCalls != nil {
-			if _, ok := seenCalls[callID]; !ok {
-				// Avoid invalid orphan tool outputs in /responses payload.
+		if pendingCalls != nil {
+			if _, ok := pendingCalls[callID]; !ok {
+				// Avoid invalid orphan/duplicate tool outputs in /responses payload.
 				return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
 			}
+			delete(pendingCalls, callID)
 		}
 		return []map[string]interface{}{map[string]interface{}{
 			"type":    "function_call_output",
@@ -696,9 +697,9 @@ func (p *HTTPProvider) BuildSummaryViaResponsesCompact(ctx context.Context, mode
 	if strings.TrimSpace(existingSummary) != "" {
 		input = append(input, responsesMessageItem("system", "Existing summary:\n"+strings.TrimSpace(existingSummary), "input_text"))
 	}
-	seenCalls := map[string]struct{}{}
+	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItemsWithState(msg, seenCalls)...)
+		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls)...)
 	}
 	if len(input) == 0 {
 		return strings.TrimSpace(existingSummary), nil
