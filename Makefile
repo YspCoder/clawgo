@@ -110,11 +110,61 @@ cleanup-embed-workspace:
 ## install: Install clawgo to system and copy builtin skills
 install: build
 	@echo "Installing $(BINARY_NAME)..."
-	@mkdir -p $(INSTALL_BIN_DIR)
-	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)
-	@cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_BIN_DIR)/$(BINARY_NAME)
-	@chmod +x $(INSTALL_BIN_DIR)/$(BINARY_NAME)
-	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
+	@mkdir -p "$(INSTALL_BIN_DIR)"
+	@set -e; \
+	PID_FILE="$(CLAWGO_HOME)/gateway.pid"; \
+	if [ -f "$$PID_FILE" ]; then \
+		PID="$$(cat "$$PID_FILE" 2>/dev/null || true)"; \
+		if [ -n "$$PID" ] && kill -0 "$$PID" 2>/dev/null; then \
+			echo "Detected running $(BINARY_NAME) process (PID=$$PID), stopping..."; \
+			kill "$$PID" 2>/dev/null || true; \
+			for _i in 1 2 3 4 5; do \
+				if ! kill -0 "$$PID" 2>/dev/null; then \
+					break; \
+				fi; \
+				sleep 1; \
+			done; \
+			if kill -0 "$$PID" 2>/dev/null; then \
+				echo "Process still running, force killing PID=$$PID..."; \
+				kill -9 "$$PID" 2>/dev/null || true; \
+			fi; \
+		fi; \
+		rm -f "$$PID_FILE"; \
+	fi; \
+	RUNNING_PIDS="$$(pgrep -x $(BINARY_NAME) 2>/dev/null || true)"; \
+	if [ -n "$$RUNNING_PIDS" ]; then \
+		echo "Detected additional running $(BINARY_NAME) process(es): $$RUNNING_PIDS, stopping..."; \
+		kill $$RUNNING_PIDS 2>/dev/null || true; \
+		sleep 1; \
+		RUNNING_PIDS="$$(pgrep -x $(BINARY_NAME) 2>/dev/null || true)"; \
+		if [ -n "$$RUNNING_PIDS" ]; then \
+			echo "Force killing remaining process(es): $$RUNNING_PIDS"; \
+			kill -9 $$RUNNING_PIDS 2>/dev/null || true; \
+		fi; \
+	fi; \
+	BIN_PATH="$(INSTALL_BIN_DIR)/$(BINARY_NAME)"; \
+	OVERWRITE_BIN="y"; \
+	RESET_WORKSPACE="n"; \
+	if [ -f "$$BIN_PATH" ]; then \
+		printf "Detected existing binary at %s. Overwrite executable? (y/n): " "$$BIN_PATH"; \
+		read -r OVERWRITE_BIN; \
+		printf "Reset workspace at %s (delete and reload)? (y/n): " "$(WORKSPACE_DIR)"; \
+		read -r RESET_WORKSPACE; \
+	fi; \
+	if [ "$$OVERWRITE_BIN" = "y" ]; then \
+		cp "$(BUILD_DIR)/$(BINARY_NAME)" "$$BIN_PATH"; \
+		chmod +x "$$BIN_PATH"; \
+		echo "Installed binary to $$BIN_PATH"; \
+	else \
+		echo "Skipped binary overwrite."; \
+	fi; \
+	if [ "$$RESET_WORKSPACE" = "y" ]; then \
+		echo "Resetting workspace: $(WORKSPACE_DIR)"; \
+		rm -rf "$(WORKSPACE_DIR)"; \
+		mkdir -p "$(WORKSPACE_DIR)"; \
+		rsync -a "$(WORKSPACE_SOURCE_DIR)/" "$(WORKSPACE_DIR)/"; \
+		echo "Workspace reloaded from $(WORKSPACE_SOURCE_DIR)"; \
+	fi
 	@echo "Installation complete!"
 
 ## install-user: Install clawgo to ~/.local and copy builtin skills
