@@ -15,6 +15,24 @@
 - **稳定性保障**：Sentinel 巡检与自动修复能力。
 - **技能扩展**：支持内置技能与 GitHub 技能安装，支持原子脚本执行。
 
+## 🧠 架构级优化（Go 特性）
+
+近期已完成一轮架构增强，重点利用 Go 并发与类型系统能力：
+
+1. **Actor 化关键路径（process）**
+   - process 元数据持久化改为异步队列（`persistQ`）串行落盘。
+2. **Typed Events 事件总线**
+   - 新增 `pkg/events/typed_bus.go` 泛型事件总线。
+   - process 生命周期事件（start/exit/kill）可发布订阅。
+3. **日志批量刷盘**
+   - process 日志由 `logWriter` 批量 flush（时间片 + 大小阈值），减少高频 I/O。
+4. **Context 分层取消传播**
+   - 后台进程改为 `exec.CommandContext`，通过父 `ctx` 统一取消。
+5. **原子配置快照**
+   - 新增 `pkg/runtimecfg/snapshot.go`，网关启动与热重载时原子替换配置快照。
+
+这些优化提升了高并发场景下的稳定性、可观测性与可维护性。
+
 ## 🏁 快速开始
 
 1. 初始化配置与工作区

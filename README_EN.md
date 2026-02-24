@@ -15,6 +15,24 @@
 - **Stability controls**: Sentinel inspection and auto-heal support.
 - **Skill extensibility**: built-in skills plus GitHub skill installation and atomic script execution.
 
+## 🧠 Architecture-Level Optimizations (Go)
+
+A recent architecture pass leveraged core Go strengths:
+
+1. **Actor-style process path**
+   - Process metadata persistence is serialized via async queue (`persistQ`).
+2. **Typed Events bus**
+   - Added generic typed pub/sub bus (`pkg/events/typed_bus.go`).
+   - Process lifecycle events (start/exit/kill) are now publishable.
+3. **Batched log flushing**
+   - Process logs are flushed by `logWriter` with time/size thresholds to reduce I/O churn.
+4. **Context hierarchy + cancellation propagation**
+   - Background exec now uses `exec.CommandContext` with parent `ctx` propagation.
+5. **Atomic runtime config snapshot**
+   - Added `pkg/runtimecfg/snapshot.go`; gateway startup/reload atomically swaps config snapshot.
+
+These changes improve stability, observability, and maintainability under concurrency.
+
 ## 🏁 Quick Start
 
 1. Initialize config and workspace

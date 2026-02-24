@@ -86,7 +86,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 		if t.procManager == nil {
 			return "", fmt.Errorf("background process manager not configured")
 		}
-		sid, err := t.procManager.Start(command, cwd)
+		sid, err := t.procManager.Start(ctx, command, cwd)
 		if err != nil {
 			return "", err
 		}

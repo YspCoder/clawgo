@@ -24,6 +24,7 @@ import (
 	"clawgo/pkg/heartbeat"
 	"clawgo/pkg/logger"
 	"clawgo/pkg/providers"
+	"clawgo/pkg/runtimecfg"
 	"clawgo/pkg/sentinel"
 )
 
@@ -62,6 +63,7 @@ func gatewayCmd() {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
 	}
+	runtimecfg.Set(cfg)
 	if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
 		applyMaximumPermissionPolicy(cfg)
 	}
@@ -238,6 +240,7 @@ func gatewayCmd() {
 					sentinelService.Start()
 				}
 				cfg = newCfg
+				runtimecfg.Set(cfg)
 				if len(templateChanges) > 0 {
 					fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(templateChanges, ", "))
 				}
@@ -260,6 +263,7 @@ func gatewayCmd() {
 			channelManager = newChannelManager
 			agentLoop = newAgentLoop
 			cfg = newCfg
+			runtimecfg.Set(cfg)
 			sentinelService.Stop()
 			sentinelService = sentinel.NewService(
 				getConfigPath(),
