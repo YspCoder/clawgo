@@ -20,14 +20,16 @@ type ExecTool struct {
 	timeout        time.Duration
 	sandboxEnabled bool
 	sandboxImage   string
+	procManager    *ProcessManager
 }
 
-func NewExecTool(cfg config.ShellConfig, workspace string) *ExecTool {
+func NewExecTool(cfg config.ShellConfig, workspace string, pm *ProcessManager) *ExecTool {
 	return &ExecTool{
 		workingDir:     workspace,
 		timeout:        cfg.Timeout,
 		sandboxEnabled: cfg.Sandbox.Enabled,
 		sandboxImage:   cfg.Sandbox.Image,
+		procManager:    pm,
 	}
 }
 
@@ -51,6 +53,10 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional working directory for the command",
 			},
+			"background": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Run command in background and return session id",
+			},
 		},
 		"required": []string{"command"},
 	}
@@ -72,6 +78,17 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 		if err == nil {
 			cwd = wd
 		}
+	}
+
+	if bg, _ := args["background"].(bool); bg {
+		if t.procManager == nil {
+			return "", fmt.Errorf("background process manager not configured")
+		}
+		sid, err := t.procManager.Start(command, cwd)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("{\"session_id\":%q,\"running\":true}", sid), nil
 	}
 
 	if t.sandboxEnabled {

@@ -63,6 +63,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
 
 	toolsRegistry := tools.NewToolRegistry()
+	processManager := tools.NewProcessManager()
 	readTool := tools.NewReadFileTool(workspace)
 	writeTool := tools.NewWriteFileTool(workspace)
 	listTool := tools.NewListDirTool(workspace)
@@ -73,7 +74,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewAliasTool("read", "Read file content (OpenClaw-compatible alias of read_file)", readTool, map[string]string{"file_path": "path"}))
 	toolsRegistry.Register(tools.NewAliasTool("write", "Write file content (OpenClaw-compatible alias of write_file)", writeTool, map[string]string{"file_path": "path"}))
 	toolsRegistry.Register(tools.NewAliasTool("edit", "Edit file content (OpenClaw-compatible alias of edit_file)", tools.NewEditFileTool(workspace), map[string]string{"file_path": "path", "old_string": "oldText", "new_string": "newText"}))
-	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace))
+	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
+	toolsRegistry.Register(tools.NewProcessTool(processManager))
 
 	if cs != nil {
 		toolsRegistry.Register(tools.NewRemindTool(cs))
