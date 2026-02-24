@@ -233,9 +233,6 @@ func toResponsesInputItemsWithState(msg Message, seenCalls map[string]struct{}) 
 			if callID == "" {
 				continue
 			}
-			if seenCalls != nil {
-				seenCalls[callID] = struct{}{}
-			}
 			name := strings.TrimSpace(tc.Name)
 			argsRaw := ""
 			if tc.Function != nil {
@@ -254,6 +251,9 @@ func toResponsesInputItemsWithState(msg Message, seenCalls map[string]struct{}) 
 				} else {
 					argsRaw = string(argsJSON)
 				}
+			}
+			if seenCalls != nil {
+				seenCalls[callID] = struct{}{}
 			}
 			items = append(items, map[string]interface{}{
 				"type":      "function_call",
