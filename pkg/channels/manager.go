@@ -193,13 +193,13 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	logger.InfoC("channels", "Starting all channels")
 	go m.dispatchOutbound(dispatchCtx)
 
-	g, gctx := errgroup.WithContext(ctx)
+	var g errgroup.Group
 	for name, channel := range channelsSnapshot {
 		name := name
 		channel := channel
 		g.Go(func() error {
 			logger.InfoCF("channels", "Starting channel", map[string]interface{}{logger.FieldChannel: name})
-			if err := channel.Start(gctx); err != nil {
+			if err := channel.Start(ctx); err != nil {
 				logger.ErrorCF("channels", "Failed to start channel", map[string]interface{}{logger.FieldChannel: name, logger.FieldError: err.Error()})
 				return fmt.Errorf("%s: %w", name, err)
 			}
@@ -228,13 +228,13 @@ func (m *Manager) StopAll(ctx context.Context) error {
 		task.cancel()
 	}
 
-	g, gctx := errgroup.WithContext(ctx)
+	var g errgroup.Group
 	for name, channel := range channelsSnapshot {
 		name := name
 		channel := channel
 		g.Go(func() error {
 			logger.InfoCF("channels", "Stopping channel", map[string]interface{}{logger.FieldChannel: name})
-			if err := channel.Stop(gctx); err != nil {
+			if err := channel.Stop(ctx); err != nil {
 				logger.ErrorCF("channels", "Error stopping channel", map[string]interface{}{logger.FieldChannel: name, logger.FieldError: err.Error()})
 				return fmt.Errorf("%s: %w", name, err)
 			}
