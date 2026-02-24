@@ -63,7 +63,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
 
 	toolsRegistry := tools.NewToolRegistry()
-	processManager := tools.NewProcessManager()
+	processManager := tools.NewProcessManager(workspace)
 	readTool := tools.NewReadFileTool(workspace)
 	writeTool := tools.NewWriteFileTool(workspace)
 	listTool := tools.NewListDirTool(workspace)
