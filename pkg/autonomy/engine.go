@@ -385,13 +385,16 @@ func (e *Engine) dispatchTask(st *taskState) {
 func (e *Engine) sendCompletionNotification(st *taskState) {
 	e.writeReflectLog("complete", st, "task marked completed")
 	e.writeTriggerAudit("complete", st, "")
+	if !isHighValueCompletion(st) {
+		return
+	}
 	if !e.shouldNotify("done:" + st.ID) {
 		return
 	}
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
 		ChatID:  e.opts.DefaultNotifyChatID,
-		Content: fmt.Sprintf("[Autonomy] Task completed: %s", st.Content),
+		Content: fmt.Sprintf("✅ 已完成：%s\n下一步：如需我继续处理后续，直接回复“继续 %s”", shortTask(st.Content), shortTask(st.Content)),
 	})
 }
 
@@ -404,7 +407,7 @@ func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
 		ChatID:  e.opts.DefaultNotifyChatID,
-		Content: fmt.Sprintf("[Autonomy] Task blocked: %s (%s)", st.Content, reason),
+		Content: fmt.Sprintf("⚠️ 任务受阻：%s\n原因：%s\n建议：回复“继续 %s”我会按当前状态重试。", shortTask(st.Content), strings.TrimSpace(reason), shortTask(st.Content)),
 	})
 }
 
@@ -749,6 +752,33 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func isHighValueCompletion(st *taskState) bool {
+	if st == nil {
+		return false
+	}
+	if priorityWeight(st.Priority) >= 3 {
+		return true
+	}
+	if strings.TrimSpace(st.DueAt) != "" {
+		return true
+	}
+	s := strings.ToLower(strings.TrimSpace(st.Content))
+	for _, k := range []string{"urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"} {
+		if strings.Contains(s, k) {
+			return true
+		}
+	}
+	return false
+}
+
+func shortTask(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= 32 {
+		return s
+	}
+	return s[:32] + "..."
 }
 
 func hashID(s string) string {
