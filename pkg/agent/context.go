@@ -136,9 +136,12 @@ Constraints:
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	bootstrapFiles := []string{
 		"AGENTS.md",
+		"BOOT.md",
+		"BOOTSTRAP.md",
 		"SOUL.md",
 		"USER.md",
 		"IDENTITY.md",
+		"TOOLS.md",
 	}
 
 	var result string
