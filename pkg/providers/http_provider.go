@@ -106,8 +106,9 @@ func (p *HTTPProvider) callChatCompletions(ctx context.Context, messages []Messa
 
 func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) ([]byte, int, string, error) {
 	input := make([]map[string]interface{}, 0, len(messages))
+	seenCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItems(msg)...)
+		input = append(input, toResponsesInputItemsWithState(msg, seenCalls)...)
 	}
 	requestBody := map[string]interface{}{
 		"model": model,
@@ -207,6 +208,10 @@ func toChatCompletionsContent(msg Message) []map[string]interface{} {
 }
 
 func toResponsesInputItems(msg Message) []map[string]interface{} {
+	return toResponsesInputItemsWithState(msg, nil)
+}
+
+func toResponsesInputItemsWithState(msg Message, seenCalls map[string]struct{}) []map[string]interface{} {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
 	case "system", "developer", "user":
@@ -227,6 +232,9 @@ func toResponsesInputItems(msg Message) []map[string]interface{} {
 			callID := strings.TrimSpace(tc.ID)
 			if callID == "" {
 				continue
+			}
+			if seenCalls != nil {
+				seenCalls[callID] = struct{}{}
 			}
 			name := strings.TrimSpace(tc.Name)
 			argsRaw := ""
@@ -259,12 +267,19 @@ func toResponsesInputItems(msg Message) []map[string]interface{} {
 		}
 		return items
 	case "tool":
-		if strings.TrimSpace(msg.ToolCallID) == "" {
+		callID := strings.TrimSpace(msg.ToolCallID)
+		if callID == "" {
 			return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
+		}
+		if seenCalls != nil {
+			if _, ok := seenCalls[callID]; !ok {
+				// Avoid invalid orphan tool outputs in /responses payload.
+				return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
+			}
 		}
 		return []map[string]interface{}{map[string]interface{}{
 			"type":    "function_call_output",
-			"call_id": msg.ToolCallID,
+			"call_id": callID,
 			"output":  msg.Content,
 		}}
 	default:
@@ -681,8 +696,9 @@ func (p *HTTPProvider) BuildSummaryViaResponsesCompact(ctx context.Context, mode
 	if strings.TrimSpace(existingSummary) != "" {
 		input = append(input, responsesMessageItem("system", "Existing summary:\n"+strings.TrimSpace(existingSummary), "input_text"))
 	}
+	seenCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItems(msg)...)
+		input = append(input, toResponsesInputItemsWithState(msg, seenCalls)...)
 	}
 	if len(input) == 0 {
 		return strings.TrimSpace(existingSummary), nil
