@@ -23,6 +23,7 @@ import (
 	"clawgo/pkg/cron"
 	"clawgo/pkg/heartbeat"
 	"clawgo/pkg/logger"
+	"clawgo/pkg/nodes"
 	"clawgo/pkg/providers"
 	"clawgo/pkg/runtimecfg"
 	"clawgo/pkg/sentinel"
@@ -174,6 +175,13 @@ func gatewayCmd() {
 
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
+	}
+
+	registryServer := nodes.NewRegistryServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
+	if err := registryServer.Start(ctx); err != nil {
+		fmt.Printf("Error starting node registry server: %v\n", err)
+	} else {
+		fmt.Printf("✓ Node registry server started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	}
 
 	go agentLoop.Run(ctx)

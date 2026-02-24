@@ -16,6 +16,10 @@ type Manager struct {
 	handlers map[string]Handler
 }
 
+var defaultManager = NewManager()
+
+func DefaultManager() *Manager { return defaultManager }
+
 func NewManager() *Manager {
 	return &Manager{nodes: map[string]NodeInfo{}, handlers: map[string]Handler{}}
 }

@@ -194,8 +194,9 @@ type ProviderConfig struct {
 }
 
 type GatewayConfig struct {
-	Host string `json:"host" env:"CLAWGO_GATEWAY_HOST"`
-	Port int    `json:"port" env:"CLAWGO_GATEWAY_PORT"`
+	Host  string `json:"host" env:"CLAWGO_GATEWAY_HOST"`
+	Port  int    `json:"port" env:"CLAWGO_GATEWAY_PORT"`
+	Token string `json:"token" env:"CLAWGO_GATEWAY_TOKEN"`
 }
 
 type CronConfig struct {
@@ -423,8 +424,9 @@ func DefaultConfig() *Config {
 			Proxies: map[string]ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
-			Port: 18790,
+			Host:  "0.0.0.0",
+			Port:  18790,
+			Token: "",
 		},
 		Cron: CronConfig{
 			MinSleepSec:                  1,

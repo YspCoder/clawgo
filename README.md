@@ -43,6 +43,8 @@
 - `action=run|invoke|camera_snap|screen_record|location_get`：已接入路由框架
 - `mode=auto|p2p|relay`：默认 `auto`（优先 p2p，失败回退 relay）
 - relay 已支持 HTTP 节点桥接：按 action 路由到 `/run` `/camera/snap` `/screen/record` `/location/get` `/canvas/*`（未知 action 回退 `/invoke`）
+- 主节点网关支持节点注册：`POST http://<gateway_host>:<gateway_port>/nodes/register`
+- 可在 `gateway.token` 配置网关注册令牌；子节点注册需带 `Authorization: Bearer <token>`
 - 可在 `NodeInfo` 中配置 `token`，relay 会自动附加 `Authorization: Bearer <token>`
 - `nodes` 工具支持设备快捷参数：`facing`、`duration_ms`、`command`
 
