@@ -184,6 +184,7 @@ func (e *Engine) tick() {
 		if !ok {
 			status := "idle"
 			retryAfter := time.Time{}
+			resourceKeys := deriveResourceKeys(t.Content)
 			if old, ok := storedMap[t.ID]; ok {
 				if old.Status == "blocked" {
 					status = "blocked"
@@ -193,8 +194,11 @@ func (e *Engine) tick() {
 						retryAfter = rt
 					}
 				}
+				if len(old.ResourceKeys) > 0 {
+					resourceKeys = append([]string(nil), old.ResourceKeys...)
+				}
 			}
-			e.state[t.ID] = &taskState{ID: t.ID, Content: t.Content, Priority: t.Priority, DueAt: t.DueAt, Status: status, RetryAfter: retryAfter, DedupeHits: t.DedupeHits, ResourceKeys: deriveResourceKeys(t.Content)}
+			e.state[t.ID] = &taskState{ID: t.ID, Content: t.Content, Priority: t.Priority, DueAt: t.DueAt, Status: status, RetryAfter: retryAfter, DedupeHits: t.DedupeHits, ResourceKeys: resourceKeys}
 			continue
 		}
 		st.Content = t.Content
@@ -675,16 +679,17 @@ func (e *Engine) persistStateLocked() {
 			retryAfter = st.RetryAfter.UTC().Format(time.RFC3339)
 		}
 		items = append(items, TaskItem{
-			ID:          st.ID,
-			Content:     st.Content,
-			Priority:    st.Priority,
-			DueAt:       st.DueAt,
-			Status:      status,
-			BlockReason: st.BlockReason,
-			RetryAfter:  retryAfter,
-			Source:      "memory_todo",
-			DedupeHits:  st.DedupeHits,
-			UpdatedAt:   nowRFC3339(),
+			ID:           st.ID,
+			Content:      st.Content,
+			Priority:     st.Priority,
+			DueAt:        st.DueAt,
+			Status:       status,
+			BlockReason:  st.BlockReason,
+			RetryAfter:   retryAfter,
+			Source:       "memory_todo",
+			DedupeHits:   st.DedupeHits,
+			ResourceKeys: append([]string(nil), st.ResourceKeys...),
+			UpdatedAt:    nowRFC3339(),
 		})
 	}
 	_ = e.taskStore.Save(items)

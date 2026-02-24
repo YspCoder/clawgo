@@ -144,11 +144,14 @@ func statusCmd() {
 			cfg.Agents.Defaults.Autonomy.NotifyCooldownSec,
 			cfg.Agents.Defaults.Autonomy.NotifySameReasonCooldownSec,
 		)
-		if summary, prio, reasons, nextRetry, dedupeHits, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
+		if summary, prio, reasons, nextRetry, dedupeHits, waitingLocks, lockKeys, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
 			fmt.Printf("Autonomy Tasks: todo=%d doing=%d waiting=%d blocked=%d done=%d dedupe_hits=%d\n", summary["todo"], summary["doing"], summary["waiting"], summary["blocked"], summary["done"], dedupeHits)
 			fmt.Printf("Autonomy Priority: high=%d normal=%d low=%d\n", prio["high"], prio["normal"], prio["low"])
-			if reasons["active_user"] > 0 || reasons["manual_pause"] > 0 || reasons["max_consecutive_stalls"] > 0 {
-				fmt.Printf("Autonomy Block Reasons: active_user=%d manual_pause=%d max_stalls=%d\n", reasons["active_user"], reasons["manual_pause"], reasons["max_consecutive_stalls"])
+			if reasons["active_user"] > 0 || reasons["manual_pause"] > 0 || reasons["max_consecutive_stalls"] > 0 || reasons["resource_lock"] > 0 {
+				fmt.Printf("Autonomy Block Reasons: active_user=%d manual_pause=%d max_stalls=%d resource_lock=%d\n", reasons["active_user"], reasons["manual_pause"], reasons["max_consecutive_stalls"], reasons["resource_lock"])
+			}
+			if waitingLocks > 0 || lockKeys > 0 {
+				fmt.Printf("Autonomy Locks: waiting=%d unique_keys=%d\n", waitingLocks, lockKeys)
 			}
 			if nextRetry != "" {
 				fmt.Printf("Autonomy Next Retry: %s\n", nextRetry)
@@ -343,30 +346,33 @@ func collectTriggerErrorCounts(path string) (map[string]int, error) {
 	return counts, nil
 }
 
-func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, map[string]int, string, int, error) {
+func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, map[string]int, string, int, int, int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}, map[string]int{"high": 0, "normal": 0, "low": 0}, map[string]int{"active_user": 0, "manual_pause": 0, "max_consecutive_stalls": 0}, "", 0, nil
+			return map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}, map[string]int{"high": 0, "normal": 0, "low": 0}, map[string]int{"active_user": 0, "manual_pause": 0, "max_consecutive_stalls": 0, "resource_lock": 0}, "", 0, 0, 0, nil
 		}
-		return nil, nil, nil, "", 0, err
+		return nil, nil, nil, "", 0, 0, 0, err
 	}
 	var items []struct {
-		Status      string `json:"status"`
-		Priority    string `json:"priority"`
-		BlockReason string `json:"block_reason"`
-		RetryAfter  string `json:"retry_after"`
-		DedupeHits  int    `json:"dedupe_hits"`
+		Status       string   `json:"status"`
+		Priority     string   `json:"priority"`
+		BlockReason  string   `json:"block_reason"`
+		RetryAfter   string   `json:"retry_after"`
+		DedupeHits   int      `json:"dedupe_hits"`
+		ResourceKeys []string `json:"resource_keys"`
 	}
 	if err := json.Unmarshal(data, &items); err != nil {
-		return nil, nil, nil, "", 0, err
+		return nil, nil, nil, "", 0, 0, 0, err
 	}
 	summary := map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}
 	priorities := map[string]int{"high": 0, "normal": 0, "low": 0}
-	reasons := map[string]int{"active_user": 0, "manual_pause": 0, "max_consecutive_stalls": 0}
+	reasons := map[string]int{"active_user": 0, "manual_pause": 0, "max_consecutive_stalls": 0, "resource_lock": 0}
 	nextRetry := ""
 	nextRetryAt := time.Time{}
 	totalDedupe := 0
+	waitingLocks := 0
+	lockKeySet := map[string]struct{}{}
 	for _, it := range items {
 		s := strings.ToLower(strings.TrimSpace(it.Status))
 		if _, ok := summary[s]; ok {
@@ -376,6 +382,15 @@ func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, ma
 		r := strings.ToLower(strings.TrimSpace(it.BlockReason))
 		if _, ok := reasons[r]; ok {
 			reasons[r]++
+		}
+		if s == "waiting" && r == "resource_lock" {
+			waitingLocks++
+			for _, k := range it.ResourceKeys {
+				kk := strings.TrimSpace(strings.ToLower(k))
+				if kk != "" {
+					lockKeySet[kk] = struct{}{}
+				}
+			}
 		}
 		p := strings.ToLower(strings.TrimSpace(it.Priority))
 		if _, ok := priorities[p]; ok {
@@ -392,7 +407,7 @@ func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, ma
 			}
 		}
 	}
-	return summary, priorities, reasons, nextRetry, totalDedupe, nil
+	return summary, priorities, reasons, nextRetry, totalDedupe, waitingLocks, len(lockKeySet), nil
 }
 
 func collectSkillExecStats(path string) (int, int, int, float64, string, error) {

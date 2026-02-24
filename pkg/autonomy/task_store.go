@@ -18,8 +18,9 @@ type TaskItem struct {
 	BlockReason string `json:"block_reason,omitempty"`
 	RetryAfter  string `json:"retry_after,omitempty"`
 	Source      string `json:"source"`
-	DedupeHits  int    `json:"dedupe_hits,omitempty"`
-	UpdatedAt   string `json:"updated_at"`
+	DedupeHits   int      `json:"dedupe_hits,omitempty"`
+	ResourceKeys []string `json:"resource_keys,omitempty"`
+	UpdatedAt    string   `json:"updated_at"`
 }
 
 type TaskStore struct {
