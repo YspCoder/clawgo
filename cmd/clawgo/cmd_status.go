@@ -138,6 +138,7 @@ func statusCmd() {
 			if nextRetry != "" {
 				fmt.Printf("Autonomy Next Retry: %s\n", nextRetry)
 			}
+			fmt.Printf("Autonomy Control: %s\n", autonomyControlState(workspace))
 		}
 	}
 }
@@ -162,6 +163,25 @@ func printTemplateField(name, current, def string) {
 		state = "default"
 	}
 	fmt.Printf("  %s: %s\n", name, state)
+}
+
+func autonomyControlState(workspace string) string {
+	memDir := filepath.Join(workspace, "memory")
+	pausePath := filepath.Join(memDir, "autonomy.pause")
+	if _, err := os.Stat(pausePath); err == nil {
+		return "paused (autonomy.pause)"
+	}
+	ctrlPath := filepath.Join(memDir, "autonomy.control.json")
+	if data, err := os.ReadFile(ctrlPath); err == nil {
+		var c struct{ Enabled bool `json:"enabled"` }
+		if json.Unmarshal(data, &c) == nil {
+			if c.Enabled {
+				return "enabled"
+			}
+			return "disabled (control file)"
+		}
+	}
+	return "default"
 }
 
 func collectSessionKindCounts(sessionsDir string) (map[string]int, error) {

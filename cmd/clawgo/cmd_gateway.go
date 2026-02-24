@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -44,9 +45,15 @@ func gatewayCmd() {
 			os.Exit(1)
 		}
 		return
+	case "autonomy":
+		if err := gatewayAutonomyControlCmd(args[1:]); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	default:
 		fmt.Printf("Unknown gateway command: %s\n", args[0])
-		fmt.Println("Usage: clawgo gateway [run|start|stop|restart|status]")
+		fmt.Println("Usage: clawgo gateway [run|start|stop|restart|status|autonomy on|off|status]")
 		return
 	}
 
@@ -298,6 +305,58 @@ func gatewayCmd() {
 			fmt.Println("✓ Gateway stopped")
 			return
 		}
+	}
+}
+
+func gatewayAutonomyControlCmd(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: clawgo gateway autonomy [on|off|status]")
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	memDir := filepath.Join(cfg.WorkspacePath(), "memory")
+	if err := os.MkdirAll(memDir, 0755); err != nil {
+		return err
+	}
+	pausePath := filepath.Join(memDir, "autonomy.pause")
+	ctrlPath := filepath.Join(memDir, "autonomy.control.json")
+
+	switch strings.ToLower(strings.TrimSpace(args[0])) {
+	case "on":
+		_ = os.Remove(pausePath)
+		if err := os.WriteFile(ctrlPath, []byte("{\n  \"enabled\": true\n}\n"), 0644); err != nil {
+			return err
+		}
+		fmt.Println("✓ Autonomy enabled")
+		return nil
+	case "off":
+		if err := os.WriteFile(ctrlPath, []byte("{\n  \"enabled\": false\n}\n"), 0644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(pausePath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0644); err != nil {
+			return err
+		}
+		fmt.Println("✓ Autonomy disabled (paused)")
+		return nil
+	case "status":
+		enabled := true
+		if data, err := os.ReadFile(ctrlPath); err == nil {
+			var c struct{ Enabled bool `json:"enabled"` }
+			if json.Unmarshal(data, &c) == nil {
+				enabled = c.Enabled
+			}
+		}
+		if _, err := os.Stat(pausePath); err == nil {
+			enabled = false
+		}
+		fmt.Printf("Autonomy status: %v\n", enabled)
+		fmt.Printf("Control file: %s\n", ctrlPath)
+		fmt.Printf("Pause file: %s\n", pausePath)
+		return nil
+	default:
+		return fmt.Errorf("usage: clawgo gateway autonomy [on|off|status]")
 	}
 }
 

@@ -416,7 +416,8 @@ func (e *Engine) writeTriggerAudit(action string, st *taskState, errText string)
 	if strings.TrimSpace(e.opts.Workspace) == "" || st == nil {
 		return
 	}
-	path := filepath.Join(e.opts.Workspace, "memory", "trigger-audit.jsonl")
+	memDir := filepath.Join(e.opts.Workspace, "memory")
+	path := filepath.Join(memDir, "trigger-audit.jsonl")
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
 	row := map[string]interface{}{
 		"time":    time.Now().UTC().Format(time.RFC3339),
@@ -433,6 +434,23 @@ func (e *Engine) writeTriggerAudit(action string, st *taskState, errText string)
 			_, _ = f.Write(append(b, '\n'))
 			_ = f.Close()
 		}
+	}
+
+	statsPath := filepath.Join(memDir, "trigger-stats.json")
+	stats := struct {
+		UpdatedAt string         `json:"updated_at"`
+		Counts    map[string]int `json:"counts"`
+	}{Counts: map[string]int{}}
+	if raw, rErr := os.ReadFile(statsPath); rErr == nil {
+		_ = json.Unmarshal(raw, &stats)
+		if stats.Counts == nil {
+			stats.Counts = map[string]int{}
+		}
+	}
+	stats.Counts["autonomy"]++
+	stats.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if raw, mErr := json.MarshalIndent(stats, "", "  "); mErr == nil {
+		_ = os.WriteFile(statsPath, raw, 0644)
 	}
 }
 
