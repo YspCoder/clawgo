@@ -448,6 +448,10 @@ func (e *Engine) writeTriggerAudit(action string, st *taskState, errText string)
 		}
 	}
 	stats.Counts["autonomy"]++
+	act := strings.ToLower(strings.TrimSpace(action))
+	if act != "" {
+		stats.Counts["autonomy:"+act]++
+	}
 	stats.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if raw, mErr := json.MarshalIndent(stats, "", "  "); mErr == nil {
 		_ = os.WriteFile(statsPath, raw, 0644)
