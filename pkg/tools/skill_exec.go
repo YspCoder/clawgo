@@ -48,6 +48,10 @@ func (t *SkillExecTool) Parameters() map[string]interface{} {
 				"default":     60,
 				"description": "Execution timeout in seconds",
 			},
+			"reason": map[string]interface{}{
+				"type":        "string",
+				"description": "Why this skill/script was selected for the current user request",
+			},
 		},
 		"required": []string{"skill", "script"},
 	}
@@ -56,8 +60,15 @@ func (t *SkillExecTool) Parameters() map[string]interface{} {
 func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	skill, _ := args["skill"].(string)
 	script, _ := args["script"].(string)
+	reason, _ := args["reason"].(string)
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "unspecified"
+	}
 	if strings.TrimSpace(skill) == "" || strings.TrimSpace(script) == "" {
-		return "", fmt.Errorf("skill and script are required")
+		err := fmt.Errorf("skill and script are required")
+		t.writeAudit(skill, script, reason, false, err.Error())
+		return "", err
 	}
 
 	timeoutSec := 60
@@ -67,31 +78,31 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 
 	skillDir, err := t.resolveSkillDir(skill)
 	if err != nil {
-		t.writeAudit(skill, script, false, err.Error())
+		t.writeAudit(skill, script, reason, false, err.Error())
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); err != nil {
 		err = fmt.Errorf("SKILL.md missing for skill: %s", skill)
-		t.writeAudit(skill, script, false, err.Error())
+		t.writeAudit(skill, script, reason, false, err.Error())
 		return "", err
 	}
 
 	relScript := filepath.Clean(script)
 	if strings.Contains(relScript, "..") || filepath.IsAbs(relScript) {
 		err := fmt.Errorf("script must be relative path inside skill directory")
-		t.writeAudit(skill, script, false, err.Error())
+		t.writeAudit(skill, script, reason, false, err.Error())
 		return "", err
 	}
 	if !strings.HasPrefix(relScript, "scripts"+string(os.PathSeparator)) {
 		err := fmt.Errorf("script must be under scripts/ directory")
-		t.writeAudit(skill, script, false, err.Error())
+		t.writeAudit(skill, script, reason, false, err.Error())
 		return "", err
 	}
 
 	scriptPath := filepath.Join(skillDir, relScript)
 	if _, err := os.Stat(scriptPath); err != nil {
 		err = fmt.Errorf("script not found: %s", scriptPath)
-		t.writeAudit(skill, script, false, err.Error())
+		t.writeAudit(skill, script, reason, false, err.Error())
 		return "", err
 	}
 
@@ -109,13 +120,13 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 
 	cmd, err := buildSkillCommand(runCtx, scriptPath, cmdArgs)
 	if err != nil {
-		t.writeAudit(skill, script, false, err.Error())
+		t.writeAudit(skill, script, reason, false, err.Error())
 		return "", err
 	}
 	cmd.Dir = skillDir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.writeAudit(skill, script, false, err.Error())
+		t.writeAudit(skill, script, reason, false, err.Error())
 		return "", fmt.Errorf("skill execution failed: %w\n%s", err, string(output))
 	}
 
@@ -123,20 +134,21 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 	if out == "" {
 		out = "(no output)"
 	}
-	t.writeAudit(skill, script, true, "")
+	t.writeAudit(skill, script, reason, true, "")
 	return out, nil
 }
 
-func (t *SkillExecTool) writeAudit(skill, script string, ok bool, errText string) {
+func (t *SkillExecTool) writeAudit(skill, script, reason string, ok bool, errText string) {
 	if strings.TrimSpace(t.workspace) == "" {
 		return
 	}
 	memDir := filepath.Join(t.workspace, "memory")
 	_ = os.MkdirAll(memDir, 0755)
-	row := fmt.Sprintf("{\"time\":%q,\"skill\":%q,\"script\":%q,\"ok\":%t,\"error\":%q}\n",
+	row := fmt.Sprintf("{\"time\":%q,\"skill\":%q,\"script\":%q,\"reason\":%q,\"ok\":%t,\"error\":%q}\n",
 		time.Now().UTC().Format(time.RFC3339),
 		strings.TrimSpace(skill),
 		strings.TrimSpace(script),
+		strings.TrimSpace(reason),
 		ok,
 		strings.TrimSpace(errText),
 	)

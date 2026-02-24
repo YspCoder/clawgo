@@ -116,8 +116,8 @@ func statusCmd() {
 				fmt.Printf("  %s: %d\n", trigger, agg[trigger])
 			}
 		}
-		if total, okCnt, failCnt, top, err := collectSkillExecStats(filepath.Join(workspace, "memory", "skill-audit.jsonl")); err == nil && total > 0 {
-			fmt.Printf("Skill Exec: total=%d ok=%d fail=%d\n", total, okCnt, failCnt)
+		if total, okCnt, failCnt, reasonCov, top, err := collectSkillExecStats(filepath.Join(workspace, "memory", "skill-audit.jsonl")); err == nil && total > 0 {
+			fmt.Printf("Skill Exec: total=%d ok=%d fail=%d reason_coverage=%.2f\n", total, okCnt, failCnt, reasonCov)
 			if top != "" {
 				fmt.Printf("Skill Exec Top: %s\n", top)
 			}
@@ -395,13 +395,14 @@ func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, ma
 	return summary, priorities, reasons, nextRetry, totalDedupe, nil
 }
 
-func collectSkillExecStats(path string) (int, int, int, string, error) {
+func collectSkillExecStats(path string) (int, int, int, float64, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, 0, 0, "", err
+		return 0, 0, 0, 0, "", err
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	total, okCnt, failCnt := 0, 0, 0
+	reasonCnt := 0
 	skillCounts := map[string]int{}
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -409,8 +410,9 @@ func collectSkillExecStats(path string) (int, int, int, string, error) {
 			continue
 		}
 		var row struct {
-			Skill string `json:"skill"`
-			OK    bool   `json:"ok"`
+			Skill  string `json:"skill"`
+			Reason string `json:"reason"`
+			OK     bool   `json:"ok"`
 		}
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
 			continue
@@ -420,6 +422,10 @@ func collectSkillExecStats(path string) (int, int, int, string, error) {
 			okCnt++
 		} else {
 			failCnt++
+		}
+		r := strings.TrimSpace(strings.ToLower(row.Reason))
+		if r != "" && r != "unspecified" {
+			reasonCnt++
 		}
 		s := strings.TrimSpace(row.Skill)
 		if s == "" {
@@ -438,7 +444,11 @@ func collectSkillExecStats(path string) (int, int, int, string, error) {
 	if topSkill != "" {
 		topSkill = fmt.Sprintf("%s(%d)", topSkill, topN)
 	}
-	return total, okCnt, failCnt, topSkill, nil
+	reasonCoverage := 0.0
+	if total > 0 {
+		reasonCoverage = float64(reasonCnt) / float64(total)
+	}
+	return total, okCnt, failCnt, reasonCoverage, topSkill, nil
 }
 
 func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {
