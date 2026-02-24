@@ -53,6 +53,7 @@ type AutonomyConfig struct {
 	MaxDispatchPerTick    int    `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
 	NotifyCooldownSec     int    `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
 	QuietHours            string `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
+	UserIdleResumeSec     int    `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
 	NotifyChannel         string `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
 	NotifyChatID          string `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
 }
@@ -307,6 +308,7 @@ func DefaultConfig() *Config {
 					MaxDispatchPerTick:    2,
 					NotifyCooldownSec:     300,
 					QuietHours:            "23:00-08:00",
+					UserIdleResumeSec:     20,
 					NotifyChannel:         "",
 					NotifyChatID:          "",
 				},

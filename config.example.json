@@ -22,6 +22,7 @@
         "max_dispatch_per_tick": 2,
         "notify_cooldown_sec": 300,
         "quiet_hours": "23:00-08:00",
+        "user_idle_resume_sec": 20,
         "notify_channel": "",
         "notify_chat_id": ""
       },

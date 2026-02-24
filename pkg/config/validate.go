@@ -108,6 +108,9 @@ func Validate(cfg *Config) []error {
 				errs = append(errs, fmt.Errorf("agents.defaults.autonomy.quiet_hours must be HH:MM-HH:MM"))
 			}
 		}
+		if aut.UserIdleResumeSec <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.user_idle_resume_sec must be > 0 when enabled=true"))
+		}
 	}
 	texts := cfg.Agents.Defaults.Texts
 	if strings.TrimSpace(texts.NoResponseFallback) == "" {

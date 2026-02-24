@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +30,7 @@ type Options struct {
 	DefaultNotifyChatID     string
 	NotifyCooldownSec       int
 	QuietHours              string
+	UserIdleResumeSec       int
 }
 
 type taskState struct {
@@ -74,6 +76,9 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	if opts.NotifyCooldownSec <= 0 {
 		opts.NotifyCooldownSec = 300
 	}
+	if opts.UserIdleResumeSec <= 0 {
+		opts.UserIdleResumeSec = 20
+	}
 	return &Engine{
 		opts:       opts,
 		bus:        msgBus,
@@ -112,6 +117,19 @@ func (e *Engine) tick() {
 	todos := e.scanTodos()
 	now := time.Now()
 	stored, _ := e.taskStore.Load()
+
+	e.mu.Lock()
+	if e.hasRecentUserActivity(now) {
+		for _, st := range e.state {
+			if st.Status == "running" {
+				st.Status = "waiting"
+			}
+		}
+		e.persistStateLocked()
+		e.mu.Unlock()
+		return
+	}
+	e.mu.Unlock()
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -498,6 +516,38 @@ func dueWeight(dueAt string) int64 {
 		}
 	}
 	return 0
+}
+
+func (e *Engine) hasRecentUserActivity(now time.Time) bool {
+	if e.opts.UserIdleResumeSec <= 0 || strings.TrimSpace(e.opts.Workspace) == "" {
+		return false
+	}
+	// sessions are stored next to workspace directory in clawgo runtime
+	sessionsPath := filepath.Join(filepath.Dir(e.opts.Workspace), "sessions", "sessions.json")
+	data, err := os.ReadFile(sessionsPath)
+	if err != nil {
+		return false
+	}
+	var index map[string]struct {
+		Kind      string `json:"kind"`
+		UpdatedAt int64  `json:"updatedAt"`
+	}
+	if err := json.Unmarshal(data, &index); err != nil {
+		return false
+	}
+	cutoff := now.Add(-time.Duration(e.opts.UserIdleResumeSec) * time.Second)
+	for _, row := range index {
+		if strings.ToLower(strings.TrimSpace(row.Kind)) != "main" {
+			continue
+		}
+		if row.UpdatedAt <= 0 {
+			continue
+		}
+		if time.UnixMilli(row.UpdatedAt).After(cutoff) {
+			return true
+		}
+	}
+	return false
 }
 
 func blockedRetryBackoff(stalls int, minRunIntervalSec int) time.Duration {
