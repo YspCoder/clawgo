@@ -20,6 +20,11 @@ type Channel interface {
 	HealthCheck(ctx context.Context) error
 }
 
+// ActionCapable is an optional capability interface for channels that support non-send message actions.
+type ActionCapable interface {
+	SupportsAction(action string) bool
+}
+
 type BaseChannel struct {
 	config    interface{}
 	bus       *bus.MessageBus

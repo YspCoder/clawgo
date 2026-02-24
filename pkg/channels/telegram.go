@@ -41,6 +41,15 @@ type TelegramChannel struct {
 	handleWG     sync.WaitGroup
 }
 
+func (c *TelegramChannel) SupportsAction(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "", "send", "edit", "delete", "react":
+		return true
+	default:
+		return false
+	}
+}
+
 func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*TelegramChannel, error) {
 	bot, err := telego.NewBot(cfg.Token, telego.WithDefaultLogger(false, false))
 	if err != nil {

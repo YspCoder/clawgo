@@ -9,6 +9,7 @@ package channels
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"clawgo/pkg/bus"
@@ -266,6 +267,20 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 					logger.FieldChannel: msg.Channel,
 				})
 				continue
+			}
+
+			action := strings.ToLower(strings.TrimSpace(msg.Action))
+			if action == "" {
+				action = "send"
+			}
+			if action != "send" {
+				if ac, ok := channel.(ActionCapable); !ok || !ac.SupportsAction(action) {
+					logger.WarnCF("channels", "Channel does not support outbound action", map[string]interface{}{
+						logger.FieldChannel: msg.Channel,
+						"action":          action,
+					})
+					continue
+				}
 			}
 
 			// Bound fan-out concurrency to prevent goroutine explosion under burst traffic.
