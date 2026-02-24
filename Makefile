@@ -162,8 +162,9 @@ run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
 ## test: Build and compile-check in Docker (Dockerfile.test)
-test:
+test: sync-embed-workspace
 	@echo "Running Docker compile test..."
+	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
 	docker build -f Dockerfile.test -t clawgo:test .
 	@echo "Docker compile test passed"
 
