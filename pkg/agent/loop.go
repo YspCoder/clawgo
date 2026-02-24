@@ -19,6 +19,7 @@ import (
 	"clawgo/pkg/config"
 	"clawgo/pkg/cron"
 	"clawgo/pkg/logger"
+	"clawgo/pkg/nodes"
 	"clawgo/pkg/providers"
 	"clawgo/pkg/session"
 	"clawgo/pkg/tools"
@@ -76,6 +77,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewAliasTool("edit", "Edit file content (OpenClaw-compatible alias of edit_file)", tools.NewEditFileTool(workspace), map[string]string{"file_path": "path", "old_string": "oldText", "new_string": "newText"}))
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
 	toolsRegistry.Register(tools.NewProcessTool(processManager))
+	nodesManager := nodes.NewManager()
+	toolsRegistry.Register(tools.NewNodesTool(nodesManager))
 
 	if cs != nil {
 		toolsRegistry.Register(tools.NewRemindTool(cs))

@@ -35,6 +35,18 @@ A recent architecture pass leveraged core Go strengths:
 
 These changes improve stability, observability, and maintainability under concurrency.
 
+### Multi-node / device control (Phase-1)
+
+A `nodes` tool control-plane PoC is now available:
+
+- `action=status|describe`: inspect paired node status and capability matrix
+- `action=run|invoke|camera_snap|screen_record|location_get`: routing framework is in place (data-plane bridge lands in next phase)
+
+Implementation:
+- `pkg/nodes/types.go`
+- `pkg/nodes/manager.go`
+- `pkg/tools/nodes_tool.go`
+
 ### Parallel task conflict control (Autonomy)
 
 Autonomy now supports lock scheduling via `resource_keys`. You can explicitly declare keys in task text for precise conflict detection:

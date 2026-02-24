@@ -35,6 +35,18 @@
 
 这些优化提升了高并发场景下的稳定性、可观测性与可维护性。
 
+### 多节点 / 设备控制（Phase-1）
+
+已新增 `nodes` 工具控制平面（PoC）：
+
+- `action=status|describe`：查看已配对节点状态与能力矩阵
+- `action=run|invoke|camera_snap|screen_record|location_get`：已接入路由框架（下一阶段接数据平面传输）
+
+实现位置：
+- `pkg/nodes/types.go`
+- `pkg/nodes/manager.go`
+- `pkg/tools/nodes_tool.go`
+
 ### 并行任务冲突控制（Autonomy）
 
 支持基于 `resource_keys` 的锁调度。任务可在内容中显式声明资源键，提升并行判冲突精度：
