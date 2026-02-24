@@ -15,6 +15,7 @@ type TaskItem struct {
 	Priority    string `json:"priority"`
 	DueAt       string `json:"due_at,omitempty"`
 	Status      string `json:"status"` // todo|doing|waiting|blocked|done
+	BlockReason string `json:"block_reason,omitempty"`
 	RetryAfter  string `json:"retry_after,omitempty"`
 	Source      string `json:"source"`
 	DedupeHits  int    `json:"dedupe_hits,omitempty"`

@@ -40,6 +40,7 @@ type taskState struct {
 	Priority         string
 	DueAt            string
 	Status           string // idle|running|waiting|blocked|completed
+	BlockReason      string
 	LastRunAt        time.Time
 	LastAutonomyAt   time.Time
 	RetryAfter       time.Time
@@ -120,6 +121,18 @@ func (e *Engine) tick() {
 	stored, _ := e.taskStore.Load()
 
 	e.mu.Lock()
+	if e.hasManualPause() {
+		for _, st := range e.state {
+			if st.Status == "running" {
+				st.Status = "waiting"
+				st.BlockReason = "manual_pause"
+				e.writeReflectLog("waiting", st, "paused by manual switch")
+			}
+		}
+		e.persistStateLocked()
+		e.mu.Unlock()
+		return
+	}
 	if e.hasRecentUserActivity(now) {
 		for _, st := range e.state {
 			if st.Status == "running" {
@@ -208,6 +221,7 @@ func (e *Engine) tick() {
 		}
 		if st.Status == "waiting" {
 			st.Status = "idle"
+			st.BlockReason = ""
 			e.writeReflectLog("resume", st, "user conversation idle, autonomy resumed")
 		}
 		if st.Status == "blocked" {
@@ -216,6 +230,7 @@ func (e *Engine) tick() {
 			}
 			if now.Sub(st.LastRunAt) >= blockedRetryBackoff(st.ConsecutiveStall, e.opts.MinRunIntervalSec) {
 				st.Status = "idle"
+				st.BlockReason = ""
 			} else {
 				continue
 			}
@@ -227,6 +242,7 @@ func (e *Engine) tick() {
 			st.ConsecutiveStall++
 			if st.ConsecutiveStall > e.opts.MaxConsecutiveStalls {
 				st.Status = "blocked"
+				st.BlockReason = "max_consecutive_stalls"
 				st.RetryAfter = now.Add(blockedRetryBackoff(st.ConsecutiveStall, e.opts.MinRunIntervalSec))
 				e.sendFailureNotification(st, "max consecutive stalls reached")
 				continue
@@ -235,9 +251,11 @@ func (e *Engine) tick() {
 
 		e.dispatchTask(st)
 		st.Status = "running"
+		st.BlockReason = ""
 		st.LastRunAt = now
 		st.LastAutonomyAt = now
 		e.writeReflectLog("dispatch", st, "task dispatched to agent loop")
+		e.writeTriggerAudit("dispatch", st, "")
 		dispatched++
 	}
 	e.persistStateLocked()
@@ -348,6 +366,7 @@ func (e *Engine) dispatchTask(st *taskState) {
 
 func (e *Engine) sendCompletionNotification(st *taskState) {
 	e.writeReflectLog("complete", st, "task marked completed")
+	e.writeTriggerAudit("complete", st, "")
 	if !e.shouldNotify("done:" + st.ID) {
 		return
 	}
@@ -360,6 +379,7 @@ func (e *Engine) sendCompletionNotification(st *taskState) {
 
 func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 	e.writeReflectLog("blocked", st, reason)
+	e.writeTriggerAudit("blocked", st, reason)
 	if !e.shouldNotify("blocked:" + st.ID) {
 		return
 	}
@@ -385,6 +405,30 @@ func (e *Engine) shouldNotify(key string) bool {
 	}
 	e.lastNotify[key] = now
 	return true
+}
+
+func (e *Engine) writeTriggerAudit(action string, st *taskState, errText string) {
+	if strings.TrimSpace(e.opts.Workspace) == "" || st == nil {
+		return
+	}
+	path := filepath.Join(e.opts.Workspace, "memory", "trigger-audit.jsonl")
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	row := map[string]interface{}{
+		"time":    time.Now().UTC().Format(time.RFC3339),
+		"trigger": "autonomy",
+		"action":  action,
+		"session": "autonomy:" + st.ID,
+	}
+	if strings.TrimSpace(errText) != "" {
+		row["error"] = errText
+	}
+	if b, err := json.Marshal(row); err == nil {
+		f, oErr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if oErr == nil {
+			_, _ = f.Write(append(b, '\n'))
+			_ = f.Close()
+		}
+	}
 }
 
 func (e *Engine) writeReflectLog(stage string, st *taskState, outcome string) {
@@ -457,15 +501,16 @@ func (e *Engine) persistStateLocked() {
 			retryAfter = st.RetryAfter.UTC().Format(time.RFC3339)
 		}
 		items = append(items, TaskItem{
-			ID:         st.ID,
-			Content:    st.Content,
-			Priority:   st.Priority,
-			DueAt:      st.DueAt,
-			Status:     status,
-			RetryAfter: retryAfter,
-			Source:     "memory_todo",
-			DedupeHits: st.DedupeHits,
-			UpdatedAt:  nowRFC3339(),
+			ID:          st.ID,
+			Content:     st.Content,
+			Priority:    st.Priority,
+			DueAt:       st.DueAt,
+			Status:      status,
+			BlockReason: st.BlockReason,
+			RetryAfter:  retryAfter,
+			Source:      "memory_todo",
+			DedupeHits:  st.DedupeHits,
+			UpdatedAt:   nowRFC3339(),
 		})
 	}
 	_ = e.taskStore.Save(items)
@@ -524,6 +569,22 @@ func dueWeight(dueAt string) int64 {
 		}
 	}
 	return 0
+}
+
+func (e *Engine) pauseFilePath() string {
+	if strings.TrimSpace(e.opts.Workspace) == "" {
+		return ""
+	}
+	return filepath.Join(e.opts.Workspace, "memory", "autonomy.pause")
+}
+
+func (e *Engine) hasManualPause() bool {
+	p := e.pauseFilePath()
+	if p == "" {
+		return false
+	}
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 func (e *Engine) hasRecentUserActivity(now time.Time) bool {
