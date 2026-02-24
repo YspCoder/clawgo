@@ -143,6 +143,7 @@
       "enabled": true,
       "working_dir": "",
       "timeout": 60000000000,
+      "auto_install_missing": false,
       "sandbox": {
         "enabled": false,
         "image": "alpine:3.20"

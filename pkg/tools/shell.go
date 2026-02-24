@@ -18,18 +18,20 @@ import (
 type ExecTool struct {
 	workingDir     string
 	timeout        time.Duration
-	sandboxEnabled bool
-	sandboxImage   string
-	procManager    *ProcessManager
+	sandboxEnabled    bool
+	sandboxImage      string
+	autoInstallMissing bool
+	procManager       *ProcessManager
 }
 
 func NewExecTool(cfg config.ShellConfig, workspace string, pm *ProcessManager) *ExecTool {
 	return &ExecTool{
-		workingDir:     workspace,
-		timeout:        cfg.Timeout,
-		sandboxEnabled: cfg.Sandbox.Enabled,
-		sandboxImage:   cfg.Sandbox.Image,
-		procManager:    pm,
+		workingDir:         workspace,
+		timeout:            cfg.Timeout,
+		sandboxEnabled:     cfg.Sandbox.Enabled,
+		sandboxImage:       cfg.Sandbox.Image,
+		autoInstallMissing: cfg.AutoInstallMissing,
+		procManager:        pm,
 	}
 }
 
@@ -142,7 +144,7 @@ func (t *ExecTool) executeCommand(ctx context.Context, command, cwd string) (str
 		return fmt.Sprintf("Error: Command timed out after %v", t.timeout), nil
 	}
 
-	if err != nil {
+	if err != nil && t.autoInstallMissing {
 		if missingCmd := detectMissingCommandFromOutput(output); missingCmd != "" {
 			if installLog, installed := t.tryAutoInstallMissingCommand(ctx, missingCmd, cwd); installed {
 				output += "\n[AUTO-INSTALL]\n" + installLog

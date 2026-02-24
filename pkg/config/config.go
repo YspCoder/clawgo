@@ -217,10 +217,11 @@ type WebToolsConfig struct {
 }
 
 type ShellConfig struct {
-	Enabled    bool          `json:"enabled" env:"CLAWGO_TOOLS_SHELL_ENABLED"`
-	WorkingDir string        `json:"working_dir" env:"CLAWGO_TOOLS_SHELL_WORKING_DIR"`
-	Timeout    time.Duration `json:"timeout" env:"CLAWGO_TOOLS_SHELL_TIMEOUT"`
-	Sandbox    SandboxConfig `json:"sandbox"`
+	Enabled            bool          `json:"enabled" env:"CLAWGO_TOOLS_SHELL_ENABLED"`
+	WorkingDir         string        `json:"working_dir" env:"CLAWGO_TOOLS_SHELL_WORKING_DIR"`
+	Timeout            time.Duration `json:"timeout" env:"CLAWGO_TOOLS_SHELL_TIMEOUT"`
+	AutoInstallMissing bool          `json:"auto_install_missing" env:"CLAWGO_TOOLS_SHELL_AUTO_INSTALL_MISSING"`
+	Sandbox            SandboxConfig `json:"sandbox"`
 }
 
 type SandboxConfig struct {
@@ -441,8 +442,9 @@ func DefaultConfig() *Config {
 				},
 			},
 			Shell: ShellConfig{
-				Enabled: true,
-				Timeout: 60 * time.Second,
+				Enabled:            true,
+				Timeout:            60 * time.Second,
+				AutoInstallMissing: false,
 				Sandbox: SandboxConfig{
 					Enabled: false,
 					Image:   "alpine:3.20",

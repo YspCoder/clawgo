@@ -137,7 +137,6 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	bootstrapFiles := []string{
 		"AGENTS.md",
 		"BOOT.md",
-		"BOOTSTRAP.md",
 		"SOUL.md",
 		"USER.md",
 		"IDENTITY.md",
@@ -152,7 +151,30 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 		}
 	}
 
+	// BOOTSTRAP.md is first-run guidance; load only when identity/user is not initialized.
+	if cb.shouldLoadBootstrap() {
+		if data, err := os.ReadFile(filepath.Join(cb.workspace, "BOOTSTRAP.md")); err == nil {
+			result += fmt.Sprintf("## %s\n\n%s\n\n", "BOOTSTRAP.md", string(data))
+		}
+	}
+
 	return result
+}
+
+func (cb *ContextBuilder) shouldLoadBootstrap() bool {
+	identityPath := filepath.Join(cb.workspace, "IDENTITY.md")
+	userPath := filepath.Join(cb.workspace, "USER.md")
+	identityData, idErr := os.ReadFile(identityPath)
+	userData, userErr := os.ReadFile(userPath)
+	if idErr != nil || userErr != nil {
+		return true
+	}
+	idText := strings.TrimSpace(string(identityData))
+	userText := strings.TrimSpace(string(userData))
+	if idText == "" || userText == "" {
+		return true
+	}
+	return false
 }
 
 func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID, responseLanguage string) []providers.Message {
