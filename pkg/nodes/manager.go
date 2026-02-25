@@ -137,6 +137,8 @@ func (m *Manager) SupportsAction(nodeID, action string) bool {
 	switch action {
 	case "run":
 		return n.Capabilities.Run
+	case "agent_task":
+		return n.Capabilities.Model
 	case "camera_snap", "camera_clip":
 		return n.Capabilities.Camera
 	case "screen_record", "screen_snapshot":
@@ -160,6 +162,10 @@ func (m *Manager) PickFor(action string) (NodeInfo, bool) {
 		switch strings.ToLower(strings.TrimSpace(action)) {
 		case "run":
 			if n.Capabilities.Run {
+				return n, true
+			}
+		case "agent_task":
+			if n.Capabilities.Model {
 				return n, true
 			}
 		case "camera_snap", "camera_clip":

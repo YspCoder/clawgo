@@ -6,6 +6,7 @@ import "time"
 type Capabilities struct {
 	Run      bool `json:"run"`
 	Invoke   bool `json:"invoke"`
+	Model    bool `json:"model"`
 	Camera   bool `json:"camera"`
 	Screen   bool `json:"screen"`
 	Location bool `json:"location"`
@@ -23,6 +24,7 @@ type NodeInfo struct {
 	Token        string       `json:"token,omitempty"`
 	Capabilities Capabilities `json:"capabilities"`
 	Actions      []string     `json:"actions,omitempty"`
+	Models       []string     `json:"models,omitempty"`
 	RegisteredAt time.Time    `json:"registered_at,omitempty"`
 	LastSeenAt   time.Time    `json:"last_seen_at"`
 	Online       bool         `json:"online"`
@@ -32,6 +34,8 @@ type NodeInfo struct {
 type Request struct {
 	Action string                 `json:"action"`
 	Node   string                 `json:"node,omitempty"`
+	Task   string                 `json:"task,omitempty"`
+	Model  string                 `json:"model,omitempty"`
 	Args   map[string]interface{} `json:"args,omitempty"`
 }
 

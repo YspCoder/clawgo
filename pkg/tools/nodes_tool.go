@@ -22,10 +22,12 @@ func (t *NodesTool) Description() string {
 }
 func (t *NodesTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
-		"action": map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|camera_snap|camera_clip|screen_record|screen_snapshot|location_get|canvas_snapshot|canvas_action"},
+		"action": map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|agent_task|camera_snap|camera_clip|screen_record|screen_snapshot|location_get|canvas_snapshot|canvas_action"},
 		"node":   map[string]interface{}{"type": "string", "description": "target node id"},
 		"mode":   map[string]interface{}{"type": "string", "description": "auto|p2p|relay (default auto)"},
 		"args":   map[string]interface{}{"type": "object", "description": "action args"},
+		"task":   map[string]interface{}{"type": "string", "description": "agent_task content for child node model"},
+		"model":  map[string]interface{}{"type": "string", "description": "optional model for agent_task"},
 		"command": map[string]interface{}{"type": "array", "description": "run command array shortcut"},
 		"facing":  map[string]interface{}{"type": "string", "description": "camera facing: front|back|both"},
 		"duration_ms": map[string]interface{}{"type": "integer", "description": "clip/record duration"},
@@ -95,12 +97,17 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 			}
 			reqArgs["duration_ms"] = di
 		}
+		task, _ := args["task"].(string)
+		model, _ := args["model"].(string)
+		if action == "agent_task" && strings.TrimSpace(task) == "" {
+			return "", fmt.Errorf("invalid_args: agent_task requires task")
+		}
 		if action == "canvas_action" {
 			if act, _ := reqArgs["action"].(string); strings.TrimSpace(act) == "" {
 				return "", fmt.Errorf("invalid_args: canvas_action requires args.action")
 			}
 		}
-		resp, err := t.router.Dispatch(ctx, nodes.Request{Action: action, Node: nodeID, Args: reqArgs}, mode)
+		resp, err := t.router.Dispatch(ctx, nodes.Request{Action: action, Node: nodeID, Task: strings.TrimSpace(task), Model: strings.TrimSpace(model), Args: reqArgs}, mode)
 		if err != nil {
 			return "", err
 		}

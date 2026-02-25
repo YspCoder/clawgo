@@ -162,19 +162,20 @@ func statusCmd() {
 		ns := nodes.DefaultManager().List()
 		if len(ns) > 0 {
 			online := 0
-			caps := map[string]int{"run": 0, "camera": 0, "screen": 0, "location": 0, "canvas": 0}
+			caps := map[string]int{"run": 0, "model": 0, "camera": 0, "screen": 0, "location": 0, "canvas": 0}
 			for _, n := range ns {
 				if n.Online {
 					online++
 				}
 				if n.Capabilities.Run { caps["run"]++ }
+				if n.Capabilities.Model { caps["model"]++ }
 				if n.Capabilities.Camera { caps["camera"]++ }
 				if n.Capabilities.Screen { caps["screen"]++ }
 				if n.Capabilities.Location { caps["location"]++ }
 				if n.Capabilities.Canvas { caps["canvas"]++ }
 			}
 			fmt.Printf("Nodes: total=%d online=%d\n", len(ns), online)
-			fmt.Printf("Nodes Capabilities: run=%d camera=%d screen=%d location=%d canvas=%d\n", caps["run"], caps["camera"], caps["screen"], caps["location"], caps["canvas"])
+			fmt.Printf("Nodes Capabilities: run=%d model=%d camera=%d screen=%d location=%d canvas=%d\n", caps["run"], caps["model"], caps["camera"], caps["screen"], caps["location"], caps["canvas"])
 		}
 	}
 }

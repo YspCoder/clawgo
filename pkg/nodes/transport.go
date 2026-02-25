@@ -75,6 +75,8 @@ func actionHTTPPath(action string) string {
 		return "/run"
 	case "invoke":
 		return "/invoke"
+	case "agent_task":
+		return "/agent/task"
 	case "camera_snap":
 		return "/camera/snap"
 	case "camera_clip":

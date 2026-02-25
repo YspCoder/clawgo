@@ -50,6 +50,7 @@ A `nodes` tool control-plane PoC is now available:
 - `nodes` tool supports device shortcuts: `facing`, `duration_ms`, `command`
 - unified device response envelope: `ok/code/error/payload` (code examples: `ok`, `unsupported_action`, `transport_error`)
 - device `payload` normalized fields: `media_type` `storage` `url|path|image` `meta`
+- supports `agent_task`: parent node can dispatch tasks to child nodes with `model` capability and receive execution results
 
 Implementation:
 - `pkg/nodes/types.go`
