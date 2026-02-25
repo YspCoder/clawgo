@@ -1,4 +1,4 @@
-.PHONY: all build build-all install uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts
+.PHONY: all build build-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts
 
 # Build variables
 BINARY_NAME=clawgo
@@ -170,6 +170,26 @@ install: build
 ## install-user: Install clawgo to ~/.local and copy builtin skills
 install-user:
 	@$(MAKE) install INSTALL_PREFIX=$(USER_HOME)/.local
+
+## install-win: Prepare Windows install bundle (binary + PowerShell installer)
+install-win: build-all
+	@echo "Preparing Windows install bundle..."
+	@mkdir -p "$(BUILD_DIR)/windows-install"
+	@cp "$(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe" "$(BUILD_DIR)/windows-install/$(BINARY_NAME).exe"
+	@printf '%s\n' \
+	'$ErrorActionPreference = "Stop"' \
+	'$targetDir = Join-Path $$env:USERPROFILE ".clawgo\\bin"' \
+	'New-Item -ItemType Directory -Force -Path $$targetDir | Out-Null' \
+	'Copy-Item -Force ".\\clawgo.exe" (Join-Path $$targetDir "clawgo.exe")' \
+	'$$userPath = [Environment]::GetEnvironmentVariable("Path", "User")' \
+	'if (-not ($$userPath -split ";" | Where-Object { $$_ -eq $$targetDir })) {' \
+	'  [Environment]::SetEnvironmentVariable("Path", "$$userPath;$$targetDir", "User")' \
+	'}' \
+	'Write-Host "Installed clawgo to $$targetDir"' \
+	'Write-Host "Reopen terminal then run: clawgo status"' \
+	> "$(BUILD_DIR)/windows-install/install-win.ps1"
+	@echo "✓ Bundle ready: $(BUILD_DIR)/windows-install"
+	@echo "Windows usage: copy folder to Windows, run PowerShell as user: ./install-win.ps1"
 
 ## uninstall: Remove clawgo from system
 uninstall:
