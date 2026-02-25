@@ -127,6 +127,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	if cs != nil {
 		toolsRegistry.Register(tools.NewRemindTool(cs))
+		toolsRegistry.Register(tools.NewCronTool(cs))
 	}
 
 	maxParallelCalls := cfg.Agents.Defaults.RuntimeControl.ToolMaxParallelCalls
