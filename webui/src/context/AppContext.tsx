@@ -3,6 +3,8 @@ import { CronJob, Cfg, Session, Skill } from '../types';
 
 interface AppContextType {
   token: string;
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
   setToken: (token: string) => void;
   isGatewayOnline: boolean;
   setIsGatewayOnline: (online: boolean) => void;
@@ -29,7 +31,16 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState('cg_nLnov7DPd9yqZDYPEU5pHnoa');
+  const initialToken = (() => {
+    try {
+      const u = new URL(window.location.href);
+      return u.searchParams.get('token') || 'cg_nLnov7DPd9yqZDYPEU5pHnoa';
+    } catch {
+      return 'cg_nLnov7DPd9yqZDYPEU5pHnoa';
+    }
+  })();
+  const [token, setToken] = useState(initialToken);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isGatewayOnline, setIsGatewayOnline] = useState(true);
   const [cfg, setCfg] = useState<Cfg>({});
   const [cfgRaw, setCfgRaw] = useState('{}');
@@ -109,7 +120,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{
-      token, setToken, isGatewayOnline, setIsGatewayOnline,
+      token, setToken, sidebarOpen, setSidebarOpen, isGatewayOnline, setIsGatewayOnline,
       cfg, setCfg, cfgRaw, setCfgRaw, nodes, setNodes,
       cron, setCron, skills, setSkills,
       sessions, setSessions,

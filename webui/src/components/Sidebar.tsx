@@ -6,10 +6,10 @@ import NavItem from './NavItem';
 
 const Sidebar: React.FC = () => {
   const { t } = useTranslation();
-  const { token, setToken } = useAppContext();
+  const { token, setToken, sidebarOpen } = useAppContext();
 
   return (
-    <aside className="w-64 border-r border-zinc-800 bg-zinc-900/30 flex flex-col shrink-0">
+    <aside className={`fixed md:static inset-y-16 left-0 z-40 w-64 border-r border-zinc-800 bg-zinc-900/95 md:bg-zinc-900/30 flex flex-col shrink-0 transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
       <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
         <NavItem icon={<LayoutDashboard className="w-5 h-5" />} label={t('dashboard')} to="/" />
         <NavItem icon={<MessageSquare className="w-5 h-5" />} label={t('chat')} to="/chat" />

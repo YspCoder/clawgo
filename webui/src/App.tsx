@@ -13,7 +13,7 @@ import Skills from './pages/Skills';
 export default function App() {
   return (
     <AppProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/webui">
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />

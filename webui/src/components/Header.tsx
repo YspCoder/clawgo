@@ -1,11 +1,11 @@
 import React from 'react';
-import { Terminal, Globe } from 'lucide-react';
+import { Terminal, Globe, Menu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 
 const Header: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { isGatewayOnline } = useAppContext();
+  const { isGatewayOnline, setSidebarOpen } = useAppContext();
 
   const toggleLang = () => {
     const nextLang = i18n.language === 'en' ? 'zh' : 'en';
@@ -15,6 +15,9 @@ const Header: React.FC = () => {
   return (
     <header className="h-16 border-b border-zinc-800 bg-zinc-900/50 flex items-center justify-between px-6 shrink-0 z-10">
       <div className="flex items-center gap-3">
+        <button className="md:hidden p-2 rounded-lg hover:bg-zinc-800 text-zinc-300" onClick={() => setSidebarOpen(true)}>
+          <Menu className="w-5 h-5" />
+        </button>
         <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
           <Terminal className="w-5 h-5 text-white" />
         </div>
