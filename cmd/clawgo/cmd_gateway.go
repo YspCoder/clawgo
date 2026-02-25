@@ -226,6 +226,9 @@ func gatewayCmd() {
 			if kind == "" {
 				kind = "every"
 			}
+			if kind == "once" {
+				kind = "at"
+			}
 			msg := getStr("message")
 			if msg == "" {
 				return nil, fmt.Errorf("message required")
@@ -241,10 +244,12 @@ func gatewayCmd() {
 			}
 			if kind == "at" {
 				atMS, ok := args["atMs"].(float64)
+				var at int64
 				if !ok || int64(atMS) <= 0 {
-					return nil, fmt.Errorf("atMs required for kind=at")
+					at = time.Now().Add(1 * time.Minute).UnixMilli()
+				} else {
+					at = int64(atMS)
 				}
-				at := int64(atMS)
 				schedule.AtMS = &at
 			}
 			if kind == "cron" {
@@ -284,6 +289,9 @@ func gatewayCmd() {
 				in.To = &v
 			}
 			if kind := getStr("kind"); kind != "" {
+				if kind == "once" {
+					kind = "at"
+				}
 				s := cron.CronSchedule{Kind: kind}
 				if kind == "every" {
 					if everyMS, ok := args["everyMs"].(float64); ok && int64(everyMS) > 0 {
@@ -294,6 +302,9 @@ func gatewayCmd() {
 				if kind == "at" {
 					if atMS, ok := args["atMs"].(float64); ok && int64(atMS) > 0 {
 						at := int64(atMS)
+						s.AtMS = &at
+					} else {
+						at := time.Now().Add(1 * time.Minute).UnixMilli()
 						s.AtMS = &at
 					}
 				}
