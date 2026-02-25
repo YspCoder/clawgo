@@ -49,6 +49,7 @@ A `nodes` tool control-plane PoC is now available:
 - `NodeInfo.token` is supported; relay automatically sets `Authorization: Bearer <token>`
 - `nodes` tool supports device shortcuts: `facing`, `duration_ms`, `command`
 - unified device response envelope: `ok/code/error/payload` (code examples: `ok`, `unsupported_action`, `transport_error`)
+- device `payload` normalized fields: `media_type` `storage` `url|path|image` `meta`
 
 Implementation:
 - `pkg/nodes/types.go`

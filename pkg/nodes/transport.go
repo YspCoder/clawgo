@@ -146,5 +146,36 @@ func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, e
 			resp.Code = "remote_error"
 		}
 	}
+	resp.Payload = normalizeDevicePayload(resp.Action, resp.Payload)
 	return resp, nil
+}
+
+func normalizeDevicePayload(action string, payload map[string]interface{}) map[string]interface{} {
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+	a := strings.ToLower(strings.TrimSpace(action))
+	switch a {
+	case "camera_snap", "screen_snapshot", "canvas_snapshot":
+		if _, ok := payload["media_type"]; !ok {
+			payload["media_type"] = "image"
+		}
+	case "camera_clip", "screen_record":
+		if _, ok := payload["media_type"]; !ok {
+			payload["media_type"] = "video"
+		}
+	}
+	if _, ok := payload["storage"]; !ok {
+		if _, hasURL := payload["url"]; hasURL {
+			payload["storage"] = "url"
+		} else if _, hasPath := payload["path"]; hasPath {
+			payload["storage"] = "path"
+		} else if _, hasInline := payload["image"]; hasInline {
+			payload["storage"] = "inline"
+		}
+	}
+	if _, ok := payload["meta"]; !ok {
+		payload["meta"] = map[string]interface{}{}
+	}
+	return payload
 }

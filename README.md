@@ -49,6 +49,7 @@
 - 可在 `NodeInfo` 中配置 `token`，relay 会自动附加 `Authorization: Bearer <token>`
 - `nodes` 工具支持设备快捷参数：`facing`、`duration_ms`、`command`
 - 设备动作响应统一：`ok/code/error/payload`（code 示例：`ok` `unsupported_action` `transport_error`）
+- 设备 `payload` 规范字段：`media_type` `storage` `url|path|image` `meta`
 
 实现位置：
 - `pkg/nodes/types.go`

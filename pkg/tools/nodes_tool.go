@@ -95,6 +95,11 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 			}
 			reqArgs["duration_ms"] = di
 		}
+		if action == "canvas_action" {
+			if act, _ := reqArgs["action"].(string); strings.TrimSpace(act) == "" {
+				return "", fmt.Errorf("invalid_args: canvas_action requires args.action")
+			}
+		}
 		resp, err := t.router.Dispatch(ctx, nodes.Request{Action: action, Node: nodeID, Args: reqArgs}, mode)
 		if err != nil {
 			return "", err
