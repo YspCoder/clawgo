@@ -51,6 +51,7 @@
 - 设备动作响应统一：`ok/code/error/payload`（code 示例：`ok` `unsupported_action` `transport_error`）
 - 设备 `payload` 规范字段：`media_type` `storage` `url|path|image` `meta`
 - 支持 `agent_task`：主节点可向具备 `model` 能力的子节点下发任务，子节点返回执行结果
+- 节点分发审计写入：`memory/nodes-dispatch-audit.jsonl`
 
 实现位置：
 - `pkg/nodes/types.go`

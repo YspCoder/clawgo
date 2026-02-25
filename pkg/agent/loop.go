@@ -113,7 +113,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		}
 	})
 	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.HTTPRelayTransport{Manager: nodesManager}}
-	toolsRegistry.Register(tools.NewNodesTool(nodesManager, nodesRouter))
+	toolsRegistry.Register(tools.NewNodesTool(nodesManager, nodesRouter, filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")))
 
 	if cs != nil {
 		toolsRegistry.Register(tools.NewRemindTool(cs))

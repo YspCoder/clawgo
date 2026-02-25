@@ -4,18 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"clawgo/pkg/nodes"
 )
 
 // NodesTool provides an OpenClaw-style control surface for paired nodes.
 type NodesTool struct {
-	manager *nodes.Manager
-	router  *nodes.Router
+	manager   *nodes.Manager
+	router    *nodes.Router
+	auditPath string
 }
 
-func NewNodesTool(m *nodes.Manager, r *nodes.Router) *NodesTool { return &NodesTool{manager: m, router: r} }
+func NewNodesTool(m *nodes.Manager, r *nodes.Router, auditPath string) *NodesTool {
+	return &NodesTool{manager: m, router: r, auditPath: strings.TrimSpace(auditPath)}
+}
 func (t *NodesTool) Name() string              { return "nodes" }
 func (t *NodesTool) Description() string {
 	return "Manage paired nodes (status/describe/run/invoke/camera/screen/location/canvas)."
@@ -107,11 +113,39 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 				return "", fmt.Errorf("invalid_args: canvas_action requires args.action")
 			}
 		}
-		resp, err := t.router.Dispatch(ctx, nodes.Request{Action: action, Node: nodeID, Task: strings.TrimSpace(task), Model: strings.TrimSpace(model), Args: reqArgs}, mode)
+		req := nodes.Request{Action: action, Node: nodeID, Task: strings.TrimSpace(task), Model: strings.TrimSpace(model), Args: reqArgs}
+		resp, err := t.router.Dispatch(ctx, req, mode)
 		if err != nil {
+			t.writeAudit(req, nodes.Response{OK: false, Code: "transport_error", Error: err.Error(), Node: nodeID, Action: action}, mode)
 			return "", err
 		}
+		t.writeAudit(req, resp, mode)
 		b, _ := json.Marshal(resp)
 		return string(b), nil
 	}
+}
+
+func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode string) {
+	if strings.TrimSpace(t.auditPath) == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(t.auditPath), 0755)
+	row := map[string]interface{}{
+		"time":   time.Now().UTC().Format(time.RFC3339),
+		"mode":   strings.TrimSpace(mode),
+		"action": req.Action,
+		"node":   req.Node,
+		"task":   req.Task,
+		"model":  req.Model,
+		"ok":     resp.OK,
+		"code":   resp.Code,
+		"error":  resp.Error,
+	}
+	b, _ := json.Marshal(row)
+	f, err := os.OpenFile(t.auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(b, '\n'))
 }
