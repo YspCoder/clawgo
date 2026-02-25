@@ -52,6 +52,7 @@ A `nodes` tool control-plane PoC is now available:
 - device `payload` normalized fields: `media_type` `storage` `url|path|image` `meta`
 - supports `agent_task`: parent node can dispatch tasks to child nodes with `model` capability and receive execution results
 - node dispatch audit is persisted to `memory/nodes-dispatch-audit.jsonl`
+- `/status` shows node dispatch stats (total/ok/fail/avg_ms/top_action)
 
 Implementation:
 - `pkg/nodes/types.go`

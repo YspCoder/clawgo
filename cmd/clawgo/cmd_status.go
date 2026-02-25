@@ -176,6 +176,12 @@ func statusCmd() {
 			}
 			fmt.Printf("Nodes: total=%d online=%d\n", len(ns), online)
 			fmt.Printf("Nodes Capabilities: run=%d model=%d camera=%d screen=%d location=%d canvas=%d\n", caps["run"], caps["model"], caps["camera"], caps["screen"], caps["location"], caps["canvas"])
+			if total, okCnt, avgMs, actionTop, err := collectNodeDispatchStats(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")); err == nil && total > 0 {
+				fmt.Printf("Nodes Dispatch: total=%d ok=%d fail=%d avg_ms=%d\n", total, okCnt, total-okCnt, avgMs)
+				if actionTop != "" {
+					fmt.Printf("Nodes Dispatch Top Action: %s\n", actionTop)
+				}
+			}
 		}
 	}
 }
@@ -427,6 +433,58 @@ func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, ma
 		}
 	}
 	return summary, priorities, reasons, nextRetry, totalDedupe, waitingLocks, len(lockKeySet), nil
+}
+
+func collectNodeDispatchStats(path string) (int, int, int, string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, 0, "", err
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	total, okCnt, msSum := 0, 0, 0
+	actionCnt := map[string]int{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var row struct {
+			Action     string `json:"action"`
+			OK         bool   `json:"ok"`
+			DurationMS int    `json:"duration_ms"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			continue
+		}
+		total++
+		if row.OK {
+			okCnt++
+		}
+		if row.DurationMS > 0 {
+			msSum += row.DurationMS
+		}
+		a := strings.TrimSpace(strings.ToLower(row.Action))
+		if a == "" {
+			a = "unknown"
+		}
+		actionCnt[a]++
+	}
+	avg := 0
+	if total > 0 {
+		avg = msSum / total
+	}
+	topAction := ""
+	topN := 0
+	for k, v := range actionCnt {
+		if v > topN {
+			topN = v
+			topAction = k
+		}
+	}
+	if topAction != "" {
+		topAction = fmt.Sprintf("%s(%d)", topAction, topN)
+	}
+	return total, okCnt, avg, topAction, nil
 }
 
 func collectSkillExecStats(path string) (int, int, int, float64, string, error) {

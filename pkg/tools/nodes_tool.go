@@ -114,32 +114,35 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 			}
 		}
 		req := nodes.Request{Action: action, Node: nodeID, Task: strings.TrimSpace(task), Model: strings.TrimSpace(model), Args: reqArgs}
+		started := time.Now()
 		resp, err := t.router.Dispatch(ctx, req, mode)
+		durationMs := int(time.Since(started).Milliseconds())
 		if err != nil {
-			t.writeAudit(req, nodes.Response{OK: false, Code: "transport_error", Error: err.Error(), Node: nodeID, Action: action}, mode)
+			t.writeAudit(req, nodes.Response{OK: false, Code: "transport_error", Error: err.Error(), Node: nodeID, Action: action}, mode, durationMs)
 			return "", err
 		}
-		t.writeAudit(req, resp, mode)
+		t.writeAudit(req, resp, mode, durationMs)
 		b, _ := json.Marshal(resp)
 		return string(b), nil
 	}
 }
 
-func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode string) {
+func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode string, durationMs int) {
 	if strings.TrimSpace(t.auditPath) == "" {
 		return
 	}
 	_ = os.MkdirAll(filepath.Dir(t.auditPath), 0755)
 	row := map[string]interface{}{
-		"time":   time.Now().UTC().Format(time.RFC3339),
-		"mode":   strings.TrimSpace(mode),
-		"action": req.Action,
-		"node":   req.Node,
-		"task":   req.Task,
-		"model":  req.Model,
-		"ok":     resp.OK,
-		"code":   resp.Code,
-		"error":  resp.Error,
+		"time":        time.Now().UTC().Format(time.RFC3339),
+		"mode":        strings.TrimSpace(mode),
+		"action":      req.Action,
+		"node":        req.Node,
+		"task":        req.Task,
+		"model":       req.Model,
+		"ok":          resp.OK,
+		"code":        resp.Code,
+		"error":       resp.Error,
+		"duration_ms": durationMs,
 	}
 	b, _ := json.Marshal(row)
 	f, err := os.OpenFile(t.auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
