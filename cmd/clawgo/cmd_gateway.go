@@ -178,6 +178,16 @@ func gatewayCmd() {
 	}
 
 	registryServer := nodes.NewRegistryServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
+	registryServer.SetConfigPath(getConfigPath())
+	registryServer.SetChatHandler(func(cctx context.Context, sessionKey, content string) (string, error) {
+		if strings.TrimSpace(content) == "" {
+			return "", nil
+		}
+		return agentLoop.ProcessDirect(cctx, content, sessionKey)
+	})
+	registryServer.SetConfigAfterHook(func() {
+		_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
+	})
 	if err := registryServer.Start(ctx); err != nil {
 		fmt.Printf("Error starting node registry server: %v\n", err)
 	} else {
