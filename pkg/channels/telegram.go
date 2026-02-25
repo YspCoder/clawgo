@@ -334,7 +334,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	return nil
 }
 
-func (c *TelegramChannel) isAllowedChat(chatID int64) bool {
+func (c *TelegramChannel) isAllowedChat(chatID int64, chatType string) bool {
+	// Private chats are governed by allow_from (sender allowlist), not allow_chats.
+	if strings.TrimSpace(chatType) == telego.ChatTypePrivate {
+		return true
+	}
 	if len(c.config.AllowChats) == 0 {
 		return true
 	}
@@ -458,7 +462,7 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 		content = "[empty message]"
 	}
 
-	if !c.isAllowedChat(chatID) {
+	if !c.isAllowedChat(chatID, message.Chat.Type) {
 		logger.WarnCF("telegram", "Telegram message rejected by chat allowlist", map[string]interface{}{
 			logger.FieldSenderID: senderID,
 			logger.FieldChatID:   chatID,
