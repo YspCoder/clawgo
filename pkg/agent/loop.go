@@ -637,6 +637,16 @@ func (al *AgentLoop) updateIntentHint(sessionKey, content string) {
 		return
 	}
 	lower := strings.ToLower(content)
+
+	// Cron natural-language intent: avoid searching project files for user timer ops.
+	if strings.Contains(lower, "定时") || strings.Contains(lower, "定时任务") || strings.Contains(lower, "cron") || strings.Contains(lower, "schedule") {
+		hint := "优先使用 cron 工具处理定时任务：查看=action=list；删除=action=delete(id)；启停=action=enable/disable。不要改为在项目目录中搜索 cron 文本。"
+		al.intentMu.Lock()
+		al.intentHints[sessionKey] = hint + " 用户补充=" + content
+		al.intentMu.Unlock()
+		return
+	}
+
 	if !strings.Contains(lower, "提交") && !strings.Contains(lower, "推送") && !strings.Contains(lower, "commit") && !strings.Contains(lower, "push") {
 		if strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") {
 			al.intentMu.Lock()
@@ -664,7 +674,7 @@ func (al *AgentLoop) applyIntentHint(sessionKey, content string) string {
 		return content
 	}
 	lower := strings.ToLower(strings.TrimSpace(content))
-	if strings.Contains(lower, "提交") || strings.Contains(lower, "推送") || strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") {
+	if strings.Contains(lower, "提交") || strings.Contains(lower, "推送") || strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") || strings.Contains(lower, "定时") || strings.Contains(lower, "cron") || strings.Contains(lower, "schedule") {
 		return "[Intent Slot]\n" + hint + "\n\n[User Message]\n" + content
 	}
 	return content
