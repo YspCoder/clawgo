@@ -4,7 +4,7 @@ type ChatItem = { role: 'user' | 'assistant'; text: string }
 type Session = { key: string; title: string }
 type CronJob = { id: string; name: string; enabled: boolean }
 type Cfg = Record<string, any>
-type View = 'chat' | 'config' | 'cron' | 'nodes'
+type View = 'dashboard' | 'chat' | 'config' | 'cron' | 'nodes'
 
 const defaultSessions: Session[] = [{ key: 'webui:default', title: 'Default' }]
 
@@ -25,7 +25,7 @@ function setPath(obj: any, path: string, value: any) {
 }
 
 export function App() {
-  const [view, setView] = useState<View>('chat')
+  const [view, setView] = useState<View>('dashboard')
   const [token, setToken] = useState('')
   const [cfg, setCfg] = useState<Cfg>({})
   const [cfgRaw, setCfgRaw] = useState('{}')
@@ -38,6 +38,14 @@ export function App() {
   const [cron, setCron] = useState<CronJob[]>([])
   const activeChat = useMemo(() => chat[active] || [], [chat, active])
   const q = token ? `?token=${encodeURIComponent(token)}` : ''
+  const onlineNodes = useMemo(() => {
+    try {
+      const arr = JSON.parse(nodes)
+      return Array.isArray(arr) ? arr.filter((n: any) => n?.online).length : 0
+    } catch {
+      return 0
+    }
+  }, [nodes])
 
   async function loadConfig() {
     const r = await fetch(`/webui/api/config${q}`)
@@ -67,6 +75,10 @@ export function App() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, id }),
     })
     await refreshCron()
+  }
+
+  async function refreshAll() {
+    await Promise.all([loadConfig(), refreshCron(), refreshNodes()])
   }
 
   async function send() {
@@ -110,6 +122,7 @@ export function App() {
 
       <div className='shell'>
         <nav className='left-menu'>
+          <button className={view==='dashboard'?'on':''} onClick={() => setView('dashboard')}>📊 Dashboard</button>
           <button className={view==='chat'?'on':''} onClick={() => setView('chat')}>💬 Chat</button>
           <button className={view==='config'?'on':''} onClick={() => setView('config')}>⚙️ Config</button>
           <button className={view==='cron'?'on':''} onClick={() => setView('cron')}>⏱ Cron</button>
@@ -124,6 +137,31 @@ export function App() {
         </aside>
 
         <main className='main'>
+          {view === 'dashboard' && (
+            <section className='panel'>
+              <div className='panel-title'>Data Dashboard</div>
+              <div className='row'><button onClick={refreshAll}>Refresh All</button></div>
+              <div className='kpi-grid'>
+                <div className='kpi'><div className='kpi-label'>Gateway</div><div className='kpi-value'>Online</div></div>
+                <div className='kpi'><div className='kpi-label'>Sessions</div><div className='kpi-value'>{sessions.length}</div></div>
+                <div className='kpi'><div className='kpi-label'>Cron Jobs</div><div className='kpi-value'>{cron.length}</div></div>
+                <div className='kpi'><div className='kpi-label'>Nodes Online</div><div className='kpi-value'>{onlineNodes}</div></div>
+              </div>
+              <div className='dashboard-panels'>
+                <div className='dashboard-card'>
+                  <div className='panel-title'>Recent Cron</div>
+                  <ul>
+                    {cron.slice(0, 5).map((j) => <li key={j.id}>{j.name || j.id} {j.enabled ? '✅' : '⏸'}</li>)}
+                  </ul>
+                </div>
+                <div className='dashboard-card'>
+                  <div className='panel-title'>Nodes Snapshot</div>
+                  <pre>{nodes}</pre>
+                </div>
+              </div>
+            </section>
+          )}
+
           {view === 'chat' && (
             <section className='panel'>
               <div className='panel-title'>Chat</div>
