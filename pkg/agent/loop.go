@@ -54,6 +54,12 @@ type AgentLoop struct {
 	intentHints             map[string]string
 }
 
+type executionTxnState struct {
+	commitIntent bool
+	commitSeen   bool
+	pushSeen     bool
+	pushOK       bool
+}
 // StartupCompactionReport provides startup memory/session maintenance stats.
 type StartupCompactionReport struct {
 	TotalSessions     int `json:"total_sessions"`
@@ -443,6 +449,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	iteration := 0
 	var finalContent string
+	txn := executionTxnState{commitIntent: isCommitPushIntent(effectiveUserContent)}
 
 	for iteration < al.maxIterations {
 		iteration++
@@ -555,6 +562,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
 			}
+			updateTxnStateFromToolCall(&txn, tc.Name, tc.Arguments, result)
 
 			toolResultMsg := providers.Message{
 				Role:       "tool",
@@ -568,11 +576,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	if finalContent == "" {
-		fallback := strings.TrimSpace(al.noResponseFallback)
-		if fallback == "" {
-			fallback = "我已完成处理，但当前没有可直接返回的结果。请告诉我下一步要继续执行什么。"
-		}
-		finalContent = fallback
+		finalContent = ""
 	}
 
 	// Filter out <think>...</think> content from user-facing response
@@ -598,7 +602,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			userContent = strings.TrimSpace(userContent + "\n\n" + src)
 		}
 	}
-	userContent = enforceExecutionReceiptTemplate(effectiveUserContent, userContent)
+	userContent = enforceExecutionReceiptTemplate(effectiveUserContent, userContent, txn)
 
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
 
@@ -663,7 +667,7 @@ func (al *AgentLoop) applyIntentHint(sessionKey, content string) string {
 	return content
 }
 
-func enforceExecutionReceiptTemplate(userInput, output string) string {
+func enforceExecutionReceiptTemplate(userInput, output string, txn executionTxnState) string {
 	l := strings.ToLower(userInput)
 	if !(strings.Contains(l, "提交") || strings.Contains(l, "推送") || strings.Contains(l, "commit") || strings.Contains(l, "push")) {
 		return output
@@ -675,7 +679,34 @@ func enforceExecutionReceiptTemplate(userInput, output string) string {
 	if strings.Contains(clean, "已理解") && strings.Contains(clean, "已完成") {
 		return clean
 	}
-	return "已理解：按你的要求执行提交/推送事务。\n正在执行：整理改动并完成 commit + push。\n已完成：\n" + clean
+	status := "事务状态：未检测到完整 commit+push。"
+	if txn.commitSeen && txn.pushSeen && txn.pushOK {
+		status = "事务状态：已检测到 commit+push 成功。"
+	}
+	return "已理解：按你的要求执行提交/推送事务。\n正在执行：整理改动并完成 commit + push。\n" + status + "\n已完成：\n" + clean
+}
+
+func isCommitPushIntent(content string) bool {
+	l := strings.ToLower(strings.TrimSpace(content))
+	return strings.Contains(l, "提交") || strings.Contains(l, "推送") || strings.Contains(l, "commit") || strings.Contains(l, "push")
+}
+
+func updateTxnStateFromToolCall(txn *executionTxnState, toolName string, args map[string]interface{}, result string) {
+	if txn == nil || strings.ToLower(strings.TrimSpace(toolName)) != "exec" {
+		return
+	}
+	cmd, _ := args["command"].(string)
+	lcmd := strings.ToLower(cmd)
+	lres := strings.ToLower(strings.TrimSpace(result))
+	if strings.Contains(lcmd, "git commit") {
+		txn.commitSeen = true
+	}
+	if strings.Contains(lcmd, "git push") {
+		txn.pushSeen = true
+		if !strings.HasPrefix(lres, "error:") && (strings.Contains(lres, "->") || strings.Contains(lres, "everything up-to-date") || strings.Contains(lres, "done")) {
+			txn.pushOK = true
+		}
+	}
 }
 
 func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
