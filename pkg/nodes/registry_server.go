@@ -361,7 +361,7 @@ func (s *RegistryServer) handleWebUICron(w http.ResponseWriter, r *http.Request)
 		} else {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "job": res})
 		}
-	case http.MethodPost, http.MethodPut, http.MethodDelete:
+	case http.MethodPost:
 		args := map[string]interface{}{}
 		if r.Body != nil {
 			_ = json.NewDecoder(r.Body).Decode(&args)
@@ -369,17 +369,9 @@ func (s *RegistryServer) handleWebUICron(w http.ResponseWriter, r *http.Request)
 		if id := strings.TrimSpace(r.URL.Query().Get("id")); id != "" {
 			args["id"] = id
 		}
-		action := ""
-		switch r.Method {
-		case http.MethodPost:
-			action = "create"
-			if a, ok := args["action"].(string); ok && strings.TrimSpace(a) != "" {
-				action = strings.ToLower(strings.TrimSpace(a))
-			}
-		case http.MethodPut:
-			action = "update"
-		case http.MethodDelete:
-			action = "delete"
+		action := "create"
+		if a, ok := args["action"].(string); ok && strings.TrimSpace(a) != "" {
+			action = strings.ToLower(strings.TrimSpace(a))
 		}
 		res, err := s.onCron(action, args)
 		if err != nil {
