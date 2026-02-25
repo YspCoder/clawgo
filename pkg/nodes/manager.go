@@ -21,6 +21,7 @@ type Manager struct {
 	handlers  map[string]Handler
 	ttl       time.Duration
 	auditPath string
+	statePath string
 }
 
 var defaultManager = NewManager()
@@ -37,6 +38,13 @@ func (m *Manager) SetAuditPath(path string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.auditPath = strings.TrimSpace(path)
+}
+
+func (m *Manager) SetStatePath(path string) {
+	m.mu.Lock()
+	m.statePath = strings.TrimSpace(path)
+	m.mu.Unlock()
+	m.loadState()
 }
 
 func (m *Manager) Upsert(info NodeInfo) {
@@ -60,15 +68,21 @@ func (m *Manager) Upsert(info NodeInfo) {
 	}
 	m.nodes[info.ID] = info
 	m.mu.Unlock()
+	m.saveState()
 	m.appendAudit("upsert", info.ID, map[string]interface{}{"existed": existed, "endpoint": info.Endpoint, "version": info.Version})
 }
 
 func (m *Manager) MarkOffline(id string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	changed := false
 	if n, ok := m.nodes[id]; ok {
 		n.Online = false
 		m.nodes[id] = n
+		changed = true
+	}
+	m.mu.Unlock()
+	if changed {
+		m.saveState()
 	}
 }
 
@@ -208,6 +222,9 @@ func (m *Manager) reaperLoop() {
 			}
 		}
 		m.mu.Unlock()
+		if len(offlined) > 0 {
+			m.saveState()
+		}
 		for _, id := range offlined {
 			m.appendAudit("offline_ttl", id, nil)
 		}
@@ -233,4 +250,48 @@ func (m *Manager) appendAudit(event, nodeID string, data map[string]interface{})
 	}
 	defer f.Close()
 	_, _ = f.Write(append(b, '\n'))
+}
+
+func (m *Manager) saveState() {
+	m.mu.RLock()
+	path := m.statePath
+	items := make([]NodeInfo, 0, len(m.nodes))
+	for _, n := range m.nodes {
+		items = append(items, n)
+	}
+	m.mu.RUnlock()
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	b, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, b, 0644)
+}
+
+func (m *Manager) loadState() {
+	m.mu.RLock()
+	path := m.statePath
+	m.mu.RUnlock()
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var items []NodeInfo
+	if err := json.Unmarshal(b, &items); err != nil {
+		return
+	}
+	m.mu.Lock()
+	for _, n := range items {
+		if strings.TrimSpace(n.ID) == "" {
+			continue
+		}
+		m.nodes[n.ID] = n
+	}
+	m.mu.Unlock()
 }
