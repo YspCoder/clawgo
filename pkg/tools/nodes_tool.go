@@ -82,10 +82,18 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 			reqArgs["command"] = cmd
 		}
 		if facing, _ := args["facing"].(string); strings.TrimSpace(facing) != "" {
-			reqArgs["facing"] = strings.TrimSpace(facing)
+			f := strings.ToLower(strings.TrimSpace(facing))
+			if f != "front" && f != "back" && f != "both" {
+				return "", fmt.Errorf("invalid_args: facing must be front|back|both")
+			}
+			reqArgs["facing"] = f
 		}
-		if d, ok := args["duration_ms"].(float64); ok && d > 0 {
-			reqArgs["duration_ms"] = int(d)
+		if d, ok := args["duration_ms"].(float64); ok {
+			di := int(d)
+			if di <= 0 || di > 300000 {
+				return "", fmt.Errorf("invalid_args: duration_ms must be in 1..300000")
+			}
+			reqArgs["duration_ms"] = di
 		}
 		resp, err := t.router.Dispatch(ctx, nodes.Request{Action: action, Node: nodeID, Args: reqArgs}, mode)
 		if err != nil {

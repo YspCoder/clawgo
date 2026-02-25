@@ -1,6 +1,9 @@
 package nodes
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -13,10 +16,11 @@ const defaultNodeTTL = 60 * time.Second
 type Handler func(req Request) Response
 
 type Manager struct {
-	mu       sync.RWMutex
-	nodes    map[string]NodeInfo
-	handlers map[string]Handler
-	ttl      time.Duration
+	mu        sync.RWMutex
+	nodes     map[string]NodeInfo
+	handlers  map[string]Handler
+	ttl       time.Duration
+	auditPath string
 }
 
 var defaultManager = NewManager()
@@ -29,12 +33,34 @@ func NewManager() *Manager {
 	return m
 }
 
+func (m *Manager) SetAuditPath(path string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.auditPath = strings.TrimSpace(path)
+}
+
 func (m *Manager) Upsert(info NodeInfo) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	info.LastSeenAt = time.Now().UTC()
+	now := time.Now().UTC()
+	old, existed := m.nodes[info.ID]
+	info.LastSeenAt = now
 	info.Online = true
+	if existed {
+		if info.RegisteredAt.IsZero() {
+			info.RegisteredAt = old.RegisteredAt
+		}
+		if strings.TrimSpace(info.Endpoint) == "" {
+			info.Endpoint = old.Endpoint
+		}
+		if strings.TrimSpace(info.Token) == "" {
+			info.Token = old.Token
+		}
+	} else if info.RegisteredAt.IsZero() {
+		info.RegisteredAt = now
+	}
 	m.nodes[info.ID] = info
+	m.appendAudit("upsert", info.ID, map[string]interface{}{"existed": existed, "endpoint": info.Endpoint, "version": info.Version})
 }
 
 func (m *Manager) MarkOffline(id string) {
@@ -95,7 +121,20 @@ func (m *Manager) SupportsAction(nodeID, action string) bool {
 	if !ok || !n.Online {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(action)) {
+	action = strings.ToLower(strings.TrimSpace(action))
+	if len(n.Actions) > 0 {
+		allowed := false
+		for _, a := range n.Actions {
+			if strings.ToLower(strings.TrimSpace(a)) == action {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return false
+		}
+	}
+	switch action {
 	case "run":
 		return n.Capabilities.Run
 	case "camera_snap", "camera_clip":
@@ -154,12 +193,38 @@ func (m *Manager) reaperLoop() {
 	for range t.C {
 		cutoff := time.Now().UTC().Add(-m.ttl)
 		m.mu.Lock()
+		offlined := make([]string, 0)
 		for id, n := range m.nodes {
 			if n.Online && !n.LastSeenAt.IsZero() && n.LastSeenAt.Before(cutoff) {
 				n.Online = false
 				m.nodes[id] = n
+				offlined = append(offlined, id)
 			}
 		}
 		m.mu.Unlock()
+		for _, id := range offlined {
+			m.appendAudit("offline_ttl", id, nil)
+		}
 	}
+}
+
+func (m *Manager) appendAudit(event, nodeID string, data map[string]interface{}) {
+	m.mu.RLock()
+	path := m.auditPath
+	m.mu.RUnlock()
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	row := map[string]interface{}{"time": time.Now().UTC().Format(time.RFC3339), "event": event, "node": nodeID}
+	for k, v := range data {
+		row[k] = v
+	}
+	b, _ := json.Marshal(row)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(b, '\n'))
 }

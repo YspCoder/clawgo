@@ -78,6 +78,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
 	toolsRegistry.Register(tools.NewProcessTool(processManager))
 	nodesManager := nodes.DefaultManager()
+	nodesManager.SetAuditPath(filepath.Join(workspace, "memory", "nodes-audit.jsonl"))
 	nodesManager.Upsert(nodes.NodeInfo{ID: "local", Name: "local", Capabilities: nodes.Capabilities{Run: true, Invoke: true, Camera: true, Screen: true, Location: true, Canvas: true}, Online: true})
 	nodesManager.RegisterHandler("local", func(req nodes.Request) nodes.Response {
 		switch req.Action {

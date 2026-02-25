@@ -22,6 +22,8 @@ type NodeInfo struct {
 	Endpoint     string       `json:"endpoint,omitempty"`
 	Token        string       `json:"token,omitempty"`
 	Capabilities Capabilities `json:"capabilities"`
+	Actions      []string     `json:"actions,omitempty"`
+	RegisteredAt time.Time    `json:"registered_at,omitempty"`
 	LastSeenAt   time.Time    `json:"last_seen_at"`
 	Online       bool         `json:"online"`
 }
