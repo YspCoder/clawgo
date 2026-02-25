@@ -26,7 +26,6 @@ type RegistryServer struct {
 	onChat        func(ctx context.Context, sessionKey, content string) (string, error)
 	onConfigAfter func()
 	onCron        func(action string, args map[string]interface{}) (interface{}, error)
-	onChannels    func() interface{}
 	webUIDir      string
 }
 
@@ -47,7 +46,6 @@ func (s *RegistryServer) SetLogFilePath(path string) { s.logFilePath = strings.T
 func (s *RegistryServer) SetChatHandler(fn func(ctx context.Context, sessionKey, content string) (string, error)) {
 	s.onChat = fn
 }
-func (s *RegistryServer) SetChannelsHandler(fn func() interface{}) { s.onChannels = fn }
 func (s *RegistryServer) SetConfigAfterHook(fn func()) { s.onConfigAfter = fn }
 func (s *RegistryServer) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
@@ -73,7 +71,6 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
 	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
 	mux.HandleFunc("/webui/api/cron", s.handleWebUICron)
-	mux.HandleFunc("/webui/api/channels", s.handleWebUIChannels)
 	mux.HandleFunc("/webui/api/skills", s.handleWebUISkills)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
@@ -414,15 +411,37 @@ func (s *RegistryServer) handleWebUINodes(w http.ResponseWriter, r *http.Request
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		list := []NodeInfo{}
+		if s.mgr != nil {
+			list = s.mgr.List()
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list})
+	case http.MethodPost:
+		var body struct {
+			Action string `json:"action"`
+			ID     string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		action := strings.ToLower(strings.TrimSpace(body.Action))
+		if action != "delete" {
+			http.Error(w, "unsupported action", http.StatusBadRequest)
+			return
+		}
+		if s.mgr == nil {
+			http.Error(w, "nodes manager unavailable", http.StatusInternalServerError)
+			return
+		}
+		id := strings.TrimSpace(body.ID)
+		ok := s.mgr.Remove(id)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": ok, "id": id})
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-	list := []NodeInfo{}
-	if s.mgr != nil {
-		list = s.mgr.List()
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list})
 }
 
 func (s *RegistryServer) handleWebUICron(w http.ResponseWriter, r *http.Request) {
@@ -473,22 +492,6 @@ func (s *RegistryServer) handleWebUICron(w http.ResponseWriter, r *http.Request)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func (s *RegistryServer) handleWebUIChannels(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	res := map[string]interface{}{"ok": true, "channels": []interface{}{}}
-	if s.onChannels != nil {
-		res["channels"] = s.onChannels()
-	}
-	_ = json.NewEncoder(w).Encode(res)
 }
 
 func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Request) {

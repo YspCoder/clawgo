@@ -188,9 +188,6 @@ func gatewayCmd() {
 		}
 		return agentLoop.ProcessDirect(cctx, content, sessionKey)
 	})
-	registryServer.SetChannelsHandler(func() interface{} {
-		return channelManager.GetStatus()
-	})
 	registryServer.SetConfigAfterHook(func() {
 		_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
 	})

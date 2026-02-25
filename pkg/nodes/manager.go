@@ -104,6 +104,25 @@ func (m *Manager) List() []NodeInfo {
 	return out
 }
 
+func (m *Manager) Remove(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	m.mu.Lock()
+	_, exists := m.nodes[id]
+	if exists {
+		delete(m.nodes, id)
+		delete(m.handlers, id)
+	}
+	m.mu.Unlock()
+	if exists {
+		m.saveState()
+		m.appendAudit("delete", id, nil)
+	}
+	return exists
+}
+
 func (m *Manager) RegisterHandler(nodeID string, h Handler) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
