@@ -41,7 +41,6 @@ func (m *Manager) SetAuditPath(path string) {
 
 func (m *Manager) Upsert(info NodeInfo) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	now := time.Now().UTC()
 	old, existed := m.nodes[info.ID]
 	info.LastSeenAt = now
@@ -60,6 +59,7 @@ func (m *Manager) Upsert(info NodeInfo) {
 		info.RegisteredAt = now
 	}
 	m.nodes[info.ID] = info
+	m.mu.Unlock()
 	m.appendAudit("upsert", info.ID, map[string]interface{}{"existed": existed, "endpoint": info.Endpoint, "version": info.Version})
 }
 
