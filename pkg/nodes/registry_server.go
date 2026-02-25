@@ -133,6 +133,16 @@ func (s *RegistryServer) handleWebUI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if s.token != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "clawgo_webui_token",
+			Value:    s.token,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   86400,
+		})
+	}
 	if s.tryServeWebUIDist(w, r, "/webui/index.html") {
 		return
 	}
@@ -370,6 +380,9 @@ func (s *RegistryServer) checkAuth(r *http.Request) bool {
 		return true
 	}
 	if strings.TrimSpace(r.URL.Query().Get("token")) == s.token {
+		return true
+	}
+	if c, err := r.Cookie("clawgo_webui_token"); err == nil && strings.TrimSpace(c.Value) == s.token {
 		return true
 	}
 	return false
