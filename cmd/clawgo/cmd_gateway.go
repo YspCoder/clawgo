@@ -179,12 +179,17 @@ func gatewayCmd() {
 
 	registryServer := nodes.NewRegistryServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
 	registryServer.SetConfigPath(getConfigPath())
+	registryServer.SetWorkspacePath(cfg.WorkspacePath())
+	registryServer.SetLogFilePath(cfg.LogFilePath())
 	registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui-dist"))
 	registryServer.SetChatHandler(func(cctx context.Context, sessionKey, content string) (string, error) {
 		if strings.TrimSpace(content) == "" {
 			return "", nil
 		}
 		return agentLoop.ProcessDirect(cctx, content, sessionKey)
+	})
+	registryServer.SetChannelsHandler(func() interface{} {
+		return channelManager.GetStatus()
 	})
 	registryServer.SetConfigAfterHook(func() {
 		_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
