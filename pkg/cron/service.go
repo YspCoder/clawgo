@@ -128,6 +128,17 @@ type CronService struct {
 	runner        *lifecycle.LoopRunner
 }
 
+type UpdateJobInput struct {
+	Name           *string
+	Enabled        *bool
+	Schedule       *CronSchedule
+	Message        *string
+	Deliver        *bool
+	Channel        *string
+	To             *string
+	DeleteAfterRun *bool
+}
+
 func NewCronService(storePath string, onJob JobHandler) *CronService {
 	cs := &CronService{
 		storePath: storePath,
@@ -649,6 +660,73 @@ func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 	}
 
 	return nil
+}
+
+func (cs *CronService) GetJob(jobID string) *CronJob {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	for i := range cs.store.Jobs {
+		if cs.store.Jobs[i].ID == jobID {
+			job := cs.store.Jobs[i]
+			return &job
+		}
+	}
+	return nil
+}
+
+func (cs *CronService) UpdateJob(jobID string, in UpdateJobInput) (*CronJob, error) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	idx := cs.findJobIndexByIDLocked(jobID)
+	if idx < 0 {
+		return nil, fmt.Errorf("job not found: %s", jobID)
+	}
+	job := &cs.store.Jobs[idx]
+
+	if in.Name != nil {
+		job.Name = *in.Name
+	}
+	if in.Schedule != nil {
+		job.Schedule = *in.Schedule
+		if job.Enabled {
+			now := time.Now().UnixMilli()
+			job.State.NextRunAtMS = cs.computeNextRun(&job.Schedule, now)
+		}
+	}
+	if in.Message != nil {
+		job.Payload.Message = *in.Message
+	}
+	if in.Deliver != nil {
+		job.Payload.Deliver = *in.Deliver
+	}
+	if in.Channel != nil {
+		job.Payload.Channel = *in.Channel
+	}
+	if in.To != nil {
+		job.Payload.To = *in.To
+	}
+	if in.DeleteAfterRun != nil {
+		job.DeleteAfterRun = *in.DeleteAfterRun
+	}
+	if in.Enabled != nil {
+		job.Enabled = *in.Enabled
+		if job.Enabled {
+			now := time.Now().UnixMilli()
+			job.State.NextRunAtMS = cs.computeNextRun(&job.Schedule, now)
+		} else {
+			job.State.NextRunAtMS = nil
+		}
+	}
+	job.UpdatedAtMS = time.Now().UnixMilli()
+
+	if err := cs.saveStore(); err != nil {
+		cs.lastSaveError = err.Error()
+		return nil, err
+	}
+	cs.lastSaveError = ""
+	ret := *job
+	return &ret, nil
 }
 
 func (cs *CronService) ListJobs(includeDisabled bool) []CronJob {

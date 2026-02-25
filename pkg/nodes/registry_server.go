@@ -22,7 +22,7 @@ type RegistryServer struct {
 	configPath    string
 	onChat        func(ctx context.Context, sessionKey, content string) (string, error)
 	onConfigAfter func()
-	onCron        func(action, id string) (interface{}, error)
+	onCron        func(action string, args map[string]interface{}) (interface{}, error)
 	webUIDir      string
 }
 
@@ -42,7 +42,7 @@ func (s *RegistryServer) SetChatHandler(fn func(ctx context.Context, sessionKey,
 	s.onChat = fn
 }
 func (s *RegistryServer) SetConfigAfterHook(fn func()) { s.onConfigAfter = fn }
-func (s *RegistryServer) SetCronHandler(fn func(action, id string) (interface{}, error)) {
+func (s *RegistryServer) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
 }
 func (s *RegistryServer) SetWebUIDir(dir string) { s.webUIDir = strings.TrimSpace(dir) }
@@ -343,33 +343,53 @@ func (s *RegistryServer) handleWebUICron(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "cron handler not configured", http.StatusInternalServerError)
 		return
 	}
-	if r.Method == http.MethodGet {
-		res, err := s.onCron("list", "")
+
+	switch r.Method {
+	case http.MethodGet:
+		id := strings.TrimSpace(r.URL.Query().Get("id"))
+		action := "list"
+		if id != "" {
+			action = "get"
+		}
+		res, err := s.onCron(action, map[string]interface{}{"id": id})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "jobs": res})
-		return
-	}
-	if r.Method == http.MethodPost {
-		var body struct {
-			Action string `json:"action"`
-			ID     string `json:"id"`
+		if action == "list" {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "jobs": res})
+		} else {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "job": res})
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
+	case http.MethodPost, http.MethodPut, http.MethodDelete:
+		args := map[string]interface{}{}
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&args)
 		}
-		res, err := s.onCron(strings.ToLower(strings.TrimSpace(body.Action)), strings.TrimSpace(body.ID))
+		if id := strings.TrimSpace(r.URL.Query().Get("id")); id != "" {
+			args["id"] = id
+		}
+		action := ""
+		switch r.Method {
+		case http.MethodPost:
+			action = "create"
+			if a, ok := args["action"].(string); ok && strings.TrimSpace(a) != "" {
+				action = strings.ToLower(strings.TrimSpace(a))
+			}
+		case http.MethodPut:
+			action = "update"
+		case http.MethodDelete:
+			action = "delete"
+		}
+		res, err := s.onCron(action, args)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "result": res})
-		return
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (s *RegistryServer) checkAuth(r *http.Request) bool {

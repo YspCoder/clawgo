@@ -189,18 +189,119 @@ func gatewayCmd() {
 	registryServer.SetConfigAfterHook(func() {
 		_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
 	})
-	registryServer.SetCronHandler(func(action, id string) (interface{}, error) {
+	registryServer.SetCronHandler(func(action string, args map[string]interface{}) (interface{}, error) {
+		getStr := func(k string) string {
+			v, _ := args[k].(string)
+			return strings.TrimSpace(v)
+		}
+		getBoolPtr := func(k string) *bool {
+			v, ok := args[k].(bool)
+			if !ok {
+				return nil
+			}
+			vv := v
+			return &vv
+		}
 		switch strings.ToLower(strings.TrimSpace(action)) {
 		case "", "list":
 			return cronService.ListJobs(true), nil
+		case "get":
+			id := getStr("id")
+			if id == "" {
+				return nil, fmt.Errorf("id required")
+			}
+			j := cronService.GetJob(id)
+			if j == nil {
+				return nil, fmt.Errorf("job not found: %s", id)
+			}
+			return j, nil
+		case "create":
+			name := getStr("name")
+			if name == "" {
+				name = "webui-cron"
+			}
+			kind := getStr("kind")
+			if kind == "" {
+				kind = "every"
+			}
+			msg := getStr("message")
+			if msg == "" {
+				return nil, fmt.Errorf("message required")
+			}
+			schedule := cron.CronSchedule{Kind: kind}
+			if kind == "every" {
+				everyMS, ok := args["everyMs"].(float64)
+				if !ok || int64(everyMS) <= 0 {
+					return nil, fmt.Errorf("everyMs required for kind=every")
+				}
+				ev := int64(everyMS)
+				schedule.EveryMS = &ev
+			}
+			if kind == "at" {
+				atMS, ok := args["atMs"].(float64)
+				if !ok || int64(atMS) <= 0 {
+					return nil, fmt.Errorf("atMs required for kind=at")
+				}
+				at := int64(atMS)
+				schedule.AtMS = &at
+			}
+			deliver := false
+			if v, ok := args["deliver"].(bool); ok {
+				deliver = v
+			}
+			return cronService.AddJob(name, schedule, msg, deliver, getStr("channel"), getStr("to"))
+		case "update":
+			id := getStr("id")
+			if id == "" {
+				return nil, fmt.Errorf("id required")
+			}
+			in := cron.UpdateJobInput{}
+			if v := getStr("name"); v != "" {
+				in.Name = &v
+			}
+			if v := getStr("message"); v != "" {
+				in.Message = &v
+			}
+			if p := getBoolPtr("enabled"); p != nil {
+				in.Enabled = p
+			}
+			if p := getBoolPtr("deliver"); p != nil {
+				in.Deliver = p
+			}
+			if v := getStr("channel"); v != "" {
+				in.Channel = &v
+			}
+			if v := getStr("to"); v != "" {
+				in.To = &v
+			}
+			if kind := getStr("kind"); kind != "" {
+				s := cron.CronSchedule{Kind: kind}
+				if kind == "every" {
+					if everyMS, ok := args["everyMs"].(float64); ok && int64(everyMS) > 0 {
+						ev := int64(everyMS)
+						s.EveryMS = &ev
+					}
+				}
+				if kind == "at" {
+					if atMS, ok := args["atMs"].(float64); ok && int64(atMS) > 0 {
+						at := int64(atMS)
+						s.AtMS = &at
+					}
+				}
+				in.Schedule = &s
+			}
+			return cronService.UpdateJob(id, in)
 		case "delete":
-			return map[string]interface{}{"deleted": cronService.RemoveJob(strings.TrimSpace(id)), "id": strings.TrimSpace(id)}, nil
+			id := getStr("id")
+			return map[string]interface{}{"deleted": cronService.RemoveJob(id), "id": id}, nil
 		case "enable":
-			j := cronService.EnableJob(strings.TrimSpace(id), true)
-			return map[string]interface{}{"ok": j != nil, "id": strings.TrimSpace(id)}, nil
+			id := getStr("id")
+			j := cronService.EnableJob(id, true)
+			return map[string]interface{}{"ok": j != nil, "id": id}, nil
 		case "disable":
-			j := cronService.EnableJob(strings.TrimSpace(id), false)
-			return map[string]interface{}{"ok": j != nil, "id": strings.TrimSpace(id)}, nil
+			id := getStr("id")
+			j := cronService.EnableJob(id, false)
+			return map[string]interface{}{"ok": j != nil, "id": id}, nil
 		default:
 			return nil, fmt.Errorf("unsupported cron action: %s", action)
 		}
