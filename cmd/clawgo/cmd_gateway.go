@@ -245,6 +245,13 @@ func gatewayCmd() {
 				at := int64(atMS)
 				schedule.AtMS = &at
 			}
+			if kind == "cron" {
+				expr := getStr("expr")
+				if expr == "" {
+					return nil, fmt.Errorf("expr required for kind=cron")
+				}
+				schedule.Expr = expr
+			}
 			deliver := false
 			if v, ok := args["deliver"].(bool); ok {
 				deliver = v
@@ -287,6 +294,13 @@ func gatewayCmd() {
 						at := int64(atMS)
 						s.AtMS = &at
 					}
+				}
+				if kind == "cron" {
+					expr := getStr("expr")
+					if expr == "" {
+						return nil, fmt.Errorf("expr required for kind=cron")
+					}
+					s.Expr = expr
 				}
 				in.Schedule = &s
 			}
