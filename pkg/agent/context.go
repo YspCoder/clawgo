@@ -129,6 +129,12 @@ Constraints:
 		parts = append(parts, memoryContext)
 	}
 
+	parts = append(parts, `# Execution & Reply Policy
+- Default behavior: execute first, then report.
+- Avoid empty/meta fallback replies.
+- For commit/push intents, treat as one transaction and return commit hash + push result.
+- Use concise receipt style: 已理解 -> 正在执行 -> 已完成.`)
+
 	// Join with "---" separator
 	return strings.Join(parts, "\n\n---\n\n")
 }

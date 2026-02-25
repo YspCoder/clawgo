@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -49,6 +50,8 @@ type AgentLoop struct {
 	systemRewriteTemplate   string
 	audit                   *triggerAudit
 	running                 bool
+	intentMu                sync.RWMutex
+	intentHints             map[string]string
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -220,6 +223,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		systemRewriteTemplate: cfg.Agents.Defaults.Texts.SystemRewriteTemplate,
 		audit:                 newTriggerAudit(workspace),
 		running:               false,
+		intentHints:           map[string]string{},
 	}
 
 	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
@@ -424,10 +428,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	preferredLang, lastLang := al.sessions.GetLanguagePreferences(msg.SessionKey)
 	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
 
+	al.updateIntentHint(msg.SessionKey, msg.Content)
+	effectiveUserContent := al.applyIntentHint(msg.SessionKey, msg.Content)
+
 	messages := al.contextBuilder.BuildMessages(
 		history,
 		summary,
-		msg.Content,
+		effectiveUserContent,
 		nil,
 		msg.Channel,
 		msg.ChatID,
@@ -563,7 +570,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if finalContent == "" {
 		fallback := strings.TrimSpace(al.noResponseFallback)
 		if fallback == "" {
-			fallback = "I've completed processing but have no response to give."
+			fallback = "我已完成处理，但当前没有可直接返回的结果。请告诉我下一步要继续执行什么。"
 		}
 		finalContent = fallback
 	}
@@ -580,7 +587,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		if iteration == 1 {
 			fallback := strings.TrimSpace(al.thinkOnlyFallback)
 			if fallback == "" {
-				fallback = "Thinking process completed."
+				fallback = "已完成思考流程。"
 			}
 			userContent = fallback
 		}
@@ -591,6 +598,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			userContent = strings.TrimSpace(userContent + "\n\n" + src)
 		}
 	}
+	userContent = enforceExecutionReceiptTemplate(effectiveUserContent, userContent)
 
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
 
@@ -614,6 +622,60 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		})
 
 	return userContent, nil
+}
+
+func (al *AgentLoop) updateIntentHint(sessionKey, content string) {
+	content = strings.TrimSpace(content)
+	if sessionKey == "" || content == "" {
+		return
+	}
+	lower := strings.ToLower(content)
+	if !strings.Contains(lower, "提交") && !strings.Contains(lower, "推送") && !strings.Contains(lower, "commit") && !strings.Contains(lower, "push") {
+		if strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") {
+			al.intentMu.Lock()
+			if prev := strings.TrimSpace(al.intentHints[sessionKey]); prev != "" {
+				al.intentHints[sessionKey] = prev + " | " + content
+			}
+			al.intentMu.Unlock()
+		}
+		return
+	}
+	hint := "执行事务: commit+push 一次闭环，包含分支/范围确认。"
+	if strings.Contains(lower, "所有分支") || strings.Contains(lower, "all branches") {
+		hint += " 范围=所有分支。"
+	}
+	al.intentMu.Lock()
+	al.intentHints[sessionKey] = hint + " 用户补充=" + content
+	al.intentMu.Unlock()
+}
+
+func (al *AgentLoop) applyIntentHint(sessionKey, content string) string {
+	al.intentMu.RLock()
+	hint := strings.TrimSpace(al.intentHints[sessionKey])
+	al.intentMu.RUnlock()
+	if hint == "" {
+		return content
+	}
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if strings.Contains(lower, "提交") || strings.Contains(lower, "推送") || strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") {
+		return "[Intent Slot]\n" + hint + "\n\n[User Message]\n" + content
+	}
+	return content
+}
+
+func enforceExecutionReceiptTemplate(userInput, output string) string {
+	l := strings.ToLower(userInput)
+	if !(strings.Contains(l, "提交") || strings.Contains(l, "推送") || strings.Contains(l, "commit") || strings.Contains(l, "push")) {
+		return output
+	}
+	clean := strings.TrimSpace(output)
+	if clean == "" {
+		return clean
+	}
+	if strings.Contains(clean, "已理解") && strings.Contains(clean, "已完成") {
+		return clean
+	}
+	return "已理解：按你的要求执行提交/推送事务。\n正在执行：整理改动并完成 commit + push。\n已完成：\n" + clean
 }
 
 func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
