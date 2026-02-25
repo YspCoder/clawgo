@@ -9,7 +9,7 @@ import (
 	"clawgo/pkg/bus"
 )
 
-type SendCallback func(channel, chatID, action, content, messageID, emoji string, buttons [][]bus.Button) error
+type SendCallback func(channel, chatID, action, content, media, messageID, emoji string, buttons [][]bus.Button) error
 
 type MessageTool struct {
 	sendCallback   SendCallback
@@ -59,6 +59,22 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional: target chat/user ID",
 			},
+			"media": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional media path or URL for action=send",
+			},
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias of media",
+			},
+			"file_path": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias of media",
+			},
+			"filePath": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias of media",
+			},
 			"message_id": map[string]interface{}{
 				"type":        "string",
 				"description": "Target message id for edit/delete/react",
@@ -106,13 +122,29 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	if msg, _ := args["message"].(string); msg != "" {
 		content = msg
 	}
+	media, _ := args["media"].(string)
+	if media == "" {
+		if p, _ := args["path"].(string); p != "" {
+			media = p
+		}
+	}
+	if media == "" {
+		if p, _ := args["file_path"].(string); p != "" {
+			media = p
+		}
+	}
+	if media == "" {
+		if p, _ := args["filePath"].(string); p != "" {
+			media = p
+		}
+	}
 	messageID, _ := args["message_id"].(string)
 	emoji, _ := args["emoji"].(string)
 
 	switch action {
 	case "send":
-		if content == "" {
-			return "", fmt.Errorf("%w: message/content for action=send", ErrMissingField)
+		if content == "" && media == "" {
+			return "", fmt.Errorf("%w: message/content or media for action=send", ErrMissingField)
 		}
 	case "edit":
 		if messageID == "" || content == "" {
@@ -175,7 +207,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 		}
 	}
 
-	if err := t.sendCallback(channel, chatID, action, content, messageID, emoji, buttons); err != nil {
+	if err := t.sendCallback(channel, chatID, action, content, media, messageID, emoji, buttons); err != nil {
 		return fmt.Sprintf("Error sending message: %v", err), nil
 	}
 

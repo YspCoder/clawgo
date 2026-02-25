@@ -1,13 +1,17 @@
 package channels
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -269,6 +273,10 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 
 	htmlContent := sanitizeTelegramHTML(markdownToTelegramHTML(msg.Content))
 
+	if strings.TrimSpace(msg.Media) != "" {
+		return c.sendMedia(ctx, chatIDInt, msg, htmlContent)
+	}
+
 	var markup *telego.InlineKeyboardMarkup
 	if len(msg.Buttons) > 0 {
 		var rows [][]telego.InlineKeyboardButton
@@ -331,6 +339,95 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return err
 	}
 
+	return nil
+}
+
+func (c *TelegramChannel) sendMedia(ctx context.Context, chatID int64, msg bus.OutboundMessage, htmlCaption string) error {
+	media := strings.TrimSpace(msg.Media)
+	if media == "" {
+		return fmt.Errorf("empty media")
+	}
+
+	method := "sendDocument"
+	field := "document"
+	lower := strings.ToLower(media)
+	if strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".webp") || strings.HasSuffix(lower, ".gif") {
+		method = "sendPhoto"
+		field = "photo"
+	}
+
+	replyID, hasReply := parseTelegramMessageID(msg.ReplyToID)
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/%s", c.config.Token, method)
+
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		vals := url.Values{}
+		vals.Set("chat_id", strconv.FormatInt(chatID, 10))
+		vals.Set(field, media)
+		if strings.TrimSpace(htmlCaption) != "" {
+			vals.Set("caption", htmlCaption)
+			vals.Set("parse_mode", "HTML")
+		}
+		if hasReply {
+			vals.Set("reply_to_message_id", strconv.Itoa(replyID))
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(vals.Encode()))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			return fmt.Errorf("telegram media send failed: status=%d body=%s", resp.StatusCode, string(body))
+		}
+		return nil
+	}
+
+	f, err := os.Open(media)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	_ = w.WriteField("chat_id", strconv.FormatInt(chatID, 10))
+	if strings.TrimSpace(htmlCaption) != "" {
+		_ = w.WriteField("caption", htmlCaption)
+		_ = w.WriteField("parse_mode", "HTML")
+	}
+	if hasReply {
+		_ = w.WriteField("reply_to_message_id", strconv.Itoa(replyID))
+	}
+	part, err := w.CreateFormFile(field, filepath.Base(media))
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(part, f); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, &b)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("telegram media send failed: status=%d body=%s", resp.StatusCode, string(body))
+	}
 	return nil
 }
 
