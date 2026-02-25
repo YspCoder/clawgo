@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -384,6 +385,14 @@ func (s *RegistryServer) checkAuth(r *http.Request) bool {
 	}
 	if c, err := r.Cookie("clawgo_webui_token"); err == nil && strings.TrimSpace(c.Value) == s.token {
 		return true
+	}
+	// Browser asset fallback: allow token propagated via Referer query.
+	if ref := strings.TrimSpace(r.Referer()); ref != "" {
+		if u, err := url.Parse(ref); err == nil {
+			if strings.TrimSpace(u.Query().Get("token")) == s.token {
+				return true
+			}
+		}
 	}
 	return false
 }
