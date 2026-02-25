@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -512,19 +513,34 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		type skillItem struct {
-			Name    string `json:"name"`
-			Enabled bool   `json:"enabled"`
+			Name           string `json:"name"`
+			Enabled        bool   `json:"enabled"`
+			UpdateChecked  bool   `json:"update_checked"`
+			RemoteFound    bool   `json:"remote_found,omitempty"`
+			RemoteVersion  string `json:"remote_version,omitempty"`
+			CheckError     string `json:"check_error,omitempty"`
 		}
 		items := make([]skillItem, 0, len(entries))
+		checkUpdates := strings.TrimSpace(r.URL.Query().Get("check_updates")) != "0"
 		for _, e := range entries {
 			if !e.IsDir() {
 				continue
 			}
 			name := e.Name()
 			enabled := !strings.HasSuffix(name, ".disabled")
-			items = append(items, skillItem{Name: strings.TrimSuffix(name, ".disabled"), Enabled: enabled})
+			baseName := strings.TrimSuffix(name, ".disabled")
+			it := skillItem{Name: baseName, Enabled: enabled, UpdateChecked: checkUpdates}
+			if checkUpdates {
+				found, version, checkErr := queryClawHubSkillVersion(r.Context(), baseName)
+				it.RemoteFound = found
+				it.RemoteVersion = version
+				if checkErr != nil {
+					it.CheckError = checkErr.Error()
+				}
+			}
+			items = append(items, it)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "skills": items})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "skills": items, "source": "clawhub"})
 	case http.MethodPost:
 		var body struct {
 			Action string `json:"action"`
@@ -564,6 +580,71 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func queryClawHubSkillVersion(ctx context.Context, skill string) (found bool, version string, err error) {
+	skill = strings.TrimSpace(skill)
+	if skill == "" {
+		return false, "", fmt.Errorf("skill empty")
+	}
+	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "clawhub", "search", skill, "--json")
+	out, runErr := cmd.Output()
+	if runErr != nil {
+		return false, "", runErr
+	}
+	var payload interface{}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		return false, "", err
+	}
+	lowerSkill := strings.ToLower(skill)
+	var walk func(v interface{}) (bool, string)
+	walk = func(v interface{}) (bool, string) {
+		switch t := v.(type) {
+		case map[string]interface{}:
+			name := strings.ToLower(strings.TrimSpace(anyToString(t["name"])))
+			if name == "" {
+				name = strings.ToLower(strings.TrimSpace(anyToString(t["id"])))
+			}
+			if name == lowerSkill || strings.Contains(name, lowerSkill) {
+				ver := strings.TrimSpace(anyToString(t["version"]))
+				if ver == "" {
+					ver = strings.TrimSpace(anyToString(t["latest_version"]))
+				}
+				return true, ver
+			}
+			for _, vv := range t {
+				if ok, ver := walk(vv); ok {
+					return ok, ver
+				}
+			}
+		case []interface{}:
+			for _, vv := range t {
+				if ok, ver := walk(vv); ok {
+					return ok, ver
+				}
+			}
+		}
+		return false, ""
+	}
+	ok, ver := walk(payload)
+	return ok, ver, nil
+}
+
+func anyToString(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case fmt.Stringer:
+		return t.String()
+	default:
+		if v == nil {
+			return ""
+		}
+		b, _ := json.Marshal(v)
+		return string(b)
 	}
 }
 
