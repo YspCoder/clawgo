@@ -179,6 +179,7 @@ func gatewayCmd() {
 
 	registryServer := nodes.NewRegistryServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
 	registryServer.SetConfigPath(getConfigPath())
+	registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui-dist"))
 	registryServer.SetChatHandler(func(cctx context.Context, sessionKey, content string) (string, error) {
 		if strings.TrimSpace(content) == "" {
 			return "", nil

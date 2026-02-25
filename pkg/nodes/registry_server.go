@@ -21,6 +21,7 @@ type RegistryServer struct {
 	configPath    string
 	onChat        func(ctx context.Context, sessionKey, content string) (string, error)
 	onConfigAfter func()
+	webUIDir      string
 }
 
 func NewRegistryServer(host string, port int, token string, mgr *Manager) *RegistryServer {
@@ -39,6 +40,7 @@ func (s *RegistryServer) SetChatHandler(fn func(ctx context.Context, sessionKey,
 	s.onChat = fn
 }
 func (s *RegistryServer) SetConfigAfterHook(fn func()) { s.onConfigAfter = fn }
+func (s *RegistryServer) SetWebUIDir(dir string)      { s.webUIDir = strings.TrimSpace(dir) }
 
 func (s *RegistryServer) Start(ctx context.Context) error {
 	if s.mgr == nil {
@@ -52,6 +54,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/nodes/register", s.handleRegister)
 	mux.HandleFunc("/nodes/heartbeat", s.handleHeartbeat)
 	mux.HandleFunc("/webui", s.handleWebUI)
+	mux.HandleFunc("/webui/", s.handleWebUIAsset)
 	mux.HandleFunc("/webui/api/config", s.handleWebUIConfig)
 	mux.HandleFunc("/webui/api/chat", s.handleWebUIChat)
 	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
@@ -124,8 +127,52 @@ func (s *RegistryServer) handleWebUI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if s.tryServeWebUIDist(w, r, "/webui/index.html") {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(webUIHTML))
+}
+
+func (s *RegistryServer) handleWebUIAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.tryServeWebUIDist(w, r, r.URL.Path) {
+		return
+	}
+	// SPA fallback
+	if s.tryServeWebUIDist(w, r, "/webui/index.html") {
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func (s *RegistryServer) tryServeWebUIDist(w http.ResponseWriter, r *http.Request, reqPath string) bool {
+	dir := strings.TrimSpace(s.webUIDir)
+	if dir == "" {
+		return false
+	}
+	p := strings.TrimPrefix(reqPath, "/webui/")
+	if reqPath == "/webui" || reqPath == "/webui/" || reqPath == "/webui/index.html" {
+		p = "index.html"
+	}
+	p = filepath.Clean(strings.TrimPrefix(p, "/"))
+	if strings.HasPrefix(p, "..") {
+		return false
+	}
+	full := filepath.Join(dir, p)
+	fi, err := os.Stat(full)
+	if err != nil || fi.IsDir() {
+		return false
+	}
+	http.ServeFile(w, r, full)
+	return true
 }
 
 func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {

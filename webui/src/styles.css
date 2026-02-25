@@ -1,0 +1,21 @@
+*{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,Segoe UI,Arial;background:#0b1020;color:#e5e7eb}
+.app{height:100vh;display:flex;flex-direction:column}
+.topbar{display:flex;gap:12px;align-items:center;padding:10px 14px;background:#111827;border-bottom:1px solid #1f2937}
+.topbar input{margin-left:auto;min-width:260px;background:#0b1220;color:#fff;border:1px solid #374151;padding:6px 8px;border-radius:8px}
+.layout{flex:1;display:grid;grid-template-columns:220px 1fr 360px;gap:10px;padding:10px;min-height:0}
+.panel{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:10px;min-height:0;display:flex;flex-direction:column}
+.panel-title{font-weight:700;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.sessions button{width:100%;margin-bottom:6px;background:#0f172a;color:#d1d5db;border:1px solid #374151;padding:8px;border-radius:8px;text-align:left}
+.sessions button.active{background:#1d4ed8;color:white}
+.chatlog{flex:1;overflow:auto;padding:6px;background:#0b1220;border:1px solid #1f2937;border-radius:10px}
+.bubble{max-width:88%;padding:8px 10px;border-radius:10px;margin:6px 0;white-space:pre-wrap}
+.bubble.user{margin-left:auto;background:#1d4ed8}
+.bubble.assistant{margin-right:auto;background:#1f2937}
+.composer{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:8px}
+.composer input{background:#0b1220;color:#fff;border:1px solid #374151;padding:8px;border-radius:8px}
+button{cursor:pointer;border:1px solid #374151;background:#0f172a;color:#fff;padding:6px 10px;border-radius:8px}
+.row{display:flex;gap:8px;margin-bottom:8px}
+textarea{width:100%;min-height:180px;background:#0b1220;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:8px}
+pre{flex:1;overflow:auto;background:#0b1220;border:1px solid #374151;border-radius:8px;padding:8px;white-space:pre-wrap}
+@media (max-width: 1024px){.layout{grid-template-columns:200px 1fr}.right{grid-column:1 / span 2;max-height:42vh}}
+@media (max-width: 768px){.layout{grid-template-columns:1fr}.sessions{order:2}.chat{order:1;min-height:50vh}.right{order:3}.topbar input{min-width:160px;width:52%}}
