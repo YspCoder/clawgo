@@ -34,7 +34,7 @@ func (t *NodesTool) Parameters() map[string]interface{} {
 		"args":   map[string]interface{}{"type": "object", "description": "action args"},
 		"task":   map[string]interface{}{"type": "string", "description": "agent_task content for child node model"},
 		"model":  map[string]interface{}{"type": "string", "description": "optional model for agent_task"},
-		"command": map[string]interface{}{"type": "array", "description": "run command array shortcut"},
+		"command": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "run command array shortcut"},
 		"facing":  map[string]interface{}{"type": "string", "description": "camera facing: front|back|both"},
 		"duration_ms": map[string]interface{}{"type": "integer", "description": "clip/record duration"},
 	}, "required": []string{"action"}}
