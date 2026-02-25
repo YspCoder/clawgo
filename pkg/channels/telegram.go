@@ -39,6 +39,7 @@ type TelegramChannel struct {
 	stopThinking sync.Map // chatID -> chan struct{}
 	handleSem    chan struct{}
 	handleWG     sync.WaitGroup
+	botUsername  string
 }
 
 func (c *TelegramChannel) SupportsAction(action string) bool {
@@ -109,6 +110,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get bot info: %w", err)
 	}
+	c.botUsername = strings.ToLower(strings.TrimSpace(botInfo.Username))
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]interface{}{
 		"username": botInfo.Username,
 	})
@@ -332,6 +334,44 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	return nil
 }
 
+func (c *TelegramChannel) isAllowedChat(chatID int64) bool {
+	if len(c.config.AllowChats) == 0 {
+		return true
+	}
+	sid := fmt.Sprintf("%d", chatID)
+	for _, allowed := range c.config.AllowChats {
+		if strings.TrimSpace(allowed) == sid {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *TelegramChannel) shouldHandleGroupMessage(message *telego.Message, content string) bool {
+	if message == nil {
+		return false
+	}
+	if message.Chat.Type == telego.ChatTypePrivate {
+		return true
+	}
+	if !c.config.EnableGroups {
+		return false
+	}
+	if !c.config.RequireMentionInGroups {
+		return true
+	}
+	if message.ReplyToMessage != nil && message.ReplyToMessage.From != nil && message.ReplyToMessage.From.IsBot {
+		return true
+	}
+	if strings.HasPrefix(strings.TrimSpace(content), "/") {
+		return true
+	}
+	if c.botUsername != "" && strings.Contains(strings.ToLower(content), "@"+c.botUsername) {
+		return true
+	}
+	return false
+}
+
 func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.Message) {
 	if message == nil {
 		return
@@ -416,6 +456,21 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 
 	if content == "" {
 		content = "[empty message]"
+	}
+
+	if !c.isAllowedChat(chatID) {
+		logger.WarnCF("telegram", "Telegram message rejected by chat allowlist", map[string]interface{}{
+			logger.FieldSenderID: senderID,
+			logger.FieldChatID:   chatID,
+		})
+		return
+	}
+	if !c.shouldHandleGroupMessage(message, content) {
+		logger.DebugCF("telegram", "Ignoring group message without mention/command", map[string]interface{}{
+			logger.FieldSenderID: senderID,
+			logger.FieldChatID:   chatID,
+		})
+		return
 	}
 
 	logger.InfoCF("telegram", "Telegram message received", map[string]interface{}{

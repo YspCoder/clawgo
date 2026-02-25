@@ -82,7 +82,10 @@
     "telegram": {
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
-      "allow_from": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"],
+      "allow_chats": [],
+      "enable_groups": true,
+      "require_mention_in_groups": true
     },
     "discord": {
       "enabled": false,

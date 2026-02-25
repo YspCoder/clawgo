@@ -137,9 +137,12 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled   bool     `json:"enabled" env:"CLAWGO_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string   `json:"token" env:"CLAWGO_CHANNELS_TELEGRAM_TOKEN"`
-	AllowFrom []string `json:"allow_from" env:"CLAWGO_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled                bool     `json:"enabled" env:"CLAWGO_CHANNELS_TELEGRAM_ENABLED"`
+	Token                  string   `json:"token" env:"CLAWGO_CHANNELS_TELEGRAM_TOKEN"`
+	AllowFrom              []string `json:"allow_from" env:"CLAWGO_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	AllowChats             []string `json:"allow_chats" env:"CLAWGO_CHANNELS_TELEGRAM_ALLOW_CHATS"`
+	EnableGroups           bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_TELEGRAM_ENABLE_GROUPS"`
+	RequireMentionInGroups bool     `json:"require_mention_in_groups" env:"CLAWGO_CHANNELS_TELEGRAM_REQUIRE_MENTION_IN_GROUPS"`
 }
 
 type FeishuConfig struct {
@@ -378,9 +381,12 @@ func DefaultConfig() *Config {
 				AllowFrom: []string{},
 			},
 			Telegram: TelegramConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: []string{},
+				Enabled:                false,
+				Token:                  "",
+				AllowFrom:              []string{},
+				AllowChats:             []string{},
+				EnableGroups:           true,
+				RequireMentionInGroups: true,
 			},
 			Feishu: FeishuConfig{
 				Enabled:           false,
