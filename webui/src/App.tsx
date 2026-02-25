@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 
 type ChatItem = { role: 'user' | 'assistant'; text: string }
-
 type Session = { key: string; title: string }
+type CronJob = { id: string; name: string; enabled: boolean; schedule?: { kind?: string } }
 
 const defaultSessions: Session[] = [{ key: 'webui:default', title: 'Default' }]
 
@@ -14,6 +14,7 @@ export function App() {
   const [chat, setChat] = useState<Record<string, ChatItem[]>>({ 'webui:default': [] })
   const [msg, setMsg] = useState('')
   const [nodes, setNodes] = useState<string>('[]')
+  const [cron, setCron] = useState<CronJob[]>([])
   const activeChat = useMemo(() => chat[active] || [], [chat, active])
 
   const q = token ? `?token=${encodeURIComponent(token)}` : ''
@@ -34,17 +35,24 @@ export function App() {
   }
 
   async function refreshNodes() {
-    const payload = {
-      session: active,
-      message: '调用nodes工具，action=status，并输出JSON。',
-    }
-    const r = await fetch(`/webui/api/chat${q}`, {
+    const r = await fetch(`/webui/api/nodes${q}`)
+    const j = await r.json()
+    setNodes(JSON.stringify(j.nodes || [], null, 2))
+  }
+
+  async function refreshCron() {
+    const r = await fetch(`/webui/api/cron${q}`)
+    const j = await r.json()
+    setCron(j.jobs || [])
+  }
+
+  async function cronAction(action: 'delete' | 'enable' | 'disable', id: string) {
+    await fetch(`/webui/api/cron${q}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ action, id }),
     })
-    const t = await r.text()
-    setNodes(t)
+    await refreshCron()
   }
 
   async function send() {
@@ -84,6 +92,8 @@ export function App() {
 
   useEffect(() => {
     loadConfig().catch(() => {})
+    refreshNodes().catch(() => {})
+    refreshCron().catch(() => {})
   }, [])
 
   return (
@@ -122,6 +132,19 @@ export function App() {
           <div className="panel-title">Config</div>
           <div className="row"><button onClick={loadConfig}>Load</button><button onClick={saveConfig}>Save+Reload</button></div>
           <textarea value={cfgText} onChange={(e) => setCfgText(e.target.value)} />
+          <div className="panel-title">Cron</div>
+          <div className="row"><button onClick={refreshCron}>Refresh</button></div>
+          <div className="cron-list">
+            {cron.map((j) => (
+              <div key={j.id} className="cron-item">
+                <div><strong>{j.name || j.id}</strong><div className="muted">{j.id}</div></div>
+                <div className="row">
+                  <button onClick={() => cronAction(j.enabled ? 'disable' : 'enable', j.id)}>{j.enabled ? 'Disable' : 'Enable'}</button>
+                  <button onClick={() => cronAction('delete', j.id)}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
           <div className="panel-title">Nodes</div>
           <div className="row"><button onClick={refreshNodes}>Refresh</button></div>
           <pre>{nodes}</pre>

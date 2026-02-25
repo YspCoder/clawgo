@@ -21,6 +21,7 @@ type RegistryServer struct {
 	configPath    string
 	onChat        func(ctx context.Context, sessionKey, content string) (string, error)
 	onConfigAfter func()
+	onCron        func(action, id string) (interface{}, error)
 	webUIDir      string
 }
 
@@ -40,7 +41,10 @@ func (s *RegistryServer) SetChatHandler(fn func(ctx context.Context, sessionKey,
 	s.onChat = fn
 }
 func (s *RegistryServer) SetConfigAfterHook(fn func()) { s.onConfigAfter = fn }
-func (s *RegistryServer) SetWebUIDir(dir string)      { s.webUIDir = strings.TrimSpace(dir) }
+func (s *RegistryServer) SetCronHandler(fn func(action, id string) (interface{}, error)) {
+	s.onCron = fn
+}
+func (s *RegistryServer) SetWebUIDir(dir string) { s.webUIDir = strings.TrimSpace(dir) }
 
 func (s *RegistryServer) Start(ctx context.Context) error {
 	if s.mgr == nil {
@@ -58,6 +62,8 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/config", s.handleWebUIConfig)
 	mux.HandleFunc("/webui/api/chat", s.handleWebUIChat)
 	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
+	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
+	mux.HandleFunc("/webui/api/cron", s.handleWebUICron)
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
 	go func() {
 		<-ctx.Done()
@@ -299,6 +305,60 @@ func (s *RegistryServer) handleWebUIChat(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reply": resp, "session": session})
+}
+
+func (s *RegistryServer) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	list := []NodeInfo{}
+	if s.mgr != nil {
+		list = s.mgr.List()
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list})
+}
+
+func (s *RegistryServer) handleWebUICron(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.onCron == nil {
+		http.Error(w, "cron handler not configured", http.StatusInternalServerError)
+		return
+	}
+	if r.Method == http.MethodGet {
+		res, err := s.onCron("list", "")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "jobs": res})
+		return
+	}
+	if r.Method == http.MethodPost {
+		var body struct {
+			Action string `json:"action"`
+			ID     string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		res, err := s.onCron(strings.ToLower(strings.TrimSpace(body.Action)), strings.TrimSpace(body.ID))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "result": res})
+		return
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (s *RegistryServer) checkAuth(r *http.Request) bool {

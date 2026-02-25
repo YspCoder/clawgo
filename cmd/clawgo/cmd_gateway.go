@@ -189,6 +189,22 @@ func gatewayCmd() {
 	registryServer.SetConfigAfterHook(func() {
 		_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
 	})
+	registryServer.SetCronHandler(func(action, id string) (interface{}, error) {
+		switch strings.ToLower(strings.TrimSpace(action)) {
+		case "", "list":
+			return cronService.ListJobs(true), nil
+		case "delete":
+			return map[string]interface{}{"deleted": cronService.RemoveJob(strings.TrimSpace(id)), "id": strings.TrimSpace(id)}, nil
+		case "enable":
+			j := cronService.EnableJob(strings.TrimSpace(id), true)
+			return map[string]interface{}{"ok": j != nil, "id": strings.TrimSpace(id)}, nil
+		case "disable":
+			j := cronService.EnableJob(strings.TrimSpace(id), false)
+			return map[string]interface{}{"ok": j != nil, "id": strings.TrimSpace(id)}, nil
+		default:
+			return nil, fmt.Errorf("unsupported cron action: %s", action)
+		}
+	})
 	if err := registryServer.Start(ctx); err != nil {
 		fmt.Printf("Error starting node registry server: %v\n", err)
 	} else {
