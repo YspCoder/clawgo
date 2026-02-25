@@ -208,6 +208,20 @@ func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Reques
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if r.URL.Query().Get("include_hot_reload_fields") == "1" || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "hot") {
+			var cfg map[string]interface{}
+			if err := json.Unmarshal(b, &cfg); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":                true,
+				"config":            cfg,
+				"hot_reload_fields": hotReloadFieldPaths(),
+			})
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(b)
 	case http.MethodPost:
@@ -407,6 +421,21 @@ func (s *RegistryServer) checkAuth(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+func hotReloadFieldPaths() []string {
+	return []string{
+		"logging.*",
+		"sentinel.*",
+		"agents.*",
+		"providers.*",
+		"tools.*",
+		"channels.*",
+		"cron.*",
+		"agents.defaults.heartbeat.*",
+		"agents.defaults.autonomy.*",
+		"gateway.* (except listen address/port may require restart in some environments)",
+	}
 }
 
 const webUIHTML = `<!doctype html>
