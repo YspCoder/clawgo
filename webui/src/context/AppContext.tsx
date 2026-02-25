@@ -24,7 +24,10 @@ interface AppContextType {
   refreshCron: () => Promise<void>;
   refreshNodes: () => Promise<void>;
   refreshSkills: () => Promise<void>;
+  refreshSessions: () => Promise<void>;
   loadConfig: () => Promise<void>;
+  hotReloadFields: string[];
+  hotReloadFieldDetails: Array<{ path: string; name?: string; description?: string }>;
   q: string;
 }
 
@@ -48,16 +51,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cron, setCron] = useState<CronJob[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [sessions, setSessions] = useState<Session[]>([{ key: 'webui:default', title: 'Default' }]);
+  const [hotReloadFields, setHotReloadFields] = useState<string[]>([]);
+  const [hotReloadFieldDetails, setHotReloadFieldDetails] = useState<Array<{ path: string; name?: string; description?: string }>>([]);
 
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
 
   const loadConfig = useCallback(async () => {
     try {
-      const r = await fetch(`/webui/api/config${q}`);
+      const hotQ = q ? `${q}&include_hot_reload_fields=1` : '?include_hot_reload_fields=1';
+      const r = await fetch(`/webui/api/config${hotQ}`);
       if (!r.ok) throw new Error('Failed to load config');
       const txt = await r.text();
-      setCfgRaw(txt);
-      try { setCfg(JSON.parse(txt)); } catch { setCfg({}); }
+      try {
+        const parsed = JSON.parse(txt);
+        if (parsed && parsed.config) {
+          setCfg(parsed.config);
+          setCfgRaw(JSON.stringify(parsed.config, null, 2));
+          setHotReloadFields(Array.isArray(parsed.hot_reload_fields) ? parsed.hot_reload_fields : []);
+          setHotReloadFieldDetails(Array.isArray(parsed.hot_reload_field_details) ? parsed.hot_reload_field_details : []);
+        } else {
+          setCfg(parsed || {});
+          setCfgRaw(txt);
+        }
+      } catch {
+        setCfgRaw(txt);
+        try { setCfg(JSON.parse(txt)); } catch { setCfg({}); }
+      }
       setIsGatewayOnline(true);
     } catch (e) {
       setIsGatewayOnline(false);
@@ -104,9 +123,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [q]);
 
+  const refreshSessions = useCallback(async () => {
+    try {
+      const r = await fetch(`/webui/api/sessions${q}`);
+      if (!r.ok) throw new Error('Failed to load sessions');
+      const j = await r.json();
+      const arr = Array.isArray(j.sessions) ? j.sessions : [];
+      setSessions(arr.map((s: any) => ({ key: s.key, title: s.key })));
+      setIsGatewayOnline(true);
+    } catch (e) {
+      setIsGatewayOnline(false);
+      console.error(e);
+    }
+  }, [q]);
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadConfig(), refreshCron(), refreshNodes(), refreshSkills()]);
-  }, [loadConfig, refreshCron, refreshNodes, refreshSkills]);
+    await Promise.all([loadConfig(), refreshCron(), refreshNodes(), refreshSkills(), refreshSessions()]);
+  }, [loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions]);
 
   useEffect(() => {
     refreshAll();
@@ -114,9 +147,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       refreshCron();
       refreshNodes();
       refreshSkills();
+      refreshSessions();
     }, 10000);
     return () => clearInterval(interval);
-  }, [token, refreshAll, refreshCron, refreshNodes, refreshSkills]);
+  }, [token, refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions]);
 
   return (
     <AppContext.Provider value={{
@@ -124,7 +158,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cfg, setCfg, cfgRaw, setCfgRaw, nodes, setNodes,
       cron, setCron, skills, setSkills,
       sessions, setSessions,
-      refreshAll, refreshCron, refreshNodes, refreshSkills, loadConfig, q
+      refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, loadConfig,
+      hotReloadFields, hotReloadFieldDetails, q
     }}>
       {children}
     </AppContext.Provider>

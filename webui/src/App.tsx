@@ -9,6 +9,7 @@ import Cron from './pages/Cron';
 import Nodes from './pages/Nodes';
 import Logs from './pages/Logs';
 import Skills from './pages/Skills';
+import Memory from './pages/Memory';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="config" element={<Config />} />
             <Route path="cron" element={<Cron />} />
             <Route path="nodes" element={<Nodes />} />
+            <Route path="memory" element={<Memory />} />
           </Route>
         </Routes>
       </BrowserRouter>

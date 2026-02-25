@@ -13,7 +13,7 @@ export type CronJob = {
   to?: string;
 };
 export type Cfg = Record<string, any>;
-export type View = 'dashboard' | 'chat' | 'config' | 'cron' | 'nodes';
+export type View = 'dashboard' | 'chat' | 'config' | 'cron' | 'nodes' | 'memory';
 export type Lang = 'en' | 'zh';
 
 export type LogEntry = {

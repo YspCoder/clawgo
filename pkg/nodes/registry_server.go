@@ -74,6 +74,8 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
 	mux.HandleFunc("/webui/api/cron", s.handleWebUICron)
 	mux.HandleFunc("/webui/api/skills", s.handleWebUISkills)
+	mux.HandleFunc("/webui/api/sessions", s.handleWebUISessions)
+	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
@@ -226,10 +228,18 @@ func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Reques
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
+			info := hotReloadFieldInfo()
+			paths := make([]string, 0, len(info))
+			for _, it := range info {
+				if p, ok := it["path"].(string); ok && strings.TrimSpace(p) != "" {
+					paths = append(paths, p)
+				}
+			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":                true,
-				"config":            cfg,
-				"hot_reload_fields": hotReloadFieldPaths(),
+				"ok":                       true,
+				"config":                   cfg,
+				"hot_reload_fields":        paths,
+				"hot_reload_field_details": info,
 			})
 			return
 		}
@@ -803,6 +813,116 @@ func anyToString(v interface{}) string {
 	}
 }
 
+func (s *RegistryServer) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sessionsDir := filepath.Join(filepath.Dir(strings.TrimSpace(s.workspacePath)), "sessions")
+	entries, err := os.ReadDir(sessionsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": []interface{}{}})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type item struct {
+		Key string `json:"key"`
+	}
+	out := make([]item, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, ".json") {
+			out = append(out, item{Key: strings.TrimSuffix(name, ".json")})
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": out})
+}
+
+func (s *RegistryServer) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	memoryDir := filepath.Join(strings.TrimSpace(s.workspacePath), "memory")
+	_ = os.MkdirAll(memoryDir, 0755)
+	switch r.Method {
+	case http.MethodGet:
+		path := strings.TrimSpace(r.URL.Query().Get("path"))
+		if path == "" {
+			entries, err := os.ReadDir(memoryDir)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			files := make([]string, 0, len(entries))
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				files = append(files, e.Name())
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "files": files})
+			return
+		}
+		clean := filepath.Clean(path)
+		if strings.HasPrefix(clean, "..") {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+		full := filepath.Join(memoryDir, clean)
+		b, err := os.ReadFile(full)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "path": clean, "content": string(b)})
+	case http.MethodPost:
+		var body struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		clean := filepath.Clean(strings.TrimSpace(body.Path))
+		if clean == "" || strings.HasPrefix(clean, "..") {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+		full := filepath.Join(memoryDir, clean)
+		if err := os.WriteFile(full, []byte(body.Content), 0644); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "path": clean})
+	case http.MethodDelete:
+		path := filepath.Clean(strings.TrimSpace(r.URL.Query().Get("path")))
+		if path == "" || strings.HasPrefix(path, "..") {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+		full := filepath.Join(memoryDir, path)
+		if err := os.Remove(full); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true, "path": path})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func (s *RegistryServer) handleWebUIExecApprovals(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -950,18 +1070,18 @@ func (s *RegistryServer) checkAuth(r *http.Request) bool {
 	return false
 }
 
-func hotReloadFieldPaths() []string {
-	return []string{
-		"logging.*",
-		"sentinel.*",
-		"agents.*",
-		"providers.*",
-		"tools.*",
-		"channels.*",
-		"cron.*",
-		"agents.defaults.heartbeat.*",
-		"agents.defaults.autonomy.*",
-		"gateway.* (except listen address/port may require restart in some environments)",
+func hotReloadFieldInfo() []map[string]interface{} {
+	return []map[string]interface{}{
+		{"path": "logging.*", "name": "日志配置", "description": "日志等级、落盘等"},
+		{"path": "sentinel.*", "name": "哨兵配置", "description": "健康检查与自动修复"},
+		{"path": "agents.*", "name": "Agent 配置", "description": "模型、策略、默认行为"},
+		{"path": "providers.*", "name": "Provider 配置", "description": "LLM 提供商与代理"},
+		{"path": "tools.*", "name": "工具配置", "description": "工具开关、执行参数"},
+		{"path": "channels.*", "name": "渠道配置", "description": "Telegram/其它渠道参数"},
+		{"path": "cron.*", "name": "定时任务配置", "description": "cron 全局运行参数"},
+		{"path": "agents.defaults.heartbeat.*", "name": "心跳策略", "description": "心跳频率、提示词"},
+		{"path": "agents.defaults.autonomy.*", "name": "自治策略", "description": "自治任务开关与限流"},
+		{"path": "gateway.*", "name": "网关配置", "description": "多数可热更，监听地址/端口可能需重启"},
 	}
 }
 

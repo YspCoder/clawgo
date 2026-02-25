@@ -19,7 +19,7 @@ function setPath(obj: any, path: string, value: any) {
 
 const Config: React.FC = () => {
   const { t } = useTranslation();
-  const { cfg, setCfg, cfgRaw, setCfgRaw, loadConfig, q } = useAppContext();
+  const { cfg, setCfg, cfgRaw, setCfgRaw, loadConfig, hotReloadFieldDetails, q } = useAppContext();
   const [showRaw, setShowRaw] = useState(false);
 
   async function saveConfig() {
@@ -51,6 +51,18 @@ const Config: React.FC = () => {
         <button onClick={saveConfig} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
           <Save className="w-4 h-4" /> {t('saveChanges')}
         </button>
+      </div>
+
+      <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-4">
+        <div className="text-sm font-semibold text-zinc-300 mb-2">热更新字段（完整）</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+          {hotReloadFieldDetails.map((it) => (
+            <div key={it.path} className="p-2 rounded bg-zinc-950 border border-zinc-800">
+              <div className="font-mono text-zinc-200">{it.path}</div>
+              <div className="text-zinc-400">{it.name || ''}{it.description ? ` · ${it.description}` : ''}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl overflow-hidden flex flex-col shadow-sm">

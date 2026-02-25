@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, Settings, Clock, Server, Terminal, Globe, Zap } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Settings, Clock, Server, Terminal, Zap, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import NavItem from './NavItem';
@@ -20,6 +20,7 @@ const Sidebar: React.FC = () => {
         <NavItem icon={<Settings className="w-5 h-5" />} label={t('config')} to="/config" />
         <NavItem icon={<Clock className="w-5 h-5" />} label={t('cronJobs')} to="/cron" />
         <NavItem icon={<Server className="w-5 h-5" />} label={t('nodes')} to="/nodes" />
+        <NavItem icon={<FolderOpen className="w-5 h-5" />} label={t('memory')} to="/memory" />
       </nav>
 
       <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
