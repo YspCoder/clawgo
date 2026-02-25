@@ -3,12 +3,32 @@ import { useEffect, useMemo, useState } from 'react'
 type ChatItem = { role: 'user' | 'assistant'; text: string }
 type Session = { key: string; title: string }
 type CronJob = { id: string; name: string; enabled: boolean; schedule?: { kind?: string } }
+type Cfg = Record<string, any>
 
 const defaultSessions: Session[] = [{ key: 'webui:default', title: 'Default' }]
 
+function getPath(obj: any, path: string, fallback: any = '') {
+  return path.split('.').reduce((acc, k) => (acc && acc[k] !== undefined ? acc[k] : undefined), obj) ?? fallback
+}
+
+function setPath(obj: any, path: string, value: any) {
+  const keys = path.split('.')
+  const next = JSON.parse(JSON.stringify(obj || {}))
+  let cur = next
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k = keys[i]
+    if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}
+    cur = cur[k]
+  }
+  cur[keys[keys.length - 1]] = value
+  return next
+}
+
 export function App() {
   const [token, setToken] = useState('')
-  const [cfgText, setCfgText] = useState('{}')
+  const [cfg, setCfg] = useState<Cfg>({})
+  const [cfgRaw, setCfgRaw] = useState('{}')
+  const [showRaw, setShowRaw] = useState(false)
   const [sessions, setSessions] = useState<Session[]>(defaultSessions)
   const [active, setActive] = useState('webui:default')
   const [chat, setChat] = useState<Record<string, ChatItem[]>>({ 'webui:default': [] })
@@ -21,18 +41,37 @@ export function App() {
 
   async function loadConfig() {
     const r = await fetch(`/webui/api/config${q}`)
-    setCfgText(await r.text())
+    const txt = await r.text()
+    setCfgRaw(txt)
+    try {
+      setCfg(JSON.parse(txt))
+    } catch {
+      setCfg({})
+    }
   }
 
   async function saveConfig() {
-    const parsed = JSON.parse(cfgText)
+    const payload = showRaw ? JSON.parse(cfgRaw) : cfg
     const r = await fetch(`/webui/api/config${q}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(parsed),
+      body: JSON.stringify(payload),
     })
     alert(await r.text())
   }
+
+  const bindText = (path: string) => ({
+    value: String(getPath(cfg, path, '')),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setCfg((v) => setPath(v, path, e.target.value)),
+  })
+  const bindNum = (path: string) => ({
+    value: Number(getPath(cfg, path, 0)),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setCfg((v) => setPath(v, path, Number(e.target.value || 0))),
+  })
+  const bindBool = (path: string) => ({
+    checked: Boolean(getPath(cfg, path, false)),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setCfg((v) => setPath(v, path, e.target.checked)),
+  })
 
   async function refreshNodes() {
     const r = await fetch(`/webui/api/nodes${q}`)
@@ -129,9 +168,23 @@ export function App() {
         </main>
 
         <section className="panel right">
-          <div className="panel-title">Config</div>
-          <div className="row"><button onClick={loadConfig}>Load</button><button onClick={saveConfig}>Save+Reload</button></div>
-          <textarea value={cfgText} onChange={(e) => setCfgText(e.target.value)} />
+          <div className="panel-title">Config Form</div>
+          <div className="row"><button onClick={loadConfig}>Load</button><button onClick={saveConfig}>Save+Reload</button><button onClick={() => setShowRaw(v => !v)}>{showRaw ? 'Form' : 'Raw'}</button></div>
+          {!showRaw ? (
+            <div className="form-grid">
+              <label>gateway.host<input {...bindText('gateway.host')} /></label>
+              <label>gateway.port<input type="number" {...bindNum('gateway.port')} /></label>
+              <label>gateway.token<input {...bindText('gateway.token')} /></label>
+              <label>agents.defaults.max_tool_iterations<input type="number" {...bindNum('agents.defaults.max_tool_iterations')} /></label>
+              <label>agents.defaults.max_tokens<input type="number" {...bindNum('agents.defaults.max_tokens')} /></label>
+              <label>providers.proxy.timeout_sec<input type="number" {...bindNum('providers.proxy.timeout_sec')} /></label>
+              <label>tools.shell.enabled<input type="checkbox" {...bindBool('tools.shell.enabled')} /></label>
+              <label>logging.enabled<input type="checkbox" {...bindBool('logging.enabled')} /></label>
+            </div>
+          ) : (
+            <textarea value={cfgRaw} onChange={(e) => setCfgRaw(e.target.value)} />
+          )}
+
           <div className="panel-title">Cron</div>
           <div className="row"><button onClick={refreshCron}>Refresh</button></div>
           <div className="cron-list">
@@ -145,6 +198,7 @@ export function App() {
               </div>
             ))}
           </div>
+
           <div className="panel-title">Nodes</div>
           <div className="row"><button onClick={refreshNodes}>Refresh</button></div>
           <pre>{nodes}</pre>

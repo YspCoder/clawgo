@@ -16,10 +16,14 @@
 button{cursor:pointer;border:1px solid #374151;background:#0f172a;color:#fff;padding:6px 10px;border-radius:8px}
 .row{display:flex;gap:8px;margin-bottom:8px}
 textarea{width:100%;min-height:180px;background:#0b1220;color:#e5e7eb;border:1px solid #374151;border-radius:8px;padding:8px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.form-grid label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#cbd5e1}
+.form-grid input{background:#0b1220;color:#fff;border:1px solid #374151;padding:8px;border-radius:8px}
+.form-grid input[type='checkbox']{width:20px;height:20px;padding:0}
 pre{flex:1;overflow:auto;background:#0b1220;border:1px solid #374151;border-radius:8px;padding:8px;white-space:pre-wrap}
 .cron-list{max-height:180px;overflow:auto;border:1px solid #374151;border-radius:8px;padding:6px;margin-bottom:8px;background:#0b1220}
 .cron-item{display:flex;justify-content:space-between;gap:8px;align-items:center;border-bottom:1px solid #1f2937;padding:6px 0}
 .cron-item:last-child{border-bottom:none}
 .muted{font-size:12px;color:#9ca3af}
 @media (max-width: 1024px){.layout{grid-template-columns:200px 1fr}.right{grid-column:1 / span 2;max-height:42vh}}
-@media (max-width: 768px){.layout{grid-template-columns:1fr}.sessions{order:2}.chat{order:1;min-height:50vh}.right{order:3}.topbar input{min-width:160px;width:52%}}
+@media (max-width: 768px){.layout{grid-template-columns:1fr}.sessions{order:2}.chat{order:1;min-height:50vh}.right{order:3}.topbar input{min-width:160px;width:52%}.form-grid{grid-template-columns:1fr}}
