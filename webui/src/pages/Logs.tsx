@@ -9,6 +9,7 @@ const Logs: React.FC = () => {
   const { q } = useAppContext();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isStreaming, setIsStreaming] = useState(true);
+  const [showRaw, setShowRaw] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -86,6 +87,7 @@ const Logs: React.FC = () => {
     time: typeof v?.time === 'string' && v.time ? v.time : new Date().toISOString(),
     level: typeof v?.level === 'string' && v.level ? v.level : 'INFO',
     msg: typeof v?.msg === 'string' ? v.msg : JSON.stringify(v),
+    __raw: JSON.stringify(v),
     ...v,
   });
 
@@ -100,6 +102,14 @@ const Logs: React.FC = () => {
     } catch {
       return '--:--:--';
     }
+  };
+
+  const renderReadable = (log: LogEntry) => {
+    const keys = Object.keys(log).filter(k => !['time', 'level', 'msg', '__raw'].includes(k));
+    const core = `${log.msg}`;
+    if (keys.length === 0) return core;
+    const extra = keys.map(k => `${k}=${JSON.stringify((log as any)[k])}`).join(' · ');
+    return `${core}  |  ${extra}`;
   };
 
   const getLevelColor = (level: string) => {
@@ -124,6 +134,12 @@ const Logs: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowRaw(!showRaw)}
+            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors text-zinc-300"
+          >
+            {showRaw ? 'Pretty' : 'Raw'}
+          </button>
           <button 
             onClick={() => setIsStreaming(!isStreaming)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -157,10 +173,7 @@ const Logs: React.FC = () => {
             <div key={i} className="group flex gap-4 hover:bg-zinc-900/50 rounded px-2 py-0.5 transition-colors">
               <span className="text-zinc-600 shrink-0 select-none">[{formatTime(log.time)}]</span>
               <span className={`font-bold shrink-0 select-none w-12 ${getLevelColor(log.level)}`}>{(log.level || 'INFO').toUpperCase()}</span>
-              <span className="text-zinc-300 break-all">{log.msg}</span>
-              {Object.keys(log).filter(k => !['time', 'level', 'msg'].includes(k)).map(k => (
-                <span key={k} className="text-zinc-500 italic shrink-0 select-none">{k}={JSON.stringify(log[k])}</span>
-              ))}
+              <span className="text-zinc-300 break-all">{showRaw ? (log.__raw || JSON.stringify(log)) : renderReadable(log)}</span>
             </div>
           ))}
           <div ref={logEndRef} />
