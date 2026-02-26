@@ -613,8 +613,6 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	})
 	cancelAPI()
 
-	c.startThinkingPlaceholder(runCtx, chatID, message.MessageID)
-
 	metadata := map[string]string{
 		"message_id": fmt.Sprintf("%d", message.MessageID),
 		"user_id":    fmt.Sprintf("%d", user.ID),
