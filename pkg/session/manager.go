@@ -108,7 +108,7 @@ func (sm *SessionManager) AddMessageFull(sessionKey string, msg providers.Messag
 	session.Updated = time.Now()
 	session.mu.Unlock()
 
-	// 立即持久化 (Append-only)
+	// Persist immediately (append-only).
 	sm.appendMessage(sessionKey, msg)
 }
 
@@ -323,8 +323,8 @@ func toOpenClawMessageEvent(msg providers.Message) openClawEvent {
 		Type:      "message",
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		Message: &struct {
-			Role       string               `json:"role"`
-			Content    []struct {
+			Role    string `json:"role"`
+			Content []struct {
 				Type string `json:"type"`
 				Text string `json:"text,omitempty"`
 			} `json:"content,omitempty"`

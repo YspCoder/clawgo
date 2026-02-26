@@ -45,19 +45,19 @@ type AgentDefaults struct {
 }
 
 type AutonomyConfig struct {
-	Enabled                  bool   `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ENABLED"`
-	TickIntervalSec          int    `json:"tick_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TICK_INTERVAL_SEC"`
-	MinRunIntervalSec        int    `json:"min_run_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
-	MaxPendingDurationSec    int    `json:"max_pending_duration_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_PENDING_DURATION_SEC"`
-	MaxConsecutiveStalls     int    `json:"max_consecutive_stalls" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_CONSECUTIVE_STALLS"`
-	MaxDispatchPerTick       int    `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
-	NotifyCooldownSec        int    `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
-	NotifySameReasonCooldownSec int `json:"notify_same_reason_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_SAME_REASON_COOLDOWN_SEC"`
-	QuietHours               string `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
-	UserIdleResumeSec        int    `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
-	WaitingResumeDebounceSec int    `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
-	NotifyChannel            string `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
-	NotifyChatID             string `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
+	Enabled                     bool   `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ENABLED"`
+	TickIntervalSec             int    `json:"tick_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TICK_INTERVAL_SEC"`
+	MinRunIntervalSec           int    `json:"min_run_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
+	MaxPendingDurationSec       int    `json:"max_pending_duration_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_PENDING_DURATION_SEC"`
+	MaxConsecutiveStalls        int    `json:"max_consecutive_stalls" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_CONSECUTIVE_STALLS"`
+	MaxDispatchPerTick          int    `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
+	NotifyCooldownSec           int    `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
+	NotifySameReasonCooldownSec int    `json:"notify_same_reason_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_SAME_REASON_COOLDOWN_SEC"`
+	QuietHours                  string `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
+	UserIdleResumeSec           int    `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
+	WaitingResumeDebounceSec    int    `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
+	NotifyChannel               string `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
+	NotifyChatID                string `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
 }
 
 type AgentTextConfig struct {
@@ -304,42 +304,42 @@ func DefaultConfig() *Config {
 				Temperature:       0.7,
 				MaxToolIterations: 20,
 				Heartbeat: HeartbeatConfig{
-					Enabled:     true,
-					EverySec:    30 * 60,
-					AckMaxChars: 64,
+					Enabled:        true,
+					EverySec:       30 * 60,
+					AckMaxChars:    64,
 					PromptTemplate: "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
 				},
 				Autonomy: AutonomyConfig{
-					Enabled:               false,
-					TickIntervalSec:       30,
-					MinRunIntervalSec:     20,
-					MaxPendingDurationSec: 180,
-					MaxConsecutiveStalls:  3,
-					MaxDispatchPerTick:    2,
-					NotifyCooldownSec:     300,
+					Enabled:                     false,
+					TickIntervalSec:             30,
+					MinRunIntervalSec:           20,
+					MaxPendingDurationSec:       180,
+					MaxConsecutiveStalls:        3,
+					MaxDispatchPerTick:          2,
+					NotifyCooldownSec:           300,
 					NotifySameReasonCooldownSec: 900,
-					QuietHours:            "23:00-08:00",
-					UserIdleResumeSec:     20,
-					WaitingResumeDebounceSec: 5,
-					NotifyChannel:         "",
-					NotifyChatID:          "",
+					QuietHours:                  "23:00-08:00",
+					UserIdleResumeSec:           20,
+					WaitingResumeDebounceSec:    5,
+					NotifyChannel:               "",
+					NotifyChatID:                "",
 				},
 				Texts: AgentTextConfig{
-					NoResponseFallback:    "I've completed processing but have no response to give.",
-					ThinkOnlyFallback:     "Thinking process completed.",
-					MemoryRecallKeywords:  []string{"remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision", "日期", "when did", "what did we"},
-					LangUsage:             "Usage: /lang <code>",
-					LangInvalid:           "Invalid language code.",
-					LangUpdatedTemplate:   "Language preference updated to %s",
-					SubagentsNone:         "No subagents.",
-					SessionsNone:          "No sessions.",
-					UnsupportedAction:     "unsupported action",
+					NoResponseFallback:         "I've completed processing but have no response to give.",
+					ThinkOnlyFallback:          "Thinking process completed.",
+					MemoryRecallKeywords:       []string{"remember", "previous", "preference", "todo", "decision", "date", "when did", "what did we"},
+					LangUsage:                  "Usage: /lang <code>",
+					LangInvalid:                "Invalid language code.",
+					LangUpdatedTemplate:        "Language preference updated to %s",
+					SubagentsNone:              "No subagents.",
+					SessionsNone:               "No sessions.",
+					UnsupportedAction:          "unsupported action",
 					SystemRewriteTemplate:      "Rewrite the following internal system update in concise user-facing language:\n\n%s",
 					RuntimeCompactionNote:      "[runtime-compaction] removed %d old messages, kept %d recent messages",
 					StartupCompactionNote:      "[startup-compaction] removed %d old messages, kept %d recent messages",
-					AutonomyImportantKeywords:  []string{"urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"},
-					AutonomyCompletionTemplate: "✅ 已完成：%s\n回复“继续 %s”可继续下一步。",
-					AutonomyBlockedTemplate:    "⚠️ 任务受阻：%s（%s）\n回复“继续 %s”我会重试。",
+					AutonomyImportantKeywords:  []string{"urgent", "payment", "release", "deadline", "p0", "asap"},
+					AutonomyCompletionTemplate: "✅ Completed: %s\nReply \"continue %s\" to proceed to the next step.",
+					AutonomyBlockedTemplate:    "⚠️ Task blocked: %s (%s)\nReply \"continue %s\" and I will retry.",
 				},
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,

@@ -20,23 +20,23 @@ import (
 )
 
 type Options struct {
-	Enabled                  bool
-	TickIntervalSec          int
-	MinRunIntervalSec        int
-	MaxPendingDurationSec    int
-	MaxConsecutiveStalls     int
-	MaxDispatchPerTick       int
-	Workspace                string
-	DefaultNotifyChannel     string
-	DefaultNotifyChatID      string
-	NotifyCooldownSec        int
+	Enabled                     bool
+	TickIntervalSec             int
+	MinRunIntervalSec           int
+	MaxPendingDurationSec       int
+	MaxConsecutiveStalls        int
+	MaxDispatchPerTick          int
+	Workspace                   string
+	DefaultNotifyChannel        string
+	DefaultNotifyChatID         string
+	NotifyCooldownSec           int
 	NotifySameReasonCooldownSec int
-	QuietHours               string
-	UserIdleResumeSec        int
-	WaitingResumeDebounceSec int
-	ImportantKeywords        []string
-	CompletionTemplate       string
-	BlockedTemplate          string
+	QuietHours                  string
+	UserIdleResumeSec           int
+	WaitingResumeDebounceSec    int
+	ImportantKeywords           []string
+	CompletionTemplate          string
+	BlockedTemplate             string
 }
 
 type taskState struct {
@@ -436,10 +436,10 @@ func normalizeResourceKeys(keys []string) []string {
 }
 
 type todoItem struct {
-	ID        string
-	Content   string
-	Priority  string
-	DueAt     string
+	ID         string
+	Content    string
+	Priority   string
+	DueAt      string
 	DedupeHits int
 }
 
@@ -549,7 +549,7 @@ func (e *Engine) sendCompletionNotification(st *taskState) {
 	}
 	tpl := strings.TrimSpace(e.opts.CompletionTemplate)
 	if tpl == "" {
-		tpl = "✅ 已完成：%s\n下一步：如需我继续处理后续，直接回复“继续 %s”"
+		tpl = "✅ Completed: %s\nNext step: reply \"continue %s\" if you want me to proceed."
 	}
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
@@ -566,7 +566,7 @@ func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 	}
 	tpl := strings.TrimSpace(e.opts.BlockedTemplate)
 	if tpl == "" {
-		tpl = "⚠️ 任务受阻：%s\n原因：%s\n建议：回复“继续 %s”我会按当前状态重试。"
+		tpl = "⚠️ Task blocked: %s\nReason: %s\nSuggestion: reply \"continue %s\" and I will retry from current state."
 	}
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
@@ -942,7 +942,7 @@ func (e *Engine) isHighValueCompletion(st *taskState) bool {
 	s := strings.ToLower(strings.TrimSpace(st.Content))
 	keywords := e.opts.ImportantKeywords
 	if len(keywords) == 0 {
-		keywords = []string{"urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"}
+		keywords = []string{"urgent", "payment", "release", "deadline", "p0", "asap"}
 	}
 	for _, k := range keywords {
 		kk := strings.ToLower(strings.TrimSpace(k))

@@ -1418,16 +1418,16 @@ func (s *RegistryServer) checkAuth(r *http.Request) bool {
 
 func hotReloadFieldInfo() []map[string]interface{} {
 	return []map[string]interface{}{
-		{"path": "logging.*", "name": "日志配置", "description": "日志等级、落盘等"},
-		{"path": "sentinel.*", "name": "哨兵配置", "description": "健康检查与自动修复"},
-		{"path": "agents.*", "name": "Agent 配置", "description": "模型、策略、默认行为"},
-		{"path": "providers.*", "name": "Provider 配置", "description": "LLM 提供商与代理"},
-		{"path": "tools.*", "name": "工具配置", "description": "工具开关、执行参数"},
-		{"path": "channels.*", "name": "渠道配置", "description": "Telegram/其它渠道参数"},
-		{"path": "cron.*", "name": "定时任务配置", "description": "cron 全局运行参数"},
-		{"path": "agents.defaults.heartbeat.*", "name": "心跳策略", "description": "心跳频率、提示词"},
-		{"path": "agents.defaults.autonomy.*", "name": "自治策略", "description": "自治任务开关与限流"},
-		{"path": "gateway.*", "name": "网关配置", "description": "多数可热更，监听地址/端口可能需重启"},
+		{"path": "logging.*", "name": "Logging", "description": "Log level, persistence, and related settings"},
+		{"path": "sentinel.*", "name": "Sentinel", "description": "Health checks and auto-heal behavior"},
+		{"path": "agents.*", "name": "Agent", "description": "Models, policies, and default behavior"},
+		{"path": "providers.*", "name": "Providers", "description": "LLM providers and proxy settings"},
+		{"path": "tools.*", "name": "Tools", "description": "Tool toggles and runtime options"},
+		{"path": "channels.*", "name": "Channels", "description": "Telegram and other channel settings"},
+		{"path": "cron.*", "name": "Cron", "description": "Global cron runtime settings"},
+		{"path": "agents.defaults.heartbeat.*", "name": "Heartbeat", "description": "Heartbeat interval and prompt template"},
+		{"path": "agents.defaults.autonomy.*", "name": "Autonomy", "description": "Autonomy toggles and throttling"},
+		{"path": "gateway.*", "name": "Gateway", "description": "Mostly hot-reloadable; host/port may require restart"},
 	}
 }
 

@@ -235,9 +235,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		sessionRunLocks:       map[string]*sync.Mutex{},
 	}
 
-	// 注入递归运行逻辑，使 subagent 具备 full tool-calling 能力
+	// Inject recursive run logic so subagents can use full tool-calling flows.
 	subagentManager.SetRunFunc(func(ctx context.Context, task, channel, chatID string) (string, error) {
-		sessionKey := fmt.Sprintf("subagent:%d", os.Getpid()) // 改用 PID 或随机数，避免 sessionKey 冲突
+		sessionKey := fmt.Sprintf("subagent:%d", os.Getpid()) // Use PID/randomized key to reduce session key collisions.
 		return loop.ProcessDirect(ctx, task, sessionKey)
 	})
 
@@ -629,7 +629,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			})
 		}
 		messages = append(messages, assistantMsg)
-		// 持久化包含 ToolCalls 的助手消息
+		// Persist assistant message with tool calls.
 		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
 
 		for _, tc := range response.ToolCalls {
@@ -652,7 +652,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				ToolCallID: tc.ID,
 			}
 			messages = append(messages, toolResultMsg)
-			// 持久化工具返回结果
+			// Persist tool result message.
 			al.sessions.AddMessageFull(msg.SessionKey, toolResultMsg)
 		}
 	}
@@ -673,7 +673,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		if iteration == 1 {
 			fallback := strings.TrimSpace(al.thinkOnlyFallback)
 			if fallback == "" {
-				fallback = "已完成思考流程。"
+				fallback = "Thinking process completed."
 			}
 			userContent = fallback
 		}
@@ -686,7 +686,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
 
-	// 使用 AddMessageFull 存储包含思考过程或工具调用的完整助手消息
+	// Persist full assistant response (including reasoning/tool flow outcomes when present).
 	al.sessions.AddMessageFull(msg.SessionKey, providers.Message{
 		Role:    "assistant",
 		Content: userContent,
@@ -716,15 +716,15 @@ func (al *AgentLoop) updateIntentHint(sessionKey, content string) {
 	lower := strings.ToLower(content)
 
 	// Cron natural-language intent: avoid searching project files for user timer ops.
-	if strings.Contains(lower, "定时") || strings.Contains(lower, "定时任务") || strings.Contains(lower, "cron") || strings.Contains(lower, "schedule") {
-		hint := "优先使用 cron 工具处理定时任务：查看=action=list；删除=action=delete(id)；启停=action=enable/disable。不要改为在项目目录中搜索 cron 文本。"
+	if strings.Contains(lower, "cron") || strings.Contains(lower, "schedule") || strings.Contains(lower, "timer") || strings.Contains(lower, "reminder") {
+		hint := "Prioritize the cron tool for timer operations: list=action=list; delete=action=delete(id); enable/disable=action=enable/disable. Do not switch to grepping project files for cron text."
 		al.intentMu.Lock()
-		al.intentHints[sessionKey] = hint + " 用户补充=" + content
+		al.intentHints[sessionKey] = hint + " User details=" + content
 		al.intentMu.Unlock()
 		return
 	}
 
-	if !strings.Contains(lower, "提交") && !strings.Contains(lower, "推送") && !strings.Contains(lower, "commit") && !strings.Contains(lower, "push") {
+	if !strings.Contains(lower, "commit") && !strings.Contains(lower, "push") {
 		if strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") {
 			al.intentMu.Lock()
 			if prev := strings.TrimSpace(al.intentHints[sessionKey]); prev != "" {
@@ -734,12 +734,12 @@ func (al *AgentLoop) updateIntentHint(sessionKey, content string) {
 		}
 		return
 	}
-	hint := "执行事务: commit+push 一次闭环，包含分支/范围确认。"
-	if strings.Contains(lower, "所有分支") || strings.Contains(lower, "all branches") {
-		hint += " 范围=所有分支。"
+	hint := "Execute as one transaction: complete commit+push in one pass with branch/scope confirmation."
+	if strings.Contains(lower, "all branches") {
+		hint += " Scope=all branches."
 	}
 	al.intentMu.Lock()
-	al.intentHints[sessionKey] = hint + " 用户补充=" + content
+	al.intentHints[sessionKey] = hint + " User details=" + content
 	al.intentMu.Unlock()
 }
 
@@ -751,7 +751,7 @@ func (al *AgentLoop) applyIntentHint(sessionKey, content string) string {
 		return content
 	}
 	lower := strings.ToLower(strings.TrimSpace(content))
-	if strings.Contains(lower, "提交") || strings.Contains(lower, "推送") || strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") || strings.Contains(lower, "定时") || strings.Contains(lower, "cron") || strings.Contains(lower, "schedule") {
+	if strings.Contains(lower, "commit") || strings.Contains(lower, "push") || strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") || strings.Contains(lower, "cron") || strings.Contains(lower, "schedule") || strings.Contains(lower, "timer") || strings.Contains(lower, "reminder") {
 		return "[Intent Slot]\n" + hint + "\n\n[User Message]\n" + content
 	}
 	return content
@@ -887,7 +887,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			})
 		}
 		messages = append(messages, assistantMsg)
-		// 持久化包含 ToolCalls 的助手消息
+		// Persist assistant message with tool calls.
 		al.sessions.AddMessageFull(sessionKey, assistantMsg)
 
 		for _, tc := range response.ToolCalls {
@@ -902,7 +902,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 				ToolCallID: tc.ID,
 			}
 			messages = append(messages, toolResultMsg)
-			// 持久化工具返回结果
+			// Persist tool result message.
 			al.sessions.AddMessageFull(sessionKey, toolResultMsg)
 		}
 	}
@@ -914,9 +914,8 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	// Save to session with system message marker
 	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
 
-	// 如果 finalContent 中没有包含 tool calls (即最后一次 LLM 返回的结果)
-	// 我们已经通过循环内部的 AddMessageFull 存储了前面的步骤
-	// 这里的 AddMessageFull 会存储最终回复
+	// If finalContent has no tool calls (last LLM turn is direct text),
+	// earlier steps were already persisted in-loop; this stores the final reply.
 	al.sessions.AddMessageFull(sessionKey, providers.Message{
 		Role:    "assistant",
 		Content: finalContent,
@@ -1110,7 +1109,7 @@ func shouldRecallMemory(text string, keywords []string) bool {
 		return false
 	}
 	if len(keywords) == 0 {
-		keywords = []string{"remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision", "日期", "when did", "what did we"}
+		keywords = []string{"remember", "preference", "todo", "decision", "date", "when did", "what did we"}
 	}
 	for _, k := range keywords {
 		kk := strings.ToLower(strings.TrimSpace(k))

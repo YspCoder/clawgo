@@ -79,9 +79,9 @@ func ExtractLanguagePreference(text string) string {
 		return ""
 	}
 
-	enHints := []string{"speak english", "reply in english", "use english", "以后用英文", "请用英文", "用英文"}
-	zhHints := []string{"说中文", "用中文", "请用中文", "reply in chinese", "speak chinese"}
-	jaHints := []string{"日本語", "reply in japanese", "speak japanese"}
+	enHints := []string{"speak english", "reply in english", "use english"}
+	zhHints := []string{"reply in chinese", "speak chinese", "use chinese"}
+	jaHints := []string{"reply in japanese", "speak japanese", "use japanese"}
 	koHints := []string{"한국어", "reply in korean", "speak korean"}
 
 	for _, h := range enHints {
