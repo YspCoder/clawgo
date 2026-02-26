@@ -116,6 +116,25 @@ clawgo gateway autonomy on
 clawgo gateway autonomy off
 ```
 
+## 🖥️ WebUI（控制台）
+
+ClawGo 提供内置 WebUI（React + Vite 构建产物由网关直接托管）：
+
+- 访问入口：`http://<host>:<port>/webui?token=<gateway.token>`
+- 移动端适配：侧边抽屉导航、紧凑头部、日志页可读模式
+- 页面：Dashboard / Chat / Logs / Skills / Config / Cron / Nodes / Memory
+
+常用 WebUI API（均需 token）：
+
+- 配置：`GET/POST /webui/api/config`
+- 聊天：`POST /webui/api/chat`、`POST /webui/api/chat/stream`
+- 日志：`GET /webui/api/logs/recent`、`GET /webui/api/logs/stream`
+- 定时任务：`GET /webui/api/cron`、`POST /webui/api/cron`
+- 节点：`GET /webui/api/nodes`、`POST /webui/api/nodes`
+- 技能：`GET/POST/DELETE /webui/api/skills`
+- 会话：`GET /webui/api/sessions`
+- 记忆文件：`GET/POST/DELETE /webui/api/memory`
+
 ## 📌 命令总览
 
 ```text
