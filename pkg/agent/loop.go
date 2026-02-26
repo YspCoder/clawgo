@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -577,10 +578,34 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
-			"max_tokens":  8192,
-			"temperature": 0.7,
-		})
+		options := map[string]interface{}{"max_tokens": 8192, "temperature": 0.7}
+		var response *providers.LLMResponse
+		var err error
+		if msg.Channel == "telegram" {
+			if sp, ok := al.provider.(providers.StreamingLLMProvider); ok {
+				streamText := ""
+				lastPush := time.Now().Add(-time.Second)
+				response, err = sp.ChatStream(ctx, messages, providerToolDefs, al.model, options, func(delta string) {
+					if strings.TrimSpace(delta) == "" {
+						return
+					}
+					streamText += delta
+					if time.Since(lastPush) < 450*time.Millisecond {
+						return
+					}
+					lastPush = time.Now()
+					replyID := ""
+					if msg.Metadata != nil {
+						replyID = msg.Metadata["message_id"]
+					}
+					al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Content: streamText, Action: "stream", ReplyToID: replyID})
+				})
+			} else {
+				response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
+			}
+		} else {
+			response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
+		}
 
 		if err != nil {
 			logger.ErrorCF("agent", "LLM call failed",

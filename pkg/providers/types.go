@@ -50,6 +50,11 @@ type LLMProvider interface {
 	GetDefaultModel() string
 }
 
+// StreamingLLMProvider is an optional capability interface for token-level streaming.
+type StreamingLLMProvider interface {
+	ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}, onDelta func(string)) (*LLMResponse, error)
+}
+
 // ResponsesCompactor is an optional capability interface.
 // Providers that support OpenAI /v1/responses/compact can implement this.
 type ResponsesCompactor interface {

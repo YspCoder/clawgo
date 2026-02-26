@@ -48,7 +48,7 @@ type TelegramChannel struct {
 
 func (c *TelegramChannel) SupportsAction(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "", "send", "edit", "delete", "react":
+	case "", "send", "stream", "edit", "delete", "react":
 		return true
 	default:
 		return false
@@ -259,15 +259,16 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 	chatID := telegoutil.ID(chatIDInt)
 
-	if stop, ok := c.stopThinking.LoadAndDelete(msg.ChatID); ok {
-		safeCloseSignal(stop)
-	}
-
 	action := strings.ToLower(strings.TrimSpace(msg.Action))
 	if action == "" {
 		action = "send"
 	}
-	if action != "send" {
+	if action == "send" {
+		if stop, ok := c.stopThinking.LoadAndDelete(msg.ChatID); ok {
+			safeCloseSignal(stop)
+		}
+	}
+	if action != "send" && action != "stream" {
 		return c.handleAction(ctx, chatIDInt, action, msg)
 	}
 
@@ -291,7 +292,6 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
-		defer c.placeholders.Delete(msg.ChatID)
 		editCtx, cancelEdit := withTelegramAPITimeout(ctx)
 		params := &telego.EditMessageTextParams{
 			ChatID:      chatID,
@@ -304,12 +304,20 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		cancelEdit()
 
 		if err == nil {
+			if action == "send" {
+				c.placeholders.Delete(msg.ChatID)
+			}
 			return nil
 		}
 		logger.WarnCF("telegram", "Placeholder update failed; fallback to new message", map[string]interface{}{
 			logger.FieldChatID: msg.ChatID,
 			logger.FieldError:  err.Error(),
 		})
+	}
+
+	if action == "stream" {
+		// stream updates should target existing placeholder only
+		return nil
 	}
 
 	sendParams := telegoutil.Message(chatID, htmlContent).WithParseMode(telego.ModeHTML)
