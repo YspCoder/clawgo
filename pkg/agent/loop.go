@@ -30,41 +30,35 @@ import (
 )
 
 type AgentLoop struct {
-	bus                    *bus.MessageBus
-	provider               providers.LLMProvider
-	workspace              string
-	model                  string
-	maxIterations          int
-	sessions               *session.SessionManager
-	contextBuilder         *ContextBuilder
-	tools                  *tools.ToolRegistry
-	compactionEnabled      bool
-	compactionTrigger      int
-	compactionKeepRecent   int
-	heartbeatAckMaxChars    int
-	memoryRecallKeywords    []string
-	noResponseFallback      string
-	thinkOnlyFallback       string
-	langUsage               string
-	langInvalid             string
-	langUpdatedTemplate     string
-	runtimeCompactionNote   string
-	startupCompactionNote   string
-	systemRewriteTemplate   string
-	audit                   *triggerAudit
-	running                 bool
-	intentMu                sync.RWMutex
-	intentHints             map[string]string
-	sessionRunMu            sync.Mutex
-	sessionRunLocks         map[string]*sync.Mutex
+	bus                   *bus.MessageBus
+	provider              providers.LLMProvider
+	workspace             string
+	model                 string
+	maxIterations         int
+	sessions              *session.SessionManager
+	contextBuilder        *ContextBuilder
+	tools                 *tools.ToolRegistry
+	compactionEnabled     bool
+	compactionTrigger     int
+	compactionKeepRecent  int
+	heartbeatAckMaxChars  int
+	memoryRecallKeywords  []string
+	noResponseFallback    string
+	thinkOnlyFallback     string
+	langUsage             string
+	langInvalid           string
+	langUpdatedTemplate   string
+	runtimeCompactionNote string
+	startupCompactionNote string
+	systemRewriteTemplate string
+	audit                 *triggerAudit
+	running               bool
+	intentMu              sync.RWMutex
+	intentHints           map[string]string
+	sessionRunMu          sync.Mutex
+	sessionRunLocks       map[string]*sync.Mutex
 }
 
-type executionTxnState struct {
-	commitIntent bool
-	commitSeen   bool
-	pushSeen     bool
-	pushOK       bool
-}
 // StartupCompactionReport provides startup memory/session maintenance stats.
 type StartupCompactionReport struct {
 	TotalSessions     int `json:"total_sessions"`
@@ -214,17 +208,17 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewSystemInfoTool())
 
 	loop := &AgentLoop{
-		bus:                  msgBus,
-		provider:             provider,
-		workspace:            workspace,
-		model:                provider.GetDefaultModel(),
-		maxIterations:        cfg.Agents.Defaults.MaxToolIterations,
-		sessions:             sessionsManager,
-		contextBuilder:       NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
-		tools:                toolsRegistry,
-		compactionEnabled:    cfg.Agents.Defaults.ContextCompaction.Enabled,
-		compactionTrigger:    cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
-		compactionKeepRecent: cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
+		bus:                   msgBus,
+		provider:              provider,
+		workspace:             workspace,
+		model:                 provider.GetDefaultModel(),
+		maxIterations:         cfg.Agents.Defaults.MaxToolIterations,
+		sessions:              sessionsManager,
+		contextBuilder:        NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
+		tools:                 toolsRegistry,
+		compactionEnabled:     cfg.Agents.Defaults.ContextCompaction.Enabled,
+		compactionTrigger:     cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
+		compactionKeepRecent:  cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
 		heartbeatAckMaxChars:  cfg.Agents.Defaults.Heartbeat.AckMaxChars,
 		memoryRecallKeywords:  cfg.Agents.Defaults.Texts.MemoryRecallKeywords,
 		noResponseFallback:    cfg.Agents.Defaults.Texts.NoResponseFallback,
@@ -541,8 +535,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	iteration := 0
 	var finalContent string
-	txn := executionTxnState{commitIntent: isCommitPushIntent(effectiveUserContent)}
-
 	for iteration < al.maxIterations {
 		iteration++
 
@@ -654,8 +646,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
 			}
-			updateTxnStateFromToolCall(&txn, tc.Name, tc.Arguments, result)
-
 			toolResultMsg := providers.Message{
 				Role:       "tool",
 				Content:    result,
@@ -694,8 +684,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			userContent = strings.TrimSpace(userContent + "\n\n" + src)
 		}
 	}
-	userContent = enforceExecutionReceiptTemplate(effectiveUserContent, userContent, txn)
-
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
 
 	// 使用 AddMessageFull 存储包含思考过程或工具调用的完整助手消息
@@ -767,48 +755,6 @@ func (al *AgentLoop) applyIntentHint(sessionKey, content string) string {
 		return "[Intent Slot]\n" + hint + "\n\n[User Message]\n" + content
 	}
 	return content
-}
-
-func enforceExecutionReceiptTemplate(userInput, output string, txn executionTxnState) string {
-	l := strings.ToLower(userInput)
-	if !(strings.Contains(l, "提交") || strings.Contains(l, "推送") || strings.Contains(l, "commit") || strings.Contains(l, "push")) {
-		return output
-	}
-	clean := strings.TrimSpace(output)
-	if clean == "" {
-		return clean
-	}
-	if strings.Contains(clean, "已理解") && strings.Contains(clean, "已完成") {
-		return clean
-	}
-	status := "事务状态：未检测到完整 commit+push。"
-	if txn.commitSeen && txn.pushSeen && txn.pushOK {
-		status = "事务状态：已检测到 commit+push 成功。"
-	}
-	return "已理解：按你的要求执行提交/推送事务。\n正在执行：整理改动并完成 commit + push。\n" + status + "\n已完成：\n" + clean
-}
-
-func isCommitPushIntent(content string) bool {
-	l := strings.ToLower(strings.TrimSpace(content))
-	return strings.Contains(l, "提交") || strings.Contains(l, "推送") || strings.Contains(l, "commit") || strings.Contains(l, "push")
-}
-
-func updateTxnStateFromToolCall(txn *executionTxnState, toolName string, args map[string]interface{}, result string) {
-	if txn == nil || strings.ToLower(strings.TrimSpace(toolName)) != "exec" {
-		return
-	}
-	cmd, _ := args["command"].(string)
-	lcmd := strings.ToLower(cmd)
-	lres := strings.ToLower(strings.TrimSpace(result))
-	if strings.Contains(lcmd, "git commit") {
-		txn.commitSeen = true
-	}
-	if strings.Contains(lcmd, "git push") {
-		txn.pushSeen = true
-		if !strings.HasPrefix(lres, "error:") && (strings.Contains(lres, "->") || strings.Contains(lres, "everything up-to-date") || strings.Contains(lres, "done")) {
-			txn.pushOK = true
-		}
-	}
 }
 
 func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
