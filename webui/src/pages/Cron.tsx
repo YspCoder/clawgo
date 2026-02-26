@@ -7,9 +7,9 @@ import { CronJob } from '../types';
 
 const initialCronForm = {
   name: '',
-  kind: 'every',
+  kind: 'cron',
   everyMs: 600000,
-  expr: '',
+  expr: '*/10 * * * *',
   message: '',
   deliver: false,
   channel: 'telegram',
@@ -44,7 +44,7 @@ const Cron: React.FC = () => {
           setEditingCron(details.job);
           setCronForm({
             name: details.job.name || '',
-            kind: details.job.kind || 'every',
+            kind: details.job.kind || 'cron',
             everyMs: details.job.everyMs || 600000,
             expr: details.job.expr || '',
             message: details.job.message || '',
@@ -215,8 +215,8 @@ const Cron: React.FC = () => {
                       onChange={(e) => setCronForm({...cronForm, kind: e.target.value})}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
                     >
-                      <option value="every">Every</option>
                       <option value="cron">Cron</option>
+                      <option value="every">Every</option>
                       <option value="once">Once</option>
                     </select>
                   </label>

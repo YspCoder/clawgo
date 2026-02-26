@@ -239,7 +239,7 @@ func gatewayCmd() {
 			}
 			kind := getStr("kind")
 			if kind == "" {
-				kind = "every"
+				kind = "cron"
 			}
 			if kind == "once" {
 				kind = "at"
@@ -270,7 +270,7 @@ func gatewayCmd() {
 			if kind == "cron" {
 				expr := getStr("expr")
 				if expr == "" {
-					return nil, fmt.Errorf("expr required for kind=cron")
+					expr = "*/10 * * * *"
 				}
 				schedule.Expr = expr
 			}
