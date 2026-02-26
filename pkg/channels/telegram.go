@@ -48,7 +48,7 @@ type TelegramChannel struct {
 
 func (c *TelegramChannel) SupportsAction(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "", "send", "stream", "edit", "delete", "react":
+	case "", "send", "stream", "finalize", "edit", "delete", "react":
 		return true
 	default:
 		return false
@@ -267,6 +267,17 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		if stop, ok := c.stopThinking.LoadAndDelete(msg.ChatID); ok {
 			safeCloseSignal(stop)
 		}
+	}
+	if action == "finalize" {
+		if stop, ok := c.stopThinking.LoadAndDelete(msg.ChatID); ok {
+			safeCloseSignal(stop)
+		}
+		if pID, ok := c.placeholders.LoadAndDelete(msg.ChatID); ok {
+			delCtx, cancel := withTelegramAPITimeout(ctx)
+			_ = c.bot.DeleteMessage(delCtx, &telego.DeleteMessageParams{ChatID: chatID, MessageID: pID.(int)})
+			cancel()
+		}
+		return nil
 	}
 	if action != "send" && action != "stream" {
 		return c.handleAction(ctx, chatIDInt, action, msg)

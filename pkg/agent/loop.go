@@ -324,6 +324,9 @@ func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage)
 			suppressed = true
 		}
 	}
+	if msg.Channel == "telegram" && suppressed {
+		al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Action: "finalize"})
+	}
 	al.audit.Record(trigger, msg.Channel, msg.SessionKey, suppressed, err)
 }
 
