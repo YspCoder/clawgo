@@ -303,11 +303,15 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	if pID, ok := c.placeholders.Load(msg.ChatID); ok {
+		htmlForEdit := htmlContent
+		if len([]rune(htmlForEdit)) > 3500 {
+			htmlForEdit = sanitizeTelegramHTML(markdownToTelegramHTML(splitTelegramText(plainTextFromTelegramHTML(htmlForEdit), 3500)[0]))
+		}
 		editCtx, cancelEdit := withTelegramAPITimeout(ctx)
 		params := &telego.EditMessageTextParams{
 			ChatID:      chatID,
 			MessageID:   pID.(int),
-			Text:        htmlContent,
+			Text:        htmlForEdit,
 			ParseMode:   telego.ModeHTML,
 			ReplyMarkup: markup,
 		}

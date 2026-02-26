@@ -394,7 +394,7 @@ func (p *HTTPProvider) callChatCompletionsStream(ctx context.Context, messages [
 		requestBody["temperature"] = temperature
 	}
 	var fullText strings.Builder
-	_, status, ctype, err := p.postJSONStream(ctx, endpointFor(p.apiBase, "/chat/completions"), requestBody, func(event string) {
+	rawBody, status, ctype, err := p.postJSONStream(ctx, endpointFor(p.apiBase, "/chat/completions"), requestBody, func(event string) {
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
@@ -415,6 +415,9 @@ func (p *HTTPProvider) callChatCompletionsStream(ctx context.Context, messages [
 	})
 	if err != nil {
 		return nil, status, ctype, err
+	}
+	if status != http.StatusOK || !strings.Contains(strings.ToLower(ctype), "text/event-stream") {
+		return rawBody, status, ctype, nil
 	}
 	body, _ := json.Marshal(map[string]interface{}{
 		"choices": []map[string]interface{}{{
