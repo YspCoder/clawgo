@@ -66,19 +66,6 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		}
 		if statusCode != http.StatusOK {
 			preview := previewResponseBody(body)
-			if statusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(preview), "no tool call found for function call output") {
-				// Retry once with sanitized history to avoid orphaned tool outputs causing hard-fail.
-				safeMessages := sanitizeResponsesRetryMessages(messages)
-				body2, status2, ctype2, err2 := p.callResponses(ctx, safeMessages, tools, model, options)
-				if err2 == nil && status2 == http.StatusOK && json.Valid(body2) {
-					logger.InfoCF("provider", "Recovered responses 400 by sanitizing tool outputs", map[string]interface{}{"messages_before": len(messages), "messages_after": len(safeMessages)})
-					return parseResponsesAPIResponse(body2)
-				}
-				if err2 != nil {
-					return nil, err2
-				}
-				return nil, fmt.Errorf("API error (status %d, content-type %q): %s", status2, ctype2, previewResponseBody(body2))
-			}
 			return nil, fmt.Errorf("API error (status %d, content-type %q): %s", statusCode, contentType, preview)
 		}
 		if !json.Valid(body) {
@@ -221,22 +208,6 @@ func toChatCompletionsContent(msg Message) []map[string]interface{} {
 	return content
 }
 
-func sanitizeResponsesRetryMessages(messages []Message) []Message {
-	out := make([]Message, 0, len(messages))
-	for _, m := range messages {
-		if strings.EqualFold(strings.TrimSpace(m.Role), "tool") {
-			text := strings.TrimSpace(m.Content)
-			if text == "" {
-				continue
-			}
-			out = append(out, Message{Role: "user", Content: "[tool_result_fallback] " + text})
-			continue
-		}
-		out = append(out, m)
-	}
-	return out
-}
-
 func toResponsesInputItems(msg Message) []map[string]interface{} {
 	return toResponsesInputItemsWithState(msg, nil)
 }
@@ -299,12 +270,12 @@ func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{
 	case "tool":
 		callID := strings.TrimSpace(msg.ToolCallID)
 		if callID == "" {
-			return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
+			return nil
 		}
 		if pendingCalls != nil {
 			if _, ok := pendingCalls[callID]; !ok {
-				// Avoid invalid orphan/duplicate tool outputs in /responses payload.
-				return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
+				// Strict pairing: drop orphan/duplicate tool outputs instead of degrading role.
+				return nil
 			}
 			delete(pendingCalls, callID)
 		}
