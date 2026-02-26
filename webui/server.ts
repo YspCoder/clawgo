@@ -1,210 +1,150 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import Database from "better-sqlite3";
 import { EventEmitter } from "events";
 import multer from "multer";
-import path from "path";
 import fs from "fs";
 
 const app = express();
 const PORT = 3000;
-const db = new Database("gateway.db");
 const logEmitter = new EventEmitter();
 
-// Setup upload directory
+// In-memory only for local dev fallback (no sqlite persistence)
+const mem = {
+  skills: [] as any[],
+  cronJobs: [] as any[],
+};
+
 const uploadDir = "uploads";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
+  destination: (_, __, cb) => cb(null, uploadDir),
+  filename: (_, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
 const upload = multer({ storage });
-
-// Initialize DB
-db.exec(`
-  CREATE TABLE IF NOT EXISTS skills (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    description TEXT,
-    tools TEXT,
-    system_prompt TEXT
-  );
-  CREATE TABLE IF NOT EXISTS cron_jobs (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    enabled INTEGER,
-    kind TEXT,
-    everyMs INTEGER,
-    expr TEXT,
-    message TEXT,
-    deliver INTEGER,
-    channel TEXT,
-    "to" TEXT
-  );
-`);
 
 app.use(express.json());
 app.use("/uploads", express.static(uploadDir));
 
-// Helper for logs
 function addLog(level: string, msg: string, extra = {}) {
   const entry = { time: new Date().toISOString(), level, msg, ...extra };
   logEmitter.emit("log", entry);
   console.log(`[${level}] ${msg}`);
 }
 
-// API Routes
-app.get("/webui/api/config", (req, res) => {
+app.get("/webui/api/config", (_req, res) => {
   res.json({
     gateway: { host: "0.0.0.0", port: 18790, token: "cg_nLnov7DPd9yqZDYPEU5pHnoa" },
     agents: { defaults: { max_tool_iterations: 10, max_tokens: 4000 } },
-    system: { logging: { level: "info" } }
+    system: { logging: { level: "info" } },
   });
 });
 
-app.post("/webui/api/config", (req, res) => {
+app.post("/webui/api/config", (_req, res) => {
   addLog("INFO", "Configuration updated");
   res.send("Config saved successfully (simulated)");
 });
 
-app.get("/webui/api/nodes", (req, res) => {
+app.get("/webui/api/nodes", (_req, res) => {
   res.json({ nodes: [{ id: "node-1", name: "Main Node", online: true, version: "v1.0.0", ip: "127.0.0.1" }] });
 });
 
 app.get("/webui/api/cron", (req, res) => {
-  const { id } = req.query;
+  const id = String(req.query.id || "");
   if (id) {
-    const job = db.prepare("SELECT * FROM cron_jobs WHERE id = ?").get(id);
-    if (job) {
-      res.json({ job: { ...job, enabled: Boolean(job.enabled), deliver: Boolean(job.deliver) } });
-    } else {
-      res.status(404).json({ error: "Job not found" });
-    }
-    return;
+    const job = mem.cronJobs.find((j) => j.id === id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    return res.json({ job });
   }
-  const jobs = db.prepare("SELECT * FROM cron_jobs").all().map((j: any) => ({
-    ...j,
-    enabled: Boolean(j.enabled),
-    deliver: Boolean(j.deliver)
-  }));
-  res.json({ jobs });
+  res.json({ jobs: mem.cronJobs });
 });
 
 app.post("/webui/api/cron", (req, res) => {
-  const { action, id, name, enabled, kind, everyMs, expr, message, deliver, channel, to } = req.body;
+  const { action, id, ...rest } = req.body || {};
   if (action === "create") {
-    const newId = Math.random().toString(36).substring(7);
-    db.prepare(`
-      INSERT INTO cron_jobs (id, name, enabled, kind, everyMs, expr, message, deliver, channel, "to")
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(newId, name, enabled ? 1 : 0, kind, everyMs, expr, message, deliver ? 1 : 0, channel, to);
-    addLog("INFO", `Created cron job: ${name}`);
-    res.json({ id: newId, status: "ok" });
-  } else if (action === "update") {
-    db.prepare(`
-      UPDATE cron_jobs SET name = ?, enabled = ?, kind = ?, everyMs = ?, expr = ?, message = ?, deliver = ?, channel = ?, "to" = ?
-      WHERE id = ?
-    `).run(name, enabled ? 1 : 0, kind, everyMs, expr, message, deliver ? 1 : 0, channel, to, id);
-    addLog("INFO", `Updated cron job: ${name}`);
-    res.json({ status: "ok" });
+    const newId = Math.random().toString(36).slice(2);
+    const job = { id: newId, enabled: true, ...rest };
+    mem.cronJobs.push(job);
+    addLog("INFO", `Created cron job: ${job.name || newId}`);
+    return res.json({ id: newId, status: "ok" });
   }
-});
-
-app.delete("/webui/api/cron", (req, res) => {
-  const { id } = req.query;
-  db.prepare("DELETE FROM cron_jobs WHERE id = ?").run(id);
-  addLog("INFO", `Deleted cron job: ${id}`);
-  res.json({ status: "ok" });
+  if (action === "update") {
+    const idx = mem.cronJobs.findIndex((j) => j.id === id);
+    if (idx >= 0) mem.cronJobs[idx] = { ...mem.cronJobs[idx], ...rest };
+    addLog("INFO", `Updated cron job: ${id}`);
+    return res.json({ status: "ok" });
+  }
+  if (action === "delete") {
+    mem.cronJobs = mem.cronJobs.filter((j) => j.id !== id);
+    addLog("INFO", `Deleted cron job: ${id}`);
+    return res.json({ status: "ok" });
+  }
+  return res.status(400).json({ error: "unsupported action" });
 });
 
 app.post("/webui/api/upload", upload.single("file"), (req: any, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded" });
-  }
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   const filePath = `/uploads/${req.file.filename}`;
   addLog("INFO", `File uploaded: ${req.file.originalname} -> ${filePath}`);
   res.json({ path: filePath });
 });
 
-app.get("/webui/api/skills", (req, res) => {
-  const skills = db.prepare("SELECT * FROM skills").all().map((s: any) => ({
-    ...s,
-    tools: JSON.parse(s.tools)
-  }));
-  res.json({ skills });
+app.get("/webui/api/skills", (_req, res) => {
+  res.json({ skills: mem.skills });
 });
 
 app.post("/webui/api/skills", (req, res) => {
-  const { action, id, name, description, tools, system_prompt } = req.body;
+  const { action, id, ...rest } = req.body || {};
   if (action === "create") {
-    const newId = Math.random().toString(36).substring(7);
-    db.prepare("INSERT INTO skills (id, name, description, tools, system_prompt) VALUES (?, ?, ?, ?, ?)").run(newId, name, description, JSON.stringify(tools), system_prompt);
-    addLog("INFO", `Created skill: ${name}`);
-    res.json({ id: newId, status: "ok" });
-  } else if (action === "update") {
-    db.prepare("UPDATE skills SET name = ?, description = ?, tools = ?, system_prompt = ? WHERE id = ?").run(name, description, JSON.stringify(tools), system_prompt, id);
-    addLog("INFO", `Updated skill: ${name}`);
-    res.json({ status: "ok" });
+    const newId = Math.random().toString(36).slice(2);
+    mem.skills.push({ id: newId, ...rest });
+    addLog("INFO", `Created skill: ${rest.name || newId}`);
+    return res.json({ id: newId, status: "ok" });
   }
-});
-
-app.delete("/webui/api/skills", (req, res) => {
-  const { id } = req.query;
-  db.prepare("DELETE FROM skills WHERE id = ?").run(id);
-  addLog("INFO", `Deleted skill: ${id}`);
-  res.json({ status: "ok" });
+  if (action === "update") {
+    const idx = mem.skills.findIndex((s) => s.id === id);
+    if (idx >= 0) mem.skills[idx] = { ...mem.skills[idx], ...rest };
+    addLog("INFO", `Updated skill: ${id}`);
+    return res.json({ status: "ok" });
+  }
+  if (action === "delete") {
+    mem.skills = mem.skills.filter((s) => s.id !== id);
+    addLog("INFO", `Deleted skill: ${id}`);
+    return res.json({ status: "ok" });
+  }
+  return res.status(400).json({ error: "unsupported action" });
 });
 
 app.get("/webui/api/logs/stream", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Content-Type", "application/x-ndjson");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
 
-  const onLog = (log: any) => {
-    res.write(`${JSON.stringify(log)}\n`);
-  };
-
+  const onLog = (log: any) => res.write(JSON.stringify(log) + "\n");
   logEmitter.on("log", onLog);
-  
-  // Send initial log
   onLog({ time: new Date().toISOString(), level: "INFO", msg: "Log stream connected" });
 
-  req.on("close", () => {
-    logEmitter.off("log", onLog);
-  });
+  req.on("close", () => logEmitter.off("log", onLog));
 });
 
 app.post("/webui/api/chat/stream", async (req, res) => {
-  const { message } = req.body;
+  const { message } = req.body || {};
   res.setHeader("Content-Type", "text/plain");
   res.setHeader("Transfer-Encoding", "chunked");
-
-  addLog("DEBUG", `User message: ${message}`);
-
-  const words = `This is a simulated streaming response from the ClawGo gateway. You said: "${message}". The gateway is currently running in local simulation mode because the external connection was refused.`.split(" ");
-  
-  for (const word of words) {
-    res.write(word + " ");
-    await new Promise(resolve => setTimeout(resolve, 50));
+  const words = `Simulated streaming response: ${String(message || "")}`.split(" ");
+  for (const w of words) {
+    res.write(w + " ");
+    await new Promise((r) => setTimeout(r, 40));
   }
-  
   res.end();
 });
 
-// Vite middleware for development
 if (process.env.NODE_ENV !== "production") {
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: "spa",
-  });
+  const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
   app.use(vite.middlewares);
 } else {
   app.use(express.static("dist"));
-  app.get("*", (req, res) => {
+  app.get("*", (_req, res) => {
     res.sendFile("dist/index.html", { root: "." });
   });
 }
