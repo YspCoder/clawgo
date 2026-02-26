@@ -24,15 +24,24 @@ const Chat: React.FC = () => {
       const j = await r.json();
       const arr = Array.isArray(j.messages) ? j.messages : [];
       const mapped: ChatItem[] = arr.map((m: any) => {
-        const role = (m.role === 'assistant' || m.role === 'user') ? m.role : 'assistant';
+        const baseRole = String(m.role || 'assistant');
+        let role: ChatItem['role'] = 'assistant';
+        if (baseRole === 'user') role = 'user';
+        else if (baseRole === 'tool') role = 'tool';
+        else if (baseRole === 'system') role = 'system';
+
         let text = m.content || '';
-        if (m.role === 'tool') {
-          text = `[tool output]\n${text}`;
-        }
+        let label = role === 'user' ? 'User' : role === 'tool' ? 'Exec' : role === 'system' ? 'System' : 'Agent';
+
         if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+          role = 'exec';
+          label = 'Exec';
           text = `${text}\n[tool calls: ${m.tool_calls.map((x: any) => x?.function?.name || x?.name).filter(Boolean).join(', ')}]`;
         }
-        return { role, text };
+        if (baseRole === 'tool') {
+          text = `[tool output]\n${text}`;
+        }
+        return { role, text, label };
       });
       setChat(mapped);
     } catch (e) {
@@ -58,7 +67,7 @@ const Chat: React.FC = () => {
     }
 
     const userText = msg + (media ? `\n[Attached File: ${f?.name}]` : '');
-    setChat((prev) => [...prev, { role: 'user', text: userText }]);
+    setChat((prev) => [...prev, { role: 'user', text: userText, label: 'User' }]);
 
     const currentMsg = msg;
     setMsg('');
@@ -78,7 +87,7 @@ const Chat: React.FC = () => {
       const decoder = new TextDecoder();
       let assistantText = '';
 
-      setChat((prev) => [...prev, { role: 'assistant', text: '' }]);
+      setChat((prev) => [...prev, { role: 'assistant', text: '', label: 'Agent' }]);
 
       while (true) {
         const { value, done } = await reader.read();
@@ -87,7 +96,7 @@ const Chat: React.FC = () => {
         assistantText += chunk;
         setChat((prev) => {
           const next = [...prev];
-          next[next.length - 1] = { role: 'assistant', text: assistantText };
+          next[next.length - 1] = { role: 'assistant', text: assistantText, label: 'Agent' };
           return next;
         });
       }
@@ -95,7 +104,7 @@ const Chat: React.FC = () => {
       // refresh full persisted history (includes tool/internal traces)
       loadHistory();
     } catch (e) {
-      setChat((prev) => [...prev, { role: 'assistant', text: 'Error: Failed to get response from server.' }]);
+      setChat((prev) => [...prev, { role: 'system', text: 'Error: Failed to get response from server.', label: 'System' }]);
     }
   }
 
@@ -120,22 +129,43 @@ const Chat: React.FC = () => {
               <p className="text-sm font-medium">{t('startConversation')}</p>
             </div>
           ) : (
-            chat.map((m, i) => (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                key={i}
-                className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`max-w-[90%] rounded-2xl px-5 py-3.5 shadow-sm ${
-                  m.role === 'user'
-                    ? 'bg-indigo-600 text-white rounded-br-sm'
-                    : 'bg-zinc-800/80 text-zinc-200 rounded-bl-sm border border-zinc-700/50'
-                }`}>
-                  <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{m.text}</p>
-                </div>
-              </motion.div>
-            ))
+            chat.map((m, i) => {
+              const isUser = m.role === 'user';
+              const isExec = m.role === 'tool' || m.role === 'exec';
+              const isSystem = m.role === 'system';
+              const avatar = isUser ? 'U' : isExec ? 'E' : isSystem ? 'S' : 'A';
+              const avatarClass = isUser
+                ? 'bg-indigo-600/90 text-white'
+                : isExec
+                  ? 'bg-amber-600/80 text-white'
+                  : isSystem
+                    ? 'bg-zinc-700 text-zinc-100'
+                    : 'bg-emerald-600/80 text-white';
+              const bubbleClass = isUser
+                ? 'bg-indigo-600 text-white rounded-br-sm'
+                : isExec
+                  ? 'bg-amber-500/10 text-amber-100 rounded-bl-sm border border-amber-500/30'
+                  : isSystem
+                    ? 'bg-zinc-700/40 text-zinc-100 rounded-bl-sm border border-zinc-600/40'
+                    : 'bg-zinc-800/80 text-zinc-200 rounded-bl-sm border border-zinc-700/50';
+
+              return (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  key={i}
+                  className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className={`flex items-start gap-2 max-w-[96%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className={`w-7 h-7 mt-1 rounded-full text-xs font-bold flex items-center justify-center shrink-0 ${avatarClass}`}>{avatar}</div>
+                    <div className={`max-w-[92%] rounded-2xl px-4 py-3 shadow-sm ${bubbleClass}`}>
+                      <div className="text-[11px] opacity-80 mb-1">{m.label || (isUser ? 'User' : isExec ? 'Exec' : isSystem ? 'System' : 'Agent')}</div>
+                      <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{m.text}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })
           )}
           <div ref={chatEndRef} />
         </div>

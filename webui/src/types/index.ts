@@ -1,4 +1,5 @@
-export type ChatItem = { role: 'user' | 'assistant'; text: string };
+export type ChatRole = 'user' | 'assistant' | 'tool' | 'system' | 'exec';
+export type ChatItem = { role: ChatRole; text: string; label?: string };
 export type Session = { key: string; title: string };
 export type CronJob = { 
   id: string; 
