@@ -583,8 +583,69 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 	}
 	_ = os.MkdirAll(skillsDir, 0755)
 
+	resolveSkillPath := func(name string) (string, error) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return "", fmt.Errorf("name required")
+		}
+		cands := []string{
+			filepath.Join(skillsDir, name),
+			filepath.Join(skillsDir, name+".disabled"),
+			filepath.Join("/root/clawgo/workspace/skills", name),
+			filepath.Join("/root/clawgo/workspace/skills", name+".disabled"),
+		}
+		for _, p := range cands {
+			if st, err := os.Stat(p); err == nil && st.IsDir() {
+				return p, nil
+			}
+		}
+		return "", fmt.Errorf("skill not found: %s", name)
+	}
+
 	switch r.Method {
 	case http.MethodGet:
+		if id := strings.TrimSpace(r.URL.Query().Get("id")); id != "" {
+			skillPath, err := resolveSkillPath(id)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			if strings.TrimSpace(r.URL.Query().Get("files")) == "1" {
+				var files []string
+				_ = filepath.WalkDir(skillPath, func(path string, d os.DirEntry, err error) error {
+					if err != nil {
+						return nil
+					}
+					if d.IsDir() {
+						return nil
+					}
+					rel, _ := filepath.Rel(skillPath, path)
+					if strings.HasPrefix(rel, "..") {
+						return nil
+					}
+					files = append(files, filepath.ToSlash(rel))
+					return nil
+				})
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id, "files": files})
+				return
+			}
+			if f := strings.TrimSpace(r.URL.Query().Get("file")); f != "" {
+				clean := filepath.Clean(f)
+				if strings.HasPrefix(clean, "..") {
+					http.Error(w, "invalid file path", http.StatusBadRequest)
+					return
+				}
+				full := filepath.Join(skillPath, clean)
+				b, err := os.ReadFile(full)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id, "file": filepath.ToSlash(clean), "content": string(b)})
+				return
+			}
+		}
+
 		type skillItem struct {
 			ID            string   `json:"id"`
 			Name          string   `json:"name"`
@@ -709,6 +770,29 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 				}
 			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		case "write_file":
+			skillPath, err := resolveSkillPath(name)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			filePath, _ := body["file"].(string)
+			clean := filepath.Clean(strings.TrimSpace(filePath))
+			if clean == "" || strings.HasPrefix(clean, "..") {
+				http.Error(w, "invalid file path", http.StatusBadRequest)
+				return
+			}
+			content, _ := body["content"].(string)
+			full := filepath.Join(skillPath, clean)
+			if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "name": name, "file": filepath.ToSlash(clean)})
 		case "create", "update":
 			desc, _ := body["description"].(string)
 			sys, _ := body["system_prompt"].(string)
