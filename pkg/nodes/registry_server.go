@@ -847,30 +847,39 @@ func detectWebUIVersion(webUIDir string) string {
 
 func detectLocalIP() string {
 	ifaces, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
+	if err == nil {
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addrs, _ := iface.Addrs()
+			for _, a := range addrs {
+				var ip net.IP
+				switch v := a.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip == nil || ip.IsLoopback() {
+					continue
+				}
+				ip = ip.To4()
+				if ip == nil {
+					continue
+				}
+				return ip.String()
+			}
 		}
-		addrs, _ := iface.Addrs()
-		for _, a := range addrs {
-			var ip net.IP
-			switch v := a.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
+	}
+	// Fallback: detect outbound source IP.
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err == nil {
+		defer conn.Close()
+		if ua, ok := conn.LocalAddr().(*net.UDPAddr); ok && ua.IP != nil {
+			if ip := ua.IP.To4(); ip != nil {
+				return ip.String()
 			}
-			if ip == nil || ip.IsLoopback() {
-				continue
-			}
-			ip = ip.To4()
-			if ip == nil {
-				continue
-			}
-			return ip.String()
 		}
 	}
 	return ""
