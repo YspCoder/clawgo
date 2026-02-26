@@ -162,20 +162,49 @@ const Logs: React.FC = () => {
           </div>
           <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">{logs.length} entries</span>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 font-mono text-[13px] leading-relaxed space-y-1 selection:bg-indigo-500/30">
-          {logs.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2">
+        <div className="flex-1 overflow-auto selection:bg-indigo-500/30">
+          {logs.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2 p-4">
               <Terminal className="w-8 h-8 opacity-10" />
               <p>Waiting for logs...</p>
             </div>
-          )}
-          {logs.map((log, i) => (
-            <div key={i} className="group flex gap-4 hover:bg-zinc-900/50 rounded px-2 py-0.5 transition-colors">
-              <span className="text-zinc-600 shrink-0 select-none">[{formatTime(log.time)}]</span>
-              <span className={`font-bold shrink-0 select-none w-12 ${getLevelColor(log.level)}`}>{(log.level || 'INFO').toUpperCase()}</span>
-              <span className="text-zinc-300 break-all">{showRaw ? (log.__raw || JSON.stringify(log)) : renderReadable(log)}</span>
+          ) : showRaw ? (
+            <div className="p-3 font-mono text-xs space-y-1">
+              {logs.map((log, i) => (
+                <div key={i} className="border-b border-zinc-900 py-1 text-zinc-300 break-all">{log.__raw || JSON.stringify(log)}</div>
+              ))}
+              <div ref={logEndRef} />
             </div>
-          ))}
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-zinc-900/95 border-b border-zinc-800">
+                <tr className="text-zinc-400">
+                  <th className="text-left p-2 font-medium">Time</th>
+                  <th className="text-left p-2 font-medium">Level</th>
+                  <th className="text-left p-2 font-medium">Message</th>
+                  <th className="text-left p-2 font-medium">Error</th>
+                  <th className="text-left p-2 font-medium">Code/Caller</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log, i) => {
+                  const lvl = (log.level || 'INFO').toUpperCase();
+                  const errText = (log as any).error || (lvl === 'ERROR' ? log.msg : '');
+                  const message = lvl === 'ERROR' ? ((log as any).message || log.msg || '') : ((log as any).message || log.msg || '');
+                  const caller = (log as any).caller || (log as any).source || '';
+                  return (
+                    <tr key={i} className="border-b border-zinc-900 hover:bg-zinc-900/40 align-top">
+                      <td className="p-2 text-zinc-500 whitespace-nowrap">{formatTime(log.time)}</td>
+                      <td className={`p-2 font-semibold whitespace-nowrap ${getLevelColor(lvl)}`}>{lvl}</td>
+                      <td className="p-2 text-zinc-200 break-all">{message}</td>
+                      <td className="p-2 text-red-300 break-all">{errText}</td>
+                      <td className="p-2 text-zinc-500 break-all">{caller}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
           <div ref={logEndRef} />
         </div>
       </div>
