@@ -903,6 +903,20 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		})
 
 		if err != nil {
+			errMsg := strings.ToLower(err.Error())
+			if strings.Contains(errMsg, "no tool call found for function call output") {
+				logger.WarnCF("agent", "System message hit orphan tool-call chain, retry with fresh context", map[string]interface{}{"iteration": iteration, "session": sessionKey})
+				messages = al.contextBuilder.BuildMessages(
+					nil,
+					"",
+					msg.Content,
+					nil,
+					originChannel,
+					originChatID,
+					responseLang,
+				)
+				continue
+			}
 			logger.ErrorCF("agent", "LLM call failed in system message",
 				map[string]interface{}{
 					"iteration": iteration,
