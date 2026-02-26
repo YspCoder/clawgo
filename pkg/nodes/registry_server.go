@@ -532,11 +532,6 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 
 	switch r.Method {
 	case http.MethodGet:
-		entries, err := os.ReadDir(skillsDir)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 		type skillItem struct {
 			ID            string   `json:"id"`
 			Name          string   `json:"name"`
@@ -548,38 +543,62 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 			RemoteFound   bool     `json:"remote_found,omitempty"`
 			RemoteVersion string   `json:"remote_version,omitempty"`
 			CheckError    string   `json:"check_error,omitempty"`
+			Source        string   `json:"source,omitempty"`
 		}
-		items := make([]skillItem, 0, len(entries))
+		candDirs := []string{skillsDir, filepath.Join("/root/clawgo/workspace", "skills")}
+		seenDirs := map[string]struct{}{}
+		seenSkills := map[string]struct{}{}
+		items := make([]skillItem, 0)
 		checkUpdates := strings.TrimSpace(r.URL.Query().Get("check_updates")) != "0"
-		for _, e := range entries {
-			if !e.IsDir() {
+
+		for _, dir := range candDirs {
+			dir = strings.TrimSpace(dir)
+			if dir == "" {
 				continue
 			}
-			name := e.Name()
-			enabled := !strings.HasSuffix(name, ".disabled")
-			baseName := strings.TrimSuffix(name, ".disabled")
-			desc, tools, sys := readSkillMeta(filepath.Join(skillsDir, name, "SKILL.md"))
-			if desc == "" || len(tools) == 0 || sys == "" {
-				d2, t2, s2 := readSkillMeta(filepath.Join(skillsDir, baseName, "SKILL.md"))
-				if desc == "" { desc = d2 }
-				if len(tools) == 0 { tools = t2 }
-				if sys == "" { sys = s2 }
+			if _, ok := seenDirs[dir]; ok {
+				continue
 			}
-			if tools == nil {
-				tools = []string{}
-			}
-			it := skillItem{ID: baseName, Name: baseName, Description: desc, Tools: tools, SystemPrompt: sys, Enabled: enabled, UpdateChecked: checkUpdates}
-			if checkUpdates {
-				found, version, checkErr := queryClawHubSkillVersion(r.Context(), baseName)
-				it.RemoteFound = found
-				it.RemoteVersion = version
-				if checkErr != nil {
-					it.CheckError = checkErr.Error()
+			seenDirs[dir] = struct{}{}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
 				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
 			}
-			items = append(items, it)
+			for _, e := range entries {
+				if !e.IsDir() {
+					continue
+				}
+				name := e.Name()
+				enabled := !strings.HasSuffix(name, ".disabled")
+				baseName := strings.TrimSuffix(name, ".disabled")
+				if _, ok := seenSkills[baseName]; ok {
+					continue
+				}
+				seenSkills[baseName] = struct{}{}
+				desc, tools, sys := readSkillMeta(filepath.Join(dir, name, "SKILL.md"))
+				if desc == "" || len(tools) == 0 || sys == "" {
+					d2, t2, s2 := readSkillMeta(filepath.Join(dir, baseName, "SKILL.md"))
+					if desc == "" { desc = d2 }
+					if len(tools) == 0 { tools = t2 }
+					if sys == "" { sys = s2 }
+				}
+				if tools == nil { tools = []string{} }
+				it := skillItem{ID: baseName, Name: baseName, Description: desc, Tools: tools, SystemPrompt: sys, Enabled: enabled, UpdateChecked: checkUpdates, Source: dir}
+				if checkUpdates {
+					found, version, checkErr := queryClawHubSkillVersion(r.Context(), baseName)
+					it.RemoteFound = found
+					it.RemoteVersion = version
+					if checkErr != nil { it.CheckError = checkErr.Error() }
+				}
+				items = append(items, it)
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "skills": items, "source": "clawhub"})
+
 	case http.MethodPost:
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -590,9 +609,7 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		action = strings.ToLower(strings.TrimSpace(action))
 		id, _ := body["id"].(string)
 		name, _ := body["name"].(string)
-		if strings.TrimSpace(name) == "" {
-			name = id
-		}
+		if strings.TrimSpace(name) == "" { name = id }
 		name = strings.TrimSpace(name)
 		if name == "" {
 			http.Error(w, "name required", http.StatusBadRequest)
@@ -633,9 +650,7 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 			var toolsList []string
 			if arr, ok := body["tools"].([]interface{}); ok {
 				for _, v := range arr {
-					if sv, ok := v.(string); ok && strings.TrimSpace(sv) != "" {
-						toolsList = append(toolsList, strings.TrimSpace(sv))
-					}
+					if sv, ok := v.(string); ok && strings.TrimSpace(sv) != "" { toolsList = append(toolsList, strings.TrimSpace(sv)) }
 				}
 			}
 			if action == "create" {
@@ -657,6 +672,7 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		default:
 			http.Error(w, "unsupported action", http.StatusBadRequest)
 		}
+
 	case http.MethodDelete:
 		id := strings.TrimSpace(r.URL.Query().Get("id"))
 		if id == "" {
@@ -666,23 +682,34 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		pathA := filepath.Join(skillsDir, id)
 		pathB := pathA + ".disabled"
 		deleted := false
-		if err := os.RemoveAll(pathA); err == nil {
-			deleted = true
-		}
-		if err := os.RemoveAll(pathB); err == nil {
-			deleted = true
-		}
+		if err := os.RemoveAll(pathA); err == nil { deleted = true }
+		if err := os.RemoveAll(pathB); err == nil { deleted = true }
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": deleted, "id": id})
+
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
+
 func buildSkillMarkdown(name, desc string, tools []string, systemPrompt string) string {
 	if strings.TrimSpace(desc) == "" {
 		desc = "No description provided."
 	}
-	t := strings.Join(tools, ", ")
+	if len(tools) == 0 {
+		tools = []string{""}
+	}
+	toolLines := make([]string, 0, len(tools))
+	for _, t := range tools {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		toolLines = append(toolLines, "- "+t)
+	}
+	if len(toolLines) == 0 {
+		toolLines = []string{"- (none)"}
+	}
 	return fmt.Sprintf(`---
 name: %s
 description: %s
@@ -697,13 +724,13 @@ description: %s
 
 ## System Prompt
 %s
-`, name, desc, name, desc, t, systemPrompt)
+`, name, desc, name, desc, strings.Join(toolLines, "\n"), systemPrompt)
 }
 
 func readSkillMeta(path string) (desc string, tools []string, systemPrompt string) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return "", nil, ""
+		return "", []string{}, ""
 	}
 	s := string(b)
 	reDesc := regexp.MustCompile(`(?m)^description:\s*(.+)$`)
@@ -718,18 +745,20 @@ func readSkillMeta(path string) (desc string, tools []string, systemPrompt strin
 			block = block[:p[0]]
 		}
 		for _, line := range strings.Split(block, "\n") {
-			v := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-			if v != "" {
-				tools = append(tools, v)
+			line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
+			if line != "" {
+				tools = append(tools, line)
 			}
 		}
+	}
+	if tools == nil {
+		tools = []string{}
 	}
 	if loc := rePrompt.FindStringIndex(s); loc != nil {
 		systemPrompt = strings.TrimSpace(s[loc[1]:])
 	}
 	return
 }
-
 
 func normalizeCronJob(v interface{}) map[string]interface{} {
 	if v == nil {
