@@ -584,7 +584,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		options := map[string]interface{}{"max_tokens": 8192, "temperature": 0.7}
 		var response *providers.LLMResponse
 		var err error
-		if msg.Channel == "telegram" {
+		if msg.Channel == "telegram" && strings.TrimSpace(os.Getenv("CLAWGO_TELEGRAM_STREAMING")) == "1" {
 			if sp, ok := al.provider.(providers.StreamingLLMProvider); ok {
 				streamText := ""
 				lastPush := time.Now().Add(-time.Second)
