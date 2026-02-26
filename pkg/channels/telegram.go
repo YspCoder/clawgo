@@ -594,6 +594,8 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	})
 	cancelAPI()
 
+	c.startThinkingPlaceholder(runCtx, chatID, message.MessageID)
+
 	metadata := map[string]string{
 		"message_id": fmt.Sprintf("%d", message.MessageID),
 		"user_id":    fmt.Sprintf("%d", user.ID),
@@ -603,6 +605,52 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	}
 
 	c.HandleMessage(senderID, fmt.Sprintf("%d", chatID), content, mediaPaths, metadata)
+}
+
+func (c *TelegramChannel) startThinkingPlaceholder(runCtx context.Context, chatID int64, replyTo int) {
+	chatKey := fmt.Sprintf("%d", chatID)
+	if stop, ok := c.stopThinking.LoadAndDelete(chatKey); ok {
+		safeCloseSignal(stop)
+	}
+
+	sendCtx, cancelSend := withTelegramAPITimeout(runCtx)
+	params := telegoutil.Message(telegoutil.ID(chatID), "⏳ Thinking...")
+	if replyTo > 0 {
+		params.ReplyParameters = &telego.ReplyParameters{MessageID: replyTo}
+	}
+	sent, err := c.bot.SendMessage(sendCtx, params)
+	cancelSend()
+	if err != nil || sent == nil {
+		return
+	}
+
+	c.placeholders.Store(chatKey, sent.MessageID)
+	stopCh := make(chan struct{})
+	c.stopThinking.Store(chatKey, stopCh)
+
+	go func(chatID int64, messageID int, stop <-chan struct{}) {
+		frames := []string{"⏳ Thinking.", "⏳ Thinking..", "⏳ Thinking..."}
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		i := 0
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-stop:
+				return
+			case <-ticker.C:
+				editCtx, cancel := withTelegramAPITimeout(runCtx)
+				_, _ = c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{
+					ChatID:    telegoutil.ID(chatID),
+					MessageID: messageID,
+					Text:      frames[i%len(frames)],
+				})
+				cancel()
+				i++
+			}
+		}
+	}(chatID, sent.MessageID, stopCh)
 }
 
 func (c *TelegramChannel) downloadFile(runCtx context.Context, fileID, ext, fileName string) string {
