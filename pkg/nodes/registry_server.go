@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	cfgpkg "clawgo/pkg/config"
 )
 
 type RegistryServer struct {
@@ -263,6 +266,61 @@ func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Reques
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
+		confirmRisky, _ := body["confirm_risky"].(bool)
+		delete(body, "confirm_risky")
+
+		oldCfgRaw, _ := os.ReadFile(s.configPath)
+		var oldMap map[string]interface{}
+		_ = json.Unmarshal(oldCfgRaw, &oldMap)
+
+		riskyPaths := []string{
+			"channels.telegram.token",
+			"channels.telegram.allow_from",
+			"channels.telegram.allow_chats",
+			"providers.proxy.base_url",
+			"providers.proxy.api_key",
+			"gateway.token",
+			"gateway.port",
+		}
+		changedRisky := make([]string, 0)
+		for _, p := range riskyPaths {
+			if fmt.Sprintf("%v", getPathValue(oldMap, p)) != fmt.Sprintf("%v", getPathValue(body, p)) {
+				changedRisky = append(changedRisky, p)
+			}
+		}
+		if len(changedRisky) > 0 && !confirmRisky {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":               false,
+				"error":            "risky fields changed; confirmation required",
+				"requires_confirm": true,
+				"changed_fields":   changedRisky,
+			})
+			return
+		}
+
+		candidate, err := json.Marshal(body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		cfg := cfgpkg.DefaultConfig()
+		dec := json.NewDecoder(bytes.NewReader(candidate))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(cfg); err != nil {
+			http.Error(w, "config schema validation failed: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if errs := cfgpkg.Validate(cfg); len(errs) > 0 {
+			list := make([]string, 0, len(errs))
+			for _, e := range errs {
+				list = append(list, e.Error())
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "config validation failed", "details": list})
+			return
+		}
+
 		b, err := json.MarshalIndent(body, "", "  ")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -286,6 +344,22 @@ func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Reques
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func getPathValue(m map[string]interface{}, path string) interface{} {
+	if m == nil || strings.TrimSpace(path) == "" {
+		return nil
+	}
+	parts := strings.Split(path, ".")
+	var cur interface{} = m
+	for _, p := range parts {
+		node, ok := cur.(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		cur = node[p]
+	}
+	return cur
 }
 
 func (s *RegistryServer) handleWebUIUpload(w http.ResponseWriter, r *http.Request) {
