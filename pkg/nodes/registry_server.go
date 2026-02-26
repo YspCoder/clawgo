@@ -469,16 +469,27 @@ func (s *RegistryServer) handleWebUINodes(w http.ResponseWriter, r *http.Request
 			local.Endpoint = ip
 		}
 		hostLower := strings.ToLower(strings.TrimSpace(host))
-		hasLocal := false
-		for _, n := range list {
-			id := strings.ToLower(strings.TrimSpace(n.ID))
-			name := strings.ToLower(strings.TrimSpace(n.Name))
+		matched := false
+		for i := range list {
+			id := strings.ToLower(strings.TrimSpace(list[i].ID))
+			name := strings.ToLower(strings.TrimSpace(list[i].Name))
 			if id == "local" || name == "local" || (hostLower != "" && name == hostLower) {
-				hasLocal = true
+				// Always keep local node green/alive with latest ip+version
+				list[i].ID = "local"
+				list[i].Online = true
+				list[i].Version = local.Version
+				if strings.TrimSpace(local.Endpoint) != "" {
+					list[i].Endpoint = local.Endpoint
+				}
+				if strings.TrimSpace(local.Name) != "" {
+					list[i].Name = local.Name
+				}
+				list[i].LastSeenAt = time.Now()
+				matched = true
 				break
 			}
 		}
-		if !hasLocal {
+		if !matched {
 			list = append([]NodeInfo{local}, list...)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list})
