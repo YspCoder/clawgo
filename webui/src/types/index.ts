@@ -5,8 +5,6 @@ export type CronJob = {
   id: string; 
   name: string; 
   enabled: boolean;
-  kind?: string;
-  everyMs?: number;
   expr?: string;
   message?: string;
   deliver?: boolean;

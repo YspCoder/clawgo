@@ -237,42 +237,38 @@ func gatewayCmd() {
 			if name == "" {
 				name = "webui-cron"
 			}
-			kind := getStr("kind")
-			if kind == "" {
-				kind = "cron"
-			}
-			if kind == "once" {
-				kind = "at"
-			}
 			msg := getStr("message")
 			if msg == "" {
 				return nil, fmt.Errorf("message required")
 			}
-			schedule := cron.CronSchedule{Kind: kind}
-			if kind == "every" {
-				everyMS, ok := args["everyMs"].(float64)
-				if !ok || int64(everyMS) <= 0 {
-					return nil, fmt.Errorf("everyMs required for kind=every")
-				}
-				ev := int64(everyMS)
-				schedule.EveryMS = &ev
-			}
-			if kind == "at" {
-				atMS, ok := args["atMs"].(float64)
-				var at int64
-				if !ok || int64(atMS) <= 0 {
-					at = time.Now().Add(1 * time.Minute).UnixMilli()
-				} else {
-					at = int64(atMS)
-				}
-				schedule.AtMS = &at
-			}
-			if kind == "cron" {
-				expr := getStr("expr")
-				if expr == "" {
-					expr = "*/10 * * * *"
-				}
+			schedule := cron.CronSchedule{}
+			if expr := getStr("expr"); expr != "" {
 				schedule.Expr = expr
+			} else {
+				// Backward compatibility for older clients.
+				kind := strings.ToLower(getStr("kind"))
+				switch kind {
+				case "every":
+					everyMS, ok := args["everyMs"].(float64)
+					if !ok || int64(everyMS) <= 0 {
+						return nil, fmt.Errorf("expr required")
+					}
+					ev := int64(everyMS)
+					schedule.Kind = "every"
+					schedule.EveryMS = &ev
+				case "once", "at":
+					atMS, ok := args["atMs"].(float64)
+					var at int64
+					if !ok || int64(atMS) <= 0 {
+						at = time.Now().Add(1 * time.Minute).UnixMilli()
+					} else {
+						at = int64(atMS)
+					}
+					schedule.Kind = "at"
+					schedule.AtMS = &at
+				default:
+					return nil, fmt.Errorf("expr required")
+				}
 			}
 			deliver := false
 			if v, ok := args["deliver"].(bool); ok {
@@ -303,18 +299,22 @@ func gatewayCmd() {
 			if v := getStr("to"); v != "" {
 				in.To = &v
 			}
-			if kind := getStr("kind"); kind != "" {
-				if kind == "once" {
-					kind = "at"
-				}
+			if expr := getStr("expr"); expr != "" {
+				s := cron.CronSchedule{Expr: expr}
+				in.Schedule = &s
+			} else if kind := strings.ToLower(getStr("kind")); kind != "" {
+				// Backward compatibility for older clients.
 				s := cron.CronSchedule{Kind: kind}
-				if kind == "every" {
+				switch kind {
+				case "every":
 					if everyMS, ok := args["everyMs"].(float64); ok && int64(everyMS) > 0 {
 						ev := int64(everyMS)
 						s.EveryMS = &ev
+					} else {
+						return nil, fmt.Errorf("expr required")
 					}
-				}
-				if kind == "at" {
+				case "once", "at":
+					s.Kind = "at"
 					if atMS, ok := args["atMs"].(float64); ok && int64(atMS) > 0 {
 						at := int64(atMS)
 						s.AtMS = &at
@@ -322,13 +322,8 @@ func gatewayCmd() {
 						at := time.Now().Add(1 * time.Minute).UnixMilli()
 						s.AtMS = &at
 					}
-				}
-				if kind == "cron" {
-					expr := getStr("expr")
-					if expr == "" {
-						return nil, fmt.Errorf("expr required for kind=cron")
-					}
-					s.Expr = expr
+				default:
+					return nil, fmt.Errorf("expr required")
 				}
 				in.Schedule = &s
 			}
@@ -990,22 +985,22 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
 	a := cfg.Agents.Defaults.Autonomy
 	return autonomy.NewEngine(autonomy.Options{
-		Enabled:                  a.Enabled,
-		TickIntervalSec:          a.TickIntervalSec,
-		MinRunIntervalSec:        a.MinRunIntervalSec,
-		MaxPendingDurationSec:    a.MaxPendingDurationSec,
-		MaxConsecutiveStalls:     a.MaxConsecutiveStalls,
-		MaxDispatchPerTick:       a.MaxDispatchPerTick,
-		NotifyCooldownSec:        a.NotifyCooldownSec,
+		Enabled:                     a.Enabled,
+		TickIntervalSec:             a.TickIntervalSec,
+		MinRunIntervalSec:           a.MinRunIntervalSec,
+		MaxPendingDurationSec:       a.MaxPendingDurationSec,
+		MaxConsecutiveStalls:        a.MaxConsecutiveStalls,
+		MaxDispatchPerTick:          a.MaxDispatchPerTick,
+		NotifyCooldownSec:           a.NotifyCooldownSec,
 		NotifySameReasonCooldownSec: a.NotifySameReasonCooldownSec,
-		QuietHours:               a.QuietHours,
-		UserIdleResumeSec:        a.UserIdleResumeSec,
-		WaitingResumeDebounceSec: a.WaitingResumeDebounceSec,
-		ImportantKeywords:        cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
-		CompletionTemplate:       cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
-		BlockedTemplate:          cfg.Agents.Defaults.Texts.AutonomyBlockedTemplate,
-		Workspace:                cfg.WorkspacePath(),
-		DefaultNotifyChannel:     a.NotifyChannel,
-		DefaultNotifyChatID:      a.NotifyChatID,
+		QuietHours:                  a.QuietHours,
+		UserIdleResumeSec:           a.UserIdleResumeSec,
+		WaitingResumeDebounceSec:    a.WaitingResumeDebounceSec,
+		ImportantKeywords:           cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
+		CompletionTemplate:          cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
+		BlockedTemplate:             cfg.Agents.Defaults.Texts.AutonomyBlockedTemplate,
+		Workspace:                   cfg.WorkspacePath(),
+		DefaultNotifyChannel:        a.NotifyChannel,
+		DefaultNotifyChatID:         a.NotifyChatID,
 	}, msgBus)
 }

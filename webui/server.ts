@@ -60,17 +60,19 @@ app.get("/webui/api/cron", (req, res) => {
 });
 
 app.post("/webui/api/cron", (req, res) => {
-  const { action, id, ...rest } = req.body || {};
+  const { action, id, expr, ...rest } = req.body || {};
   if (action === "create") {
+    if (!String(expr || "").trim()) return res.status(400).json({ error: "expr required" });
     const newId = Math.random().toString(36).slice(2);
-    const job = { id: newId, enabled: true, ...rest };
+    const job = { id: newId, enabled: true, expr: String(expr).trim(), ...rest };
     mem.cronJobs.push(job);
     addLog("INFO", `Created cron job: ${job.name || newId}`);
     return res.json({ id: newId, status: "ok" });
   }
   if (action === "update") {
+    if (expr !== undefined && !String(expr || "").trim()) return res.status(400).json({ error: "expr required" });
     const idx = mem.cronJobs.findIndex((j) => j.id === id);
-    if (idx >= 0) mem.cronJobs[idx] = { ...mem.cronJobs[idx], ...rest };
+    if (idx >= 0) mem.cronJobs[idx] = { ...mem.cronJobs[idx], ...(expr !== undefined ? { expr: String(expr).trim() } : {}), ...rest };
     addLog("INFO", `Updated cron job: ${id}`);
     return res.json({ status: "ok" });
   }

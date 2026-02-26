@@ -46,9 +46,9 @@ func NewRegistryServer(host string, port int, token string, mgr *Manager) *Regis
 	return &RegistryServer{addr: fmt.Sprintf("%s:%d", addr, port), token: strings.TrimSpace(token), mgr: mgr}
 }
 
-func (s *RegistryServer) SetConfigPath(path string) { s.configPath = strings.TrimSpace(path) }
+func (s *RegistryServer) SetConfigPath(path string)    { s.configPath = strings.TrimSpace(path) }
 func (s *RegistryServer) SetWorkspacePath(path string) { s.workspacePath = strings.TrimSpace(path) }
-func (s *RegistryServer) SetLogFilePath(path string) { s.logFilePath = strings.TrimSpace(path) }
+func (s *RegistryServer) SetLogFilePath(path string)   { s.logFilePath = strings.TrimSpace(path) }
 func (s *RegistryServer) SetChatHandler(fn func(ctx context.Context, sessionKey, content string) (string, error)) {
 	s.onChat = fn
 }
@@ -131,7 +131,9 @@ func (s *RegistryServer) handleHeartbeat(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	var body struct{ ID string `json:"id"` }
+	var body struct {
+		ID string `json:"id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ID) == "" {
 		http.Error(w, "id required", http.StatusBadRequest)
 		return
@@ -633,17 +635,27 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 				desc, tools, sys := readSkillMeta(filepath.Join(dir, name, "SKILL.md"))
 				if desc == "" || len(tools) == 0 || sys == "" {
 					d2, t2, s2 := readSkillMeta(filepath.Join(dir, baseName, "SKILL.md"))
-					if desc == "" { desc = d2 }
-					if len(tools) == 0 { tools = t2 }
-					if sys == "" { sys = s2 }
+					if desc == "" {
+						desc = d2
+					}
+					if len(tools) == 0 {
+						tools = t2
+					}
+					if sys == "" {
+						sys = s2
+					}
 				}
-				if tools == nil { tools = []string{} }
+				if tools == nil {
+					tools = []string{}
+				}
 				it := skillItem{ID: baseName, Name: baseName, Description: desc, Tools: tools, SystemPrompt: sys, Enabled: enabled, UpdateChecked: checkUpdates, Source: dir}
 				if checkUpdates {
 					found, version, checkErr := queryClawHubSkillVersion(r.Context(), baseName)
 					it.RemoteFound = found
 					it.RemoteVersion = version
-					if checkErr != nil { it.CheckError = checkErr.Error() }
+					if checkErr != nil {
+						it.CheckError = checkErr.Error()
+					}
 				}
 				items = append(items, it)
 			}
@@ -660,7 +672,9 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		action = strings.ToLower(strings.TrimSpace(action))
 		id, _ := body["id"].(string)
 		name, _ := body["name"].(string)
-		if strings.TrimSpace(name) == "" { name = id }
+		if strings.TrimSpace(name) == "" {
+			name = id
+		}
 		name = strings.TrimSpace(name)
 		if name == "" {
 			http.Error(w, "name required", http.StatusBadRequest)
@@ -701,7 +715,9 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 			var toolsList []string
 			if arr, ok := body["tools"].([]interface{}); ok {
 				for _, v := range arr {
-					if sv, ok := v.(string); ok && strings.TrimSpace(sv) != "" { toolsList = append(toolsList, strings.TrimSpace(sv)) }
+					if sv, ok := v.(string); ok && strings.TrimSpace(sv) != "" {
+						toolsList = append(toolsList, strings.TrimSpace(sv))
+					}
 				}
 			}
 			if action == "create" {
@@ -733,15 +749,18 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		pathA := filepath.Join(skillsDir, id)
 		pathB := pathA + ".disabled"
 		deleted := false
-		if err := os.RemoveAll(pathA); err == nil { deleted = true }
-		if err := os.RemoveAll(pathB); err == nil { deleted = true }
+		if err := os.RemoveAll(pathA); err == nil {
+			deleted = true
+		}
+		if err := os.RemoveAll(pathB); err == nil {
+			deleted = true
+		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": deleted, "id": id})
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
-
 
 func buildSkillMarkdown(name, desc string, tools []string, systemPrompt string) string {
 	if strings.TrimSpace(desc) == "" {
@@ -913,16 +932,32 @@ func normalizeCronJob(v interface{}) map[string]interface{} {
 		out[k] = val
 	}
 	if sch, ok := m["schedule"].(map[string]interface{}); ok {
-		if kind, ok := sch["kind"]; ok { out["kind"] = kind }
-		if every, ok := sch["everyMs"]; ok { out["everyMs"] = every }
-		if expr, ok := sch["expr"]; ok { out["expr"] = expr }
-		if at, ok := sch["atMs"]; ok { out["atMs"] = at }
+		kind, _ := sch["kind"].(string)
+		if expr, ok := sch["expr"].(string); ok && strings.TrimSpace(expr) != "" {
+			out["expr"] = strings.TrimSpace(expr)
+		} else if strings.EqualFold(strings.TrimSpace(kind), "every") {
+			if every, ok := sch["everyMs"].(float64); ok && every > 0 {
+				out["expr"] = fmt.Sprintf("@every %s", (time.Duration(int64(every)) * time.Millisecond).String())
+			}
+		} else if strings.EqualFold(strings.TrimSpace(kind), "at") {
+			if at, ok := sch["atMs"].(float64); ok && at > 0 {
+				out["expr"] = time.UnixMilli(int64(at)).Format(time.RFC3339)
+			}
+		}
 	}
 	if payload, ok := m["payload"].(map[string]interface{}); ok {
-		if msg, ok := payload["message"]; ok { out["message"] = msg }
-		if d, ok := payload["deliver"]; ok { out["deliver"] = d }
-		if c, ok := payload["channel"]; ok { out["channel"] = c }
-		if to, ok := payload["to"]; ok { out["to"] = to }
+		if msg, ok := payload["message"]; ok {
+			out["message"] = msg
+		}
+		if d, ok := payload["deliver"]; ok {
+			out["deliver"] = d
+		}
+		if c, ok := payload["channel"]; ok {
+			out["channel"] = c
+		}
+		if to, ok := payload["to"]; ok {
+			out["to"] = to
+		}
 	}
 	return out
 }
