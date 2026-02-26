@@ -690,8 +690,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	if finalContent == "" {
-		finalContent = ""
+	if strings.TrimSpace(finalContent) == "" {
+		fallback := strings.TrimSpace(al.noResponseFallback)
+		if fallback == "" {
+			fallback = "在的，我刚刚这条回复丢了。请再说一次，我马上处理。"
+		}
+		finalContent = fallback
 	}
 
 	// Filter out <think>...</think> content from user-facing response
