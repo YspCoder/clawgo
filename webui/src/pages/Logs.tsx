@@ -12,6 +12,19 @@ const Logs: React.FC = () => {
   const logEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const loadRecent = async () => {
+    try {
+      const r = await fetch(`/webui/api/logs/recent${q ? `${q}&limit=10` : '?limit=10'}`);
+      if (!r.ok) return;
+      const j = await r.json();
+      if (Array.isArray(j.logs)) {
+        setLogs(j.logs as LogEntry[]);
+      }
+    } catch (e) {
+      console.error('load recent logs failed', e);
+    }
+  };
+
   const startStreaming = async () => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
@@ -51,6 +64,7 @@ const Logs: React.FC = () => {
   };
 
   useEffect(() => {
+    loadRecent();
     if (isStreaming) {
       startStreaming();
     } else {

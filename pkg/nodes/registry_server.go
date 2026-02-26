@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -78,6 +79,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
+	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
 	go func() {
 		<-ctx.Done()
@@ -984,6 +986,57 @@ func (s *RegistryServer) handleWebUIExecApprovals(w http.ResponseWriter, r *http
 		return
 	}
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (s *RegistryServer) handleWebUILogsRecent(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path := strings.TrimSpace(s.logFilePath)
+	if path == "" {
+		http.Error(w, "log path not configured", http.StatusInternalServerError)
+		return
+	}
+	limit := 10
+	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lines := strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n")
+	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	start := 0
+	if len(lines) > limit {
+		start = len(lines) - limit
+	}
+	out := make([]map[string]interface{}, 0, limit)
+	for _, ln := range lines[start:] {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			continue
+		}
+		if json.Valid([]byte(ln)) {
+			var m map[string]interface{}
+			if err := json.Unmarshal([]byte(ln), &m); err == nil {
+				out = append(out, m)
+				continue
+			}
+		}
+		out = append(out, map[string]interface{}{"time": time.Now().UTC().Format(time.RFC3339), "level": "INFO", "msg": ln})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "logs": out})
 }
 
 func (s *RegistryServer) handleWebUILogsStream(w http.ResponseWriter, r *http.Request) {
