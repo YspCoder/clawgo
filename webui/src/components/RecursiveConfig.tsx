@@ -6,9 +6,19 @@ interface RecursiveConfigProps {
   labels: Record<string, string>;
   path?: string;
   onChange: (path: string, val: any) => void;
+  hotPaths?: string[];
+  onlyHot?: boolean;
 }
 
 const isPrimitive = (v: any) => ['string', 'number', 'boolean'].includes(typeof v) || v === null;
+const isPathHot = (currentPath: string, hotPaths: string[]) => {
+  if (!hotPaths.length) return true;
+  return hotPaths.some((hp) => {
+    const p = String(hp || '').replace(/\.\*$/, '');
+    if (!p) return false;
+    return currentPath === p || currentPath.startsWith(`${p}.`) || p.startsWith(`${currentPath}.`);
+  });
+};
 
 const PrimitiveArrayEditor: React.FC<{
   value: any[];
@@ -96,7 +106,7 @@ const PrimitiveArrayEditor: React.FC<{
   );
 };
 
-const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = '', onChange }) => {
+const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = '', onChange, hotPaths = [], onlyHot = false }) => {
   const { t } = useTranslation();
 
   if (typeof data !== 'object' || data === null) return null;
@@ -106,6 +116,9 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
       {Object.entries(data).map(([key, value]) => {
         const currentPath = path ? `${path}.${key}` : key;
         const label = labels[key] || key.replace(/_/g, ' ');
+        if (onlyHot && !isPathHot(currentPath, hotPaths)) {
+          return null;
+        }
 
         if (Array.isArray(value)) {
           const allPrimitive = value.every(isPrimitive);
@@ -149,7 +162,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                 {label}
               </h3>
               <div className="pl-6 border-l border-zinc-800/50">
-                <RecursiveConfig data={value} labels={labels} path={currentPath} onChange={onChange} />
+                <RecursiveConfig data={value} labels={labels} path={currentPath} onChange={onChange} hotPaths={hotPaths} onlyHot={onlyHot} />
               </div>
             </div>
           );

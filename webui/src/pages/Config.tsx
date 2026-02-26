@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
@@ -47,6 +47,42 @@ const Config: React.FC = () => {
 
   const [selectedTop, setSelectedTop] = useState<string>('');
   const activeTop = filteredTopKeys.includes(selectedTop) ? selectedTop : (filteredTopKeys[0] || '');
+  const [baseline, setBaseline] = useState<any>(null);
+  const [showDiff, setShowDiff] = useState(false);
+
+  const currentPayload = useMemo(() => {
+    if (showRaw) {
+      try { return JSON.parse(cfgRaw); } catch { return cfg; }
+    }
+    return cfg;
+  }, [showRaw, cfgRaw, cfg]);
+
+  const diffRows = useMemo(() => {
+    const out: Array<{ path: string; before: any; after: any }> = [];
+    const walk = (a: any, b: any, p: string) => {
+      const keys = new Set([...(a && typeof a === 'object' ? Object.keys(a) : []), ...(b && typeof b === 'object' ? Object.keys(b) : [])]);
+      if (keys.size === 0) {
+        if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ path: p || '(root)', before: a, after: b });
+        return;
+      }
+      keys.forEach((k) => {
+        const pa = p ? `${p}.${k}` : k;
+        const av = a ? a[k] : undefined;
+        const bv = b ? b[k] : undefined;
+        const bothObj = av && bv && typeof av === 'object' && typeof bv === 'object' && !Array.isArray(av) && !Array.isArray(bv);
+        if (bothObj) walk(av, bv, pa);
+        else if (JSON.stringify(av) !== JSON.stringify(bv)) out.push({ path: pa, before: av, after: bv });
+      });
+    };
+    walk(baseline || {}, currentPayload || {}, '');
+    return out;
+  }, [baseline, currentPayload]);
+
+  useEffect(() => {
+    if (baseline == null && cfg && Object.keys(cfg).length > 0) {
+      setBaseline(JSON.parse(JSON.stringify(cfg)));
+    }
+  }, [cfg, baseline]);
 
   async function saveConfig() {
     try {
@@ -55,6 +91,8 @@ const Config: React.FC = () => {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
       alert(await r.text());
+      setBaseline(JSON.parse(JSON.stringify(payload)));
+      setShowDiff(false);
     } catch (e) {
       alert('Failed to save config: ' + e);
     }
@@ -71,9 +109,10 @@ const Config: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
-        <button onClick={loadConfig} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
+        <button onClick={async () => { await loadConfig(); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
           <RefreshCw className="w-4 h-4" /> {t('reload')}
         </button>
+        <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">差异预览</button>
         <button onClick={saveConfig} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
           <Save className="w-4 h-4" /> {t('saveChanges')}
         </button>
@@ -123,6 +162,8 @@ const Config: React.FC = () => {
                   data={(cfg as any)?.[activeTop] || {}}
                   labels={t('configLabels', { returnObjects: true }) as Record<string, string>}
                   path={activeTop}
+                  hotPaths={hotReloadFieldDetails.map((x) => x.path)}
+                  onlyHot={hotOnly}
                   onChange={(path, val) => setCfg(v => setPath(v, path, val))}
                 />
               ) : (
@@ -139,6 +180,37 @@ const Config: React.FC = () => {
           />
         )}
       </div>
+
+      {showDiff && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl max-h-[85vh] bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col">
+            <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+              <div className="font-semibold">配置差异预览（{diffRows.length}项）</div>
+              <button className="px-3 py-1 rounded bg-zinc-800" onClick={() => setShowDiff(false)}>关闭</button>
+            </div>
+            <div className="overflow-auto text-xs">
+              <table className="w-full">
+                <thead className="sticky top-0 bg-zinc-900 text-zinc-300">
+                  <tr>
+                    <th className="text-left p-2">Path</th>
+                    <th className="text-left p-2">Before</th>
+                    <th className="text-left p-2">After</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diffRows.map((r, i) => (
+                    <tr key={i} className="border-t border-zinc-900 align-top">
+                      <td className="p-2 font-mono text-zinc-400">{r.path}</td>
+                      <td className="p-2 text-zinc-300 break-all">{JSON.stringify(r.before)}</td>
+                      <td className="p-2 text-emerald-300 break-all">{JSON.stringify(r.after)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
