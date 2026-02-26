@@ -15,6 +15,8 @@ const initialSkillForm: Omit<Skill, 'id'> = {
 const Skills: React.FC = () => {
   const { t } = useTranslation();
   const { skills, refreshSkills, q } = useAppContext();
+  const [installName, setInstallName] = useState('');
+  const qp = (k: string, v: string) => `${q}${q ? '&' : '?'}${k}=${encodeURIComponent(v)}`;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
   const [form, setForm] = useState<Omit<Skill, 'id'>>(initialSkillForm);
@@ -22,11 +24,27 @@ const Skills: React.FC = () => {
   async function deleteSkill(id: string) {
     if (!confirm('Are you sure you want to delete this skill?')) return;
     try {
-      await fetch(`/webui/api/skills${q}&id=${id}`, { method: 'DELETE' });
+      await fetch(`/webui/api/skills${qp('id', id)}`, { method: 'DELETE' });
       await refreshSkills();
     } catch (e) {
       console.error(e);
     }
+  }
+
+  async function installSkill() {
+    const name = installName.trim();
+    if (!name) return;
+    const r = await fetch(`/webui/api/skills${q}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'install', name }),
+    });
+    if (!r.ok) {
+      alert(await r.text());
+      return;
+    }
+    setInstallName('');
+    await refreshSkills();
   }
 
   async function handleSubmit() {
@@ -53,6 +71,10 @@ const Skills: React.FC = () => {
     <div className="p-8 max-w-7xl mx-auto space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">{t('skills')}</h1>
+        <div className="flex items-center gap-2">
+          <input value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder="skill name" className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm" />
+          <button onClick={installSkill} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">Install</button>
+        </div>
         <div className="flex items-center gap-3">
           <button onClick={() => refreshSkills()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
             <RefreshCw className="w-4 h-4" /> {t('refresh')}
@@ -84,10 +106,10 @@ const Skills: React.FC = () => {
               <div>
                 <div className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Tools</div>
                 <div className="flex flex-wrap gap-2">
-                  {s.tools.map(tool => (
+                  {(Array.isArray(s.tools) ? s.tools : []).map(tool => (
                     <span key={tool} className="px-2 py-1 bg-zinc-800/50 text-zinc-300 text-[10px] font-mono rounded border border-zinc-700/50">{tool}</span>
                   ))}
-                  {s.tools.length === 0 && <span className="text-xs text-zinc-600 italic">No tools defined</span>}
+                  {(!Array.isArray(s.tools) || s.tools.length === 0) && <span className="text-xs text-zinc-600 italic">No tools defined</span>}
                 </div>
               </div>
               {s.system_prompt && (
@@ -107,7 +129,7 @@ const Skills: React.FC = () => {
                   setForm({
                     name: s.name,
                     description: s.description,
-                    tools: s.tools,
+                    tools: Array.isArray(s.tools) ? s.tools : [],
                     system_prompt: s.system_prompt || ''
                   }); 
                   setIsModalOpen(true); 

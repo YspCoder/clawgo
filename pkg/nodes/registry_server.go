@@ -549,6 +549,9 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 				if len(tools) == 0 { tools = t2 }
 				if sys == "" { sys = s2 }
 			}
+			if tools == nil {
+				tools = []string{}
+			}
 			it := skillItem{ID: baseName, Name: baseName, Description: desc, Tools: tools, SystemPrompt: sys, Enabled: enabled, UpdateChecked: checkUpdates}
 			if checkUpdates {
 				found, version, checkErr := queryClawHubSkillVersion(r.Context(), baseName)
@@ -583,6 +586,15 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		disabledPath := enabledPath + ".disabled"
 
 		switch action {
+		case "install":
+			cmd := exec.CommandContext(r.Context(), "clawhub", "install", name)
+			cmd.Dir = strings.TrimSpace(s.workspacePath)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				http.Error(w, fmt.Sprintf("install failed: %v\n%s", err, string(out)), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "installed": name, "output": string(out)})
 		case "enable":
 			if _, err := os.Stat(disabledPath); err == nil {
 				if err := os.Rename(disabledPath, enabledPath); err != nil {
