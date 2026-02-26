@@ -437,6 +437,10 @@ func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey stri
 	return al.processMessage(ctx, msg)
 }
 
+func (al *AgentLoop) GetSessionHistory(sessionKey string) []providers.Message {
+	return al.sessions.GetHistory(sessionKey)
+}
+
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
 	unlock := al.lockSessionRun(msg.SessionKey)
 	defer unlock()

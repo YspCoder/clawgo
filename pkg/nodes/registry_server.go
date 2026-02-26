@@ -27,6 +27,7 @@ type RegistryServer struct {
 	workspacePath string
 	logFilePath   string
 	onChat        func(ctx context.Context, sessionKey, content string) (string, error)
+	onChatHistory func(sessionKey string) []map[string]interface{}
 	onConfigAfter func()
 	onCron        func(action string, args map[string]interface{}) (interface{}, error)
 	webUIDir      string
@@ -49,6 +50,9 @@ func (s *RegistryServer) SetLogFilePath(path string) { s.logFilePath = strings.T
 func (s *RegistryServer) SetChatHandler(fn func(ctx context.Context, sessionKey, content string) (string, error)) {
 	s.onChat = fn
 }
+func (s *RegistryServer) SetChatHistoryHandler(fn func(sessionKey string) []map[string]interface{}) {
+	s.onChatHistory = fn
+}
 func (s *RegistryServer) SetConfigAfterHook(fn func()) { s.onConfigAfter = fn }
 func (s *RegistryServer) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
@@ -70,6 +74,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/", s.handleWebUIAsset)
 	mux.HandleFunc("/webui/api/config", s.handleWebUIConfig)
 	mux.HandleFunc("/webui/api/chat", s.handleWebUIChat)
+	mux.HandleFunc("/webui/api/chat/history", s.handleWebUIChatHistory)
 	mux.HandleFunc("/webui/api/chat/stream", s.handleWebUIChatStream)
 	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
 	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
@@ -336,10 +341,7 @@ func (s *RegistryServer) handleWebUIChat(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	session := strings.TrimSpace(body.Session)
-	if session == "" {
-		session = "webui:default"
-	}
+	session := "main"
 	prompt := strings.TrimSpace(body.Message)
 	if strings.TrimSpace(body.Media) != "" {
 		if prompt != "" {
@@ -353,6 +355,23 @@ func (s *RegistryServer) handleWebUIChat(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reply": resp, "session": session})
+}
+
+func (s *RegistryServer) handleWebUIChatHistory(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	session := "main"
+	if s.onChatHistory == nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session": session, "messages": []interface{}{}})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session": session, "messages": s.onChatHistory(session)})
 }
 
 func (s *RegistryServer) handleWebUIChatStream(w http.ResponseWriter, r *http.Request) {
@@ -382,10 +401,7 @@ func (s *RegistryServer) handleWebUIChatStream(w http.ResponseWriter, r *http.Re
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	session := strings.TrimSpace(body.Session)
-	if session == "" {
-		session = "webui:default"
-	}
+	session := "main"
 	prompt := strings.TrimSpace(body.Message)
 	if strings.TrimSpace(body.Media) != "" {
 		if prompt != "" {

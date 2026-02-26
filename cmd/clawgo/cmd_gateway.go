@@ -188,6 +188,21 @@ func gatewayCmd() {
 		}
 		return agentLoop.ProcessDirect(cctx, content, sessionKey)
 	})
+	registryServer.SetChatHistoryHandler(func(sessionKey string) []map[string]interface{} {
+		h := agentLoop.GetSessionHistory(sessionKey)
+		out := make([]map[string]interface{}, 0, len(h))
+		for _, m := range h {
+			entry := map[string]interface{}{"role": m.Role, "content": m.Content}
+			if strings.TrimSpace(m.ToolCallID) != "" {
+				entry["tool_call_id"] = m.ToolCallID
+			}
+			if len(m.ToolCalls) > 0 {
+				entry["tool_calls"] = m.ToolCalls
+			}
+			out = append(out, entry)
+		}
+		return out
+	})
 	registryServer.SetConfigAfterHook(func() {
 		_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
 	})
