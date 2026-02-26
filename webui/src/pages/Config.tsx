@@ -21,10 +21,32 @@ const Config: React.FC = () => {
   const { t } = useTranslation();
   const { cfg, setCfg, cfgRaw, setCfgRaw, loadConfig, hotReloadFieldDetails, q } = useAppContext();
   const [showRaw, setShowRaw] = useState(false);
-  const topKeys = useMemo(() => Object.keys(cfg || {}).filter(k => typeof (cfg as any)?.[k] === 'object' && (cfg as any)?.[k] !== null), [cfg]);
-  const [selectedTop, setSelectedTop] = useState<string>('');
+  const [basicMode, setBasicMode] = useState(true);
+  const [hotOnly, setHotOnly] = useState(false);
+  const [search, setSearch] = useState('');
 
-  const activeTop = selectedTop || topKeys[0] || '';
+  const hotPrefixes = useMemo(() => hotReloadFieldDetails.map((x) => String(x.path || '').replace(/\.\*$/, '')).filter(Boolean), [hotReloadFieldDetails]);
+
+  const allTopKeys = useMemo(() => Object.keys(cfg || {}).filter(k => typeof (cfg as any)?.[k] === 'object' && (cfg as any)?.[k] !== null), [cfg]);
+  const basicTopKeys = useMemo(() => {
+    const preferred = ['gateway', 'providers', 'channels', 'tools', 'cron', 'agents', 'logging'];
+    return preferred.filter((k) => allTopKeys.includes(k));
+  }, [allTopKeys]);
+
+  const filteredTopKeys = useMemo(() => {
+    let keys = basicMode ? basicTopKeys : allTopKeys;
+    if (hotOnly) {
+      keys = keys.filter((k) => hotPrefixes.some((p) => p === k || p.startsWith(`${k}.`) || k.startsWith(`${p}.`)));
+    }
+    if (search.trim()) {
+      const s = search.trim().toLowerCase();
+      keys = keys.filter((k) => k.toLowerCase().includes(s));
+    }
+    return keys;
+  }, [allTopKeys, basicTopKeys, basicMode, hotOnly, search, hotPrefixes]);
+
+  const [selectedTop, setSelectedTop] = useState<string>('');
+  const activeTop = filteredTopKeys.includes(selectedTop) ? selectedTop : (filteredTopKeys[0] || '');
 
   async function saveConfig() {
     try {
@@ -48,13 +70,21 @@ const Config: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button onClick={loadConfig} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
           <RefreshCw className="w-4 h-4" /> {t('reload')}
         </button>
         <button onClick={saveConfig} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
           <Save className="w-4 h-4" /> {t('saveChanges')}
         </button>
+        <button onClick={() => setBasicMode(v => !v)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">
+          {basicMode ? '基础模式' : '高级模式'}
+        </button>
+        <label className="flex items-center gap-2 text-sm text-zinc-300">
+          <input type="checkbox" checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
+          仅热更新字段
+        </label>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索分类..." className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm" />
       </div>
 
       <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-4">
@@ -75,7 +105,7 @@ const Config: React.FC = () => {
             <aside className="w-44 md:w-56 border-r border-zinc-800 bg-zinc-950/40 p-2 md:p-3 overflow-y-auto shrink-0">
               <div className="text-xs text-zinc-500 uppercase tracking-widest mb-2 px-2">Top Level</div>
               <div className="space-y-1">
-                {topKeys.map((k) => (
+                {filteredTopKeys.map((k) => (
                   <button
                     key={k}
                     onClick={() => setSelectedTop(k)}
