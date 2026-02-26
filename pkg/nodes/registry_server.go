@@ -468,7 +468,19 @@ func (s *RegistryServer) handleWebUINodes(w http.ResponseWriter, r *http.Request
 		if ip := detectLocalIP(); ip != "" {
 			local.Endpoint = ip
 		}
-		list = append([]NodeInfo{local}, list...)
+		hostLower := strings.ToLower(strings.TrimSpace(host))
+		hasLocal := false
+		for _, n := range list {
+			id := strings.ToLower(strings.TrimSpace(n.ID))
+			name := strings.ToLower(strings.TrimSpace(n.Name))
+			if id == "local" || name == "local" || (hostLower != "" && name == hostLower) {
+				hasLocal = true
+				break
+			}
+		}
+		if !hasLocal {
+			list = append([]NodeInfo{local}, list...)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list})
 	case http.MethodPost:
 		var body struct {
