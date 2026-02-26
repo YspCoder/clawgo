@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,8 @@ func NewSessionManager(storage string) *SessionManager {
 
 	if storage != "" {
 		os.MkdirAll(storage, 0755)
+		sm.migrateLegacySessions()
+		sm.cleanupArchivedSessions()
 		sm.loadSessions()
 	}
 
@@ -443,6 +446,75 @@ func (sm *SessionManager) writeOpenClawSessionsIndex() error {
 		_ = os.Remove(filepath.Join(sm.storage, e.Name()))
 	}
 	return nil
+}
+
+func (sm *SessionManager) migrateLegacySessions() {
+	if sm.storage == "" {
+		return
+	}
+	root := filepath.Dir(filepath.Dir(filepath.Dir(sm.storage))) // ~/.clawgo
+	candidates := []string{
+		filepath.Join(root, "sessions"),
+		filepath.Join(filepath.Dir(sm.storage), "sessions"),
+	}
+	for _, legacy := range candidates {
+		if strings.TrimSpace(legacy) == "" || legacy == sm.storage {
+			continue
+		}
+		entries, err := os.ReadDir(legacy)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !(strings.HasSuffix(name, ".jsonl") || name == "sessions.json" || strings.Contains(name, ".jsonl.deleted.")) {
+				continue
+			}
+			src := filepath.Join(legacy, name)
+			dst := filepath.Join(sm.storage, name)
+			if _, err := os.Stat(dst); err == nil {
+				continue
+			}
+			_ = os.Rename(src, dst)
+		}
+	}
+}
+
+func (sm *SessionManager) cleanupArchivedSessions() {
+	if sm.storage == "" {
+		return
+	}
+	days := 30
+	if v := strings.TrimSpace(os.Getenv("CLAWGO_SESSION_ARCHIVE_RETENTION_DAYS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			days = n
+		}
+	}
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	entries, err := os.ReadDir(sm.storage)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.Contains(name, ".jsonl.deleted.") {
+			continue
+		}
+		full := filepath.Join(sm.storage, name)
+		fi, err := os.Stat(full)
+		if err != nil {
+			continue
+		}
+		if fi.ModTime().Before(cutoff) {
+			_ = os.Remove(full)
+		}
+	}
 }
 
 func mapKindToChatType(kind string) string {
