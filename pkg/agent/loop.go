@@ -611,6 +611,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 
 		if err != nil {
+			errText := strings.ToLower(err.Error())
+			if strings.Contains(errText, "no tool call found for function call output") {
+				removed := al.sessions.PurgeOrphanToolOutputs(msg.SessionKey)
+				logger.WarnCF("agent", "Purged orphan tool outputs after provider pairing error", map[string]interface{}{"session_key": msg.SessionKey, "removed": removed})
+			}
 			logger.ErrorCF("agent", "LLM call failed",
 				map[string]interface{}{
 					"iteration": iteration,
@@ -885,6 +890,11 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		})
 
 		if err != nil {
+			errText := strings.ToLower(err.Error())
+			if strings.Contains(errText, "no tool call found for function call output") {
+				removed := al.sessions.PurgeOrphanToolOutputs(sessionKey)
+				logger.WarnCF("agent", "Purged orphan tool outputs after provider pairing error (system)", map[string]interface{}{"session_key": sessionKey, "removed": removed})
+			}
 			logger.ErrorCF("agent", "LLM call failed in system message",
 				map[string]interface{}{
 					"iteration": iteration,

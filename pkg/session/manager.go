@@ -246,6 +246,81 @@ func (sm *SessionManager) SetPreferredLanguage(key, lang string) {
 	session.mu.Unlock()
 }
 
+func (sm *SessionManager) PurgeOrphanToolOutputs(key string) int {
+	sm.mu.RLock()
+	session, ok := sm.sessions[key]
+	sm.mu.RUnlock()
+	if !ok {
+		return 0
+	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	pending := map[string]struct{}{}
+	kept := make([]providers.Message, 0, len(session.Messages))
+	removed := 0
+	for _, m := range session.Messages {
+		role := strings.ToLower(strings.TrimSpace(m.Role))
+		switch role {
+		case "assistant":
+			for _, tc := range m.ToolCalls {
+				id := strings.TrimSpace(tc.ID)
+				if id != "" {
+					pending[id] = struct{}{}
+				}
+			}
+			kept = append(kept, m)
+		case "tool":
+			id := strings.TrimSpace(m.ToolCallID)
+			if id == "" {
+				removed++
+				continue
+			}
+			if _, ok := pending[id]; !ok {
+				removed++
+				continue
+			}
+			delete(pending, id)
+			kept = append(kept, m)
+		default:
+			kept = append(kept, m)
+		}
+	}
+	if removed == 0 {
+		return 0
+	}
+	session.Messages = kept
+	session.Updated = time.Now()
+	if sm.storage != "" {
+		_ = sm.rewriteSessionFileLocked(session)
+		_ = sm.writeOpenClawSessionsIndex()
+	}
+	return removed
+}
+
+func (sm *SessionManager) rewriteSessionFileLocked(session *Session) error {
+	if sm.storage == "" || session == nil {
+		return nil
+	}
+	path := filepath.Join(sm.storage, session.Key+".jsonl")
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	for _, msg := range session.Messages {
+		e := toOpenClawMessageEvent(msg)
+		b, err := json.Marshal(e)
+		if err != nil {
+			continue
+		}
+		if _, err := f.Write(append(b, '\n')); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	sm.mu.RLock()
 	session, ok := sm.sessions[key]
