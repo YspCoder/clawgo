@@ -75,7 +75,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	workspace := cfg.WorkspacePath()
 	os.MkdirAll(workspace, 0755)
 
-	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "sessions"))
+	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "agents", "main", "sessions"))
 
 	toolsRegistry := tools.NewToolRegistry()
 	processManager := tools.NewProcessManager(workspace)
@@ -442,6 +442,7 @@ func (al *AgentLoop) GetSessionHistory(sessionKey string) []providers.Message {
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	msg.SessionKey = "main"
 	unlock := al.lockSessionRun(msg.SessionKey)
 	defer unlock()
 	// Add message preview to log

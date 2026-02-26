@@ -881,30 +881,11 @@ func (s *RegistryServer) handleWebUISessions(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	sessionsDir := filepath.Join(filepath.Dir(strings.TrimSpace(s.workspacePath)), "sessions")
-	entries, err := os.ReadDir(sessionsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": []interface{}{}})
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	_ = os.MkdirAll(filepath.Join(filepath.Dir(strings.TrimSpace(s.workspacePath)), "agents", "main", "sessions"), 0755)
 	type item struct {
 		Key string `json:"key"`
 	}
-	out := make([]item, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if strings.HasSuffix(name, ".json") {
-			out = append(out, item{Key: strings.TrimSuffix(name, ".json")})
-		}
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": out})
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": []item{{Key: "main"}}})
 }
 
 func (s *RegistryServer) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
