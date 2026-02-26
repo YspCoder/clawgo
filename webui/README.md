@@ -1,48 +1,54 @@
 # ClawGo WebUI
 
-React + Vite frontend for ClawGo WebUI.
+ClawGo 的前端控制台，基于 **React + Vite**。
 
-## What was cleaned
+## 功能简介
 
-- Removed unused packages:
-  - `@google/genai`
-  - `better-sqlite3`
-  - `dotenv`
-  - `@types/react-router-dom` (v5 typings, not used)
-- Moved build-only tooling to `devDependencies` (`vite`, `@vitejs/plugin-react`, `@tailwindcss/vite`, etc.).
-- Updated package metadata/name to `clawgo-webui`.
+- Dashboard（状态看板）
+- Chat（对话与流式回复）
+- Logs（实时日志 / Raw）
+- Skills（技能列表、安装、管理）
+- Config（配置编辑与热更新）
+- Cron（定时任务管理）
+- Nodes（节点状态与管理）
+- Memory（记忆文件管理）
 
-## Development
+## 本地使用
 
-### Prerequisites
-
-- Node.js 18+
-
-### Install
+### 1) 安装依赖
 
 ```bash
 npm install
 ```
 
-### Start local dev server
+### 2) 开发模式
 
 ```bash
 npm run dev
 ```
 
-### Build
+### 3) 构建
 
 ```bash
 npm run build
 ```
 
-### Preview build
+### 4) 预览构建产物
 
 ```bash
 npm run preview
 ```
 
-## Notes
+## 线上访问
 
-- `server.ts` is a local dev fallback API server.
-- Production deployment uses ClawGo gateway `/webui/api/*` endpoints, not SQLite.
+部署后通过 gateway 访问：
+
+```text
+http://<host>:<port>/webui?token=<gateway_token>
+```
+
+例如：
+
+```text
+http://134.195.210.114:18790/webui?token=xxxxx
+```
