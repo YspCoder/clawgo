@@ -331,6 +331,29 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return nil
 	}
 
+	if len([]rune(htmlContent)) > 3500 {
+		plain := plainTextFromTelegramHTML(htmlContent)
+		chunks := splitTelegramText(plain, 3500)
+		for i, ch := range chunks {
+			sendParams := telegoutil.Message(chatID, ch)
+			if i == 0 {
+				if markup != nil {
+					sendParams.WithReplyMarkup(markup)
+				}
+				if replyID, ok := parseTelegramMessageID(msg.ReplyToID); ok {
+					sendParams.ReplyParameters = &telego.ReplyParameters{MessageID: replyID}
+				}
+			}
+			sendCtx, cancelSend := withTelegramAPITimeout(ctx)
+			_, err := c.bot.SendMessage(sendCtx, sendParams)
+			cancelSend()
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	sendParams := telegoutil.Message(chatID, htmlContent).WithParseMode(telego.ModeHTML)
 	if markup != nil {
 		sendParams.WithReplyMarkup(markup)
@@ -348,14 +371,20 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 			logger.FieldError: err.Error(),
 		})
 		plain := plainTextFromTelegramHTML(htmlContent)
-		sendPlainParams := telegoutil.Message(chatID, plain)
-		if markup != nil {
-			sendPlainParams.WithReplyMarkup(markup)
+		chunks := splitTelegramText(plain, 3500)
+		for i, ch := range chunks {
+			sendPlainParams := telegoutil.Message(chatID, ch)
+			if i == 0 && markup != nil {
+				sendPlainParams.WithReplyMarkup(markup)
+			}
+			sendPlainCtx, cancelSendPlain := withTelegramAPITimeout(ctx)
+			_, err = c.bot.SendMessage(sendPlainCtx, sendPlainParams)
+			cancelSendPlain()
+			if err != nil {
+				return err
+			}
 		}
-		sendPlainCtx, cancelSendPlain := withTelegramAPITimeout(ctx)
-		_, err = c.bot.SendMessage(sendPlainCtx, sendPlainParams)
-		cancelSendPlain()
-		return err
+		return nil
 	}
 
 	return nil
@@ -709,6 +738,47 @@ func min(a, b int) int {
 	return b
 }
 
+func splitTelegramText(s string, maxRunes int) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return []string{""}
+	}
+	if maxRunes <= 0 {
+		maxRunes = 3500
+	}
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return []string{s}
+	}
+	out := make([]string, 0, len(r)/maxRunes+1)
+	for start := 0; start < len(r); {
+		end := start + maxRunes
+		if end >= len(r) {
+			out = append(out, strings.TrimSpace(string(r[start:])))
+			break
+		}
+		split := end
+		for i := end; i > start+maxRunes/2; i-- {
+			if r[i-1] == '\n' || r[i-1] == ' ' {
+				split = i
+				break
+			}
+		}
+		out = append(out, strings.TrimSpace(string(r[start:split])))
+		start = split
+	}
+	cleaned := make([]string, 0, len(out))
+	for _, part := range out {
+		if strings.TrimSpace(part) != "" {
+			cleaned = append(cleaned, part)
+		}
+	}
+	if len(cleaned) == 0 {
+		return []string{""}
+	}
+	return cleaned
+}
+
 func (c *TelegramChannel) downloadFromURL(runCtx context.Context, url, localPath string) error {
 	downloadCtx, cancelDownload := context.WithTimeout(runCtx, telegramDownloadTimeout)
 	defer cancelDownload()
@@ -753,6 +823,9 @@ func (c *TelegramChannel) handleAction(ctx context.Context, chatID int64, action
 	switch action {
 	case "edit":
 		htmlContent := sanitizeTelegramHTML(markdownToTelegramHTML(msg.Content))
+		if len([]rune(htmlContent)) > 3500 {
+			htmlContent = sanitizeTelegramHTML(markdownToTelegramHTML(splitTelegramText(plainTextFromTelegramHTML(htmlContent), 3500)[0]))
+		}
 		editCtx, cancel := withTelegramAPITimeout(ctx)
 		defer cancel()
 		_, err := c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{ChatID: telegoutil.ID(chatID), MessageID: messageID, Text: htmlContent, ParseMode: telego.ModeHTML})
