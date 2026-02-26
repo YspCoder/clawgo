@@ -6,7 +6,7 @@ import StatCard from '../components/StatCard';
 
 const Dashboard: React.FC = () => {
   const { t } = useTranslation();
-  const { isGatewayOnline, sessions, cron, nodes, refreshAll } = useAppContext();
+  const { isGatewayOnline, sessions, cron, nodes, refreshAll, gatewayVersion, webuiVersion } = useAppContext();
 
   const onlineNodes = useMemo(() => {
     try {
@@ -19,8 +19,11 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-5 md:space-y-8">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">{t('dashboard')}</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">{t('dashboard')}</h1>
+          <div className="mt-1 text-xs text-zinc-500">Gateway: {gatewayVersion} · WebUI: {webuiVersion}</div>
+        </div>
         <button onClick={refreshAll} className="flex items-center gap-2 px-3 md:px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors shrink-0">
           <RefreshCw className="w-4 h-4" /> {t('refreshAll')}
         </button>

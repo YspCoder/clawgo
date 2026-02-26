@@ -25,7 +25,10 @@ interface AppContextType {
   refreshNodes: () => Promise<void>;
   refreshSkills: () => Promise<void>;
   refreshSessions: () => Promise<void>;
+  refreshVersion: () => Promise<void>;
   loadConfig: () => Promise<void>;
+  gatewayVersion: string;
+  webuiVersion: string;
   hotReloadFields: string[];
   hotReloadFieldDetails: Array<{ path: string; name?: string; description?: string }>;
   q: string;
@@ -50,7 +53,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [nodes, setNodes] = useState('[]');
   const [cron, setCron] = useState<CronJob[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([{ key: 'webui:default', title: 'Default' }]);
+  const [sessions, setSessions] = useState<Session[]>([{ key: 'main', title: 'main' }]);
+  const [gatewayVersion, setGatewayVersion] = useState('unknown');
+  const [webuiVersion, setWebuiVersion] = useState('unknown');
   const [hotReloadFields, setHotReloadFields] = useState<string[]>([]);
   const [hotReloadFieldDetails, setHotReloadFieldDetails] = useState<Array<{ path: string; name?: string; description?: string }>>([]);
 
@@ -137,9 +142,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [q]);
 
+  const refreshVersion = useCallback(async () => {
+    try {
+      const r = await fetch(`/webui/api/version${q}`);
+      if (!r.ok) throw new Error('Failed to load version');
+      const j = await r.json();
+      setGatewayVersion(j.gateway_version || 'unknown');
+      setWebuiVersion(j.webui_version || 'unknown');
+    } catch (e) {
+      console.error(e);
+    }
+  }, [q]);
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadConfig(), refreshCron(), refreshNodes(), refreshSkills(), refreshSessions()]);
-  }, [loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions]);
+    await Promise.all([loadConfig(), refreshCron(), refreshNodes(), refreshSkills(), refreshSessions(), refreshVersion()]);
+  }, [loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion]);
 
   useEffect(() => {
     refreshAll();
@@ -148,9 +165,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       refreshNodes();
       refreshSkills();
       refreshSessions();
+      refreshVersion();
     }, 10000);
     return () => clearInterval(interval);
-  }, [token, refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions]);
+  }, [token, refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion]);
 
   return (
     <AppContext.Provider value={{
@@ -158,8 +176,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cfg, setCfg, cfgRaw, setCfgRaw, nodes, setNodes,
       cron, setCron, skills, setSkills,
       sessions, setSessions,
-      refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, loadConfig,
-      hotReloadFields, hotReloadFieldDetails, q
+      refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion, loadConfig,
+      gatewayVersion, webuiVersion, hotReloadFields, hotReloadFieldDetails, q
     }}>
       {children}
     </AppContext.Provider>

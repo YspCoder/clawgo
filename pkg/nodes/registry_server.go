@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -76,6 +78,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/chat", s.handleWebUIChat)
 	mux.HandleFunc("/webui/api/chat/history", s.handleWebUIChatHistory)
 	mux.HandleFunc("/webui/api/chat/stream", s.handleWebUIChatStream)
+	mux.HandleFunc("/webui/api/version", s.handleWebUIVersion)
 	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
 	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
 	mux.HandleFunc("/webui/api/cron", s.handleWebUICron)
@@ -430,6 +433,22 @@ func (s *RegistryServer) handleWebUIChatStream(w http.ResponseWriter, r *http.Re
 	}
 }
 
+func (s *RegistryServer) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":              true,
+		"gateway_version": gatewayBuildVersion(),
+		"webui_version":   detectWebUIVersion(strings.TrimSpace(s.webUIDir)),
+	})
+}
+
 func (s *RegistryServer) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -441,6 +460,15 @@ func (s *RegistryServer) handleWebUINodes(w http.ResponseWriter, r *http.Request
 		if s.mgr != nil {
 			list = s.mgr.List()
 		}
+		host, _ := os.Hostname()
+		local := NodeInfo{ID: "local", Name: "local", Endpoint: "gateway", Version: gatewayBuildVersion(), LastSeenAt: time.Now(), Online: true}
+		if strings.TrimSpace(host) != "" {
+			local.Name = host
+		}
+		if ip := detectLocalIP(); ip != "" {
+			local.Endpoint = ip
+		}
+		list = append([]NodeInfo{local}, list...)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list})
 	case http.MethodPost:
 		var body struct {
@@ -758,6 +786,82 @@ func readSkillMeta(path string) (desc string, tools []string, systemPrompt strin
 		systemPrompt = strings.TrimSpace(s[loc[1]:])
 	}
 	return
+}
+
+func gatewayBuildVersion() string {
+	if bi, ok := debug.ReadBuildInfo(); ok && bi != nil {
+		ver := strings.TrimSpace(bi.Main.Version)
+		rev := ""
+		for _, s := range bi.Settings {
+			if s.Key == "vcs.revision" {
+				rev = s.Value
+				break
+			}
+		}
+		if len(rev) > 8 {
+			rev = rev[:8]
+		}
+		if ver == "" || ver == "(devel)" {
+			ver = "devel"
+		}
+		if rev != "" {
+			return ver + "+" + rev
+		}
+		return ver
+	}
+	return "unknown"
+}
+
+func detectWebUIVersion(webUIDir string) string {
+	if strings.TrimSpace(webUIDir) == "" {
+		return "unknown"
+	}
+	assets := filepath.Join(webUIDir, "assets")
+	entries, err := os.ReadDir(assets)
+	if err != nil {
+		return "unknown"
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, "index-") && strings.HasSuffix(name, ".js") {
+			mid := strings.TrimSuffix(strings.TrimPrefix(name, "index-"), ".js")
+			if mid != "" {
+				return mid
+			}
+		}
+	}
+	return "unknown"
+}
+
+func detectLocalIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			ip = ip.To4()
+			if ip == nil {
+				continue
+			}
+			return ip.String()
+		}
+	}
+	return ""
 }
 
 func normalizeCronJob(v interface{}) map[string]interface{} {
