@@ -18,7 +18,7 @@ const Logs: React.FC = () => {
       if (!r.ok) return;
       const j = await r.json();
       if (Array.isArray(j.logs)) {
-        setLogs(j.logs as LogEntry[]);
+        setLogs(j.logs.map(normalizeLog));
       }
     } catch (e) {
       console.error('load recent logs failed', e);
@@ -48,11 +48,11 @@ const Logs: React.FC = () => {
 
         lines.forEach(line => {
           try {
-            const log: LogEntry = JSON.parse(line);
+            const log = normalizeLog(JSON.parse(line));
             setLogs(prev => [...prev.slice(-1000), log]);
           } catch (e) {
             // Fallback for non-JSON logs
-            setLogs(prev => [...prev.slice(-1000), { time: new Date().toISOString(), level: 'INFO', msg: line }]);
+            setLogs(prev => [...prev.slice(-1000), normalizeLog({ time: new Date().toISOString(), level: 'INFO', msg: line })]);
           }
         });
       }
@@ -82,8 +82,28 @@ const Logs: React.FC = () => {
 
   const clearLogs = () => setLogs([]);
 
+  const normalizeLog = (v: any): LogEntry => ({
+    time: typeof v?.time === 'string' && v.time ? v.time : new Date().toISOString(),
+    level: typeof v?.level === 'string' && v.level ? v.level : 'INFO',
+    msg: typeof v?.msg === 'string' ? v.msg : JSON.stringify(v),
+    ...v,
+  });
+
+  const formatTime = (raw: string) => {
+    try {
+      if (!raw) return '--:--:--';
+      if (raw.includes('T')) {
+        const right = raw.split('T')[1] || '';
+        return (right.split('.')[0] || right).trim() || '--:--:--';
+      }
+      return raw;
+    } catch {
+      return '--:--:--';
+    }
+  };
+
   const getLevelColor = (level: string) => {
-    switch (level.toUpperCase()) {
+    switch ((level || 'INFO').toUpperCase()) {
       case 'ERROR': return 'text-red-400';
       case 'WARN': return 'text-amber-400';
       case 'DEBUG': return 'text-blue-400';
@@ -135,8 +155,8 @@ const Logs: React.FC = () => {
           )}
           {logs.map((log, i) => (
             <div key={i} className="group flex gap-4 hover:bg-zinc-900/50 rounded px-2 py-0.5 transition-colors">
-              <span className="text-zinc-600 shrink-0 select-none">[{log.time.split('T')[1].split('.')[0]}]</span>
-              <span className={`font-bold shrink-0 select-none w-12 ${getLevelColor(log.level)}`}>{log.level.toUpperCase()}</span>
+              <span className="text-zinc-600 shrink-0 select-none">[{formatTime(log.time)}]</span>
+              <span className={`font-bold shrink-0 select-none w-12 ${getLevelColor(log.level)}`}>{(log.level || 'INFO').toUpperCase()}</span>
               <span className="text-zinc-300 break-all">{log.msg}</span>
               {Object.keys(log).filter(k => !['time', 'level', 'msg'].includes(k)).map(k => (
                 <span key={k} className="text-zinc-500 italic shrink-0 select-none">{k}={JSON.stringify(log[k])}</span>
