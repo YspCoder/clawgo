@@ -679,7 +679,15 @@ func runGatewayBootstrapInit(parent context.Context, cfg *config.Config, agentLo
 		return
 	}
 	line := fmt.Sprintf("%s\n%s\n", time.Now().UTC().Format(time.RFC3339), strings.TrimSpace(resp))
-	_ = os.WriteFile(markerPath, []byte(line), 0644)
+	if err := os.WriteFile(markerPath, []byte(line), 0644); err != nil {
+		logger.ErrorCF("gateway", "Bootstrap init marker write failed", map[string]interface{}{logger.FieldError: err.Error()})
+		return
+	}
+	// Bootstrap only runs once. After successful initialization marker is written,
+	// remove BOOTSTRAP.md to avoid repeated first-run guidance.
+	if err := os.Remove(bootstrapPath); err != nil && !os.IsNotExist(err) {
+		logger.WarnCF("gateway", "Bootstrap file cleanup failed", map[string]interface{}{logger.FieldError: err.Error()})
+	}
 	logger.InfoC("gateway", "Bootstrap init model call completed")
 }
 
