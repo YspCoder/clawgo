@@ -108,22 +108,24 @@ const Config: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <button onClick={async () => { await loadConfig(); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
-          <RefreshCw className="w-4 h-4" /> {t('reload')}
-        </button>
-        <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">差异预览</button>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={async () => { await loadConfig(); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
+            <RefreshCw className="w-4 h-4" /> {t('reload')}
+          </button>
+          <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">差异预览</button>
+          <button onClick={() => setBasicMode(v => !v)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">
+            {basicMode ? '基础模式' : '高级模式'}
+          </button>
+          <label className="flex items-center gap-2 text-sm text-zinc-300">
+            <input type="checkbox" checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
+            仅热更新字段
+          </label>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索分类..." className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm" />
+        </div>
         <button onClick={saveConfig} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
           <Save className="w-4 h-4" /> {t('saveChanges')}
         </button>
-        <button onClick={() => setBasicMode(v => !v)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">
-          {basicMode ? '基础模式' : '高级模式'}
-        </button>
-        <label className="flex items-center gap-2 text-sm text-zinc-300">
-          <input type="checkbox" checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
-          仅热更新字段
-        </label>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索分类..." className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm" />
       </div>
 
       <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-4">
