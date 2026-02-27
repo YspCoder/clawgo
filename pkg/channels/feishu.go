@@ -110,18 +110,17 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("unsupported feishu action: %s", action)
 	}
 
-	content := normalizeFeishuText(msg.Content)
-	payload, err := json.Marshal(map[string]string{"text": content})
+	msgType, contentPayload, err := buildFeishuOutbound(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal feishu content: %w", err)
+		return err
 	}
 
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(msg.ChatID).
-			MsgType(larkim.MsgTypeText).
-			Content(string(payload)).
+			MsgType(msgType).
+			Content(contentPayload).
 			Uuid(fmt.Sprintf("clawgo-%d", time.Now().UnixNano())).
 			Build()).
 		Build()
@@ -241,6 +240,84 @@ func (c *FeishuChannel) shouldHandleGroupMessage(chatType, content string) bool 
 		return true
 	}
 	return false
+}
+
+func buildFeishuOutbound(msg bus.OutboundMessage) (string, string, error) {
+	content := strings.TrimSpace(msg.Content)
+
+	// Support Feishu interactive card when content is raw card JSON.
+	if looksLikeFeishuCard(content) {
+		return larkim.MsgTypeInteractive, content, nil
+	}
+
+	if looksLikeMarkdown(content) {
+		postPayload, err := buildFeishuPostContent(content)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to marshal feishu post content: %w", err)
+		}
+		return larkim.MsgTypePost, postPayload, nil
+	}
+
+	textPayload, err := json.Marshal(map[string]string{"text": normalizeFeishuText(content)})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to marshal feishu text content: %w", err)
+	}
+	return larkim.MsgTypeText, string(textPayload), nil
+}
+
+func looksLikeFeishuCard(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" || (!strings.HasPrefix(s, "{") && !strings.HasPrefix(s, "[")) {
+		return false
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(s), &obj); err != nil {
+		return false
+	}
+	_, hasElements := obj["elements"]
+	_, hasHeader := obj["header"]
+	_, hasConfig := obj["config"]
+	return hasElements || hasHeader || hasConfig
+}
+
+func looksLikeMarkdown(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return false
+	}
+	markers := []string{"```", "# ", "## ", "- ", "* ", "**", "`", "[", "]("}
+	for _, m := range markers {
+		if strings.Contains(trimmed, m) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildFeishuPostContent(s string) (string, error) {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	contentRows := make([][]map[string]string, 0, len(lines))
+	for _, line := range lines {
+		n := normalizeFeishuText(line)
+		if strings.TrimSpace(n) == "" {
+			continue
+		}
+		contentRows = append(contentRows, []map[string]string{{"tag": "text", "text": n}})
+	}
+	if len(contentRows) == 0 {
+		contentRows = append(contentRows, []map[string]string{{"tag": "text", "text": " "}})
+	}
+	payload := map[string]interface{}{
+		"zh_cn": map[string]interface{}{
+			"title":   "",
+			"content": contentRows,
+		},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func normalizeFeishuText(s string) string {
