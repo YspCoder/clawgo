@@ -273,10 +273,10 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	}
 
 	if len([]rune(htmlContent)) > 3500 {
-		plain := plainTextFromTelegramHTML(htmlContent)
-		chunks := splitTelegramText(plain, 3500)
+		chunks := splitTelegramMarkdown(msg.Content, 3000)
 		for i, ch := range chunks {
-			sendParams := telegoutil.Message(chatID, ch)
+			htmlChunk := sanitizeTelegramHTML(markdownToTelegramHTML(ch))
+			sendParams := telegoutil.Message(chatID, htmlChunk).WithParseMode(telego.ModeHTML)
 			if i == 0 {
 				if markup != nil {
 					sendParams.WithReplyMarkup(markup)
@@ -633,6 +633,29 @@ func min(a, b int) int {
 	return b
 }
 
+
+func splitTelegramMarkdown(s string, maxRunes int) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return []string{""}
+	}
+	if maxRunes <= 0 {
+		maxRunes = 3000
+	}
+	parts := splitTelegramText(s, maxRunes)
+	if len(parts) <= 1 {
+		return parts
+	}
+	// Keep fenced code blocks balanced across chunks.
+	for i := 0; i < len(parts)-1; i++ {
+		if strings.Count(parts[i], "```")%2 == 1 {
+			parts[i] += "\n```"
+			parts[i+1] = "```\n" + parts[i+1]
+		}
+	}
+	return parts
+}
+
 func splitTelegramText(s string, maxRunes int) []string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -719,7 +742,7 @@ func (c *TelegramChannel) handleAction(ctx context.Context, chatID int64, action
 	case "edit":
 		htmlContent := sanitizeTelegramHTML(markdownToTelegramHTML(msg.Content))
 		if len([]rune(htmlContent)) > 3500 {
-			htmlContent = sanitizeTelegramHTML(markdownToTelegramHTML(splitTelegramText(plainTextFromTelegramHTML(htmlContent), 3500)[0]))
+			htmlContent = sanitizeTelegramHTML(markdownToTelegramHTML(splitTelegramMarkdown(msg.Content, 3000)[0]))
 		}
 		editCtx, cancel := withTelegramAPITimeout(ctx)
 		defer cancel()
