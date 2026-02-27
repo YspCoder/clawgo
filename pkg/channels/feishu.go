@@ -482,10 +482,7 @@ func (c *FeishuChannel) setFeishuSheetPublicEditable(ctx context.Context, sheetT
 		PermissionPublic(larkdrivev2.NewPermissionPublicBuilder().
 			ExternalAccessEntity(larkdrivev2.PermissionPublicExternalAccessEntityOpen).
 			SecurityEntity(larkdrivev2.PermissionPublicSecurityEntityAnyoneCanEdit).
-			CommentEntity("anyone_can_comment").
-			ShareEntity("anyone").
-			ManageCollaboratorEntity("anyone").
-			LinkShareEntity(larkdrivev2.PermissionPublicLinkShareEntityAnyoneReadable).
+			LinkShareEntity(larkdrivev2.PermissionPublicLinkShareEntityTenantEditable).
 			Build()).
 		Build()
 	resp, err := c.client.Drive.V2.PermissionPublic.Patch(ctx, req)
