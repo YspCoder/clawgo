@@ -145,8 +145,10 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("feishu api error: code=%d msg=%s", resp.Code, resp.Msg)
 	}
 
-	logger.DebugCF("feishu", "Feishu message sent", map[string]interface{}{
+	logger.InfoCF("feishu", "Feishu message sent", map[string]interface{}{
 		logger.FieldChatID: msg.ChatID,
+		"msg_type":       msgType,
+		"has_media":      strings.TrimSpace(msg.Media) != "",
 	})
 
 	return nil
@@ -336,7 +338,7 @@ func buildFeishuOutbound(msg bus.OutboundMessage) (string, string, error) {
 		return larkim.MsgTypeInteractive, content, nil
 	}
 
-	if looksLikeMarkdown(content) {
+	if looksLikeMarkdown(content) || strings.Contains(content, "\n") || len([]rune(content)) > 180 {
 		postPayload, err := buildFeishuPostContent(content)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to marshal feishu post content: %w", err)
