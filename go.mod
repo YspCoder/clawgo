@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/bwmarrin/discordgo v0.29.0
-	github.com/caarlos0/env/v11 v11.3.1
+	github.com/caarlos0/env/v11 v11.4.0
 	github.com/chzyer/readline v1.5.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
@@ -14,7 +14,7 @@ require (
 	github.com/tencent-connect/botgo v0.2.1
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sync v0.19.0
-	golang.org/x/time v0.12.0
+	golang.org/x/time v0.14.0
 )
 
 require (
