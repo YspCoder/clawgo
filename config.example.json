@@ -109,7 +109,10 @@
       "app_secret": "",
       "encrypt_key": "",
       "verification_token": "",
-      "allow_from": []
+      "allow_from": [],
+      "allow_chats": [],
+      "enable_groups": true,
+      "require_mention_in_groups": true
     },
     "dingtalk": {
       "enabled": false,

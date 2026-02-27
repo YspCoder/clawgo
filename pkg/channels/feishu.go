@@ -152,6 +152,15 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 	if chatID == "" {
 		return nil
 	}
+	chatType := strings.ToLower(strings.TrimSpace(stringValue(message.ChatType)))
+	if !c.isAllowedChat(chatID, chatType) {
+		logger.WarnCF("feishu", "Feishu message rejected by chat allowlist", map[string]interface{}{
+			logger.FieldSenderID: extractFeishuSenderID(sender),
+			logger.FieldChatID:   chatID,
+			"chat_type":         chatType,
+		})
+		return nil
+	}
 
 	senderID := extractFeishuSenderID(sender)
 	if senderID == "" {
@@ -161,6 +170,13 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 	content := extractFeishuMessageContent(message)
 	if content == "" {
 		content = "[empty message]"
+	}
+	if !c.shouldHandleGroupMessage(chatType, content) {
+		logger.DebugCF("feishu", "Ignoring group message without mention/command", map[string]interface{}{
+			logger.FieldSenderID: senderID,
+			logger.FieldChatID:   chatID,
+		})
+		return nil
 	}
 
 	metadata := map[string]string{}
@@ -185,6 +201,44 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 
 	c.HandleMessage(senderID, chatID, content, nil, metadata)
 	return nil
+}
+
+func (c *FeishuChannel) isAllowedChat(chatID, chatType string) bool {
+	chatID = strings.TrimSpace(chatID)
+	chatType = strings.ToLower(strings.TrimSpace(chatType))
+	isGroup := chatType != "" && chatType != "p2p"
+	if isGroup && !c.config.EnableGroups {
+		return false
+	}
+	if len(c.config.AllowChats) == 0 {
+		return true
+	}
+	for _, allowed := range c.config.AllowChats {
+		if strings.TrimSpace(allowed) == chatID {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *FeishuChannel) shouldHandleGroupMessage(chatType, content string) bool {
+	chatType = strings.ToLower(strings.TrimSpace(chatType))
+	isGroup := chatType != "" && chatType != "p2p"
+	if !isGroup {
+		return true
+	}
+	if !c.config.RequireMentionInGroups {
+		return true
+	}
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "/") {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "@") || strings.Contains(lower, "<at") {
+		return true
+	}
+	return false
 }
 
 func extractFeishuSenderID(sender *larkim.EventSender) string {

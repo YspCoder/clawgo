@@ -146,12 +146,15 @@ type TelegramConfig struct {
 }
 
 type FeishuConfig struct {
-	Enabled           bool     `json:"enabled" env:"CLAWGO_CHANNELS_FEISHU_ENABLED"`
-	AppID             string   `json:"app_id" env:"CLAWGO_CHANNELS_FEISHU_APP_ID"`
-	AppSecret         string   `json:"app_secret" env:"CLAWGO_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey        string   `json:"encrypt_key" env:"CLAWGO_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken string   `json:"verification_token" env:"CLAWGO_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom         []string `json:"allow_from" env:"CLAWGO_CHANNELS_FEISHU_ALLOW_FROM"`
+	Enabled              bool     `json:"enabled" env:"CLAWGO_CHANNELS_FEISHU_ENABLED"`
+	AppID                string   `json:"app_id" env:"CLAWGO_CHANNELS_FEISHU_APP_ID"`
+	AppSecret            string   `json:"app_secret" env:"CLAWGO_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey           string   `json:"encrypt_key" env:"CLAWGO_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken    string   `json:"verification_token" env:"CLAWGO_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	AllowFrom            []string `json:"allow_from" env:"CLAWGO_CHANNELS_FEISHU_ALLOW_FROM"`
+	AllowChats           []string `json:"allow_chats" env:"CLAWGO_CHANNELS_FEISHU_ALLOW_CHATS"`
+	EnableGroups         bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_FEISHU_ENABLE_GROUPS"`
+	RequireMentionInGroups bool   `json:"require_mention_in_groups" env:"CLAWGO_CHANNELS_FEISHU_REQUIRE_MENTION_IN_GROUPS"`
 }
 
 type DiscordConfig struct {
@@ -389,12 +392,15 @@ func DefaultConfig() *Config {
 				RequireMentionInGroups: true,
 			},
 			Feishu: FeishuConfig{
-				Enabled:           false,
-				AppID:             "",
-				AppSecret:         "",
-				EncryptKey:        "",
-				VerificationToken: "",
-				AllowFrom:         []string{},
+				Enabled:                false,
+				AppID:                  "",
+				AppSecret:              "",
+				EncryptKey:             "",
+				VerificationToken:      "",
+				AllowFrom:              []string{},
+				AllowChats:             []string{},
+				EnableGroups:           true,
+				RequireMentionInGroups: true,
 			},
 			Discord: DiscordConfig{
 				Enabled:   false,
