@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Trash2, Edit2, Zap, X, FileText, Save } from 'lucide-r
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { useUI } from '../context/UIContext';
 import { Skill } from '../types';
 
 const initialSkillForm: Omit<Skill, 'id'> = {
@@ -15,6 +16,7 @@ const initialSkillForm: Omit<Skill, 'id'> = {
 const Skills: React.FC = () => {
   const { t } = useTranslation();
   const { skills, refreshSkills, q } = useAppContext();
+  const ui = useUI();
   const [installName, setInstallName] = useState('');
   const qp = (k: string, v: string) => `${q}${q ? '&' : '?'}${k}=${encodeURIComponent(v)}`;
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -28,7 +30,7 @@ const Skills: React.FC = () => {
   const [fileContent, setFileContent] = useState('');
 
   async function deleteSkill(id: string) {
-    if (!confirm('Are you sure you want to delete this skill?')) return;
+    if (!await ui.confirm({ title: 'Delete Skill', message: 'Are you sure you want to delete this skill?', danger: true, confirmText: 'Delete' })) return;
     try {
       await fetch(`/webui/api/skills${qp('id', id)}`, { method: 'DELETE' });
       await refreshSkills();
@@ -46,7 +48,7 @@ const Skills: React.FC = () => {
       body: JSON.stringify({ action: 'install', name }),
     });
     if (!r.ok) {
-      alert(await r.text());
+      await ui.alert({ title: 'Request Failed', message: await r.text() });
       return;
     }
     setInstallName('');
@@ -66,10 +68,10 @@ const Skills: React.FC = () => {
         setIsModalOpen(false);
         await refreshSkills();
       } else {
-        alert(await r.text());
+        await ui.alert({ title: 'Request Failed', message: await r.text() });
       }
     } catch (e) {
-      alert(String(e));
+      await ui.alert({ title: 'Error', message: String(e) });
     }
   }
 
@@ -78,7 +80,7 @@ const Skills: React.FC = () => {
     setIsFileModalOpen(true);
     const r = await fetch(`/webui/api/skills${q ? `${q}&id=${encodeURIComponent(skillId)}&files=1` : `?id=${encodeURIComponent(skillId)}&files=1`}`);
     if (!r.ok) {
-      alert(await r.text());
+      await ui.alert({ title: 'Request Failed', message: await r.text() });
       return;
     }
     const j = await r.json();
@@ -96,7 +98,7 @@ const Skills: React.FC = () => {
     const url = `/webui/api/skills${q ? `${q}&id=${encodeURIComponent(skillId)}&file=${encodeURIComponent(file)}` : `?id=${encodeURIComponent(skillId)}&file=${encodeURIComponent(file)}`}`;
     const r = await fetch(url);
     if (!r.ok) {
-      alert(await r.text());
+      await ui.alert({ title: 'Request Failed', message: await r.text() });
       return;
     }
     const j = await r.json();
@@ -112,10 +114,10 @@ const Skills: React.FC = () => {
       body: JSON.stringify({ action: 'write_file', id: activeSkill, file: activeFile, content: fileContent }),
     });
     if (!r.ok) {
-      alert(await r.text());
+      await ui.alert({ title: 'Request Failed', message: await r.text() });
       return;
     }
-    alert('Saved');
+    await ui.alert({ title: 'Saved', message: 'Skill file saved successfully.' });
   }
 
   return (
