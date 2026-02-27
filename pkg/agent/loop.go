@@ -742,7 +742,35 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"user_length":  len(userContent),
 		})
 
+	al.appendDailySummaryLog(msg, userContent)
 	return userContent, nil
+}
+
+func (al *AgentLoop) appendDailySummaryLog(msg bus.InboundMessage, response string) {
+	if strings.TrimSpace(al.workspace) == "" {
+		return
+	}
+	userText := strings.TrimSpace(msg.Content)
+	respText := strings.TrimSpace(response)
+	if userText == "" && respText == "" {
+		return
+	}
+	// Avoid noisy heartbeat/system boilerplate.
+	lc := strings.ToLower(userText)
+	if strings.Contains(lc, "heartbeat") && strings.Contains(strings.ToLower(respText), "heartbeat_ok") {
+		return
+	}
+	ms := NewMemoryStore(al.workspace)
+	line := fmt.Sprintf("- [%s] channel=%s session=%s\n  - user: %s\n  - result: %s",
+		time.Now().Format("15:04"),
+		strings.TrimSpace(msg.Channel),
+		strings.TrimSpace(msg.SessionKey),
+		truncate(strings.ReplaceAll(userText, "\n", " "), 180),
+		truncate(strings.ReplaceAll(respText, "\n", " "), 220),
+	)
+	if err := ms.AppendToday(line); err != nil {
+		logger.WarnCF("agent", "append daily summary log failed", map[string]interface{}{logger.FieldError: err.Error()})
+	}
 }
 
 func (al *AgentLoop) updateIntentHint(sessionKey, content string) {
