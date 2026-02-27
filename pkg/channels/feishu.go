@@ -941,39 +941,39 @@ func extractFeishuMessageContent(message *larkim.EventMessage) (string, []string
 	if message == nil || message.Content == nil || *message.Content == "" {
 		return "", nil
 	}
-	raw := strings.TrimSpace(*message.Content)
+	raw := *message.Content
 	msgType := ""
 	if message.MessageType != nil {
-		msgType = strings.ToLower(strings.TrimSpace(*message.MessageType))
+		msgType = *message.MessageType
 	}
 
 	switch msgType {
-	case strings.ToLower(string(larkim.MsgTypeText)):
+	case string(larkim.MsgTypeText):
 		var textPayload struct {
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal([]byte(raw), &textPayload); err == nil {
 			return textPayload.Text, nil
 		}
-	case strings.ToLower(string(larkim.MsgTypePost)):
+	case string(larkim.MsgTypePost):
 		md, media := parseFeishuPostToMarkdown(raw)
-		if strings.TrimSpace(md) != "" || len(media) > 0 {
+		if md != "" || len(media) > 0 {
 			return md, media
 		}
-	case strings.ToLower(string(larkim.MsgTypeImage)):
+	case string(larkim.MsgTypeImage):
 		var img struct {
 			ImageKey string `json:"image_key"`
 		}
-		if err := json.Unmarshal([]byte(raw), &img); err == nil && strings.TrimSpace(img.ImageKey) != "" {
+		if err := json.Unmarshal([]byte(raw), &img); err == nil && img.ImageKey != "" {
 			return "[image]", []string{"feishu:image:" + img.ImageKey}
 		}
-	case strings.ToLower(string(larkim.MsgTypeFile)):
+	case string(larkim.MsgTypeFile):
 		var f struct {
 			FileKey  string `json:"file_key"`
 			FileName string `json:"file_name"`
 		}
-		if err := json.Unmarshal([]byte(raw), &f); err == nil && strings.TrimSpace(f.FileKey) != "" {
-			name := strings.TrimSpace(f.FileName)
+		if err := json.Unmarshal([]byte(raw), &f); err == nil && f.FileKey != "" {
+			name := f.FileName
 			if name == "" {
 				name = f.FileKey
 			}
@@ -1003,8 +1003,8 @@ func parseFeishuPostToMarkdown(raw string) (string, []string) {
 	}
 	lines := make([]string, 0, 32)
 	media := make([]string, 0, 8)
-	if title, _ := lang["title"].(string); strings.TrimSpace(title) != "" {
-		lines = append(lines, "# "+strings.TrimSpace(title))
+	if title, _ := lang["title"].(string); title != "" {
+		lines = append(lines, "# "+title)
 	}
 	rows, _ := lang["content"].([]interface{})
 	for _, row := range rows {
@@ -1019,45 +1019,45 @@ func parseFeishuPostToMarkdown(raw string) (string, []string) {
 			if em == nil {
 				continue
 			}
-			tag := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", em["tag"])))
+			tag := fmt.Sprintf("%v", em["tag"])
 			switch tag {
-			case "text":
+			case "text", "TEXT":
 				line += fmt.Sprintf("%v", em["text"])
-			case "a":
+			case "a", "A":
 				line += fmt.Sprintf("[%v](%v)", em["text"], em["href"])
-			case "at":
-				uid := strings.TrimSpace(fmt.Sprintf("%v", em["user_id"]))
+			case "at", "AT":
+				uid := fmt.Sprintf("%v", em["user_id"])
 				if uid == "" {
-					uid = strings.TrimSpace(fmt.Sprintf("%v", em["open_id"]))
+					uid = fmt.Sprintf("%v", em["open_id"])
 				}
 				line += "@" + uid
-			case "img":
-				k := strings.TrimSpace(fmt.Sprintf("%v", em["image_key"]))
+			case "img", "IMG":
+				k := fmt.Sprintf("%v", em["image_key"])
 				if k != "" {
 					media = append(media, "feishu:image:"+k)
 					line += " ![image](" + k + ")"
 				}
-			case "code_block":
-				lang := strings.TrimSpace(fmt.Sprintf("%v", em["language"]))
+			case "code_block", "CODE_BLOCK":
+				lang := fmt.Sprintf("%v", em["language"])
 				code := fmt.Sprintf("%v", em["text"])
 				if line != "" {
-					lines = append(lines, strings.TrimSpace(line))
+					lines = append(lines, line)
 					line = ""
 				}
 				lines = append(lines, "```"+lang+"\n"+code+"\n```")
-			case "hr":
+			case "hr", "HR":
 				if line != "" {
-					lines = append(lines, strings.TrimSpace(line))
+					lines = append(lines, line)
 					line = ""
 				}
 				lines = append(lines, "---")
 			}
 		}
-		if strings.TrimSpace(line) != "" {
-			lines = append(lines, strings.TrimSpace(line))
+		if line != "" {
+			lines = append(lines, line)
 		}
 	}
-	return strings.TrimSpace(strings.Join(lines, "\n")), media
+	return strings.Join(lines, "\n"), media
 }
 
 func stringValue(v *string) string {
