@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -109,7 +110,8 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("unsupported feishu action: %s", action)
 	}
 
-	payload, err := json.Marshal(map[string]string{"text": msg.Content})
+	content := normalizeFeishuText(msg.Content)
+	payload, err := json.Marshal(map[string]string{"text": content})
 	if err != nil {
 		return fmt.Errorf("failed to marshal feishu content: %w", err)
 	}
@@ -239,6 +241,30 @@ func (c *FeishuChannel) shouldHandleGroupMessage(chatType, content string) bool 
 		return true
 	}
 	return false
+}
+
+func normalizeFeishuText(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	// Headers: "## title" -> "title"
+	s = regexp.MustCompile(`(?m)^#{1,6}\s+`).ReplaceAllString(s, "")
+	// Bullet styles
+	s = regexp.MustCompile(`(?m)^[-*]\s+`).ReplaceAllString(s, "• ")
+	// Ordered list to bullet for readability
+	s = regexp.MustCompile(`(?m)^\d+\.\s+`).ReplaceAllString(s, "• ")
+	// Bold/italic/strike markers
+	s = regexp.MustCompile(`\*\*(.*?)\*\*`).ReplaceAllString(s, `$1`)
+	s = regexp.MustCompile(`__(.*?)__`).ReplaceAllString(s, `$1`)
+	s = regexp.MustCompile(`\*(.*?)\*`).ReplaceAllString(s, `$1`)
+	s = regexp.MustCompile(`_(.*?)_`).ReplaceAllString(s, `$1`)
+	s = regexp.MustCompile(`~~(.*?)~~`).ReplaceAllString(s, `$1`)
+	// Inline code markers keep content
+	s = regexp.MustCompile("`([^`]+)`").ReplaceAllString(s, "$1")
+	// Markdown link: [text](url) -> text (url)
+	s = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`).ReplaceAllString(s, `$1 ($2)`)
+	return strings.TrimSpace(s)
 }
 
 func extractFeishuSenderID(sender *larkim.EventSender) string {
