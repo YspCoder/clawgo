@@ -382,18 +382,99 @@ func looksLikeMarkdown(s string) bool {
 	return false
 }
 
+type feishuElement map[string]interface{}
+type feishuParagraph []feishuElement
+
+var (
+	feishuLinkRe = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)]+)\)`)
+	feishuImgRe  = regexp.MustCompile(`!\[([^\]]*)\]\((img_[a-zA-Z0-9_-]+)\)`)
+	feishuAtRe   = regexp.MustCompile(`@([a-zA-Z0-9_-]+)`)
+	feishuHrRe   = regexp.MustCompile(`^\s*-{3,}\s*$`)
+)
+
+func parseFeishuMarkdownLine(line string) feishuParagraph {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil
+	}
+	if feishuHrRe.MatchString(line) {
+		return feishuParagraph{{"tag": "hr"}}
+	}
+	elems := make(feishuParagraph, 0, 4)
+
+	line = feishuImgRe.ReplaceAllStringFunc(line, func(m string) string {
+		mm := feishuImgRe.FindStringSubmatch(m)
+		if len(mm) == 3 {
+			elems = append(elems, feishuElement{"tag": "img", "image_key": mm[2]})
+		}
+		return ""
+	})
+	line = feishuLinkRe.ReplaceAllStringFunc(line, func(m string) string {
+		mm := feishuLinkRe.FindStringSubmatch(m)
+		if len(mm) == 3 {
+			elems = append(elems, feishuElement{"tag": "a", "text": mm[1], "href": mm[2]})
+		}
+		return ""
+	})
+	line = feishuAtRe.ReplaceAllStringFunc(line, func(m string) string {
+		mm := feishuAtRe.FindStringSubmatch(m)
+		if len(mm) == 2 {
+			elems = append(elems, feishuElement{"tag": "at", "user_id": mm[1]})
+		}
+		return ""
+	})
+
+	text := normalizeFeishuText(line)
+	if text != "" {
+		elems = append(feishuParagraph{{"tag": "text", "text": text}}, elems...)
+	}
+	if len(elems) == 0 {
+		return nil
+	}
+	return elems
+}
+
 func buildFeishuPostContent(s string) (string, error) {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	contentRows := make([][]map[string]string, 0, len(lines))
-	for _, line := range lines {
-		n := normalizeFeishuText(line)
-		if strings.TrimSpace(n) == "" {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		s = " "
+	}
+	lines := strings.Split(s, "\n")
+	contentRows := make([]feishuParagraph, 0, len(lines)+2)
+	inCode := false
+	codeLines := make([]string, 0, 16)
+	flushCode := func() {
+		if len(codeLines) == 0 {
+			return
+		}
+		contentRows = append(contentRows, feishuParagraph{{"tag": "code_block", "language": "text", "text": strings.Join(codeLines, "\n")}})
+		codeLines = codeLines[:0]
+	}
+	for _, raw := range lines {
+		line := strings.TrimRight(raw, "\r")
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			if inCode {
+				flushCode()
+				inCode = false
+			} else {
+				inCode = true
+			}
 			continue
 		}
-		contentRows = append(contentRows, []map[string]string{{"tag": "text", "text": n}})
+		if inCode {
+			codeLines = append(codeLines, line)
+			continue
+		}
+		if p := parseFeishuMarkdownLine(line); len(p) > 0 {
+			contentRows = append(contentRows, p)
+		}
+	}
+	if inCode {
+		flushCode()
 	}
 	if len(contentRows) == 0 {
-		contentRows = append(contentRows, []map[string]string{{"tag": "text", "text": " "}})
+		contentRows = append(contentRows, feishuParagraph{{"tag": "text", "text": normalizeFeishuText(s)}})
 	}
 	payload := map[string]interface{}{
 		"zh_cn": map[string]interface{}{
