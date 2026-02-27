@@ -1,9 +1,14 @@
 package channels
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -113,6 +118,12 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	msgType, contentPayload, err := buildFeishuOutbound(msg)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(msg.Media) != "" {
+		msgType, contentPayload, err = c.buildFeishuMediaOutbound(ctx, strings.TrimSpace(msg.Media))
+		if err != nil {
+			return err
+		}
 	}
 
 	req := larkim.NewCreateMessageReqBuilder().
@@ -240,6 +251,81 @@ func (c *FeishuChannel) shouldHandleGroupMessage(chatType, content string) bool 
 		return true
 	}
 	return false
+}
+
+func (c *FeishuChannel) buildFeishuMediaOutbound(ctx context.Context, media string) (string, string, error) {
+	name, data, err := readFeishuMedia(media)
+	if err != nil {
+		return "", "", err
+	}
+	ext := strings.ToLower(filepath.Ext(name))
+	isImage := ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".gif" || ext == ".bmp"
+	if isImage {
+		imgReq := larkim.NewCreateImageReqBuilder().
+			Body(larkim.NewCreateImageReqBodyBuilder().
+				ImageType("message").
+				Image(bytes.NewReader(data)).
+				Build()).
+			Build()
+		imgResp, err := c.client.Im.Image.Create(ctx, imgReq)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to upload feishu image: %w", err)
+		}
+		if !imgResp.Success() {
+			return "", "", fmt.Errorf("feishu image upload error: code=%d msg=%s", imgResp.Code, imgResp.Msg)
+		}
+		b, _ := json.Marshal(imgResp.Data)
+		return larkim.MsgTypeImage, string(b), nil
+	}
+
+	fileReq := larkim.NewCreateFileReqBuilder().
+		Body(larkim.NewCreateFileReqBodyBuilder().
+			FileType("stream").
+			FileName(name).
+			Duration(0).
+			File(bytes.NewReader(data)).
+			Build()).
+		Build()
+	fileResp, err := c.client.Im.File.Create(ctx, fileReq)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to upload feishu file: %w", err)
+	}
+	if !fileResp.Success() {
+		return "", "", fmt.Errorf("feishu file upload error: code=%d msg=%s", fileResp.Code, fileResp.Msg)
+	}
+	b, _ := json.Marshal(fileResp.Data)
+	return larkim.MsgTypeFile, string(b), nil
+}
+
+func readFeishuMedia(media string) (string, []byte, error) {
+	if strings.HasPrefix(media, "http://") || strings.HasPrefix(media, "https://") {
+		req, err := http.NewRequest(http.MethodGet, media, nil)
+		if err != nil {
+			return "", nil, err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return "", nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return "", nil, fmt.Errorf("download media failed: status=%d", resp.StatusCode)
+		}
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", nil, err
+		}
+		name := filepath.Base(req.URL.Path)
+		if strings.TrimSpace(name) == "" || name == "." || name == "/" {
+			name = "media.bin"
+		}
+		return name, b, nil
+	}
+	b, err := os.ReadFile(media)
+	if err != nil {
+		return "", nil, err
+	}
+	return filepath.Base(media), b, nil
 }
 
 func buildFeishuOutbound(msg bus.OutboundMessage) (string, string, error) {
