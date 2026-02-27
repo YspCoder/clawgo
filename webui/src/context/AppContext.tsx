@@ -134,7 +134,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!r.ok) throw new Error('Failed to load sessions');
       const j = await r.json();
       const arr = Array.isArray(j.sessions) ? j.sessions : [];
-      setSessions(arr.map((s: any) => ({ key: s.key, title: s.key })));
+      setSessions(arr.map((s: any) => ({ key: s.key, title: s.title || s.key })));
       setIsGatewayOnline(true);
     } catch (e) {
       setIsGatewayOnline(false);

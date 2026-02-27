@@ -420,7 +420,13 @@ func (s *RegistryServer) handleWebUIChat(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	session := "main"
+	session := strings.TrimSpace(body.Session)
+	if session == "" {
+		session = strings.TrimSpace(r.URL.Query().Get("session"))
+	}
+	if session == "" {
+		session = "main"
+	}
 	prompt := strings.TrimSpace(body.Message)
 	if strings.TrimSpace(body.Media) != "" {
 		if prompt != "" {
@@ -445,7 +451,10 @@ func (s *RegistryServer) handleWebUIChatHistory(w http.ResponseWriter, r *http.R
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	session := "main"
+	session := strings.TrimSpace(r.URL.Query().Get("session"))
+	if session == "" {
+		session = "main"
+	}
 	if s.onChatHistory == nil {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session": session, "messages": []interface{}{}})
 		return
@@ -480,7 +489,13 @@ func (s *RegistryServer) handleWebUIChatStream(w http.ResponseWriter, r *http.Re
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	session := "main"
+	session := strings.TrimSpace(body.Session)
+	if session == "" {
+		session = strings.TrimSpace(r.URL.Query().Get("session"))
+	}
+	if session == "" {
+		session = "main"
+	}
 	prompt := strings.TrimSpace(body.Message)
 	if strings.TrimSpace(body.Media) != "" {
 		if prompt != "" {
@@ -1210,11 +1225,43 @@ func (s *RegistryServer) handleWebUISessions(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_ = os.MkdirAll(filepath.Join(filepath.Dir(strings.TrimSpace(s.workspacePath)), "agents", "main", "sessions"), 0755)
+	sessionsDir := filepath.Join(filepath.Dir(strings.TrimSpace(s.workspacePath)), "agents", "main", "sessions")
+	_ = os.MkdirAll(sessionsDir, 0755)
 	type item struct {
-		Key string `json:"key"`
+		Key     string `json:"key"`
+		Channel string `json:"channel,omitempty"`
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": []item{{Key: "main"}}})
+	out := make([]item, 0, 16)
+	entries, err := os.ReadDir(sessionsDir)
+	if err == nil {
+		seen := map[string]struct{}{}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".deleted.") {
+				continue
+			}
+			key := strings.TrimSuffix(name, ".jsonl")
+			if strings.TrimSpace(key) == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			channel := ""
+			if i := strings.Index(key, ":"); i > 0 {
+				channel = key[:i]
+			}
+			out = append(out, item{Key: key, Channel: channel})
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, item{Key: "main", Channel: "main"})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": out})
 }
 
 func (s *RegistryServer) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {

@@ -7,10 +7,11 @@ import { ChatItem } from '../types';
 
 const Chat: React.FC = () => {
   const { t } = useTranslation();
-  const { q } = useAppContext();
+  const { q, sessions } = useAppContext();
   const [chat, setChat] = useState<ChatItem[]>([]);
   const [msg, setMsg] = useState('');
   const [fileSelected, setFileSelected] = useState(false);
+  const [sessionKey, setSessionKey] = useState('main');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -19,7 +20,8 @@ const Chat: React.FC = () => {
 
   const loadHistory = async () => {
     try {
-      const r = await fetch(`/webui/api/chat/history${q}`);
+      const qs = q ? `${q}&session=${encodeURIComponent(sessionKey)}` : `?session=${encodeURIComponent(sessionKey)}`;
+      const r = await fetch(`/webui/api/chat/history${qs}`);
       if (!r.ok) return;
       const j = await r.json();
       const arr = Array.isArray(j.messages) ? j.messages : [];
@@ -78,7 +80,7 @@ const Chat: React.FC = () => {
       const response = await fetch(`/webui/api/chat/stream${q}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session: 'main', message: currentMsg, media }),
+        body: JSON.stringify({ session: sessionKey, message: currentMsg, media }),
       });
 
       if (!response.ok || !response.body) throw new Error('Chat request failed');
@@ -110,13 +112,25 @@ const Chat: React.FC = () => {
 
   useEffect(() => {
     loadHistory();
-  }, [q]);
+  }, [q, sessionKey]);
 
+
+  useEffect(() => {
+    if (!sessions || sessions.length === 0) return;
+    if (!sessions.some(s => s.key === sessionKey)) {
+      setSessionKey(sessions[0].key);
+    }
+  }, [sessions]);
   return (
     <div className="flex h-full">
       <div className="flex-1 flex flex-col bg-zinc-950/50">
-        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-          <h2 className="text-sm text-zinc-300 font-medium">Main Agent</h2>
+        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm text-zinc-300 font-medium">Session</h2>
+            <select value={sessionKey} onChange={(e)=>setSessionKey(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200">
+              {(sessions || []).map((s:any)=> <option key={s.key} value={s.key}>{s.key}</option>)}
+            </select>
+          </div>
           <button onClick={loadHistory} className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3"/>Reload History</button>
         </div>
 
