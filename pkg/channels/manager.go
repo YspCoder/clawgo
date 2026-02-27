@@ -9,7 +9,6 @@ package channels
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -298,7 +297,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 				continue
 			}
 
-			action := strings.ToLower(strings.TrimSpace(msg.Action))
+			action := msg.Action
 			if action == "" {
 				action = "send"
 			}

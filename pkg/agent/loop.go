@@ -440,7 +440,6 @@ func (al *AgentLoop) GetSessionHistory(sessionKey string) []providers.Message {
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
-	msg.SessionKey = strings.TrimSpace(msg.SessionKey)
 	if msg.SessionKey == "" {
 		msg.SessionKey = "main"
 	}
@@ -462,8 +461,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Explicit language command: /lang <code>
-	if strings.HasPrefix(strings.TrimSpace(msg.Content), "/lang") {
-		parts := strings.Fields(strings.TrimSpace(msg.Content))
+	if strings.HasPrefix(msg.Content, "/lang") {
+		parts := strings.Fields(msg.Content)
 		if len(parts) < 2 {
 			preferred, last := al.sessions.GetLanguagePreferences(msg.SessionKey)
 			if preferred == "" {
@@ -696,7 +695,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	if strings.TrimSpace(finalContent) == "" {
+	if finalContent == "" {
 		if hasToolActivity && len(lastToolOutputs) > 0 {
 			finalContent = "我已执行完成，关键信息如下：\n- " + strings.Join(lastToolOutputs, "\n- ")
 		} else {
@@ -712,7 +711,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Keep full content in debug logs if needed, but remove from final output
 	re := regexp.MustCompile(`(?s)<think>.*?</think>`)
 	userContent := re.ReplaceAllString(finalContent, "")
-	userContent = strings.TrimSpace(userContent)
 	if userContent == "" && finalContent != "" {
 		// If only thoughts were present, maybe provide a generic "Done" or keep something?
 		// For now, let's assume thoughts are auxiliary and empty response is okay if tools did work.
