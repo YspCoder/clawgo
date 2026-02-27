@@ -280,11 +280,7 @@ func (c *FeishuChannel) downloadFeishuMediaByKey(ctx context.Context, kind, key 
 		if !resp.Success() {
 			return "", fmt.Errorf("download feishu image failed: code=%d msg=%s", resp.Code, resp.Msg)
 		}
-		name := filepath.Base(strings.TrimSpace(resp.FileName))
-		if name == "" || name == "." || name == "/" {
-			name = fmt.Sprintf("image_%d.jpg", time.Now().UnixNano())
-		}
-		path := filepath.Join(dir, name)
+		path := filepath.Join(dir, resp.FileName)
 		if err := resp.WriteFile(path); err != nil {
 			return "", fmt.Errorf("write feishu image file failed: %w", err)
 		}
@@ -298,11 +294,7 @@ func (c *FeishuChannel) downloadFeishuMediaByKey(ctx context.Context, kind, key 
 		if !resp.Success() {
 			return "", fmt.Errorf("download feishu file failed: code=%d msg=%s", resp.Code, resp.Msg)
 		}
-		name := filepath.Base(strings.TrimSpace(resp.FileName))
-		if name == "" || name == "." || name == "/" {
-			name = fmt.Sprintf("file_%d.bin", time.Now().UnixNano())
-		}
-		path := filepath.Join(dir, name)
+		path := filepath.Join(dir, resp.FileName)
 		if err := resp.WriteFile(path); err != nil {
 			return "", fmt.Errorf("write feishu file failed: %w", err)
 		}
