@@ -422,7 +422,7 @@ func (c *TelegramChannel) sendMedia(ctx context.Context, chatID int64, msg bus.O
 
 func (c *TelegramChannel) isAllowedChat(chatID int64, chatType string) bool {
 	// Private chats are governed by allow_from (sender allowlist), not allow_chats.
-	if strings.TrimSpace(chatType) == telego.ChatTypePrivate {
+	if chatType == telego.ChatTypePrivate {
 		return true
 	}
 	if len(c.config.AllowChats) == 0 {
@@ -430,7 +430,7 @@ func (c *TelegramChannel) isAllowedChat(chatID int64, chatType string) bool {
 	}
 	sid := fmt.Sprintf("%d", chatID)
 	for _, allowed := range c.config.AllowChats {
-		if strings.TrimSpace(allowed) == sid {
+		if allowed == sid {
 			return true
 		}
 	}
@@ -453,7 +453,7 @@ func (c *TelegramChannel) shouldHandleGroupMessage(message *telego.Message, cont
 	if message.ReplyToMessage != nil && message.ReplyToMessage.From != nil && message.ReplyToMessage.From.IsBot {
 		return true
 	}
-	if strings.HasPrefix(strings.TrimSpace(content), "/") {
+	if strings.HasPrefix(content, "/") {
 		return true
 	}
 	if c.botUsername != "" && strings.Contains(strings.ToLower(content), "@"+c.botUsername) {
@@ -609,11 +609,11 @@ func (c *TelegramChannel) downloadFile(runCtx context.Context, fileID, ext, file
 	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", c.config.Token, file.FilePath)
 	mediaDir := filepath.Join(os.TempDir(), "clawgo_media")
 	_ = os.MkdirAll(mediaDir, 0755)
-	finalExt := strings.TrimSpace(ext)
+	finalExt := ext
 	if finalExt == "" {
-		if fromName := strings.TrimSpace(filepath.Ext(fileName)); fromName != "" {
+		if fromName := filepath.Ext(fileName); fromName != "" {
 			finalExt = fromName
-		} else if fromPath := strings.TrimSpace(filepath.Ext(file.FilePath)); fromPath != "" {
+		} else if fromPath := filepath.Ext(file.FilePath); fromPath != "" {
 			finalExt = fromPath
 		}
 	}
@@ -635,7 +635,6 @@ func min(a, b int) int {
 
 
 func splitTelegramMarkdown(s string, maxRunes int) []string {
-	s = strings.TrimSpace(s)
 	if s == "" {
 		return []string{""}
 	}
@@ -657,7 +656,6 @@ func splitTelegramMarkdown(s string, maxRunes int) []string {
 }
 
 func splitTelegramText(s string, maxRunes int) []string {
-	s = strings.TrimSpace(s)
 	if s == "" {
 		return []string{""}
 	}
@@ -672,7 +670,7 @@ func splitTelegramText(s string, maxRunes int) []string {
 	for start := 0; start < len(r); {
 		end := start + maxRunes
 		if end >= len(r) {
-			out = append(out, strings.TrimSpace(string(r[start:])))
+			out = append(out, string(r[start:]))
 			break
 		}
 		split := end
@@ -682,12 +680,12 @@ func splitTelegramText(s string, maxRunes int) []string {
 				break
 			}
 		}
-		out = append(out, strings.TrimSpace(string(r[start:split])))
+		out = append(out, string(r[start:split]))
 		start = split
 	}
 	cleaned := make([]string, 0, len(out))
 	for _, part := range out {
-		if strings.TrimSpace(part) != "" {
+		if part != "" {
 			cleaned = append(cleaned, part)
 		}
 	}
