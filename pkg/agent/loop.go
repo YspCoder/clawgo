@@ -540,7 +540,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	var finalContent string
 	hasToolActivity := false
 	lastToolOutputs := make([]string, 0, 4)
-	for iteration < al.maxIterations {
+	maxAllowed := al.maxIterations
+	if maxAllowed < 1 {
+		maxAllowed = 1
+	}
+	for iteration < maxAllowed {
 		iteration++
 
 		logger.DebugCF("agent", "LLM iteration",
@@ -667,6 +671,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
 
 		hasToolActivity = true
+		if maxAllowed < al.maxIterations*3 {
+			maxAllowed = al.maxIterations * 3
+			if maxAllowed < 6 {
+				maxAllowed = 6
+			}
+		}
 		for _, tc := range response.ToolCalls {
 			// Log tool call with arguments preview
 			argsJSON, _ := json.Marshal(tc.Arguments)
@@ -695,9 +705,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
+	if finalContent == "" && hasToolActivity {
+		forced, ferr := al.provider.Chat(ctx, messages, nil, al.model, map[string]interface{}{"max_tokens": 8192, "temperature": 0.2})
+		if ferr == nil && forced != nil && forced.Content != "" {
+			finalContent = forced.Content
+		}
+	}
 	if finalContent == "" {
 		if hasToolActivity && len(lastToolOutputs) > 0 {
-			finalContent = "我已执行完成，关键信息如下：\n- " + strings.Join(lastToolOutputs, "\n- ")
+			finalContent = "执行链路仍在收敛，当前已完成：\n- " + strings.Join(lastToolOutputs, "\n- ") + "\n我会继续补全最终结果。"
 		} else {
 			fallback := strings.TrimSpace(al.noResponseFallback)
 			if fallback == "" {
