@@ -539,6 +539,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	iteration := 0
 	var finalContent string
+	hasToolActivity := false
+	lastToolOutputs := make([]string, 0, 4)
 	for iteration < al.maxIterations {
 		iteration++
 
@@ -665,6 +667,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		// Persist assistant message with tool calls.
 		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
 
+		hasToolActivity = true
 		for _, tc := range response.ToolCalls {
 			// Log tool call with arguments preview
 			argsJSON, _ := json.Marshal(tc.Arguments)
@@ -679,6 +682,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
 			}
+			if len(lastToolOutputs) < 4 {
+				lastToolOutputs = append(lastToolOutputs, fmt.Sprintf("%s: %s", tc.Name, truncate(strings.ReplaceAll(result, "\n", " "), 180)))
+			}
 			toolResultMsg := providers.Message{
 				Role:       "tool",
 				Content:    result,
@@ -691,11 +697,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	if strings.TrimSpace(finalContent) == "" {
-		fallback := strings.TrimSpace(al.noResponseFallback)
-		if fallback == "" {
-			fallback = "在的，我刚刚这条回复丢了。请再说一次，我马上处理。"
+		if hasToolActivity && len(lastToolOutputs) > 0 {
+			finalContent = "我已执行完成，关键信息如下：\n- " + strings.Join(lastToolOutputs, "\n- ")
+		} else {
+			fallback := strings.TrimSpace(al.noResponseFallback)
+			if fallback == "" {
+				fallback = "在的，我刚刚这条回复丢了。请再说一次，我马上处理。"
+			}
+			finalContent = fallback
 		}
-		finalContent = fallback
 	}
 
 	// Filter out <think>...</think> content from user-facing response
