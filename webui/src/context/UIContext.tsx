@@ -1,20 +1,13 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-
-type ModalOptions = {
-  title?: string;
-  message: string;
-  confirmText?: string;
-  cancelText?: string;
-  danger?: boolean;
-};
+import { GlobalDialog, DialogOptions } from '../components/GlobalDialog';
 
 type UIContextType = {
   loading: boolean;
   showLoading: (text?: string) => void;
   hideLoading: () => void;
-  alert: (opts: ModalOptions | string) => Promise<void>;
-  confirm: (opts: ModalOptions | string) => Promise<boolean>;
+  notify: (opts: DialogOptions | string) => Promise<void>;
+  confirmDialog: (opts: DialogOptions | string) => Promise<boolean>;
   openModal: (node: React.ReactNode, title?: string) => void;
   closeModal: () => void;
 };
@@ -24,7 +17,7 @@ const UIContext = createContext<UIContextType | undefined>(undefined);
 export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('Loading...');
-  const [dialog, setDialog] = useState<null | { kind: 'alert' | 'confirm'; options: ModalOptions; resolve: (v: any) => void }>(null);
+  const [dialog, setDialog] = useState<null | { kind: 'notice' | 'confirm'; options: DialogOptions; resolve: (v: any) => void }>(null);
   const [customModal, setCustomModal] = useState<null | { title?: string; node: React.ReactNode }>(null);
 
   const value = useMemo<UIContextType>(() => ({
@@ -34,11 +27,11 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       setLoading(true);
     },
     hideLoading: () => setLoading(false),
-    alert: (opts) => new Promise<void>((resolve) => {
+    notify: (opts) => new Promise<void>((resolve) => {
       const options = typeof opts === 'string' ? { message: opts } : opts;
-      setDialog({ kind: 'alert', options, resolve });
+      setDialog({ kind: 'notice', options, resolve });
     }),
-    confirm: (opts) => new Promise<boolean>((resolve) => {
+    confirmDialog: (opts) => new Promise<boolean>((resolve) => {
       const options = typeof opts === 'string' ? { message: opts } : opts;
       setDialog({ kind: 'confirm', options, resolve });
     }),
@@ -48,7 +41,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const closeDialog = (result: boolean) => {
     if (!dialog) return;
-    dialog.resolve(dialog.kind === 'alert' ? undefined : result);
+    dialog.resolve(dialog.kind === 'notice' ? undefined : result);
     setDialog(null);
   };
 
@@ -68,28 +61,13 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {dialog && (
-          <motion.div className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <motion.div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl"
-              initial={{ scale: 0.95, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 8 }}>
-              <div className="px-5 py-4 border-b border-zinc-800">
-                <h3 className="text-sm font-semibold text-zinc-100">{dialog.options.title || (dialog.kind === 'confirm' ? 'Please confirm' : 'Notice')}</h3>
-              </div>
-              <div className="px-5 py-4 text-sm text-zinc-300 whitespace-pre-wrap">{dialog.options.message}</div>
-              <div className="px-5 pb-5 flex items-center justify-end gap-2">
-                {dialog.kind === 'confirm' && (
-                  <button onClick={() => closeDialog(false)} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm">{dialog.options.cancelText || 'Cancel'}</button>
-                )}
-                <button onClick={() => closeDialog(true)} className={`px-3 py-1.5 rounded-lg text-sm ${dialog.options.danger ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
-                  {dialog.options.confirmText || 'OK'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <GlobalDialog
+        open={!!dialog}
+        kind={(dialog?.kind || 'notice') as 'notice' | 'confirm'}
+        options={dialog?.options || { message: '' }}
+        onConfirm={() => closeDialog(true)}
+        onCancel={() => closeDialog(false)}
+      />
 
       <AnimatePresence>
         {customModal && (
