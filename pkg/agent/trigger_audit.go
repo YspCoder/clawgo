@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -79,7 +78,7 @@ func (ta *triggerAudit) Record(trigger, channel, session string, suppressed bool
 }
 
 func normalizeTrigger(v string) string {
-	s := strings.ToLower(strings.TrimSpace(v))
+	s := v
 	if s == "" {
 		return "user"
 	}

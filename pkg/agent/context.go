@@ -174,8 +174,8 @@ func (cb *ContextBuilder) shouldLoadBootstrap() bool {
 	if idErr != nil || userErr != nil {
 		return true
 	}
-	idText := strings.TrimSpace(string(identityData))
-	userText := strings.TrimSpace(string(userData))
+	idText := string(identityData)
+	userText := string(userData)
 	if idText == "" || userText == "" {
 		return true
 	}

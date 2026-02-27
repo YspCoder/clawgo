@@ -18,7 +18,6 @@ func DetectResponseLanguage(userText, preferred, last string) string {
 }
 
 func detectFromText(text string) string {
-	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
 	}
@@ -54,7 +53,7 @@ func detectFromText(text string) string {
 }
 
 func normalizeLang(lang string) string {
-	lang = strings.TrimSpace(strings.ToLower(lang))
+	lang = strings.ToLower(lang)
 	switch lang {
 	case "zh", "zh-cn", "zh_hans", "chinese":
 		return "zh-CN"
@@ -74,7 +73,7 @@ func normalizeLang(lang string) string {
 
 // ExtractLanguagePreference detects explicit user instructions for language switch.
 func ExtractLanguagePreference(text string) string {
-	s := strings.ToLower(strings.TrimSpace(text))
+	s := text
 	if s == "" {
 		return ""
 	}
@@ -85,22 +84,22 @@ func ExtractLanguagePreference(text string) string {
 	koHints := []string{"한국어", "reply in korean", "speak korean"}
 
 	for _, h := range enHints {
-		if strings.Contains(s, strings.ToLower(h)) {
+		if strings.Contains(s, h) {
 			return "en"
 		}
 	}
 	for _, h := range zhHints {
-		if strings.Contains(s, strings.ToLower(h)) {
+		if strings.Contains(s, h) {
 			return "zh-CN"
 		}
 	}
 	for _, h := range jaHints {
-		if strings.Contains(s, strings.ToLower(h)) {
+		if strings.Contains(s, h) {
 			return "ja"
 		}
 	}
 	for _, h := range koHints {
-		if strings.Contains(s, strings.ToLower(h)) {
+		if strings.Contains(s, h) {
 			return "ko"
 		}
 	}
