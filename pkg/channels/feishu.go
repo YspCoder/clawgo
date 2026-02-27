@@ -122,14 +122,20 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	var tables []feishuTableData
 	if strings.TrimSpace(workMsg.Media) == "" {
 		workMsg.Content, tables = extractMarkdownTables(strings.TrimSpace(workMsg.Content))
+		links := make([]string, 0, len(tables))
 		for i, t := range tables {
 			link, lerr := c.createFeishuSheetFromTable(ctx, t.Name, t.Rows)
-			ph := fmt.Sprintf("[Table %d converted: %s]", i+1, t.Name)
 			if lerr != nil {
 				logger.WarnCF("feishu", "create sheet from markdown table failed", map[string]interface{}{logger.FieldError: lerr.Error(), logger.FieldChatID: msg.ChatID})
 				continue
 			}
-			workMsg.Content = strings.ReplaceAll(workMsg.Content, ph, fmt.Sprintf("[Table %d] %s", i+1, link))
+			links = append(links, fmt.Sprintf("表格%d: %s", i+1, link))
+		}
+		if len(links) > 0 {
+			if strings.TrimSpace(workMsg.Content) != "" {
+				workMsg.Content = strings.TrimSpace(workMsg.Content) + "\n\n"
+			}
+			workMsg.Content += strings.Join(links, "\n")
 		}
 	}
 
@@ -664,7 +670,7 @@ func extractMarkdownTables(content string) (string, []feishuTableData) {
 				tableIdx++
 				name := fmt.Sprintf("table_%d", tableIdx)
 				tables = append(tables, feishuTableData{Name: name, Rows: rows})
-				out = append(out, fmt.Sprintf("[Table %d converted: %s]", tableIdx, name))
+				// keep message clean: do not inject table placeholder text
 				continue
 			}
 		}
