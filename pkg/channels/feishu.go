@@ -191,7 +191,7 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		senderID = "unknown"
 	}
 
-	content := extractFeishuMessageContent(message)
+	content, mediaPaths := extractFeishuMessageContent(message)
 	if content == "" {
 		content = "[empty message]"
 	}
@@ -223,7 +223,7 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		logger.FieldPreview:  truncateString(content, 80),
 	})
 
-	c.HandleMessage(senderID, chatID, content, nil, metadata)
+	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
 	return nil
 }
 
@@ -830,21 +830,100 @@ func extractFeishuSenderID(sender *larkim.EventSender) string {
 	return ""
 }
 
-func extractFeishuMessageContent(message *larkim.EventMessage) string {
+func extractFeishuMessageContent(message *larkim.EventMessage) (string, []string) {
 	if message == nil || message.Content == nil || *message.Content == "" {
-		return ""
+		return "", nil
+	}
+	raw := strings.TrimSpace(*message.Content)
+	msgType := ""
+	if message.MessageType != nil {
+		msgType = strings.ToLower(strings.TrimSpace(*message.MessageType))
 	}
 
-	if message.MessageType != nil && *message.MessageType == larkim.MsgTypeText {
-		var textPayload struct {
-			Text string `json:"text"`
+	switch msgType {
+	case strings.ToLower(string(larkim.MsgTypeText)):
+		var textPayload struct { Text string `json:"text"` }
+		if err := json.Unmarshal([]byte(raw), &textPayload); err == nil {
+			return textPayload.Text, nil
 		}
-		if err := json.Unmarshal([]byte(*message.Content), &textPayload); err == nil {
-			return textPayload.Text
+	case strings.ToLower(string(larkim.MsgTypePost)):
+		md, media := parseFeishuPostToMarkdown(raw)
+		if strings.TrimSpace(md) != "" || len(media) > 0 {
+			return md, media
+		}
+	case strings.ToLower(string(larkim.MsgTypeImage)):
+		var img struct { ImageKey string `json:"image_key"` }
+		if err := json.Unmarshal([]byte(raw), &img); err == nil && strings.TrimSpace(img.ImageKey) != "" {
+			return "[image]", []string{"feishu:image:" + img.ImageKey}
+		}
+	case strings.ToLower(string(larkim.MsgTypeFile)):
+		var f struct { FileKey string `json:"file_key"`; FileName string `json:"file_name"` }
+		if err := json.Unmarshal([]byte(raw), &f); err == nil && strings.TrimSpace(f.FileKey) != "" {
+			name := strings.TrimSpace(f.FileName)
+			if name == "" { name = f.FileKey }
+			return "[file] " + name, []string{"feishu:file:" + f.FileKey}
 		}
 	}
 
-	return *message.Content
+	return raw, nil
+}
+
+func parseFeishuPostToMarkdown(raw string) (string, []string) {
+	var obj map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		return raw, nil
+	}
+	lang, _ := obj["zh_cn"].(map[string]interface{})
+	if lang == nil {
+		for _, v := range obj {
+			if m, ok := v.(map[string]interface{}); ok { lang = m; break }
+		}
+	}
+	if lang == nil {
+		return raw, nil
+	}
+	lines := make([]string, 0, 32)
+	media := make([]string, 0, 8)
+	if title, _ := lang["title"].(string); strings.TrimSpace(title) != "" {
+		lines = append(lines, "# "+strings.TrimSpace(title))
+	}
+	rows, _ := lang["content"].([]interface{})
+	for _, row := range rows {
+		elems, _ := row.([]interface{})
+		if len(elems) == 0 { lines = append(lines, ""); continue }
+		line := ""
+		for _, ev := range elems {
+			em, _ := ev.(map[string]interface{})
+			if em == nil { continue }
+			tag := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", em["tag"])))
+			switch tag {
+			case "text":
+				line += fmt.Sprintf("%v", em["text"])
+			case "a":
+				line += fmt.Sprintf("[%v](%v)", em["text"], em["href"])
+			case "at":
+				uid := strings.TrimSpace(fmt.Sprintf("%v", em["user_id"]))
+				if uid == "" { uid = strings.TrimSpace(fmt.Sprintf("%v", em["open_id"])) }
+				line += "@" + uid
+			case "img":
+				k := strings.TrimSpace(fmt.Sprintf("%v", em["image_key"]))
+				if k != "" { media = append(media, "feishu:image:"+k); line += " ![image]("+k+")" }
+			case "code_block":
+				lang := strings.TrimSpace(fmt.Sprintf("%v", em["language"]))
+				code := fmt.Sprintf("%v", em["text"])
+				if line != "" {
+					lines = append(lines, strings.TrimSpace(line))
+					line = ""
+				}
+				lines = append(lines, "```"+lang+"\n"+code+"\n```")
+			case "hr":
+				if line != "" { lines = append(lines, strings.TrimSpace(line)); line = "" }
+				lines = append(lines, "---")
+			}
+		}
+		if strings.TrimSpace(line) != "" { lines = append(lines, strings.TrimSpace(line)) }
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n")), media
 }
 
 func stringValue(v *string) string {
