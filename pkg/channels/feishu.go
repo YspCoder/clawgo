@@ -518,7 +518,10 @@ func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name str
 		sheetID = strings.TrimSpace(*queryResp.Data.Sheets[0].SheetId)
 	}
 	if sheetID == "" {
-		sheetID = "Sheet1"
+		sheetID = parseSheetIDFromCreateResp(createResp.RawBody)
+	}
+	if sheetID == "" {
+		return "", fmt.Errorf("create sheet failed: empty sheet id")
 	}
 
 	if len(rows) > 0 {
@@ -526,9 +529,19 @@ func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name str
 		if err != nil {
 			return "", err
 		}
+		maxCols := 0
+		for _, row := range rows {
+			if len(row) > maxCols {
+				maxCols = len(row)
+			}
+		}
+		if maxCols == 0 {
+			maxCols = 1
+		}
+		writeRange := fmt.Sprintf("%s!A1:%s%d", sheetID, feishuSheetColumnName(maxCols), len(rows))
 		payload := map[string]interface{}{
 			"valueRanges": []map[string]interface{}{{
-				"range":  fmt.Sprintf("%s!A1", sheetID),
+				"range":  writeRange,
 				"values": rows,
 			}},
 		}
@@ -557,6 +570,47 @@ func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name str
 		return strings.TrimSpace(*createResp.Data.Spreadsheet.Url), nil
 	}
 	return "https://feishu.cn/sheets/" + spToken, nil
+}
+
+func parseSheetIDFromCreateResp(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return ""
+	}
+	data, _ := obj["data"].(map[string]interface{})
+	if data == nil {
+		return ""
+	}
+	if sp, ok := data["spreadsheet"].(map[string]interface{}); ok {
+		if sheetID, ok := sp["sheet_id"].(string); ok && strings.TrimSpace(sheetID) != "" {
+			return strings.TrimSpace(sheetID)
+		}
+	}
+	if sheetID, ok := data["sheet_id"].(string); ok && strings.TrimSpace(sheetID) != "" {
+		return strings.TrimSpace(sheetID)
+	}
+	if sheetIDs, ok := data["sheet_ids"].([]interface{}); ok && len(sheetIDs) > 0 {
+		if first, ok := sheetIDs[0].(string); ok && strings.TrimSpace(first) != "" {
+			return strings.TrimSpace(first)
+		}
+	}
+	return ""
+}
+
+func feishuSheetColumnName(col int) string {
+	if col <= 0 {
+		return "A"
+	}
+	var out []byte
+	for col > 0 {
+		col--
+		out = append([]byte{byte('A' + (col % 26))}, out...)
+		col /= 26
+	}
+	return string(out)
 }
 
 func parseMarkdownTableRow(line string) []string {
