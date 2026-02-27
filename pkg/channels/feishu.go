@@ -492,6 +492,36 @@ func firstString(m map[string]interface{}, paths ...string) string {
 	return ""
 }
 
+func (c *FeishuChannel) setFeishuSheetPublicEditable(ctx context.Context, token, sheetToken string) error {
+	permBody := map[string]interface{}{
+		"external_access_entity":     "open",
+		"security_entity":            "anyone_can_edit",
+		"comment_entity":             "anyone_can_comment",
+		"share_entity":               "anyone",
+		"manage_collaborator_entity": "anyone",
+		"link_share_entity":          "anyone_readable",
+	}
+	b, _ := json.Marshal(permBody)
+	url := fmt.Sprintf("https://open.feishu.cn/open-apis/drive/v2/permissions/%s/public?type=sheet", sheetToken)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(resp.Body)
+	var obj map[string]interface{}
+	if err := json.Unmarshal(rb, &obj); err != nil {
+		return err
+	}
+	if code, _ := obj["code"].(float64); code != 0 {
+		return fmt.Errorf("set permission code=%v msg=%v", obj["code"], obj["msg"])
+	}
+	return nil
+}
+
 func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name string, rows [][]string) (string, error) {
 	tok, err := c.getTenantAccessToken(ctx)
 	if err != nil {
@@ -550,6 +580,9 @@ func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name str
 		if code, _ := vobj["code"].(float64); code != 0 {
 			return "", fmt.Errorf("write sheet values code=%v msg=%v", vobj["code"], vobj["msg"])
 		}
+	}
+	if err := c.setFeishuSheetPublicEditable(ctx, tok, spToken); err != nil {
+		logger.WarnCF("feishu", "set sheet permission failed", map[string]interface{}{logger.FieldError: err.Error(), "sheet_token": spToken})
 	}
 	return "https://feishu.cn/sheets/" + spToken, nil
 }
