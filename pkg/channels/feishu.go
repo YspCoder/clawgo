@@ -3,7 +3,6 @@ package channels
 import (
 	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -117,9 +116,18 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	}
 
 	workMsg := msg
-	tableFiles := []feishuTableFile{}
+	tables := []feishuTableData{}
 	if strings.TrimSpace(workMsg.Media) == "" {
-		workMsg.Content, tableFiles = extractMarkdownTablesToCSV(strings.TrimSpace(workMsg.Content))
+		workMsg.Content, tables = extractMarkdownTables(strings.TrimSpace(workMsg.Content))
+		for i, t := range tables {
+			link, lerr := c.createFeishuSheetFromTable(ctx, t.Name, t.Rows)
+			ph := fmt.Sprintf("[Table %d converted: %s]", i+1, t.Name)
+			if lerr != nil {
+				logger.WarnCF("feishu", "create sheet from markdown table failed", map[string]interface{}{logger.FieldError: lerr.Error(), logger.FieldChatID: msg.ChatID})
+				continue
+			}
+			workMsg.Content = strings.ReplaceAll(workMsg.Content, ph, fmt.Sprintf("[Table %d] %s", i+1, link))
+		}
 	}
 
 	msgType, contentPayload, err := buildFeishuOutbound(workMsg)
@@ -137,22 +145,12 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return err
 	}
 
-	for _, tf := range tableFiles {
-		fileType, filePayload, ferr := c.buildFeishuFileFromBytes(ctx, tf.Name, tf.Data)
-		if ferr != nil {
-			logger.WarnCF("feishu", "failed to upload table csv", map[string]interface{}{logger.FieldError: ferr.Error(), logger.FieldChatID: msg.ChatID})
-			continue
-		}
-		if ferr = c.sendFeishuMessage(ctx, msg.ChatID, fileType, filePayload); ferr != nil {
-			logger.WarnCF("feishu", "failed to send table csv", map[string]interface{}{logger.FieldError: ferr.Error(), logger.FieldChatID: msg.ChatID})
-		}
-	}
 
 	logger.InfoCF("feishu", "Feishu message sent", map[string]interface{}{
 		logger.FieldChatID: msg.ChatID,
 		"msg_type":       msgType,
 		"has_media":      strings.TrimSpace(workMsg.Media) != "",
-		"table_files":    len(tableFiles),
+		"tables":         len(tables),
 	})
 
 	return nil
@@ -429,9 +427,9 @@ func looksLikeMarkdown(s string) bool {
 type feishuElement map[string]interface{}
 type feishuParagraph []feishuElement
 
-type feishuTableFile struct {
+type feishuTableData struct {
 	Name string
-	Data []byte
+	Rows [][]string
 }
 
 var (
@@ -442,6 +440,72 @@ var (
 	feishuOrderedRe = regexp.MustCompile(`^(\d+\.\s+)(.*)$`)
 	feishuUnorderedRe = regexp.MustCompile(`^([-*]\s+)(.*)$`)
 )
+
+
+func (c *FeishuChannel) getTenantAccessToken(ctx context.Context) (string, error) {
+	body := map[string]string{"app_id": c.config.AppID, "app_secret": c.config.AppSecret}
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil { return "", err }
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(resp.Body)
+	var obj map[string]interface{}
+	if err := json.Unmarshal(rb, &obj); err != nil { return "", err }
+	if code, _ := obj["code"].(float64); code != 0 { return "", fmt.Errorf("token api code=%v msg=%v", obj["code"], obj["msg"]) }
+	tok, _ := obj["tenant_access_token"].(string)
+	if strings.TrimSpace(tok)=="" { return "", fmt.Errorf("empty tenant_access_token") }
+	return tok, nil
+}
+
+func firstString(m map[string]interface{}, paths ...string) string {
+	for _, p := range paths {
+		parts := strings.Split(p, ".")
+		var cur interface{} = m
+		ok := true
+		for _, seg := range parts {
+			n, yes := cur.(map[string]interface{})
+			if !yes { ok=false; break }
+			cur = n[seg]
+		}
+		if !ok { continue }
+		if s, yes := cur.(string); yes && strings.TrimSpace(s) != "" { return s }
+	}
+	return ""
+}
+
+func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name string, rows [][]string) (string, error) {
+	tok, err := c.getTenantAccessToken(ctx)
+	if err != nil { return "", err }
+	createBody, _ := json.Marshal(map[string]interface{}{ "title": name })
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets", bytes.NewReader(createBody))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil { return "", err }
+	defer resp.Body.Close()
+	rb, _ := io.ReadAll(resp.Body)
+	var obj map[string]interface{}
+	if err := json.Unmarshal(rb, &obj); err != nil { return "", err }
+	if code, _ := obj["code"].(float64); code != 0 { return "", fmt.Errorf("create sheet code=%v msg=%v", obj["code"], obj["msg"]) }
+	spToken := firstString(obj, "data.spreadsheet.spreadsheet_token", "data.spreadsheet_token", "data.spreadsheetToken")
+	sheetID := firstString(obj, "data.spreadsheet.sheet_id", "data.sheet_id", "data.sheetId")
+	if spToken == "" { return "", fmt.Errorf("no spreadsheet token in response") }
+	if sheetID == "" { sheetID = "Sheet1" }
+	if len(rows) > 0 {
+		vr := map[string]interface{}{ "valueRange": map[string]interface{}{ "range": fmt.Sprintf("%s!A1", sheetID), "values": rows } }
+		vb, _ := json.Marshal(vr)
+		vreq, _ := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/%s/values", spToken), bytes.NewReader(vb))
+		vreq.Header.Set("Authorization", "Bearer "+tok)
+		vreq.Header.Set("Content-Type", "application/json")
+		vresp, err := http.DefaultClient.Do(vreq)
+		if err == nil {
+			defer vresp.Body.Close()
+		}
+	}
+	return "https://feishu.cn/sheets/" + spToken, nil
+}
 
 func parseMarkdownTableRow(line string) []string {
 	line = strings.TrimSpace(line)
@@ -472,9 +536,9 @@ func isMarkdownTableSeparator(line string) bool {
 	return true
 }
 
-func extractMarkdownTablesToCSV(content string) (string, []feishuTableFile) {
+func extractMarkdownTables(content string) (string, []feishuTableData) {
 	lines := strings.Split(content, "\n")
-	files := make([]feishuTableFile, 0)
+	tables := make([]feishuTableData, 0)
 	out := make([]string, 0, len(lines))
 	tableIdx := 0
 	for i := 0; i < len(lines); {
@@ -492,20 +556,16 @@ func extractMarkdownTablesToCSV(content string) (string, []feishuTableFile) {
 			}
 			if len(rows) >= 2 {
 				tableIdx++
-				buf := &bytes.Buffer{}
-				w := csv.NewWriter(buf)
-				_ = w.WriteAll(rows)
-				w.Flush()
-				name := fmt.Sprintf("table_%d.csv", tableIdx)
-				files = append(files, feishuTableFile{Name: name, Data: buf.Bytes()})
-				out = append(out, fmt.Sprintf("[Table %d converted to CSV: %s]", tableIdx, name))
+				name := fmt.Sprintf("table_%d", tableIdx)
+				tables = append(tables, feishuTableData{Name: name, Rows: rows})
+				out = append(out, fmt.Sprintf("[Table %d converted: %s]", tableIdx, name))
 				continue
 			}
 		}
 		out = append(out, line)
 		i++
 	}
-	return strings.Join(out, "\n"), files
+	return strings.Join(out, "\n"), tables
 }
 
 func parseFeishuMarkdownLine(line string) feishuParagraph {
