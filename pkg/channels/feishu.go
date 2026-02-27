@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -465,43 +466,89 @@ func firstString(m map[string]interface{}, paths ...string) string {
 		var cur interface{} = m
 		ok := true
 		for _, seg := range parts {
-			n, yes := cur.(map[string]interface{})
-			if !yes { ok=false; break }
-			cur = n[seg]
+			if obj, yes := cur.(map[string]interface{}); yes {
+				cur = obj[seg]
+				continue
+			}
+			if arr, yes := cur.([]interface{}); yes {
+				idx, err := strconv.Atoi(seg)
+				if err != nil || idx < 0 || idx >= len(arr) {
+					ok = false
+					break
+				}
+				cur = arr[idx]
+				continue
+			}
+			ok = false
+			break
 		}
-		if !ok { continue }
-		if s, yes := cur.(string); yes && strings.TrimSpace(s) != "" { return s }
+		if !ok {
+			continue
+		}
+		if s, yes := cur.(string); yes && strings.TrimSpace(s) != "" {
+			return s
+		}
 	}
 	return ""
 }
 
 func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name string, rows [][]string) (string, error) {
 	tok, err := c.getTenantAccessToken(ctx)
-	if err != nil { return "", err }
-	createBody, _ := json.Marshal(map[string]interface{}{ "title": name })
+	if err != nil {
+		return "", err
+	}
+	createBody, _ := json.Marshal(map[string]interface{}{"title": name})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets", bytes.NewReader(createBody))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	defer resp.Body.Close()
 	rb, _ := io.ReadAll(resp.Body)
 	var obj map[string]interface{}
-	if err := json.Unmarshal(rb, &obj); err != nil { return "", err }
-	if code, _ := obj["code"].(float64); code != 0 { return "", fmt.Errorf("create sheet code=%v msg=%v", obj["code"], obj["msg"]) }
+	if err := json.Unmarshal(rb, &obj); err != nil {
+		return "", err
+	}
+	if code, _ := obj["code"].(float64); code != 0 {
+		return "", fmt.Errorf("create sheet code=%v msg=%v", obj["code"], obj["msg"])
+	}
 	spToken := firstString(obj, "data.spreadsheet.spreadsheet_token", "data.spreadsheet_token", "data.spreadsheetToken")
-	sheetID := firstString(obj, "data.spreadsheet.sheet_id", "data.sheet_id", "data.sheetId")
-	if spToken == "" { return "", fmt.Errorf("no spreadsheet token in response") }
-	if sheetID == "" { sheetID = "Sheet1" }
+	sheetID := firstString(obj, "data.spreadsheet.sheet_id", "data.sheet_id", "data.sheetId", "data.sheet_ids.0")
+	if spToken == "" {
+		return "", fmt.Errorf("no spreadsheet token in response")
+	}
+	if sheetID == "" {
+		sheetID = firstString(obj, "data.sheets.0.sheet_id")
+	}
+	if sheetID == "" {
+		sheetID = "Sheet1"
+	}
+
 	if len(rows) > 0 {
-		vr := map[string]interface{}{ "valueRange": map[string]interface{}{ "range": fmt.Sprintf("%s!A1", sheetID), "values": rows } }
-		vb, _ := json.Marshal(vr)
-		vreq, _ := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/%s/values", spToken), bytes.NewReader(vb))
+		payload := map[string]interface{}{
+			"valueRanges": []map[string]interface{}{{
+				"range":  fmt.Sprintf("%s!A1", sheetID),
+				"values": rows,
+			}},
+		}
+		vb, _ := json.Marshal(payload)
+		vreq, _ := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/%s/values_batch_update", spToken), bytes.NewReader(vb))
 		vreq.Header.Set("Authorization", "Bearer "+tok)
 		vreq.Header.Set("Content-Type", "application/json")
 		vresp, err := http.DefaultClient.Do(vreq)
-		if err == nil {
-			defer vresp.Body.Close()
+		if err != nil {
+			return "", fmt.Errorf("write sheet values failed: %w", err)
+		}
+		defer vresp.Body.Close()
+		vrb, _ := io.ReadAll(vresp.Body)
+		var vobj map[string]interface{}
+		if err := json.Unmarshal(vrb, &vobj); err != nil {
+			return "", fmt.Errorf("write sheet values decode failed: %w", err)
+		}
+		if code, _ := vobj["code"].(float64); code != 0 {
+			return "", fmt.Errorf("write sheet values code=%v msg=%v", vobj["code"], vobj["msg"])
 		}
 	}
 	return "https://feishu.cn/sheets/" + spToken, nil
