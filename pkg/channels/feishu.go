@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,6 +35,12 @@ type FeishuChannel struct {
 
 	mu        sync.Mutex
 	runCancel cancelGuard
+
+	tokenMu           sync.Mutex
+	tenantTokenOnce   sync.Once
+	tenantAccessToken string
+	tenantTokenExpire time.Time
+	tenantTokenErr    error
 }
 
 func (c *FeishuChannel) SupportsAction(action string) bool {
@@ -262,54 +267,49 @@ func (c *FeishuChannel) resolveInboundMedia(ctx context.Context, mediaRefs []str
 }
 
 func (c *FeishuChannel) downloadFeishuMediaByKey(ctx context.Context, kind, key string) (string, error) {
-	tok, err := c.getTenantAccessToken(ctx)
-	if err != nil {
-		return "", err
-	}
-	var u string
+	dir := filepath.Join(os.TempDir(), "clawgo_feishu_media")
+	_ = os.MkdirAll(dir, 0755)
+
 	switch kind {
 	case "image":
-		u = "https://open.feishu.cn/open-apis/im/v1/images/" + key
+		req := larkim.NewGetImageReqBuilder().ImageKey(key).Build()
+		resp, err := c.client.Im.V1.Image.Get(ctx, req)
+		if err != nil {
+			return "", fmt.Errorf("download feishu image failed: %w", err)
+		}
+		if !resp.Success() {
+			return "", fmt.Errorf("download feishu image failed: code=%d msg=%s", resp.Code, resp.Msg)
+		}
+		name := filepath.Base(strings.TrimSpace(resp.FileName))
+		if name == "" || name == "." || name == "/" {
+			name = fmt.Sprintf("image_%d.jpg", time.Now().UnixNano())
+		}
+		path := filepath.Join(dir, name)
+		if err := resp.WriteFile(path); err != nil {
+			return "", fmt.Errorf("write feishu image file failed: %w", err)
+		}
+		return path, nil
 	case "file":
-		u = "https://open.feishu.cn/open-apis/im/v1/files/" + key + "/download"
+		req := larkim.NewGetFileReqBuilder().FileKey(key).Build()
+		resp, err := c.client.Im.V1.File.Get(ctx, req)
+		if err != nil {
+			return "", fmt.Errorf("download feishu file failed: %w", err)
+		}
+		if !resp.Success() {
+			return "", fmt.Errorf("download feishu file failed: code=%d msg=%s", resp.Code, resp.Msg)
+		}
+		name := filepath.Base(strings.TrimSpace(resp.FileName))
+		if name == "" || name == "." || name == "/" {
+			name = fmt.Sprintf("file_%d.bin", time.Now().UnixNano())
+		}
+		path := filepath.Join(dir, name)
+		if err := resp.WriteFile(path); err != nil {
+			return "", fmt.Errorf("write feishu file failed: %w", err)
+		}
+		return path, nil
 	default:
 		return "", fmt.Errorf("unsupported media kind: %s", kind)
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return "", fmt.Errorf("download status=%d body=%s", resp.StatusCode, string(b))
-	}
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	ext := ""
-	if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
-		if exts, _ := mime.ExtensionsByType(ct); len(exts) > 0 {
-			ext = exts[0]
-		}
-	}
-	if ext == "" {
-		if kind == "image" {
-			ext = ".jpg"
-		} else {
-			ext = ".bin"
-		}
-	}
-	dir := filepath.Join(os.TempDir(), "clawgo_feishu_media")
-	_ = os.MkdirAll(dir, 0755)
-	path := filepath.Join(dir, fmt.Sprintf("%s_%d%s", kind, time.Now().UnixNano(), ext))
-	if err := os.WriteFile(path, b, 0644); err != nil {
-		return "", err
-	}
-	return path, nil
 }
 
 func (c *FeishuChannel) isAllowedChat(chatID, chatType string) bool {
@@ -535,6 +535,31 @@ var (
 )
 
 func (c *FeishuChannel) getTenantAccessToken(ctx context.Context) (string, error) {
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+
+	now := time.Now()
+	if c.tenantAccessToken != "" && now.Before(c.tenantTokenExpire) {
+		return c.tenantAccessToken, nil
+	}
+
+	// Token is missing or expired; reset once so only one fetch happens for this refresh window.
+	c.tenantTokenOnce = sync.Once{}
+	c.tenantTokenOnce.Do(func() {
+		token, expireAt, err := c.requestTenantAccessToken(ctx)
+		c.tenantAccessToken = token
+		c.tenantTokenExpire = expireAt
+		c.tenantTokenErr = err
+	})
+	if c.tenantTokenErr != nil {
+		// Allow next call to retry when current refresh fails.
+		c.tenantTokenOnce = sync.Once{}
+		return "", c.tenantTokenErr
+	}
+	return c.tenantAccessToken, nil
+}
+
+func (c *FeishuChannel) requestTenantAccessToken(ctx context.Context) (string, time.Time, error) {
 	req := larkauthv3.NewInternalTenantAccessTokenReqBuilder().
 		Body(larkauthv3.NewInternalTenantAccessTokenReqBodyBuilder().
 			AppId(c.config.AppID).
@@ -543,21 +568,26 @@ func (c *FeishuChannel) getTenantAccessToken(ctx context.Context) (string, error
 		Build()
 	resp, err := c.client.Auth.V3.TenantAccessToken.Internal(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("get tenant access token failed: %w", err)
+		return "", time.Time{}, fmt.Errorf("get tenant access token failed: %w", err)
 	}
 	if !resp.Success() {
-		return "", fmt.Errorf("get tenant access token failed: code=%d msg=%s", resp.Code, resp.Msg)
+		return "", time.Time{}, fmt.Errorf("get tenant access token failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
 	var tokenResp struct {
 		TenantAccessToken string `json:"tenant_access_token"`
+		Expire            int64  `json:"expire"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &tokenResp); err != nil {
-		return "", fmt.Errorf("decode tenant access token failed: %w", err)
+		return "", time.Time{}, fmt.Errorf("decode tenant access token failed: %w", err)
 	}
 	if strings.TrimSpace(tokenResp.TenantAccessToken) == "" {
-		return "", fmt.Errorf("empty tenant access token")
+		return "", time.Time{}, fmt.Errorf("empty tenant access token")
 	}
-	return strings.TrimSpace(tokenResp.TenantAccessToken), nil
+	if tokenResp.Expire <= 0 {
+		return "", time.Time{}, fmt.Errorf("invalid token expire: %d", tokenResp.Expire)
+	}
+	expireAt := time.Now().Add(time.Duration(tokenResp.Expire) * time.Second)
+	return strings.TrimSpace(tokenResp.TenantAccessToken), expireAt, nil
 }
 
 func (c *FeishuChannel) setFeishuSheetPublicEditable(ctx context.Context, sheetToken string) error {
@@ -927,7 +957,9 @@ func extractFeishuMessageContent(message *larkim.EventMessage) (string, []string
 
 	switch msgType {
 	case strings.ToLower(string(larkim.MsgTypeText)):
-		var textPayload struct { Text string `json:"text"` }
+		var textPayload struct {
+			Text string `json:"text"`
+		}
 		if err := json.Unmarshal([]byte(raw), &textPayload); err == nil {
 			return textPayload.Text, nil
 		}
@@ -937,15 +969,22 @@ func extractFeishuMessageContent(message *larkim.EventMessage) (string, []string
 			return md, media
 		}
 	case strings.ToLower(string(larkim.MsgTypeImage)):
-		var img struct { ImageKey string `json:"image_key"` }
+		var img struct {
+			ImageKey string `json:"image_key"`
+		}
 		if err := json.Unmarshal([]byte(raw), &img); err == nil && strings.TrimSpace(img.ImageKey) != "" {
 			return "[image]", []string{"feishu:image:" + img.ImageKey}
 		}
 	case strings.ToLower(string(larkim.MsgTypeFile)):
-		var f struct { FileKey string `json:"file_key"`; FileName string `json:"file_name"` }
+		var f struct {
+			FileKey  string `json:"file_key"`
+			FileName string `json:"file_name"`
+		}
 		if err := json.Unmarshal([]byte(raw), &f); err == nil && strings.TrimSpace(f.FileKey) != "" {
 			name := strings.TrimSpace(f.FileName)
-			if name == "" { name = f.FileKey }
+			if name == "" {
+				name = f.FileKey
+			}
 			return "[file] " + name, []string{"feishu:file:" + f.FileKey}
 		}
 	}
@@ -961,7 +1000,10 @@ func parseFeishuPostToMarkdown(raw string) (string, []string) {
 	lang, _ := obj["zh_cn"].(map[string]interface{})
 	if lang == nil {
 		for _, v := range obj {
-			if m, ok := v.(map[string]interface{}); ok { lang = m; break }
+			if m, ok := v.(map[string]interface{}); ok {
+				lang = m
+				break
+			}
 		}
 	}
 	if lang == nil {
@@ -975,11 +1017,16 @@ func parseFeishuPostToMarkdown(raw string) (string, []string) {
 	rows, _ := lang["content"].([]interface{})
 	for _, row := range rows {
 		elems, _ := row.([]interface{})
-		if len(elems) == 0 { lines = append(lines, ""); continue }
+		if len(elems) == 0 {
+			lines = append(lines, "")
+			continue
+		}
 		line := ""
 		for _, ev := range elems {
 			em, _ := ev.(map[string]interface{})
-			if em == nil { continue }
+			if em == nil {
+				continue
+			}
 			tag := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", em["tag"])))
 			switch tag {
 			case "text":
@@ -988,11 +1035,16 @@ func parseFeishuPostToMarkdown(raw string) (string, []string) {
 				line += fmt.Sprintf("[%v](%v)", em["text"], em["href"])
 			case "at":
 				uid := strings.TrimSpace(fmt.Sprintf("%v", em["user_id"]))
-				if uid == "" { uid = strings.TrimSpace(fmt.Sprintf("%v", em["open_id"])) }
+				if uid == "" {
+					uid = strings.TrimSpace(fmt.Sprintf("%v", em["open_id"]))
+				}
 				line += "@" + uid
 			case "img":
 				k := strings.TrimSpace(fmt.Sprintf("%v", em["image_key"]))
-				if k != "" { media = append(media, "feishu:image:"+k); line += " ![image]("+k+")" }
+				if k != "" {
+					media = append(media, "feishu:image:"+k)
+					line += " ![image](" + k + ")"
+				}
 			case "code_block":
 				lang := strings.TrimSpace(fmt.Sprintf("%v", em["language"]))
 				code := fmt.Sprintf("%v", em["text"])
@@ -1002,11 +1054,16 @@ func parseFeishuPostToMarkdown(raw string) (string, []string) {
 				}
 				lines = append(lines, "```"+lang+"\n"+code+"\n```")
 			case "hr":
-				if line != "" { lines = append(lines, strings.TrimSpace(line)); line = "" }
+				if line != "" {
+					lines = append(lines, strings.TrimSpace(line))
+					line = ""
+				}
 				lines = append(lines, "---")
 			}
 		}
-		if strings.TrimSpace(line) != "" { lines = append(lines, strings.TrimSpace(line)) }
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, strings.TrimSpace(line))
+		}
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n")), media
 }
