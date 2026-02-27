@@ -3,6 +3,7 @@ package channels
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -115,40 +116,43 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("unsupported feishu action: %s", action)
 	}
 
-	msgType, contentPayload, err := buildFeishuOutbound(msg)
+	workMsg := msg
+	tableFiles := []feishuTableFile{}
+	if strings.TrimSpace(workMsg.Media) == "" {
+		workMsg.Content, tableFiles = extractMarkdownTablesToCSV(strings.TrimSpace(workMsg.Content))
+	}
+
+	msgType, contentPayload, err := buildFeishuOutbound(workMsg)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(msg.Media) != "" {
-		msgType, contentPayload, err = c.buildFeishuMediaOutbound(ctx, strings.TrimSpace(msg.Media))
+	if strings.TrimSpace(workMsg.Media) != "" {
+		msgType, contentPayload, err = c.buildFeishuMediaOutbound(ctx, strings.TrimSpace(workMsg.Media))
 		if err != nil {
 			return err
 		}
 	}
 
-	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType(larkim.ReceiveIdTypeChatId).
-		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(msg.ChatID).
-			MsgType(msgType).
-			Content(contentPayload).
-			Uuid(fmt.Sprintf("clawgo-%d", time.Now().UnixNano())).
-			Build()).
-		Build()
-
-	resp, err := c.client.Im.V1.Message.Create(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to send feishu message: %w", err)
+	if err := c.sendFeishuMessage(ctx, msg.ChatID, msgType, contentPayload); err != nil {
+		return err
 	}
 
-	if !resp.Success() {
-		return fmt.Errorf("feishu api error: code=%d msg=%s", resp.Code, resp.Msg)
+	for _, tf := range tableFiles {
+		fileType, filePayload, ferr := c.buildFeishuFileFromBytes(ctx, tf.Name, tf.Data)
+		if ferr != nil {
+			logger.WarnCF("feishu", "failed to upload table csv", map[string]interface{}{logger.FieldError: ferr.Error(), logger.FieldChatID: msg.ChatID})
+			continue
+		}
+		if ferr = c.sendFeishuMessage(ctx, msg.ChatID, fileType, filePayload); ferr != nil {
+			logger.WarnCF("feishu", "failed to send table csv", map[string]interface{}{logger.FieldError: ferr.Error(), logger.FieldChatID: msg.ChatID})
+		}
 	}
 
 	logger.InfoCF("feishu", "Feishu message sent", map[string]interface{}{
 		logger.FieldChatID: msg.ChatID,
 		"msg_type":       msgType,
-		"has_media":      strings.TrimSpace(msg.Media) != "",
+		"has_media":      strings.TrimSpace(workMsg.Media) != "",
+		"table_files":    len(tableFiles),
 	})
 
 	return nil
@@ -255,6 +259,26 @@ func (c *FeishuChannel) shouldHandleGroupMessage(chatType, content string) bool 
 	return false
 }
 
+func (c *FeishuChannel) sendFeishuMessage(ctx context.Context, chatID, msgType, content string) error {
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(chatID).
+			MsgType(msgType).
+			Content(content).
+			Uuid(fmt.Sprintf("clawgo-%d", time.Now().UnixNano())).
+			Build()).
+		Build()
+	resp, err := c.client.Im.V1.Message.Create(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to send feishu message: %w", err)
+	}
+	if !resp.Success() {
+		return fmt.Errorf("feishu api error: code=%d msg=%s", resp.Code, resp.Msg)
+	}
+	return nil
+}
+
 func (c *FeishuChannel) buildFeishuMediaOutbound(ctx context.Context, media string) (string, string, error) {
 	name, data, err := readFeishuMedia(media)
 	if err != nil {
@@ -280,6 +304,26 @@ func (c *FeishuChannel) buildFeishuMediaOutbound(ctx context.Context, media stri
 		return larkim.MsgTypeImage, string(b), nil
 	}
 
+	fileReq := larkim.NewCreateFileReqBuilder().
+		Body(larkim.NewCreateFileReqBodyBuilder().
+			FileType("stream").
+			FileName(name).
+			Duration(0).
+			File(bytes.NewReader(data)).
+			Build()).
+		Build()
+	fileResp, err := c.client.Im.File.Create(ctx, fileReq)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to upload feishu file: %w", err)
+	}
+	if !fileResp.Success() {
+		return "", "", fmt.Errorf("feishu file upload error: code=%d msg=%s", fileResp.Code, fileResp.Msg)
+	}
+	b, _ := json.Marshal(fileResp.Data)
+	return larkim.MsgTypeFile, string(b), nil
+}
+
+func (c *FeishuChannel) buildFeishuFileFromBytes(ctx context.Context, name string, data []byte) (string, string, error) {
 	fileReq := larkim.NewCreateFileReqBuilder().
 		Body(larkim.NewCreateFileReqBodyBuilder().
 			FileType("stream").
@@ -385,6 +429,11 @@ func looksLikeMarkdown(s string) bool {
 type feishuElement map[string]interface{}
 type feishuParagraph []feishuElement
 
+type feishuTableFile struct {
+	Name string
+	Data []byte
+}
+
 var (
 	feishuLinkRe = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)]+)\)`)
 	feishuImgRe  = regexp.MustCompile(`!\[([^\]]*)\]\((img_[a-zA-Z0-9_-]+)\)`)
@@ -393,6 +442,71 @@ var (
 	feishuOrderedRe = regexp.MustCompile(`^(\d+\.\s+)(.*)$`)
 	feishuUnorderedRe = regexp.MustCompile(`^([-*]\s+)(.*)$`)
 )
+
+func parseMarkdownTableRow(line string) []string {
+	line = strings.TrimSpace(line)
+	line = strings.TrimPrefix(line, "|")
+	line = strings.TrimSuffix(line, "|")
+	parts := strings.Split(line, "|")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, strings.TrimSpace(p))
+	}
+	return out
+}
+
+func isMarkdownTableSeparator(line string) bool {
+	line = strings.TrimSpace(line)
+	if !strings.Contains(line, "|") {
+		return false
+	}
+	line = strings.Trim(line, "| ")
+	if line == "" {
+		return false
+	}
+	for _, ch := range line {
+		if ch != '-' && ch != ':' && ch != '|' && ch != ' ' {
+			return false
+		}
+	}
+	return true
+}
+
+func extractMarkdownTablesToCSV(content string) (string, []feishuTableFile) {
+	lines := strings.Split(content, "\n")
+	files := make([]feishuTableFile, 0)
+	out := make([]string, 0, len(lines))
+	tableIdx := 0
+	for i := 0; i < len(lines); {
+		line := lines[i]
+		if i+1 < len(lines) && strings.Contains(line, "|") && isMarkdownTableSeparator(lines[i+1]) {
+			head := parseMarkdownTableRow(line)
+			rows := [][]string{head}
+			i += 2
+			for i < len(lines) {
+				if !strings.Contains(lines[i], "|") || strings.TrimSpace(lines[i]) == "" {
+					break
+				}
+				rows = append(rows, parseMarkdownTableRow(lines[i]))
+				i++
+			}
+			if len(rows) >= 2 {
+				tableIdx++
+				buf := &bytes.Buffer{}
+				w := csv.NewWriter(buf)
+				_ = w.WriteAll(rows)
+				w.Flush()
+				name := fmt.Sprintf("table_%d.csv", tableIdx)
+				files = append(files, feishuTableFile{Name: name, Data: buf.Bytes()})
+				out = append(out, fmt.Sprintf("[Table %d converted to CSV: %s]", tableIdx, name))
+				continue
+			}
+		}
+		out = append(out, line)
+		i++
+	}
+	return strings.Join(out, "\n"), files
+}
 
 func parseFeishuMarkdownLine(line string) feishuParagraph {
 	line = strings.TrimSpace(line)
