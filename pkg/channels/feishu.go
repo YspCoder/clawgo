@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -164,7 +165,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	return nil
 }
 
-func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2MessageReceiveV1) error {
+func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return nil
 	}
@@ -223,8 +224,92 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		logger.FieldPreview:  truncateString(content, 80),
 	})
 
-	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
+	resolvedMedia := c.resolveInboundMedia(ctx, mediaPaths)
+	c.HandleMessage(senderID, chatID, content, resolvedMedia, metadata)
 	return nil
+}
+
+func (c *FeishuChannel) resolveInboundMedia(ctx context.Context, mediaRefs []string) []string {
+	if len(mediaRefs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(mediaRefs))
+	for _, ref := range mediaRefs {
+		ref = strings.TrimSpace(ref)
+		if strings.HasPrefix(ref, "feishu:image:") {
+			key := strings.TrimPrefix(ref, "feishu:image:")
+			if path, err := c.downloadFeishuMediaByKey(ctx, "image", key); err == nil {
+				out = append(out, path)
+			} else {
+				logger.WarnCF("feishu", "download inbound image failed", map[string]interface{}{logger.FieldError: err.Error(), "image_key": key})
+				out = append(out, ref)
+			}
+			continue
+		}
+		if strings.HasPrefix(ref, "feishu:file:") {
+			key := strings.TrimPrefix(ref, "feishu:file:")
+			if path, err := c.downloadFeishuMediaByKey(ctx, "file", key); err == nil {
+				out = append(out, path)
+			} else {
+				logger.WarnCF("feishu", "download inbound file failed", map[string]interface{}{logger.FieldError: err.Error(), "file_key": key})
+				out = append(out, ref)
+			}
+			continue
+		}
+		out = append(out, ref)
+	}
+	return out
+}
+
+func (c *FeishuChannel) downloadFeishuMediaByKey(ctx context.Context, kind, key string) (string, error) {
+	tok, err := c.getTenantAccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	var u string
+	switch kind {
+	case "image":
+		u = "https://open.feishu.cn/open-apis/im/v1/images/" + key
+	case "file":
+		u = "https://open.feishu.cn/open-apis/im/v1/files/" + key + "/download"
+	default:
+		return "", fmt.Errorf("unsupported media kind: %s", kind)
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("download status=%d body=%s", resp.StatusCode, string(b))
+	}
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	ext := ""
+	if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
+		if exts, _ := mime.ExtensionsByType(ct); len(exts) > 0 {
+			ext = exts[0]
+		}
+	}
+	if ext == "" {
+		if kind == "image" {
+			ext = ".jpg"
+		} else {
+			ext = ".bin"
+		}
+	}
+	dir := filepath.Join(os.TempDir(), "clawgo_feishu_media")
+	_ = os.MkdirAll(dir, 0755)
+	path := filepath.Join(dir, fmt.Sprintf("%s_%d%s", kind, time.Now().UnixNano(), ext))
+	if err := os.WriteFile(path, b, 0644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func (c *FeishuChannel) isAllowedChat(chatID, chatType string) bool {
