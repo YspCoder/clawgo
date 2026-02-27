@@ -10,14 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
+	larkauthv3 "github.com/larksuite/oapi-sdk-go/v3/service/auth/v3"
+	larkdrivev2 "github.com/larksuite/oapi-sdk-go/v3/service/drive/v2"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	larksheets "github.com/larksuite/oapi-sdk-go/v3/service/sheets/v3"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
 	"clawgo/pkg/bus"
@@ -117,7 +119,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	}
 
 	workMsg := msg
-	tables := []feishuTableData{}
+	var tables []feishuTableData
 	if strings.TrimSpace(workMsg.Media) == "" {
 		workMsg.Content, tables = extractMarkdownTables(strings.TrimSpace(workMsg.Content))
 		for i, t := range tables {
@@ -146,12 +148,11 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return err
 	}
 
-
 	logger.InfoCF("feishu", "Feishu message sent", map[string]interface{}{
 		logger.FieldChatID: msg.ChatID,
-		"msg_type":       msgType,
-		"has_media":      strings.TrimSpace(workMsg.Media) != "",
-		"tables":         len(tables),
+		"msg_type":         msgType,
+		"has_media":        strings.TrimSpace(workMsg.Media) != "",
+		"tables":           len(tables),
 	})
 
 	return nil
@@ -174,7 +175,7 @@ func (c *FeishuChannel) handleMessageReceive(_ context.Context, event *larkim.P2
 		logger.WarnCF("feishu", "Feishu message rejected by chat allowlist", map[string]interface{}{
 			logger.FieldSenderID: extractFeishuSenderID(sender),
 			logger.FieldChatID:   chatID,
-			"chat_type":         chatType,
+			"chat_type":          chatType,
 		})
 		return nil
 	}
@@ -434,129 +435,97 @@ type feishuTableData struct {
 }
 
 var (
-	feishuLinkRe = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)]+)\)`)
-	feishuImgRe  = regexp.MustCompile(`!\[([^\]]*)\]\((img_[a-zA-Z0-9_-]+)\)`)
-	feishuAtRe   = regexp.MustCompile(`@([a-zA-Z0-9_-]+)`)
-	feishuHrRe   = regexp.MustCompile(`^\s*-{3,}\s*$`)
-	feishuOrderedRe = regexp.MustCompile(`^(\d+\.\s+)(.*)$`)
+	feishuLinkRe      = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)]+)\)`)
+	feishuImgRe       = regexp.MustCompile(`!\[([^\]]*)\]\((img_[a-zA-Z0-9_-]+)\)`)
+	feishuAtRe        = regexp.MustCompile(`@([a-zA-Z0-9_-]+)`)
+	feishuHrRe        = regexp.MustCompile(`^\s*-{3,}\s*$`)
+	feishuOrderedRe   = regexp.MustCompile(`^(\d+\.\s+)(.*)$`)
 	feishuUnorderedRe = regexp.MustCompile(`^([-*]\s+)(.*)$`)
 )
 
-
 func (c *FeishuChannel) getTenantAccessToken(ctx context.Context) (string, error) {
-	body := map[string]string{"app_id": c.config.AppID, "app_secret": c.config.AppSecret}
-	b, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil { return "", err }
-	defer resp.Body.Close()
-	rb, _ := io.ReadAll(resp.Body)
-	var obj map[string]interface{}
-	if err := json.Unmarshal(rb, &obj); err != nil { return "", err }
-	if code, _ := obj["code"].(float64); code != 0 { return "", fmt.Errorf("token api code=%v msg=%v", obj["code"], obj["msg"]) }
-	tok, _ := obj["tenant_access_token"].(string)
-	if strings.TrimSpace(tok)=="" { return "", fmt.Errorf("empty tenant_access_token") }
-	return tok, nil
-}
-
-func firstString(m map[string]interface{}, paths ...string) string {
-	for _, p := range paths {
-		parts := strings.Split(p, ".")
-		var cur interface{} = m
-		ok := true
-		for _, seg := range parts {
-			if obj, yes := cur.(map[string]interface{}); yes {
-				cur = obj[seg]
-				continue
-			}
-			if arr, yes := cur.([]interface{}); yes {
-				idx, err := strconv.Atoi(seg)
-				if err != nil || idx < 0 || idx >= len(arr) {
-					ok = false
-					break
-				}
-				cur = arr[idx]
-				continue
-			}
-			ok = false
-			break
-		}
-		if !ok {
-			continue
-		}
-		if s, yes := cur.(string); yes && strings.TrimSpace(s) != "" {
-			return s
-		}
-	}
-	return ""
-}
-
-func (c *FeishuChannel) setFeishuSheetPublicEditable(ctx context.Context, token, sheetToken string) error {
-	permBody := map[string]interface{}{
-		"external_access_entity":     "open",
-		"security_entity":            "anyone_can_edit",
-		"comment_entity":             "anyone_can_comment",
-		"share_entity":               "anyone",
-		"manage_collaborator_entity": "anyone",
-		"link_share_entity":          "anyone_readable",
-	}
-	b, _ := json.Marshal(permBody)
-	url := fmt.Sprintf("https://open.feishu.cn/open-apis/drive/v2/permissions/%s/public?type=sheet", sheetToken)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(b))
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	req := larkauthv3.NewInternalTenantAccessTokenReqBuilder().
+		Body(larkauthv3.NewInternalTenantAccessTokenReqBodyBuilder().
+			AppId(c.config.AppID).
+			AppSecret(c.config.AppSecret).
+			Build()).
+		Build()
+	resp, err := c.client.Auth.V3.TenantAccessToken.Internal(ctx, req)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("get tenant access token failed: %w", err)
 	}
-	defer resp.Body.Close()
-	rb, _ := io.ReadAll(resp.Body)
-	var obj map[string]interface{}
-	if err := json.Unmarshal(rb, &obj); err != nil {
-		return err
+	if !resp.Success() {
+		return "", fmt.Errorf("get tenant access token failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
-	if code, _ := obj["code"].(float64); code != 0 {
-		return fmt.Errorf("set permission code=%v msg=%v", obj["code"], obj["msg"])
+	var tokenResp struct {
+		TenantAccessToken string `json:"tenant_access_token"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &tokenResp); err != nil {
+		return "", fmt.Errorf("decode tenant access token failed: %w", err)
+	}
+	if strings.TrimSpace(tokenResp.TenantAccessToken) == "" {
+		return "", fmt.Errorf("empty tenant access token")
+	}
+	return strings.TrimSpace(tokenResp.TenantAccessToken), nil
+}
+
+func (c *FeishuChannel) setFeishuSheetPublicEditable(ctx context.Context, sheetToken string) error {
+	req := larkdrivev2.NewPatchPermissionPublicReqBuilder().
+		Token(sheetToken).
+		Type("sheet").
+		PermissionPublic(larkdrivev2.NewPermissionPublicBuilder().
+			ExternalAccessEntity(larkdrivev2.PermissionPublicExternalAccessEntityOpen).
+			SecurityEntity(larkdrivev2.PermissionPublicSecurityEntityAnyoneCanEdit).
+			CommentEntity("anyone_can_comment").
+			ShareEntity("anyone").
+			ManageCollaboratorEntity("anyone").
+			LinkShareEntity(larkdrivev2.PermissionPublicLinkShareEntityAnyoneReadable).
+			Build()).
+		Build()
+	resp, err := c.client.Drive.V2.PermissionPublic.Patch(ctx, req)
+	if err != nil {
+		return fmt.Errorf("set sheet permission failed: %w", err)
+	}
+	if !resp.Success() {
+		return fmt.Errorf("set sheet permission failed: code=%d msg=%s", resp.Code, resp.Msg)
 	}
 	return nil
 }
 
 func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name string, rows [][]string) (string, error) {
-	tok, err := c.getTenantAccessToken(ctx)
+	createReq := larksheets.NewCreateSpreadsheetReqBuilder().
+		Spreadsheet(larksheets.NewSpreadsheetBuilder().
+			Title(name).
+			Build()).
+		Build()
+	createResp, err := c.client.Sheets.V3.Spreadsheet.Create(ctx, createReq)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create sheet failed: %w", err)
 	}
-	createBody, _ := json.Marshal(map[string]interface{}{"title": name})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets", bytes.NewReader(createBody))
-	req.Header.Set("Authorization", "Bearer "+tok)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
+	if !createResp.Success() {
+		return "", fmt.Errorf("create sheet failed: code=%d msg=%s", createResp.Code, createResp.Msg)
 	}
-	defer resp.Body.Close()
-	rb, _ := io.ReadAll(resp.Body)
-	var obj map[string]interface{}
-	if err := json.Unmarshal(rb, &obj); err != nil {
-		return "", err
+	if createResp.Data == nil || createResp.Data.Spreadsheet == nil || createResp.Data.Spreadsheet.SpreadsheetToken == nil {
+		return "", fmt.Errorf("create sheet failed: spreadsheet token is empty")
 	}
-	if code, _ := obj["code"].(float64); code != 0 {
-		return "", fmt.Errorf("create sheet code=%v msg=%v", obj["code"], obj["msg"])
-	}
-	spToken := firstString(obj, "data.spreadsheet.spreadsheet_token", "data.spreadsheet_token", "data.spreadsheetToken")
-	sheetID := firstString(obj, "data.spreadsheet.sheet_id", "data.sheet_id", "data.sheetId", "data.sheet_ids.0")
-	if spToken == "" {
-		return "", fmt.Errorf("no spreadsheet token in response")
-	}
-	if sheetID == "" {
-		sheetID = firstString(obj, "data.sheets.0.sheet_id")
+	spToken := strings.TrimSpace(*createResp.Data.Spreadsheet.SpreadsheetToken)
+	sheetID := ""
+	queryReq := larksheets.NewQuerySpreadsheetSheetReqBuilder().
+		SpreadsheetToken(spToken).
+		Build()
+	queryResp, qerr := c.client.Sheets.V3.SpreadsheetSheet.Query(ctx, queryReq)
+	if qerr == nil && queryResp != nil && queryResp.Success() && queryResp.Data != nil && len(queryResp.Data.Sheets) > 0 && queryResp.Data.Sheets[0] != nil && queryResp.Data.Sheets[0].SheetId != nil {
+		sheetID = strings.TrimSpace(*queryResp.Data.Sheets[0].SheetId)
 	}
 	if sheetID == "" {
 		sheetID = "Sheet1"
 	}
 
 	if len(rows) > 0 {
+		tok, err := c.getTenantAccessToken(ctx)
+		if err != nil {
+			return "", err
+		}
 		payload := map[string]interface{}{
 			"valueRanges": []map[string]interface{}{{
 				"range":  fmt.Sprintf("%s!A1", sheetID),
@@ -581,8 +550,11 @@ func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name str
 			return "", fmt.Errorf("write sheet values code=%v msg=%v", vobj["code"], vobj["msg"])
 		}
 	}
-	if err := c.setFeishuSheetPublicEditable(ctx, tok, spToken); err != nil {
+	if err := c.setFeishuSheetPublicEditable(ctx, spToken); err != nil {
 		logger.WarnCF("feishu", "set sheet permission failed", map[string]interface{}{logger.FieldError: err.Error(), "sheet_token": spToken})
+	}
+	if createResp.Data.Spreadsheet.Url != nil && strings.TrimSpace(*createResp.Data.Spreadsheet.Url) != "" {
+		return strings.TrimSpace(*createResp.Data.Spreadsheet.Url), nil
 	}
 	return "https://feishu.cn/sheets/" + spToken, nil
 }

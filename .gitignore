@@ -19,3 +19,5 @@ build
 /clawgo
 /clawgo_bin
 /clawgo_test
+
+.gocache
