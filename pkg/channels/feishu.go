@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,15 @@ type FeishuChannel struct {
 
 	mu        sync.Mutex
 	runCancel cancelGuard
+}
+
+func (c *FeishuChannel) SupportsAction(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "", "send":
+		return true
+	default:
+		return false
+	}
 }
 
 func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
@@ -93,6 +103,10 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 
 	if msg.ChatID == "" {
 		return fmt.Errorf("chat ID is empty")
+	}
+	action := strings.ToLower(strings.TrimSpace(msg.Action))
+	if action != "" && action != "send" {
+		return fmt.Errorf("unsupported feishu action: %s", action)
 	}
 
 	payload, err := json.Marshal(map[string]string{"text": msg.Content})
