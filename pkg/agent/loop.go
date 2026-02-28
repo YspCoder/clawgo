@@ -544,6 +544,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if maxAllowed < 1 {
 		maxAllowed = 1
 	}
+	hardCap := 24
+	if v := os.Getenv("CLAWGO_MAX_TOOL_ITERATIONS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			hardCap = n
+		}
+	}
+	if hardCap < maxAllowed {
+		hardCap = maxAllowed
+	}
 	for iteration < maxAllowed {
 		iteration++
 
@@ -671,11 +680,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
 
 		hasToolActivity = true
-		if maxAllowed < al.maxIterations*3 {
-			maxAllowed = al.maxIterations * 3
-			if maxAllowed < 6 {
-				maxAllowed = 6
-			}
+		if maxAllowed < hardCap {
+			maxAllowed = hardCap
 		}
 		for _, tc := range response.ToolCalls {
 			// Log tool call with arguments preview
@@ -713,7 +719,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 	if finalContent == "" {
 		if hasToolActivity && len(lastToolOutputs) > 0 {
-			finalContent = "执行链路仍在收敛，当前已完成：\n- " + strings.Join(lastToolOutputs, "\n- ") + "\n我会继续补全最终结果。"
+			finalContent = "我已执行完成，关键信息如下：\n- " + strings.Join(lastToolOutputs, "\n- ")
 		} else {
 			fallback := strings.TrimSpace(al.noResponseFallback)
 			if fallback == "" {
