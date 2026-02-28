@@ -241,12 +241,18 @@ func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Reques
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		cfgDefault := cfgpkg.DefaultConfig()
+		defBytes, _ := json.Marshal(cfgDefault)
+		var merged map[string]interface{}
+		_ = json.Unmarshal(defBytes, &merged)
+		var loaded map[string]interface{}
+		if err := json.Unmarshal(b, &loaded); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		merged = mergeJSONMap(merged, loaded)
+
 		if r.URL.Query().Get("include_hot_reload_fields") == "1" || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "hot") {
-			var cfg map[string]interface{}
-			if err := json.Unmarshal(b, &cfg); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
 			w.Header().Set("Content-Type", "application/json")
 			info := hotReloadFieldInfo()
 			paths := make([]string, 0, len(info))
@@ -257,14 +263,15 @@ func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Reques
 			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"ok":                       true,
-				"config":                   cfg,
+				"config":                   merged,
 				"hot_reload_fields":        paths,
 				"hot_reload_field_details": info,
 			})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(b)
+		out, _ := json.MarshalIndent(merged, "", "  ")
+		_, _ = w.Write(out)
 	case http.MethodPost:
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -349,6 +356,24 @@ func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Reques
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func mergeJSONMap(base, override map[string]interface{}) map[string]interface{} {
+	if base == nil {
+		base = map[string]interface{}{}
+	}
+	for k, v := range override {
+		if bv, ok := base[k]; ok {
+			bm, ok1 := bv.(map[string]interface{})
+			om, ok2 := v.(map[string]interface{})
+			if ok1 && ok2 {
+				base[k] = mergeJSONMap(bm, om)
+				continue
+			}
+		}
+		base[k] = v
+	}
+	return base
 }
 
 func getPathValue(m map[string]interface{}, path string) interface{} {
