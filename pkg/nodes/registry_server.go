@@ -1455,15 +1455,17 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 					continue
 				}
 				row := map[string]interface{}{
-					"task_id":       id,
-					"time":          t["updated_at"],
-					"status":        t["status"],
-					"source":        t["source"],
-					"idle_run":      true,
-					"input_preview": t["content"],
-					"block_reason":  t["block_reason"],
-					"logs":          []string{fmt.Sprintf("autonomy state: %v", t["status"])},
-					"retry_count":   0,
+					"task_id":          id,
+					"time":             t["updated_at"],
+					"status":           t["status"],
+					"source":           t["source"],
+					"idle_run":         true,
+					"input_preview":    t["content"],
+					"block_reason":     t["block_reason"],
+					"last_pause_reason": t["last_pause_reason"],
+					"last_pause_at":     t["last_pause_at"],
+					"logs":             []string{fmt.Sprintf("autonomy state: %v", t["status"])},
+					"retry_count":      0,
 				}
 				items = append(items, row)
 				if fmt.Sprintf("%v", row["status"]) == "running" {

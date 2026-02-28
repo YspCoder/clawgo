@@ -13,6 +13,8 @@ type TaskAuditItem = {
   source?: string;
   idle_run?: boolean;
   block_reason?: string;
+  last_pause_reason?: string;
+  last_pause_at?: string;
   duration_ms?: number;
   retry_count?: number;
   error?: string;
@@ -113,6 +115,17 @@ const TaskAudit: React.FC = () => {
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">Block Reason</div>
                   <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-amber-200">{selected.block_reason || '-'}</div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('lastPauseReason')}</div>
+                    <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{selected.last_pause_reason || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('lastPauseAt')}</div>
+                    <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{selected.last_pause_at || '-'}</div>
+                  </div>
                 </div>
 
                 <div>
