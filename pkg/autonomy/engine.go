@@ -802,6 +802,9 @@ func (e *Engine) maybeWriteDailyReportLocked(now time.Time) {
 	}
 	defer f.Close()
 	counts := map[string]int{"total": 0, "success": 0, "error": 0, "suppressed": 0, "running": 0}
+	errorReasons := map[string]int{}
+	type topTask struct { TaskID string; Duration int; Status string }
+	top := make([]topTask, 0, 32)
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		line := s.Bytes()
@@ -821,12 +824,50 @@ func (e *Engine) maybeWriteDailyReportLocked(now time.Time) {
 		if _, ok := counts[st]; ok {
 			counts[st]++
 		}
+		if st == "error" {
+			errText := fmt.Sprintf("%v", row["error"])
+			if errText == "" {
+				errText = fmt.Sprintf("%v", row["log"])
+			}
+			errText = shortTask(strings.ReplaceAll(errText, "\n", " "))
+			if errText != "" {
+				errorReasons[errText]++
+			}
+		}
+		dur := 0
+		switch v := row["duration_ms"].(type) {
+		case float64:
+			dur = int(v)
+		case int:
+			dur = v
+		case string:
+			if n, err := strconv.Atoi(v); err == nil { dur = n }
+		}
+		top = append(top, topTask{TaskID: fmt.Sprintf("%v", row["task_id"]), Duration: dur, Status: st})
 	}
 	if counts["total"] == 0 {
 		e.lastDailyReportDate = date
 		return
 	}
-	reportLine := fmt.Sprintf("\n## Autonomy Daily Report (%s)\n- total: %d\n- success: %d\n- error: %d\n- suppressed: %d\n- running: %d\n", date, counts["total"], counts["success"], counts["error"], counts["suppressed"], counts["running"])
+	sort.Slice(top, func(i, j int) bool { return top[i].Duration > top[j].Duration })
+	maxTop := 3
+	if len(top) < maxTop { maxTop = len(top) }
+	topLines := make([]string, 0, maxTop)
+	for i := 0; i < maxTop; i++ {
+		if top[i].TaskID == "" { continue }
+		topLines = append(topLines, fmt.Sprintf("- %s (%dms, %s)", top[i].TaskID, top[i].Duration, top[i].Status))
+	}
+	type kv struct { K string; V int }
+	reasons := make([]kv, 0, len(errorReasons))
+	for k, v := range errorReasons { reasons = append(reasons, kv{K:k, V:v}) }
+	sort.Slice(reasons, func(i, j int) bool { return reasons[i].V > reasons[j].V })
+	maxR := 3
+	if len(reasons) < maxR { maxR = len(reasons) }
+	reasonLines := make([]string, 0, maxR)
+	for i := 0; i < maxR; i++ {
+		reasonLines = append(reasonLines, fmt.Sprintf("- %s (x%d)", reasons[i].K, reasons[i].V))
+	}
+	reportLine := fmt.Sprintf("\n## Autonomy Daily Report (%s)\n- total: %d\n- success: %d\n- error: %d\n- suppressed: %d\n- running: %d\n\n### Top Duration Tasks\n%s\n\n### Top Error Reasons\n%s\n", date, counts["total"], counts["success"], counts["error"], counts["suppressed"], counts["running"], strings.Join(topLines, "\n"), strings.Join(reasonLines, "\n"))
 	dailyPath := filepath.Join(workspace, "memory", date+".md")
 	_ = os.MkdirAll(filepath.Dir(dailyPath), 0755)
 	_ = appendUniqueReport(dailyPath, reportLine, date)
