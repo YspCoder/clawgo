@@ -361,6 +361,10 @@ func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage,
 	}
 	path := filepath.Join(al.workspace, "memory", "task-audit.jsonl")
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	source := "direct"
+	if msg.Metadata != nil && msg.Metadata["trigger"] != "" {
+		source = msg.Metadata["trigger"]
+	}
 	row := map[string]interface{}{
 		"task_id":       taskID,
 		"time":          time.Now().UTC().Format(time.RFC3339),
@@ -369,6 +373,8 @@ func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage,
 		"chat_id":       msg.ChatID,
 		"sender_id":     msg.SenderID,
 		"status":        status,
+		"source":        source,
+		"idle_run":      source == "autonomy",
 		"duration_ms":   durationMs,
 		"suppressed":    suppressed,
 		"retry_count":   0,

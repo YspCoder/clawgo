@@ -10,6 +10,9 @@ type TaskAuditItem = {
   chat_id?: string;
   sender_id?: string;
   status?: string;
+  source?: string;
+  idle_run?: boolean;
+  block_reason?: string;
   duration_ms?: number;
   retry_count?: number;
   error?: string;
@@ -72,7 +75,7 @@ const TaskAudit: React.FC = () => {
                   className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/40 ${active ? 'bg-indigo-500/15' : ''}`}
                 >
                   <div className="text-sm font-medium text-zinc-100 truncate">{it.task_id || `task-${idx + 1}`}</div>
-                  <div className="text-xs text-zinc-400 truncate">{it.channel} · {it.status} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0}</div>
+                  <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'}</div>
                   <div className="text-[11px] text-zinc-500 truncate">{it.time}</div>
                 </button>
               );
@@ -90,6 +93,7 @@ const TaskAudit: React.FC = () => {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div><div className="text-zinc-500 text-xs">Task ID</div><div className="font-mono break-all">{selected.task_id}</div></div>
                   <div><div className="text-zinc-500 text-xs">Status</div><div>{selected.status}</div></div>
+                  <div><div className="text-zinc-500 text-xs">Source</div><div>{selected.source || '-'}</div></div>
                   <div><div className="text-zinc-500 text-xs">Duration</div><div>{selected.duration_ms || 0}ms</div></div>
                   <div><div className="text-zinc-500 text-xs">Channel</div><div>{selected.channel}</div></div>
                   <div><div className="text-zinc-500 text-xs">Session</div><div className="font-mono break-all">{selected.session}</div></div>
@@ -104,6 +108,11 @@ const TaskAudit: React.FC = () => {
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('error')}</div>
                   <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-red-300">{selected.error || '-'}</div>
+                </div>
+
+                <div>
+                  <div className="text-zinc-500 text-xs mb-1">Block Reason</div>
+                  <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-amber-200">{selected.block_reason || '-'}</div>
                 </div>
 
                 <div>

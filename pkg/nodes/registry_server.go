@@ -1436,6 +1436,43 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 			running = append(running, row)
 		}
 	}
+
+	// Merge autonomy queue states (including waiting/blocked-by-user) for full audit visibility.
+	tasksPath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "tasks.json")
+	if tb, err := os.ReadFile(tasksPath); err == nil {
+		var tasks []map[string]interface{}
+		if json.Unmarshal(tb, &tasks) == nil {
+			seen := map[string]struct{}{}
+			for _, it := range items {
+				seen[fmt.Sprintf("%v", it["task_id"])] = struct{}{}
+			}
+			for _, t := range tasks {
+				id := fmt.Sprintf("%v", t["id"])
+				if id == "" {
+					continue
+				}
+				if _, ok := seen[id]; ok {
+					continue
+				}
+				row := map[string]interface{}{
+					"task_id":       id,
+					"time":          t["updated_at"],
+					"status":        t["status"],
+					"source":        t["source"],
+					"idle_run":      true,
+					"input_preview": t["content"],
+					"block_reason":  t["block_reason"],
+					"logs":          []string{fmt.Sprintf("autonomy state: %v", t["status"])},
+					"retry_count":   0,
+				}
+				items = append(items, row)
+				if fmt.Sprintf("%v", row["status"]) == "running" {
+					running = append(running, row)
+				}
+			}
+		}
+	}
+
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": running, "items": items})
 }
 
