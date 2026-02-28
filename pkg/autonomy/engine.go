@@ -251,9 +251,6 @@ func (e *Engine) tick() {
 		st.DueAt = t.DueAt
 		st.DedupeHits = t.DedupeHits
 		st.ResourceKeys = deriveResourceKeys(t.Content)
-		if st.Status == "completed" {
-			st.Status = "idle"
-		}
 	}
 
 	// completed when removed from todo source
@@ -537,8 +534,19 @@ func (e *Engine) scanTodos() []todoItem {
 		return nil
 	}
 	merged := map[string]todoItem{}
+	storedItems, _ := e.taskStore.Load()
+	doneIDs := map[string]bool{}
+	for _, it := range storedItems {
+		status := strings.ToLower(strings.TrimSpace(it.Status))
+		if status == "done" || status == "completed" {
+			doneIDs[strings.TrimSpace(it.ID)] = true
+		}
+	}
 	merge := func(it todoItem) {
 		if strings.TrimSpace(it.ID) == "" || strings.TrimSpace(it.Content) == "" {
+			return
+		}
+		if doneIDs[strings.TrimSpace(it.ID)] {
 			return
 		}
 		if cur, ok := merged[it.ID]; ok {
@@ -582,26 +590,24 @@ func (e *Engine) scanTodos() []todoItem {
 	}
 
 	// 2) Merge structured tasks.json items (manual injections / prior state).
-	if items, err := e.taskStore.Load(); err == nil {
-		for _, it := range items {
-			status := strings.ToLower(strings.TrimSpace(it.Status))
-			if status == "done" {
-				continue
-			}
-			content := it.Content
-			if content == "" {
-				continue
-			}
-			id := strings.TrimSpace(it.ID)
-			if id == "" {
-				id = hashID(content)
-			}
-			priority := strings.TrimSpace(it.Priority)
-			if priority == "" {
-				priority = "normal"
-			}
-			merge(todoItem{ID: id, Content: content, Priority: priority, DueAt: it.DueAt})
+	for _, it := range storedItems {
+		status := strings.ToLower(strings.TrimSpace(it.Status))
+		if status == "done" {
+			continue
 		}
+		content := it.Content
+		if content == "" {
+			continue
+		}
+		id := strings.TrimSpace(it.ID)
+		if id == "" {
+			id = hashID(content)
+		}
+		priority := strings.TrimSpace(it.Priority)
+		if priority == "" {
+			priority = "normal"
+		}
+		merge(todoItem{ID: id, Content: content, Priority: priority, DueAt: it.DueAt})
 	}
 
 	out := make([]todoItem, 0, len(merged))
