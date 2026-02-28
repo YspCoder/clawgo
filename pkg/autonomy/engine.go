@@ -194,6 +194,23 @@ func (e *Engine) tick() {
 	known := map[string]struct{}{}
 	for _, t := range todos {
 		known[t.ID] = struct{}{}
+	}
+	// Merge structured tasks.json entries as todo source too (for WebUI CRUD-created tasks).
+	for _, old := range stored {
+		if old.ID == "" {
+			continue
+		}
+		if _, ok := known[old.ID]; ok {
+			continue
+		}
+		st := strings.ToLower(old.Status)
+		if st == "done" || st == "completed" {
+			continue
+		}
+		todos = append(todos, todoItem{ID: old.ID, Content: old.Content, Priority: old.Priority, DueAt: old.DueAt})
+		known[old.ID] = struct{}{}
+	}
+	for _, t := range todos {
 		st, ok := e.state[t.ID]
 		if !ok {
 			status := "idle"
