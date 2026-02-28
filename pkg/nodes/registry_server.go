@@ -936,7 +936,7 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 }
 
 func buildSkillMarkdown(name, desc string, tools []string, systemPrompt string) string {
-	if strings.TrimSpace(desc) == "" {
+	if desc == "" {
 		desc = "No description provided."
 	}
 	if len(tools) == 0 {
@@ -944,7 +944,7 @@ func buildSkillMarkdown(name, desc string, tools []string, systemPrompt string) 
 	}
 	toolLines := make([]string, 0, len(tools))
 	for _, t := range tools {
-		t = strings.TrimSpace(t)
+		t = t
 		if t == "" {
 			continue
 		}
@@ -980,7 +980,7 @@ func readSkillMeta(path string) (desc string, tools []string, systemPrompt strin
 	reTools := regexp.MustCompile(`(?m)^##\s*Tools\s*$`)
 	rePrompt := regexp.MustCompile(`(?m)^##\s*System Prompt\s*$`)
 	if m := reDesc.FindStringSubmatch(s); len(m) > 1 {
-		desc = strings.TrimSpace(m[1])
+		desc = m[1]
 	}
 	if loc := reTools.FindStringIndex(s); loc != nil {
 		block := s[loc[1]:]
@@ -988,7 +988,7 @@ func readSkillMeta(path string) (desc string, tools []string, systemPrompt strin
 			block = block[:p[0]]
 		}
 		for _, line := range strings.Split(block, "\n") {
-			line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
+			line = strings.TrimPrefix(line, "-")
 			if line != "" {
 				tools = append(tools, line)
 			}
@@ -998,7 +998,7 @@ func readSkillMeta(path string) (desc string, tools []string, systemPrompt strin
 		tools = []string{}
 	}
 	if loc := rePrompt.FindStringIndex(s); loc != nil {
-		systemPrompt = strings.TrimSpace(s[loc[1]:])
+		systemPrompt = s[loc[1]:]
 	}
 	return
 }
@@ -1106,8 +1106,8 @@ func normalizeCronJob(v interface{}) map[string]interface{} {
 	}
 	if sch, ok := m["schedule"].(map[string]interface{}); ok {
 		kind, _ := sch["kind"].(string)
-		if expr, ok := sch["expr"].(string); ok && strings.TrimSpace(expr) != "" {
-			out["expr"] = strings.TrimSpace(expr)
+		if expr, ok := sch["expr"].(string); ok && expr != "" {
+			out["expr"] = expr
 		} else if strings.EqualFold(strings.TrimSpace(kind), "every") {
 			if every, ok := sch["everyMs"].(float64); ok && every > 0 {
 				out["expr"] = fmt.Sprintf("@every %s", (time.Duration(int64(every)) * time.Millisecond).String())
@@ -1152,7 +1152,7 @@ func normalizeCronJobs(v interface{}) []map[string]interface{} {
 }
 
 func queryClawHubSkillVersion(ctx context.Context, skill string) (found bool, version string, err error) {
-	skill = strings.TrimSpace(skill)
+	skill = skill
 	if skill == "" {
 		return false, "", fmt.Errorf("skill empty")
 	}
@@ -1177,9 +1177,9 @@ func queryClawHubSkillVersion(ctx context.Context, skill string) (found bool, ve
 				name = strings.ToLower(strings.TrimSpace(anyToString(t["id"])))
 			}
 			if name == lowerSkill || strings.Contains(name, lowerSkill) {
-				ver := strings.TrimSpace(anyToString(t["version"]))
+				ver := anyToString(t["version"])
 				if ver == "" {
-					ver = strings.TrimSpace(anyToString(t["latest_version"]))
+					ver = anyToString(t["latest_version"])
 				}
 				return true, ver
 			}
