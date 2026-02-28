@@ -207,7 +207,7 @@ func toChatCompletionsContent(msg Message) []map[string]interface{} {
 	for _, part := range msg.ContentParts {
 		switch strings.ToLower(strings.TrimSpace(part.Type)) {
 		case "input_text":
-			if strings.TrimSpace(part.Text) == "" {
+			if part.Text == "" {
 				continue
 			}
 			content = append(content, map[string]interface{}{
@@ -215,7 +215,7 @@ func toChatCompletionsContent(msg Message) []map[string]interface{} {
 				"text": part.Text,
 			})
 		case "input_image":
-			if strings.TrimSpace(part.ImageURL) == "" {
+			if part.ImageURL == "" {
 				continue
 			}
 			content = append(content, map[string]interface{}{
@@ -225,11 +225,11 @@ func toChatCompletionsContent(msg Message) []map[string]interface{} {
 				},
 			})
 		case "input_file":
-			fileLabel := strings.TrimSpace(part.Filename)
+			fileLabel := part.Filename
 			if fileLabel == "" {
 				fileLabel = "attached file"
 			}
-			mimeType := strings.TrimSpace(part.MIMEType)
+			mimeType := part.MIMEType
 			if mimeType == "" {
 				mimeType = "application/octet-stream"
 			}
@@ -260,21 +260,21 @@ func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{
 		return []map[string]interface{}{responsesMessageItem(role, msg.Content, "input_text")}
 	case "assistant":
 		items := make([]map[string]interface{}, 0, 1+len(msg.ToolCalls))
-		if strings.TrimSpace(msg.Content) != "" || len(msg.ToolCalls) == 0 {
+		if msg.Content != "" || len(msg.ToolCalls) == 0 {
 			items = append(items, responsesMessageItem(role, msg.Content, "output_text"))
 		}
 		for _, tc := range msg.ToolCalls {
-			callID := strings.TrimSpace(tc.ID)
+			callID := tc.ID
 			if callID == "" {
 				continue
 			}
-			name := strings.TrimSpace(tc.Name)
+			name := tc.Name
 			argsRaw := ""
 			if tc.Function != nil {
-				if strings.TrimSpace(tc.Function.Name) != "" {
-					name = strings.TrimSpace(tc.Function.Name)
+				if tc.Function.Name != "" {
+					name = tc.Function.Name
 				}
-				argsRaw = strings.TrimSpace(tc.Function.Arguments)
+				argsRaw = tc.Function.Arguments
 			}
 			if name == "" {
 				continue
@@ -302,7 +302,7 @@ func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{
 		}
 		return items
 	case "tool":
-		callID := strings.TrimSpace(msg.ToolCallID)
+		callID := msg.ToolCallID
 		if callID == "" {
 			return nil
 		}
@@ -328,7 +328,7 @@ func responsesMessageContent(msg Message) []map[string]interface{} {
 	for _, part := range msg.ContentParts {
 		switch strings.ToLower(strings.TrimSpace(part.Type)) {
 		case "input_text":
-			if strings.TrimSpace(part.Text) == "" {
+			if part.Text == "" {
 				continue
 			}
 			content = append(content, map[string]interface{}{
@@ -336,7 +336,7 @@ func responsesMessageContent(msg Message) []map[string]interface{} {
 				"text": part.Text,
 			})
 		case "input_image":
-			if strings.TrimSpace(part.ImageURL) == "" {
+			if part.ImageURL == "" {
 				continue
 			}
 			content = append(content, map[string]interface{}{
@@ -344,14 +344,14 @@ func responsesMessageContent(msg Message) []map[string]interface{} {
 				"image_url": part.ImageURL,
 			})
 		case "input_file":
-			if strings.TrimSpace(part.FileData) == "" {
+			if part.FileData == "" {
 				continue
 			}
 			entry := map[string]interface{}{
 				"type":      "input_file",
 				"file_data": part.FileData,
 			}
-			if strings.TrimSpace(part.Filename) != "" {
+			if part.Filename != "" {
 				entry["filename"] = part.Filename
 			}
 			content = append(content, entry)
@@ -361,7 +361,7 @@ func responsesMessageContent(msg Message) []map[string]interface{} {
 }
 
 func responsesMessageItem(role, text, contentType string) map[string]interface{} {
-	ct := strings.TrimSpace(contentType)
+	ct := contentType
 	if ct == "" {
 		ct = "input_text"
 	}
