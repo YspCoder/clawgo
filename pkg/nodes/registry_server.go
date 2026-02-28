@@ -88,6 +88,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/skills", s.handleWebUISkills)
 	mux.HandleFunc("/webui/api/sessions", s.handleWebUISessions)
 	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
+	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
@@ -1337,6 +1338,50 @@ func (s *RegistryServer) handleWebUIMemory(w http.ResponseWriter, r *http.Reques
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *RegistryServer) handleWebUITaskAudit(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 500 {
+				n = 500
+			}
+			limit = n
+		}
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": []map[string]interface{}{}})
+		return
+	}
+	lines := strings.Split(string(b), "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	items := make([]map[string]interface{}, 0, len(lines))
+	for _, ln := range lines {
+		if ln == "" {
+			continue
+		}
+		var row map[string]interface{}
+		if err := json.Unmarshal([]byte(ln), &row); err == nil {
+			items = append(items, row)
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": items})
 }
 
 func (s *RegistryServer) handleWebUIExecApprovals(w http.ResponseWriter, r *http.Request) {
