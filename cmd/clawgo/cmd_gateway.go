@@ -958,5 +958,6 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		Workspace:                   cfg.WorkspacePath(),
 		DefaultNotifyChannel:        a.NotifyChannel,
 		DefaultNotifyChatID:         a.NotifyChatID,
+		NotifyAllowChats:            a.NotifyAllowChats,
 	}, msgBus)
 }

@@ -29,6 +29,7 @@ type Options struct {
 	Workspace                   string
 	DefaultNotifyChannel        string
 	DefaultNotifyChatID         string
+	NotifyAllowChats            []string
 	NotifyCooldownSec           int
 	NotifySameReasonCooldownSec int
 	QuietHours                  string
@@ -635,6 +636,18 @@ func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 func (e *Engine) shouldNotify(key string, reason string) bool {
 	if strings.TrimSpace(e.opts.DefaultNotifyChannel) == "" || strings.TrimSpace(e.opts.DefaultNotifyChatID) == "" {
 		return false
+	}
+	if len(e.opts.NotifyAllowChats) > 0 {
+		allowed := false
+		for _, c := range e.opts.NotifyAllowChats {
+			if c == e.opts.DefaultNotifyChatID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return false
+		}
 	}
 	now := time.Now()
 	if inQuietHours(now, e.opts.QuietHours) {

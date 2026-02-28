@@ -26,7 +26,8 @@
         "user_idle_resume_sec": 20,
         "waiting_resume_debounce_sec": 5,
         "notify_channel": "",
-        "notify_chat_id": ""
+        "notify_chat_id": "",
+        "notify_allow_chats": []
       },
       "texts": {
         "no_response_fallback": "I've completed processing but have no response to give.",

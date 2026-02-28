@@ -58,8 +58,9 @@ type AutonomyConfig struct {
 	MaxRoundsWithoutUser       int      `json:"max_rounds_without_user" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
 	WaitingResumeDebounceSec   int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
 	AllowedTaskKeywords        []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
-	NotifyChannel               string `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
-	NotifyChatID                string `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
+	NotifyChannel               string   `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
+	NotifyChatID                string   `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
+	NotifyAllowChats            []string `json:"notify_allow_chats" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_ALLOW_CHATS"`
 }
 
 type AgentTextConfig struct {
@@ -330,6 +331,7 @@ func DefaultConfig() *Config {
 					AllowedTaskKeywords:         []string{},
 					NotifyChannel:               "",
 					NotifyChatID:                "",
+					NotifyAllowChats:            []string{},
 				},
 				Texts: AgentTextConfig{
 					NoResponseFallback:         "I've completed processing but have no response to give.",
