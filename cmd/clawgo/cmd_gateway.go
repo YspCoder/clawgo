@@ -950,6 +950,7 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		QuietHours:                  a.QuietHours,
 		UserIdleResumeSec:           a.UserIdleResumeSec,
 		MaxRoundsWithoutUser:        a.MaxRoundsWithoutUser,
+		TaskHistoryRetentionDays:    a.TaskHistoryRetentionDays,
 		WaitingResumeDebounceSec:    a.WaitingResumeDebounceSec,
 		AllowedTaskKeywords:         a.AllowedTaskKeywords,
 		ImportantKeywords:           cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,

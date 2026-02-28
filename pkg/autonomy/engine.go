@@ -36,6 +36,7 @@ type Options struct {
 	UserIdleResumeSec           int
 	WaitingResumeDebounceSec    int
 	MaxRoundsWithoutUser      int
+	TaskHistoryRetentionDays  int
 	AllowedTaskKeywords        []string
 	ImportantKeywords           []string
 	CompletionTemplate          string
@@ -73,6 +74,7 @@ type Engine struct {
 	lockOwners map[string]string
 	roundsWithoutUser int
 	lastDailyReportDate string
+	lastHistoryCleanupAt time.Time
 }
 
 func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
@@ -105,6 +107,9 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	}
 	if opts.MaxRoundsWithoutUser < 0 {
 		opts.MaxRoundsWithoutUser = 0
+	}
+	if opts.TaskHistoryRetentionDays <= 0 {
+		opts.TaskHistoryRetentionDays = 3
 	}
 	return &Engine{
 		opts:       opts,
@@ -363,6 +368,7 @@ func (e *Engine) tick() {
 	}
 	e.persistStateLocked()
 	e.maybeWriteDailyReportLocked(now)
+	e.maybeCleanupTaskHistoryLocked(now)
 }
 
 func (e *Engine) tryAcquireLocksLocked(st *taskState) bool {
@@ -917,6 +923,68 @@ func appendUniqueReport(path, content, date string) error {
 	defer f.Close()
 	_, err = f.WriteString(content)
 	return err
+}
+
+func (e *Engine) maybeCleanupTaskHistoryLocked(now time.Time) {
+	if e.opts.TaskHistoryRetentionDays <= 0 {
+		return
+	}
+	if !e.lastHistoryCleanupAt.IsZero() && now.Sub(e.lastHistoryCleanupAt) < time.Hour {
+		return
+	}
+	workspace := e.opts.Workspace
+	if workspace == "" {
+		return
+	}
+	cutoff := now.AddDate(0, 0, -e.opts.TaskHistoryRetentionDays)
+
+	// Cleanup task-audit.jsonl by event time
+	auditPath := filepath.Join(workspace, "memory", "task-audit.jsonl")
+	if b, err := os.ReadFile(auditPath); err == nil {
+		lines := strings.Split(string(b), "\n")
+		kept := make([]string, 0, len(lines))
+		for _, ln := range lines {
+			if ln == "" {
+				continue
+			}
+			var row map[string]interface{}
+			if json.Unmarshal([]byte(ln), &row) != nil {
+				continue
+			}
+			ts := fmt.Sprintf("%v", row["time"])
+			tm, err := time.Parse(time.RFC3339, ts)
+			if err != nil || tm.After(cutoff) {
+				kept = append(kept, ln)
+			}
+		}
+		_ = os.WriteFile(auditPath, []byte(strings.Join(kept, "\n")+"\n"), 0644)
+	}
+
+	// Cleanup tasks.json old terminal states
+	tasksPath := filepath.Join(workspace, "memory", "tasks.json")
+	if b, err := os.ReadFile(tasksPath); err == nil {
+		var items []TaskItem
+		if json.Unmarshal(b, &items) == nil {
+			kept := make([]TaskItem, 0, len(items))
+			for _, it := range items {
+				st := strings.ToLower(it.Status)
+				terminal := st == "done" || st == "completed" || st == "suppressed" || st == "error"
+				ts := strings.TrimSpace(it.UpdatedAt)
+				if !terminal || ts == "" {
+					kept = append(kept, it)
+					continue
+				}
+				tm, err := time.Parse(time.RFC3339, ts)
+				if err != nil || tm.After(cutoff) {
+					kept = append(kept, it)
+				}
+			}
+			if out, err := json.MarshalIndent(kept, "", "  "); err == nil {
+				_ = os.WriteFile(tasksPath, out, 0644)
+			}
+		}
+	}
+	e.lastHistoryCleanupAt = now
 }
 
 func parseTodoAttributes(content string) (priority, dueAt, normalized string) {

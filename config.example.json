@@ -24,7 +24,10 @@
         "notify_same_reason_cooldown_sec": 900,
         "quiet_hours": "23:00-08:00",
         "user_idle_resume_sec": 20,
+        "max_rounds_without_user": 12,
+        "task_history_retention_days": 3,
         "waiting_resume_debounce_sec": 5,
+        "allowed_task_keywords": [],
         "notify_channel": "",
         "notify_chat_id": "",
         "notify_allow_chats": []
