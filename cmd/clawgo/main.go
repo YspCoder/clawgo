@@ -55,9 +55,6 @@ func main() {
 	case "agent":
 		agentCmd()
 	case "gateway":
-		if shouldPromptGatewayRoot(os.Args) {
-			maybePromptAndEscalateRoot("gateway")
-		}
 		gatewayCmd()
 	case "status":
 		statusCmd()
