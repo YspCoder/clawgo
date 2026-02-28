@@ -8,29 +8,55 @@ const Sidebar: React.FC = () => {
   const { t } = useTranslation();
   const { token, setToken, sidebarOpen } = useAppContext();
 
+  const sections = [
+    {
+      title: t('sidebarCore'),
+      items: [
+        { icon: <LayoutDashboard className="w-5 h-5" />, label: t('dashboard'), to: '/' },
+        { icon: <MessageSquare className="w-5 h-5" />, label: t('chat'), to: '/chat' },
+        { icon: <Terminal className="w-5 h-5" />, label: t('logs'), to: '/logs' },
+        { icon: <Zap className="w-5 h-5" />, label: t('skills'), to: '/skills' },
+      ],
+    },
+    {
+      title: t('sidebarSystem'),
+      items: [
+        { icon: <Settings className="w-5 h-5" />, label: t('config'), to: '/config' },
+        { icon: <Clock className="w-5 h-5" />, label: t('cronJobs'), to: '/cron' },
+        { icon: <Server className="w-5 h-5" />, label: t('nodes'), to: '/nodes' },
+        { icon: <FolderOpen className="w-5 h-5" />, label: t('memory'), to: '/memory' },
+      ],
+    },
+    {
+      title: t('sidebarOps'),
+      items: [
+        { icon: <ClipboardList className="w-5 h-5" />, label: t('taskAudit'), to: '/task-audit' },
+        { icon: <ListTodo className="w-5 h-5" />, label: t('tasks'), to: '/tasks' },
+      ],
+    },
+  ];
+
   return (
-    <aside className={`fixed md:static inset-y-16 left-0 z-40 w-64 border-r border-zinc-800 bg-zinc-900/95 md:bg-zinc-900/30 flex flex-col shrink-0 transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-      <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
-        <NavItem icon={<LayoutDashboard className="w-5 h-5" />} label={t('dashboard')} to="/" />
-        <NavItem icon={<MessageSquare className="w-5 h-5" />} label={t('chat')} to="/chat" />
-        <NavItem icon={<Terminal className="w-5 h-5" />} label={t('logs')} to="/logs" />
-        <NavItem icon={<Zap className="w-5 h-5" />} label={t('skills')} to="/skills" />
-        <div className="h-4" />
-        <div className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest px-4 mb-2">System</div>
-        <NavItem icon={<Settings className="w-5 h-5" />} label={t('config')} to="/config" />
-        <NavItem icon={<Clock className="w-5 h-5" />} label={t('cronJobs')} to="/cron" />
-        <NavItem icon={<Server className="w-5 h-5" />} label={t('nodes')} to="/nodes" />
-        <NavItem icon={<FolderOpen className="w-5 h-5" />} label={t('memory')} to="/memory" />
-        <NavItem icon={<ClipboardList className="w-5 h-5" />} label={t('taskAudit')} to="/task-audit" />
-        <NavItem icon={<ListTodo className="w-5 h-5" />} label={t('tasks')} to="/tasks" />
+    <aside className={`fixed md:static inset-y-16 left-0 z-40 w-64 border-r border-zinc-800 bg-zinc-900/95 md:bg-zinc-900/40 backdrop-blur-sm flex flex-col shrink-0 transform transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <nav className="flex-1 px-3 py-4 space-y-3 overflow-y-auto">
+        {sections.map((sec) => (
+          <div key={sec.title} className="rounded-xl border border-zinc-800/60 bg-zinc-900/30 p-2">
+            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-2 pb-2">{sec.title}</div>
+            <div className="space-y-1">
+              {sec.items.map((it) => (
+                <NavItem key={it.to} icon={it.icon} label={it.label} to={it.to} />
+              ))}
+            </div>
+          </div>
+        ))}
       </nav>
 
-      <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
-        <div className="text-xs font-medium text-zinc-500 mb-2 uppercase tracking-wider px-1">{t('gatewayToken')}</div>
-        <input 
-          type="password" 
-          value={token} 
-          onChange={(e) => setToken(e.target.value)} 
+      <div className="p-3 border-t border-zinc-800 bg-zinc-900/60">
+        <div className="text-[11px] font-medium text-zinc-500 mb-1 uppercase tracking-wider px-1">{t('gatewayToken')}</div>
+        <input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
           placeholder={t('enterToken')}
           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors placeholder:text-zinc-600"
         />
