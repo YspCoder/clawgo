@@ -61,6 +61,18 @@ const TaskAudit: React.FC = () => {
     if (statusFilter !== 'all' && String(it.status || '-') !== statusFilter) return false;
     return true;
   }), [items, sourceFilter, statusFilter]);
+
+  const taskAction = async (action: 'pause'|'retry'|'complete'|'ignore') => {
+    if (!selected?.task_id) return;
+    try {
+      const url = `/webui/api/task_queue${q}`;
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, task_id: selected.task_id }) });
+      if (!r.ok) throw new Error(await r.text());
+      await fetchData();
+    } catch (e) {
+      console.error(e);
+    }
+  };
   const selectedPretty = useMemo(() => selected ? JSON.stringify(selected, null, 2) : '', [selected]);
 
   return (
@@ -114,6 +126,14 @@ const TaskAudit: React.FC = () => {
         <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('taskDetail')}</div>
           <div className="p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
+            {selected && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <button onClick={()=>taskAction('pause')} className="px-2 py-1 text-xs rounded bg-amber-700/70 hover:bg-amber-600">{t('pauseTask')}</button>
+                <button onClick={()=>taskAction('retry')} className="px-2 py-1 text-xs rounded bg-indigo-700/70 hover:bg-indigo-600">{t('retryTask')}</button>
+                <button onClick={()=>taskAction('complete')} className="px-2 py-1 text-xs rounded bg-emerald-700/70 hover:bg-emerald-600">{t('completeTask')}</button>
+                <button onClick={()=>taskAction('ignore')} className="px-2 py-1 text-xs rounded bg-zinc-700 hover:bg-zinc-600">{t('ignoreTask')}</button>
+              </div>
+            )}
             {!selected ? (
               <div className="text-zinc-500">{t('selectTask')}</div>
             ) : (

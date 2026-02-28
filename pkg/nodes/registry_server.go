@@ -1350,7 +1350,74 @@ func (s *RegistryServer) handleWebUITaskAudit(w http.ResponseWriter, r *http.Req
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+		if r.Method == http.MethodPost {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		action := fmt.Sprintf("%v", body["action"])
+		taskID := fmt.Sprintf("%v", body["task_id"])
+		if taskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		tasksPath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "tasks.json")
+		tb, err := os.ReadFile(tasksPath)
+		if err != nil {
+			http.Error(w, "tasks not found", http.StatusNotFound)
+			return
+		}
+		var tasks []map[string]interface{}
+		if err := json.Unmarshal(tb, &tasks); err != nil {
+			http.Error(w, "invalid tasks file", http.StatusInternalServerError)
+			return
+		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		updated := false
+		for _, t := range tasks {
+			if fmt.Sprintf("%v", t["id"]) != taskID {
+				continue
+			}
+			switch action {
+			case "pause":
+				t["status"] = "waiting"
+				t["block_reason"] = "manual_pause"
+				t["last_pause_reason"] = "manual_pause"
+				t["last_pause_at"] = now
+			case "retry":
+				t["status"] = "todo"
+				t["block_reason"] = ""
+				t["retry_after"] = ""
+			case "complete":
+				t["status"] = "done"
+				t["block_reason"] = "manual_complete"
+			case "ignore":
+				t["status"] = "blocked"
+				t["block_reason"] = "manual_ignore"
+				t["retry_after"] = "2099-01-01T00:00:00Z"
+			default:
+				http.Error(w, "unsupported action", http.StatusBadRequest)
+				return
+			}
+			t["updated_at"] = now
+			updated = true
+			break
+		}
+		if !updated {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+		out, _ := json.MarshalIndent(tasks, "", "  ")
+		if err := os.WriteFile(tasksPath, out, 0644); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		return
+	}
+
+path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
 	limit := 100
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
