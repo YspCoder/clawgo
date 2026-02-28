@@ -1,11 +1,20 @@
 package bus
 
+type MediaItem struct {
+	Source  string `json:"source,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Ref     string `json:"ref,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Channel string `json:"channel,omitempty"`
+}
+
 type InboundMessage struct {
 	Channel    string            `json:"channel"`
 	SenderID   string            `json:"sender_id"`
 	ChatID     string            `json:"chat_id"`
 	Content    string            `json:"content"`
 	Media      []string          `json:"media,omitempty"`
+	MediaItems []MediaItem       `json:"media_items,omitempty"`
 	SessionKey string            `json:"session_key"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
 }

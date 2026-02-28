@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 
@@ -96,11 +97,52 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 		ChatID:     chatID,
 		Content:    content,
 		Media:      media,
+		MediaItems: toMediaItems(c.name, media),
 		Metadata:   metadata,
 		SessionKey: sessionKey,
 	}
 
 	c.bus.PublishInbound(msg)
+}
+
+func toMediaItems(channel string, media []string) []bus.MediaItem {
+	if len(media) == 0 {
+		return nil
+	}
+	out := make([]bus.MediaItem, 0, len(media))
+	for _, m := range media {
+		item := bus.MediaItem{Channel: channel, Ref: m, Source: "raw", Type: "unknown"}
+		switch {
+		case strings.HasPrefix(m, "feishu:image:"):
+			item.Source = "feishu"
+			item.Type = "image"
+		case strings.HasPrefix(m, "feishu:file:"):
+			item.Source = "feishu"
+			item.Type = "file"
+		case strings.HasPrefix(m, "telegram:"):
+			item.Source = "telegram"
+			item.Type = "remote"
+		case strings.HasPrefix(m, "http://") || strings.HasPrefix(m, "https://"):
+			item.Source = "url"
+			item.Type = "remote"
+		default:
+			ext := strings.ToLower(filepath.Ext(m))
+			item.Path = m
+			switch ext {
+			case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
+				item.Type = "image"
+			case ".mp4", ".mov", ".webm", ".avi":
+				item.Type = "video"
+			case ".mp3", ".wav", ".ogg", ".m4a":
+				item.Type = "audio"
+			default:
+				item.Type = "file"
+			}
+			item.Source = "local"
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (c *BaseChannel) setRunning(running bool) {

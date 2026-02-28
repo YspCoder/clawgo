@@ -374,6 +374,8 @@ func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage,
 		"retry_count":   0,
 		"log":           logText,
 		"input_preview": truncate(strings.ReplaceAll(msg.Content, "\n", " "), 180),
+		"media_count":   len(msg.MediaItems),
+		"media_items":   msg.MediaItems,
 	}
 	b, _ := json.Marshal(row)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)

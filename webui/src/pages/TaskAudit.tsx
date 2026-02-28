@@ -15,6 +15,7 @@ type TaskAuditItem = {
   error?: string;
   input_preview?: string;
   logs?: string[];
+  media_items?: Array<{ source?: string; type?: string; ref?: string; path?: string; channel?: string }>;
   [key: string]: any;
 };
 
@@ -108,6 +109,21 @@ const TaskAudit: React.FC = () => {
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('taskLogs')}</div>
                   <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{Array.isArray(selected.logs) && selected.logs.length ? selected.logs.join('\n') : '-'}</div>
+                </div>
+
+                <div>
+                  <div className="text-zinc-500 text-xs mb-1">{t('mediaSources')}</div>
+                  <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 text-xs">
+                    {Array.isArray(selected.media_items) && selected.media_items.length > 0 ? (
+                      <div className="space-y-1">
+                        {selected.media_items.map((m, i) => (
+                          <div key={i} className="font-mono break-all text-zinc-200">
+                            [{m.channel || '-'}] {m.source || '-'} / {m.type || '-'} · {m.path || m.ref || '-'}
+                          </div>
+                        ))}
+                      </div>
+                    ) : '-'}
+                  </div>
                 </div>
 
                 <div>
