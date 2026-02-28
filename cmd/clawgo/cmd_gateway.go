@@ -938,8 +938,16 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 
 func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
 	a := cfg.Agents.Defaults.Autonomy
+	notifyChannel := strings.ToLower(strings.TrimSpace(a.NotifyChannel))
+	notifyChatID := strings.TrimSpace(a.NotifyChatID)
+	if notifyChannel == "" || notifyChatID == "" {
+		if ch, chat := inferAutonomyNotifyTarget(cfg); ch != "" && chat != "" {
+			notifyChannel = ch
+			notifyChatID = chat
+		}
+	}
 	notifyAllowFrom := []string{}
-	switch strings.ToLower(a.NotifyChannel) {
+	switch notifyChannel {
 	case "telegram":
 		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.Telegram.AllowFrom...)
 	case "feishu":
@@ -972,8 +980,33 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		CompletionTemplate:          cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
 		BlockedTemplate:             cfg.Agents.Defaults.Texts.AutonomyBlockedTemplate,
 		Workspace:                   cfg.WorkspacePath(),
-		DefaultNotifyChannel:        a.NotifyChannel,
-		DefaultNotifyChatID:         a.NotifyChatID,
+		DefaultNotifyChannel:        notifyChannel,
+		DefaultNotifyChatID:         notifyChatID,
 		NotifyAllowFrom:             notifyAllowFrom,
 	}, msgBus)
+}
+
+func inferAutonomyNotifyTarget(cfg *config.Config) (string, string) {
+	if cfg == nil {
+		return "", ""
+	}
+	if cfg.Channels.Telegram.Enabled && len(cfg.Channels.Telegram.AllowFrom) > 0 {
+		return "telegram", strings.TrimSpace(cfg.Channels.Telegram.AllowFrom[0])
+	}
+	if cfg.Channels.Feishu.Enabled && len(cfg.Channels.Feishu.AllowFrom) > 0 {
+		return "feishu", strings.TrimSpace(cfg.Channels.Feishu.AllowFrom[0])
+	}
+	if cfg.Channels.WhatsApp.Enabled && len(cfg.Channels.WhatsApp.AllowFrom) > 0 {
+		return "whatsapp", strings.TrimSpace(cfg.Channels.WhatsApp.AllowFrom[0])
+	}
+	if cfg.Channels.Discord.Enabled && len(cfg.Channels.Discord.AllowFrom) > 0 {
+		return "discord", strings.TrimSpace(cfg.Channels.Discord.AllowFrom[0])
+	}
+	if cfg.Channels.QQ.Enabled && len(cfg.Channels.QQ.AllowFrom) > 0 {
+		return "qq", strings.TrimSpace(cfg.Channels.QQ.AllowFrom[0])
+	}
+	if cfg.Channels.DingTalk.Enabled && len(cfg.Channels.DingTalk.AllowFrom) > 0 {
+		return "dingtalk", strings.TrimSpace(cfg.Channels.DingTalk.AllowFrom[0])
+	}
+	return "", ""
 }
