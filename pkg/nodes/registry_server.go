@@ -92,6 +92,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
 	mux.HandleFunc("/webui/api/task_queue", s.handleWebUITaskQueue)
 	mux.HandleFunc("/webui/api/tasks", s.handleWebUITasks)
+	mux.HandleFunc("/webui/api/task_daily_summary", s.handleWebUITaskDailySummary)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
@@ -1557,6 +1558,38 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 		}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": running, "items": items, "stats": stats})
+}
+
+func (s *RegistryServer) handleWebUITaskDailySummary(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		date = time.Now().UTC().Format("2006-01-02")
+	}
+	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", date+".md")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "date": date, "report": ""})
+		return
+	}
+	text := string(b)
+	marker := "## Autonomy Daily Report (" + date + ")"
+	idx := strings.Index(text, marker)
+	report := ""
+	if idx >= 0 {
+		report = text[idx:]
+		if n := strings.Index(report[len(marker):], "\n## "); n > 0 {
+			report = report[:len(marker)+n]
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "date": date, "report": report})
 }
 
 func (s *RegistryServer) handleWebUITasks(w http.ResponseWriter, r *http.Request) {

@@ -33,6 +33,7 @@ const TaskAudit: React.FC = () => {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [draft, setDraft] = useState<any>({ id: '', content: '', priority: 'normal', status: 'todo', source: 'manual', due_at: '' });
+  const [dailyReport, setDailyReport] = useState<string>('');
 
   const fetchData = async () => {
     setLoading(true);
@@ -45,6 +46,13 @@ const TaskAudit: React.FC = () => {
       const sorted = arr.sort((a: any, b: any) => String(b.time || '').localeCompare(String(a.time || '')));
       setItems(sorted);
       if (sorted.length > 0) setSelected(sorted[0]);
+      const dr = await fetch(`/webui/api/task_daily_summary${q}`);
+      if (dr.ok) {
+        const dj = await dr.json();
+        setDailyReport(String(dj.report || ''));
+      } else {
+        setDailyReport('');
+      }
     } catch (e) {
       console.error(e);
       setItems([]);
@@ -114,6 +122,11 @@ const TaskAudit: React.FC = () => {
           </select>
           <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
         </div>
+      </div>
+
+      <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-3 text-sm">
+        <div className="text-xs text-zinc-400 uppercase tracking-wider mb-2">{t('dailySummary')}</div>
+        <div className="whitespace-pre-wrap text-zinc-200">{dailyReport || t('noDailySummary')}</div>
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
