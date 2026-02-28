@@ -30,6 +30,8 @@ const TaskAudit: React.FC = () => {
   const [items, setItems] = useState<TaskAuditItem[]>([]);
   const [selected, setSelected] = useState<TaskAuditItem | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const fetchData = async () => {
     setLoading(true);
@@ -53,22 +55,46 @@ const TaskAudit: React.FC = () => {
 
   useEffect(() => { fetchData(); }, [q]);
 
+
+  const filteredItems = useMemo(() => items.filter((it) => {
+    if (sourceFilter !== 'all' && String(it.source || '-') !== sourceFilter) return false;
+    if (statusFilter !== 'all' && String(it.status || '-') !== statusFilter) return false;
+    return true;
+  }), [items, sourceFilter, statusFilter]);
   const selectedPretty = useMemo(() => selected ? JSON.stringify(selected, null, 2) : '', [selected]);
 
   return (
     <div className="h-full p-4 md:p-6 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl md:text-2xl font-semibold">{t('taskAudit')}</h1>
-        <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
+        <div className="flex items-center gap-2">
+          <select value={sourceFilter} onChange={(e)=>setSourceFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
+            <option value="all">{t('allSources')}</option>
+            <option value="autonomy">autonomy</option>
+            <option value="direct">direct</option>
+            <option value="memory_todo">memory_todo</option>
+            <option value="-">-</option>
+          </select>
+          <select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
+            <option value="all">{t('allStatus')}</option>
+            <option value="running">running</option>
+            <option value="waiting">waiting</option>
+            <option value="blocked">blocked</option>
+            <option value="success">success</option>
+            <option value="error">error</option>
+            <option value="suppressed">suppressed</option>
+          </select>
+          <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
         <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('taskQueue')}</div>
           <div className="overflow-y-auto min-h-0">
-            {items.length === 0 ? (
+            {filteredItems.length === 0 ? (
               <div className="p-4 text-sm text-zinc-500">{t('noTaskAudit')}</div>
-            ) : items.map((it, idx) => {
+            ) : filteredItems.map((it, idx) => {
               const active = selected?.task_id === it.task_id && selected?.time === it.time;
               return (
                 <button

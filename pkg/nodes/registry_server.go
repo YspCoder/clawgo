@@ -1475,7 +1475,19 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": running, "items": items})
+	stats := map[string]int{"total": len(items), "running": len(running), "idle_round_budget": 0, "active_user": 0, "manual_pause": 0}
+	for _, it := range items {
+		reason := fmt.Sprintf("%v", it["block_reason"])
+		switch reason {
+		case "idle_round_budget":
+			stats["idle_round_budget"]++
+		case "active_user":
+			stats["active_user"]++
+		case "manual_pause":
+			stats["manual_pause"]++
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": running, "items": items, "stats": stats})
 }
 
 func (s *RegistryServer) handleWebUIExecApprovals(w http.ResponseWriter, r *http.Request) {
