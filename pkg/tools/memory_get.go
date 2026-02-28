@@ -96,7 +96,7 @@ func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}
 		return "", err
 	}
 
-	content := strings.TrimSpace(out.String())
+	content := out.String()
 	if content == "" {
 		return fmt.Sprintf("No content in range for %s (from=%d, lines=%d)", rawPath, from, lines), nil
 	}

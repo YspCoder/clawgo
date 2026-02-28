@@ -65,9 +65,8 @@ func (t *MemoryWriteTool) Parameters() map[string]interface{} {
 
 func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	content, _ := args["content"].(string)
-	content = strings.TrimSpace(content)
 	if content == "" {
-		return "", fmt.Errorf("content is required")
+		return "error: content is required", nil
 	}
 
 	kind, _ := args["kind"].(string)

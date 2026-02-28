@@ -277,7 +277,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("History for %s:\n", key))
 		for _, item := range window {
-			content := strings.TrimSpace(item.msg.Content)
+			content := item.msg.Content
 			if len(content) > 180 {
 				content = content[:180] + "..."
 			}
