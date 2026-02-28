@@ -55,6 +55,8 @@ type taskState struct {
 	DedupeHits       int
 	ResourceKeys     []string
 	WaitAttempts     int
+	LastPauseReason string
+	LastPauseAt     time.Time
 }
 
 type Engine struct {
@@ -145,6 +147,8 @@ func (e *Engine) tick() {
 				st.Status = "waiting"
 				st.BlockReason = "manual_pause"
 				st.WaitingSince = now
+				st.LastPauseReason = "manual_pause"
+				st.LastPauseAt = now
 				e.writeReflectLog("waiting", st, "paused by manual switch")
 				e.writeTriggerAudit("waiting", st, "manual_pause")
 			}
@@ -160,6 +164,8 @@ func (e *Engine) tick() {
 				st.Status = "waiting"
 				st.BlockReason = "active_user"
 				st.WaitingSince = now
+				st.LastPauseReason = "active_user"
+				st.LastPauseAt = now
 				e.writeReflectLog("waiting", st, "paused due to active user conversation")
 				e.writeTriggerAudit("waiting", st, "active_user")
 			}
@@ -186,6 +192,8 @@ func (e *Engine) tick() {
 			status := "idle"
 			retryAfter := time.Time{}
 			resourceKeys := deriveResourceKeys(t.Content)
+			lastPauseReason := ""
+			lastPauseAt := time.Time{}
 			if old, ok := storedMap[t.ID]; ok {
 				if old.Status == "blocked" {
 					status = "blocked"
@@ -198,8 +206,14 @@ func (e *Engine) tick() {
 				if len(old.ResourceKeys) > 0 {
 					resourceKeys = append([]string(nil), old.ResourceKeys...)
 				}
+				lastPauseReason = old.LastPauseReason
+				if old.LastPauseAt != "" {
+					if pt, err := time.Parse(time.RFC3339, old.LastPauseAt); err == nil {
+						lastPauseAt = pt
+					}
+				}
 			}
-			e.state[t.ID] = &taskState{ID: t.ID, Content: t.Content, Priority: t.Priority, DueAt: t.DueAt, Status: status, RetryAfter: retryAfter, DedupeHits: t.DedupeHits, ResourceKeys: resourceKeys}
+			e.state[t.ID] = &taskState{ID: t.ID, Content: t.Content, Priority: t.Priority, DueAt: t.DueAt, Status: status, RetryAfter: retryAfter, DedupeHits: t.DedupeHits, ResourceKeys: resourceKeys, LastPauseReason: lastPauseReason, LastPauseAt: lastPauseAt}
 			continue
 		}
 		st.Content = t.Content
@@ -256,7 +270,11 @@ func (e *Engine) tick() {
 			st.Status = "idle"
 			st.BlockReason = ""
 			st.WaitingSince = time.Time{}
-			e.writeReflectLog("resume", st, "autonomy resumed from waiting")
+			pausedFor := 0
+			if !st.LastPauseAt.IsZero() {
+				pausedFor = int(now.Sub(st.LastPauseAt).Seconds())
+			}
+			e.writeReflectLog("resume", st, fmt.Sprintf("autonomy resumed from waiting (reason=%s paused_for=%ds)", reason, pausedFor))
 			e.writeTriggerAudit("resume", st, reason)
 		}
 		if st.Status == "blocked" {
@@ -302,6 +320,7 @@ func (e *Engine) tick() {
 		st.WaitAttempts = 0
 		st.BlockReason = ""
 		st.WaitingSince = time.Time{}
+		st.LastPauseReason = ""
 		st.LastRunAt = now
 		st.LastAutonomyAt = now
 		e.writeReflectLog("dispatch", st, "task dispatched to agent loop")
@@ -727,18 +746,24 @@ func (e *Engine) persistStateLocked() {
 		if !st.RetryAfter.IsZero() {
 			retryAfter = st.RetryAfter.UTC().Format(time.RFC3339)
 		}
+		lastPauseAt := ""
+		if !st.LastPauseAt.IsZero() {
+			lastPauseAt = st.LastPauseAt.UTC().Format(time.RFC3339)
+		}
 		items = append(items, TaskItem{
-			ID:           st.ID,
-			Content:      st.Content,
-			Priority:     st.Priority,
-			DueAt:        st.DueAt,
-			Status:       status,
-			BlockReason:  st.BlockReason,
-			RetryAfter:   retryAfter,
-			Source:       "memory_todo",
-			DedupeHits:   st.DedupeHits,
-			ResourceKeys: append([]string(nil), st.ResourceKeys...),
-			UpdatedAt:    nowRFC3339(),
+			ID:              st.ID,
+			Content:         st.Content,
+			Priority:        st.Priority,
+			DueAt:           st.DueAt,
+			Status:          status,
+			BlockReason:     st.BlockReason,
+			RetryAfter:      retryAfter,
+			Source:          "memory_todo",
+			DedupeHits:      st.DedupeHits,
+			ResourceKeys:    append([]string(nil), st.ResourceKeys...),
+			LastPauseReason: st.LastPauseReason,
+			LastPauseAt:     lastPauseAt,
+			UpdatedAt:       nowRFC3339(),
 		})
 	}
 	_ = e.taskStore.Save(items)

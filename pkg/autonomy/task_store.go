@@ -20,6 +20,8 @@ type TaskItem struct {
 	Source      string `json:"source"`
 	DedupeHits   int      `json:"dedupe_hits,omitempty"`
 	ResourceKeys []string `json:"resource_keys,omitempty"`
+	LastPauseReason string `json:"last_pause_reason,omitempty"`
+	LastPauseAt     string `json:"last_pause_at,omitempty"`
 	UpdatedAt    string   `json:"updated_at"`
 }
 
