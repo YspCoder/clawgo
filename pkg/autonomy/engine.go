@@ -292,6 +292,10 @@ func (e *Engine) tick() {
 			if st.BlockReason == "resource_lock" && !st.RetryAfter.IsZero() && now.Before(st.RetryAfter) {
 				continue
 			}
+			if st.BlockReason == "idle_round_budget" && e.opts.MaxRoundsWithoutUser > 0 && e.roundsWithoutUser >= e.opts.MaxRoundsWithoutUser {
+				// Stay waiting until user activity resets round budget.
+				continue
+			}
 			// Debounce waiting/resume flapping
 			if !st.WaitingSince.IsZero() && now.Sub(st.WaitingSince) < time.Duration(e.opts.WaitingResumeDebounceSec)*time.Second {
 				continue
@@ -306,6 +310,23 @@ func (e *Engine) tick() {
 			}
 			e.writeReflectLog("resume", st, fmt.Sprintf("autonomy resumed from waiting (reason=%s paused_for=%ds)", reason, pausedFor))
 			e.writeTriggerAudit("resume", st, reason)
+		}
+		if st.Status == "running" {
+			if outcome, ok := e.detectRunOutcome(st.ID, st.LastRunAt); ok {
+				e.releaseLocksLocked(st.ID)
+				if outcome == "success" || outcome == "suppressed" {
+					st.Status = "completed"
+					e.writeReflectLog("complete", st, "marked completed by run outcome")
+					continue
+				}
+				if outcome == "error" {
+					st.Status = "blocked"
+					st.BlockReason = "last_run_error"
+					st.RetryAfter = now.Add(blockedRetryBackoff(st.ConsecutiveStall+1, e.opts.MinRunIntervalSec))
+					e.sendFailureNotification(st, "last run ended with error")
+					continue
+				}
+			}
 		}
 		if st.Status == "blocked" {
 			e.releaseLocksLocked(st.ID)
@@ -337,11 +358,13 @@ func (e *Engine) tick() {
 		}
 
 		if e.opts.MaxRoundsWithoutUser > 0 && e.roundsWithoutUser >= e.opts.MaxRoundsWithoutUser {
-			st.Status = "waiting"
-			st.BlockReason = "idle_round_budget"
-			st.WaitingSince = now
-			e.writeReflectLog("waiting", st, fmt.Sprintf("paused by idle round budget (%d)", e.opts.MaxRoundsWithoutUser))
-			e.writeTriggerAudit("waiting", st, "idle_round_budget")
+			if !(st.Status == "waiting" && st.BlockReason == "idle_round_budget") {
+				st.Status = "waiting"
+				st.BlockReason = "idle_round_budget"
+				st.WaitingSince = now
+				e.writeReflectLog("waiting", st, fmt.Sprintf("paused by idle round budget (%d)", e.opts.MaxRoundsWithoutUser))
+				e.writeTriggerAudit("waiting", st, "idle_round_budget")
+			}
 			continue
 		}
 		if !e.tryAcquireLocksLocked(st) {
@@ -985,6 +1008,51 @@ func (e *Engine) maybeCleanupTaskHistoryLocked(now time.Time) {
 		}
 	}
 	e.lastHistoryCleanupAt = now
+}
+
+func (e *Engine) detectRunOutcome(taskID string, since time.Time) (string, bool) {
+	if e.opts.Workspace == "" || taskID == "" {
+		return "", false
+	}
+	path := filepath.Join(e.opts.Workspace, "memory", "task-audit.jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	sessionKey := "autonomy:" + taskID
+	latest := ""
+	latestAt := time.Time{}
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		var row map[string]interface{}
+		if json.Unmarshal(s.Bytes(), &row) != nil {
+			continue
+		}
+		if fmt.Sprintf("%v", row["session"]) != sessionKey {
+			continue
+		}
+		st := fmt.Sprintf("%v", row["status"])
+		if st == "" || st == "running" {
+			continue
+		}
+		ts := fmt.Sprintf("%v", row["time"])
+		tm, err := time.Parse(time.RFC3339, ts)
+		if err != nil {
+			continue
+		}
+		if !since.IsZero() && tm.Before(since) {
+			continue
+		}
+		if latestAt.IsZero() || tm.After(latestAt) {
+			latestAt = tm
+			latest = st
+		}
+	}
+	if latest == "" {
+		return "", false
+	}
+	return latest, true
 }
 
 func parseTodoAttributes(content string) (priority, dueAt, normalized string) {
