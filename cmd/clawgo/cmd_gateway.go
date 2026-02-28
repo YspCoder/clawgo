@@ -938,6 +938,21 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 
 func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
 	a := cfg.Agents.Defaults.Autonomy
+	notifyAllowFrom := []string{}
+	switch strings.ToLower(a.NotifyChannel) {
+	case "telegram":
+		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.Telegram.AllowFrom...)
+	case "feishu":
+		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.Feishu.AllowFrom...)
+	case "whatsapp":
+		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.WhatsApp.AllowFrom...)
+	case "discord":
+		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.Discord.AllowFrom...)
+	case "qq":
+		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.QQ.AllowFrom...)
+	case "dingtalk":
+		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.DingTalk.AllowFrom...)
+	}
 	return autonomy.NewEngine(autonomy.Options{
 		Enabled:                     a.Enabled,
 		TickIntervalSec:             a.TickIntervalSec,
@@ -959,6 +974,6 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		Workspace:                   cfg.WorkspacePath(),
 		DefaultNotifyChannel:        a.NotifyChannel,
 		DefaultNotifyChatID:         a.NotifyChatID,
-		NotifyAllowChats:            a.NotifyAllowChats,
+		NotifyAllowFrom:             notifyAllowFrom,
 	}, msgBus)
 }

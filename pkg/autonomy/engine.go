@@ -29,7 +29,7 @@ type Options struct {
 	Workspace                   string
 	DefaultNotifyChannel        string
 	DefaultNotifyChatID         string
-	NotifyAllowChats            []string
+	NotifyAllowFrom             []string
 	NotifyCooldownSec           int
 	NotifySameReasonCooldownSec int
 	QuietHours                  string
@@ -643,9 +643,9 @@ func (e *Engine) shouldNotify(key string, reason string) bool {
 	if strings.TrimSpace(e.opts.DefaultNotifyChannel) == "" || strings.TrimSpace(e.opts.DefaultNotifyChatID) == "" {
 		return false
 	}
-	if len(e.opts.NotifyAllowChats) > 0 {
+	if len(e.opts.NotifyAllowFrom) > 0 {
 		allowed := false
-		for _, c := range e.opts.NotifyAllowChats {
+		for _, c := range e.opts.NotifyAllowFrom {
 			if c == e.opts.DefaultNotifyChatID {
 				allowed = true
 				break
