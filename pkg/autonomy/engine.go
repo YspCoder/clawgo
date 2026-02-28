@@ -263,6 +263,7 @@ func (e *Engine) tick() {
 				e.releaseLocksLocked(st.ID)
 				st.Status = "completed"
 				e.sendCompletionNotification(st)
+				e.enqueueInferredNextTasksLocked(st)
 			}
 		}
 	}
@@ -317,6 +318,7 @@ func (e *Engine) tick() {
 				if outcome == "success" || outcome == "suppressed" {
 					st.Status = "completed"
 					e.writeReflectLog("complete", st, "marked completed by run outcome")
+					e.enqueueInferredNextTasksLocked(st)
 					continue
 				}
 				if outcome == "error" {
@@ -643,6 +645,56 @@ func (e *Engine) sendCompletionNotification(st *taskState) {
 		ChatID:  e.opts.DefaultNotifyChatID,
 		Content: fmt.Sprintf(tpl, shortTask(st.Content), shortTask(st.Content)),
 	})
+}
+
+func (e *Engine) enqueueInferredNextTasksLocked(st *taskState) {
+	if st == nil {
+		return
+	}
+	content := strings.TrimSpace(st.Content)
+	if content == "" {
+		return
+	}
+	if strings.Contains(content, "[auto-next]") {
+		return
+	}
+	c := strings.ToLower(content)
+	looksLikeStudy := strings.Contains(c, "学习") || strings.Contains(c, "研究") || strings.Contains(c, "analy") || strings.Contains(c, "study") || strings.Contains(c, "代码") || strings.Contains(c, "codebase")
+	if !looksLikeStudy {
+		return
+	}
+
+	candidates := []string{
+		fmt.Sprintf("[auto-next] 基于「%s」输出架构摘要与改进点 Top5（含收益/风险评估）", shortTask(content)),
+		fmt.Sprintf("[auto-next] 基于「%s」拆解 3-5 个可执行开发任务（含优先级、验收标准），并写入任务队列", shortTask(content)),
+	}
+
+	existing := map[string]bool{}
+	for _, cur := range e.state {
+		existing[strings.TrimSpace(cur.Content)] = true
+	}
+	items, _ := e.taskStore.Load()
+	for _, it := range items {
+		existing[strings.TrimSpace(it.Content)] = true
+	}
+
+	now := nowRFC3339()
+	added := 0
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || existing[candidate] {
+			continue
+		}
+		id := hashID(candidate)
+		e.state[id] = &taskState{ID: id, Content: candidate, Priority: "normal", Status: "idle"}
+		items = append(items, TaskItem{ID: id, Content: candidate, Priority: "normal", Status: "todo", Source: "autonomy_infer", UpdatedAt: now})
+		existing[candidate] = true
+		added++
+	}
+	if added > 0 {
+		_ = e.taskStore.Save(items)
+		e.writeReflectLog("infer", st, fmt.Sprintf("generated %d follow-up task(s)", added))
+	}
 }
 
 func (e *Engine) sendFailureNotification(st *taskState, reason string) {
