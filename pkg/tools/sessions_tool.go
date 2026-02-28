@@ -138,7 +138,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		if query != "" {
 			filtered := make([]SessionInfo, 0, len(items))
 			for _, s := range items {
-				blob := strings.ToLower(strings.TrimSpace(s.Key + "\n" + s.Kind + "\n" + s.Summary))
+				blob := strings.ToLower(s.Key + "\n" + s.Kind + "\n" + s.Summary)
 				if strings.Contains(blob, query) {
 					filtered = append(filtered, s)
 				}
@@ -157,13 +157,13 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		for _, s := range items {
 			sb.WriteString(fmt.Sprintf("- %s kind=%s compactions=%d updated=%s\n", s.Key, s.Kind, s.CompactionCount, s.UpdatedAt.Format(time.RFC3339)))
 		}
-		return strings.TrimSpace(sb.String()), nil
+		return sb.String(), nil
 	case "history":
 		if t.historyFn == nil {
 			return "sessions history unavailable", nil
 		}
 		key, _ := args["key"].(string)
-		key = strings.TrimSpace(key)
+		key = key
 		if key == "" {
 			return "key is required for history", nil
 		}
@@ -229,7 +229,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		if !includeTools {
 			filtered := make([]indexedMsg, 0, len(window))
 			for _, m := range window {
-				if strings.TrimSpace(strings.ToLower(m.msg.Role)) == "tool" {
+				if strings.ToLower(m.msg.Role) == "tool" {
 					continue
 				}
 				filtered = append(filtered, m)
@@ -239,7 +239,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		if roleFilter != "" {
 			filtered := make([]indexedMsg, 0, len(window))
 			for _, m := range window {
-				if strings.ToLower(strings.TrimSpace(m.msg.Role)) == roleFilter {
+				if strings.ToLower(m.msg.Role) == roleFilter {
 					filtered = append(filtered, m)
 				}
 			}
@@ -252,7 +252,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 			}
 			filtered := make([]indexedMsg, 0, len(window))
 			for _, m := range window {
-				if strings.ToLower(strings.TrimSpace(m.msg.Role)) == targetRole {
+				if strings.ToLower(m.msg.Role) == targetRole {
 					filtered = append(filtered, m)
 				}
 			}
@@ -261,7 +261,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		if query != "" {
 			filtered := make([]indexedMsg, 0, len(window))
 			for _, m := range window {
-				blob := strings.ToLower(strings.TrimSpace(m.msg.Role + "\n" + m.msg.Content))
+				blob := strings.ToLower(m.msg.Role + "\n" + m.msg.Content)
 				if strings.Contains(blob, query) {
 					filtered = append(filtered, m)
 				}
@@ -283,14 +283,14 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 			}
 			sb.WriteString(fmt.Sprintf("- [#%d][%s] %s\n", item.idx, item.msg.Role, content))
 		}
-		return strings.TrimSpace(sb.String()), nil
+		return sb.String(), nil
 	default:
 		return firstNonEmpty(t.unsupportedAction, "unsupported action"), nil
 	}
 }
 
 func firstNonEmpty(v, fallback string) string {
-	if strings.TrimSpace(v) != "" {
+	if v != "" {
 		return v
 	}
 	return fallback

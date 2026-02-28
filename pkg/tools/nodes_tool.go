@@ -113,7 +113,7 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 				return "", fmt.Errorf("invalid_args: canvas_action requires args.action")
 			}
 		}
-		req := nodes.Request{Action: action, Node: nodeID, Task: strings.TrimSpace(task), Model: strings.TrimSpace(model), Args: reqArgs}
+		req := nodes.Request{Action: action, Node: nodeID, Task: task, Model: model, Args: reqArgs}
 		started := time.Now()
 		resp, err := t.router.Dispatch(ctx, req, mode)
 		durationMs := int(time.Since(started).Milliseconds())
@@ -134,7 +134,7 @@ func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode stri
 	_ = os.MkdirAll(filepath.Dir(t.auditPath), 0755)
 	row := map[string]interface{}{
 		"time":        time.Now().UTC().Format(time.RFC3339),
-		"mode":        strings.TrimSpace(mode),
+		"mode":        mode,
 		"action":      req.Action,
 		"node":        req.Node,
 		"task":        req.Task,
