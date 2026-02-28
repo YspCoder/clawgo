@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -689,67 +688,6 @@ func runGatewayBootstrapInit(parent context.Context, cfg *config.Config, agentLo
 		logger.WarnCF("gateway", "Bootstrap file cleanup failed", map[string]interface{}{logger.FieldError: err.Error()})
 	}
 	logger.InfoC("gateway", "Bootstrap init model call completed")
-}
-
-func maybePromptAndEscalateRoot(command string) {
-	if os.Getenv(envRootPrompted) == "1" {
-		return
-	}
-	if !isInteractiveStdin() {
-		return
-	}
-
-	fmt.Printf("Grant root permissions for `clawgo %s`? (yes/no): ", command)
-	reader := bufio.NewReader(os.Stdin)
-	line, _ := reader.ReadString('\n')
-	answer := strings.ToLower(strings.TrimSpace(line))
-	if answer != "yes" && answer != "y" {
-		_ = os.Setenv(envRootPrompted, "1")
-		_ = os.Setenv(envRootGranted, "0")
-		return
-	}
-
-	_ = os.Setenv(envRootPrompted, "1")
-	_ = os.Setenv(envRootGranted, "1")
-
-	if os.Geteuid() == 0 {
-		return
-	}
-
-	exePath, err := os.Executable()
-	if err != nil {
-		fmt.Printf("Error resolving executable for sudo re-run: %v\n", err)
-		os.Exit(1)
-	}
-	exePath, _ = filepath.Abs(exePath)
-
-	cmdArgs := append([]string{"-E", exePath}, os.Args[1:]...)
-	cmd := exec.Command("sudo", cmdArgs...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), envRootPrompted+"=1", envRootGranted+"=1")
-
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		fmt.Printf("Failed to elevate privileges with sudo: %v\n", err)
-		os.Exit(1)
-	}
-	os.Exit(0)
-}
-
-func shouldPromptGatewayRoot(args []string) bool {
-	return len(args) == 2 && args[1] == "gateway"
-}
-
-func isInteractiveStdin() bool {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
 func applyMaximumPermissionPolicy(cfg *config.Config) {

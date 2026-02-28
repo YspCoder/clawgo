@@ -22,7 +22,6 @@ var embeddedFiles embed.FS
 const version = "0.1.0"
 const logo = "🦞"
 const gatewayServiceName = "clawgo-gateway.service"
-const envRootPrompted = "CLAWGO_ROOT_PROMPTED"
 const envRootGranted = "CLAWGO_ROOT_GRANTED"
 
 var globalConfigPathOverride string
