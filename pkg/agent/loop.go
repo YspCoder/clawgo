@@ -544,14 +544,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if maxAllowed < 1 {
 		maxAllowed = 1
 	}
-	hardCap := 24
+	// CLAWGO_MAX_TOOL_ITERATIONS:
+	//   0 or unset => no fixed cap, keep extending while tool chain progresses
+	//   >0         => explicit ceiling
+	hardCap := 0
 	if v := os.Getenv("CLAWGO_MAX_TOOL_ITERATIONS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			hardCap = n
 		}
-	}
-	if hardCap < maxAllowed {
-		hardCap = maxAllowed
 	}
 	for iteration < maxAllowed {
 		iteration++
@@ -680,8 +680,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
 
 		hasToolActivity = true
-		if maxAllowed < hardCap {
-			maxAllowed = hardCap
+		if hardCap > 0 {
+			if maxAllowed < hardCap {
+				maxAllowed = hardCap
+			}
+		} else {
+			// No fixed cap: extend rolling window as long as tools keep chaining.
+			if maxAllowed < iteration+al.maxIterations {
+				maxAllowed = iteration + al.maxIterations
+			}
 		}
 		for _, tc := range response.ToolCalls {
 			// Log tool call with arguments preview
