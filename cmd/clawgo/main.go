@@ -62,8 +62,6 @@ func main() {
 		configCmd()
 	case "cron":
 		cronCmd()
-	case "login":
-		loginCmd()
 	case "channel":
 		channelCmd()
 	case "skills":

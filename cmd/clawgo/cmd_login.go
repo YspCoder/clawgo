@@ -9,7 +9,7 @@ import (
 	"clawgo/pkg/config"
 )
 
-func loginCmd() {
+func configLoginCmd() {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
@@ -38,6 +38,3 @@ func loginCmd() {
 	fmt.Println("✓ CLIProxyAPI configuration saved.")
 }
 
-func configureProvider(cfg *config.Config, provider string) {
-	// Deprecated: Migrated to CLIProxyAPI logic in loginCmd
-}

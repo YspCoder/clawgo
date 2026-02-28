@@ -25,6 +25,8 @@ func configCmd() {
 		configCheckCmd()
 	case "reload":
 		configReloadCmd()
+	case "login":
+		configLoginCmd()
 	default:
 		fmt.Printf("Unknown config command: %s\n", os.Args[2])
 		configHelp()

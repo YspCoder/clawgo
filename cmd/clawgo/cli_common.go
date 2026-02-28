@@ -94,7 +94,6 @@ func printHelp() {
 	fmt.Println("  status      Show clawgo status")
 	fmt.Println("  config      Get/set config values")
 	fmt.Println("  cron        Manage scheduled tasks")
-	fmt.Println("  login       Configure CLIProxyAPI upstream")
 	fmt.Println("  channel     Test and manage messaging channels")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  uninstall   Uninstall clawgo components")
