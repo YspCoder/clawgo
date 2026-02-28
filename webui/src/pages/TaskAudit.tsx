@@ -32,7 +32,6 @@ const TaskAudit: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [draft, setDraft] = useState<any>({ id: '', content: '', priority: 'normal', status: 'todo', source: 'manual', due_at: '' });
   const [dailyReport, setDailyReport] = useState<string>('');
   const [reportDate, setReportDate] = useState<string>(new Date().toISOString().slice(0,10));
 
@@ -101,20 +100,6 @@ const TaskAudit: React.FC = () => {
     setSelected(null);
     setDraft({ id: '', content: '', priority: 'normal', status: 'todo', source: 'manual', due_at: '' });
   };
-  const saveTask = async (action: 'create'|'update'|'delete') => {
-    try {
-      const url = `/webui/api/tasks${q}`;
-      const payload: any = { action };
-      if (action === 'create') payload.item = draft;
-      if (action === 'update') { payload.id = draft.id; payload.item = draft; }
-      if (action === 'delete') payload.id = draft.id;
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!r.ok) throw new Error(await r.text());
-      await fetchData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
   const selectedPretty = useMemo(() => selected ? JSON.stringify(selected, null, 2) : '', [selected]);
 
   return (
@@ -138,7 +123,6 @@ const TaskAudit: React.FC = () => {
             <option value="error">error</option>
             <option value="suppressed">suppressed</option>
           </select>
-          <button onClick={resetDraftForNew} className="px-3 py-1.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-sm">{t('newTask')}</button>
           <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
         </div>
       </div>
@@ -165,7 +149,7 @@ const TaskAudit: React.FC = () => {
               return (
                 <button
                   key={`${it.task_id || idx}-${it.time || idx}`}
-                  onClick={() => { setSelected(it); setDraft({ id: it.task_id || it.id || '', content: it.input_preview || it.content || '', priority: it.priority || 'normal', status: it.status || 'todo', source: it.source || 'manual', due_at: it.due_at || '' }); }}
+                  onClick={() => setSelected(it)}
                   className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/40 ${active ? 'bg-indigo-500/15' : ''}`}
                 >
                   <div className="text-sm font-medium text-zinc-100 truncate">{it.task_id || `task-${idx + 1}`}</div>
@@ -188,22 +172,7 @@ const TaskAudit: React.FC = () => {
                 <button onClick={()=>taskAction('ignore')} className="px-2 py-1 text-xs rounded bg-zinc-700 hover:bg-zinc-600">{t('ignoreTask')}</button>
               </div>
             )}
-            <div className="p-3 border border-zinc-800 rounded-lg bg-zinc-950/40 space-y-2">
-              <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('taskCrud')} {selected ? `(${selected.task_id || selected.id || ''})` : '(new)'}</div>
-              <input value={draft.id} onChange={(e)=>setDraft({ ...draft, id: e.target.value })} placeholder="id" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-              <textarea value={draft.content} onChange={(e)=>setDraft({ ...draft, content: e.target.value })} placeholder="content" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[70px]" />
-              <div className="grid grid-cols-3 gap-2">
-                <input value={draft.priority} onChange={(e)=>setDraft({ ...draft, priority: e.target.value })} placeholder="priority" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-                <input value={draft.status} onChange={(e)=>setDraft({ ...draft, status: e.target.value })} placeholder="status" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-                <input value={draft.source} onChange={(e)=>setDraft({ ...draft, source: e.target.value })} placeholder="source" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={()=>saveTask('create')} className="px-2 py-1 text-xs rounded bg-emerald-700/70 hover:bg-emerald-600">{t('createTask')}</button>
-                <button onClick={()=>saveTask('update')} className="px-2 py-1 text-xs rounded bg-indigo-700/70 hover:bg-indigo-600">{t('updateTask')}</button>
-                <button onClick={()=>saveTask('delete')} className="px-2 py-1 text-xs rounded bg-red-700/70 hover:bg-red-600">{t('deleteTask')}</button>
-              </div>
-            </div>
-            {!selected ? (
+                        {!selected ? (
               <div className="text-zinc-500">{t('selectTask')}</div>
             ) : (
               <>
