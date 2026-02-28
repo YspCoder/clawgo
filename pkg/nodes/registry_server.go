@@ -420,19 +420,19 @@ func (s *RegistryServer) handleWebUIChat(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	session := strings.TrimSpace(body.Session)
+	session := body.Session
 	if session == "" {
-		session = strings.TrimSpace(r.URL.Query().Get("session"))
+		session = r.URL.Query().Get("session")
 	}
 	if session == "" {
 		session = "main"
 	}
-	prompt := strings.TrimSpace(body.Message)
-	if strings.TrimSpace(body.Media) != "" {
+	prompt := body.Message
+	if body.Media != "" {
 		if prompt != "" {
 			prompt += "\n"
 		}
-		prompt += "[file: " + strings.TrimSpace(body.Media) + "]"
+		prompt += "[file: " + body.Media + "]"
 	}
 	resp, err := s.onChat(r.Context(), session, prompt)
 	if err != nil {
@@ -451,7 +451,7 @@ func (s *RegistryServer) handleWebUIChatHistory(w http.ResponseWriter, r *http.R
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	session := strings.TrimSpace(r.URL.Query().Get("session"))
+	session := r.URL.Query().Get("session")
 	if session == "" {
 		session = "main"
 	}
@@ -489,19 +489,19 @@ func (s *RegistryServer) handleWebUIChatStream(w http.ResponseWriter, r *http.Re
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	session := strings.TrimSpace(body.Session)
+	session := body.Session
 	if session == "" {
-		session = strings.TrimSpace(r.URL.Query().Get("session"))
+		session = r.URL.Query().Get("session")
 	}
 	if session == "" {
 		session = "main"
 	}
-	prompt := strings.TrimSpace(body.Message)
-	if strings.TrimSpace(body.Media) != "" {
+	prompt := body.Message
+	if body.Media != "" {
 		if prompt != "" {
 			prompt += "\n"
 		}
-		prompt += "[file: " + strings.TrimSpace(body.Media) + "]"
+		prompt += "[file: " + body.Media + "]"
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
