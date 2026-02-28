@@ -34,6 +34,7 @@ type Options struct {
 	QuietHours                  string
 	UserIdleResumeSec           int
 	WaitingResumeDebounceSec    int
+	AllowedTaskKeywords        []string
 	ImportantKeywords           []string
 	CompletionTemplate          string
 	BlockedTemplate             string
@@ -271,6 +272,9 @@ func (e *Engine) tick() {
 			}
 		}
 		if !st.LastRunAt.IsZero() && now.Sub(st.LastRunAt) < time.Duration(e.opts.MinRunIntervalSec)*time.Second {
+			continue
+		}
+		if !e.allowTaskByPolicy(st.Content) {
 			continue
 		}
 		if st.Status == "running" && now.Sub(st.LastRunAt) > time.Duration(e.opts.MaxPendingDurationSec)*time.Second {
@@ -839,10 +843,14 @@ func (e *Engine) hasRecentUserActivity(now time.Time) bool {
 	if e.opts.UserIdleResumeSec <= 0 || strings.TrimSpace(e.opts.Workspace) == "" {
 		return false
 	}
-	sessionsPath := filepath.Join(filepath.Dir(e.opts.Workspace), "sessions", "sessions.json")
+	sessionsPath := filepath.Join(filepath.Dir(e.opts.Workspace), "agents", "main", "sessions", "sessions.json")
 	data, err := os.ReadFile(sessionsPath)
 	if err != nil {
-		return false
+		legacy := filepath.Join(filepath.Dir(e.opts.Workspace), "sessions", "sessions.json")
+		data, err = os.ReadFile(legacy)
+		if err != nil {
+			return false
+		}
 	}
 	var index map[string]struct {
 		Kind        string `json:"kind"`
@@ -860,6 +868,22 @@ func (e *Engine) hasRecentUserActivity(now time.Time) bool {
 			continue
 		}
 		if ts := latestUserMessageTime(row.SessionFile); !ts.IsZero() && ts.After(cutoff) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Engine) allowTaskByPolicy(content string) bool {
+	if len(e.opts.AllowedTaskKeywords) == 0 {
+		return true
+	}
+	v := strings.ToLower(content)
+	for _, kw := range e.opts.AllowedTaskKeywords {
+		if kw == "" {
+			continue
+		}
+		if strings.Contains(v, strings.ToLower(kw)) {
 			return true
 		}
 	}

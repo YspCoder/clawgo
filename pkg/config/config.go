@@ -55,7 +55,8 @@ type AutonomyConfig struct {
 	NotifySameReasonCooldownSec int    `json:"notify_same_reason_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_SAME_REASON_COOLDOWN_SEC"`
 	QuietHours                  string `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
 	UserIdleResumeSec           int    `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
-	WaitingResumeDebounceSec    int    `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
+	WaitingResumeDebounceSec    int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
+	AllowedTaskKeywords       []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
 	NotifyChannel               string `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
 	NotifyChatID                string `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
 }
