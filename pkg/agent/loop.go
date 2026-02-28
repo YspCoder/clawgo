@@ -310,6 +310,9 @@ func (al *AgentLoop) lockSessionRun(sessionKey string) func() {
 }
 
 func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage) {
+	stopNotice := al.startLongRunNotice(ctx, msg)
+	defer stopNotice()
+
 	response, err := al.processMessage(ctx, msg)
 	if err != nil {
 		response = fmt.Sprintf("Error processing message: %v", err)
@@ -328,6 +331,39 @@ func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage)
 		al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Action: "finalize"})
 	}
 	al.audit.Record(trigger, msg.Channel, msg.SessionKey, suppressed, err)
+}
+
+func (al *AgentLoop) startLongRunNotice(ctx context.Context, msg bus.InboundMessage) func() {
+	first := 45 * time.Second
+	interval := 45 * time.Second
+	if v := os.Getenv("CLAWGO_LONGRUN_NOTICE_SEC"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			first = time.Duration(n) * time.Second
+			interval = first
+		}
+	}
+	stop := make(chan struct{})
+	go func() {
+		t := time.NewTimer(first)
+		defer t.Stop()
+		notified := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stop:
+				return
+			case <-t.C:
+				notified++
+				text := fmt.Sprintf("任务较复杂，正在持续执行中（第%d次进度通知）…", notified)
+				if outbound, ok := al.prepareOutbound(msg, text); ok {
+					al.bus.PublishOutbound(outbound)
+				}
+				t.Reset(interval)
+			}
+		}
+	}()
+	return func() { close(stop) }
 }
 
 func sessionShardCount() int {
