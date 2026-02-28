@@ -96,6 +96,11 @@ const TaskAudit: React.FC = () => {
     }
   };
 
+
+  const resetDraftForNew = () => {
+    setSelected(null);
+    setDraft({ id: '', content: '', priority: 'normal', status: 'todo', source: 'manual', due_at: '' });
+  };
   const saveTask = async (action: 'create'|'update'|'delete') => {
     try {
       const url = `/webui/api/tasks${q}`;
@@ -133,6 +138,7 @@ const TaskAudit: React.FC = () => {
             <option value="error">error</option>
             <option value="suppressed">suppressed</option>
           </select>
+          <button onClick={resetDraftForNew} className="px-3 py-1.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-sm">{t('newTask')}</button>
           <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
         </div>
       </div>
@@ -183,7 +189,7 @@ const TaskAudit: React.FC = () => {
               </div>
             )}
             <div className="p-3 border border-zinc-800 rounded-lg bg-zinc-950/40 space-y-2">
-              <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('taskCrud')}</div>
+              <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('taskCrud')} {selected ? `(${selected.task_id || selected.id || ''})` : '(new)'}</div>
               <input value={draft.id} onChange={(e)=>setDraft({ ...draft, id: e.target.value })} placeholder="id" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
               <textarea value={draft.content} onChange={(e)=>setDraft({ ...draft, content: e.target.value })} placeholder="content" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[70px]" />
               <div className="grid grid-cols-3 gap-2">
