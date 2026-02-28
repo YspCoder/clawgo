@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -90,6 +91,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
 	mux.HandleFunc("/webui/api/task_queue", s.handleWebUITaskQueue)
+	mux.HandleFunc("/webui/api/tasks", s.handleWebUITasks)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
@@ -1555,6 +1557,111 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 		}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": running, "items": items, "stats": stats})
+}
+
+func (s *RegistryServer) handleWebUITasks(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	tasksPath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "tasks.json")
+	if r.Method == http.MethodGet {
+		b, err := os.ReadFile(tasksPath)
+		if err != nil {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": []map[string]interface{}{}})
+			return
+		}
+		var items []map[string]interface{}
+		if err := json.Unmarshal(b, &items); err != nil {
+			http.Error(w, "invalid tasks file", http.StatusInternalServerError)
+			return
+		}
+		sort.Slice(items, func(i, j int) bool { return fmt.Sprintf("%v", items[i]["updated_at"]) > fmt.Sprintf("%v", items[j]["updated_at"]) })
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": items})
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	action := fmt.Sprintf("%v", body["action"])
+	now := time.Now().UTC().Format(time.RFC3339)
+	items := []map[string]interface{}{}
+	if b, err := os.ReadFile(tasksPath); err == nil {
+		_ = json.Unmarshal(b, &items)
+	}
+	switch action {
+	case "create":
+		it, _ := body["item"].(map[string]interface{})
+		if it == nil {
+			http.Error(w, "item required", http.StatusBadRequest)
+			return
+		}
+		id := fmt.Sprintf("%v", it["id"])
+		if id == "" {
+			id = fmt.Sprintf("task_%d", time.Now().UnixNano())
+		}
+		it["id"] = id
+		if fmt.Sprintf("%v", it["status"]) == "" {
+			it["status"] = "todo"
+		}
+		if fmt.Sprintf("%v", it["source"]) == "" {
+			it["source"] = "manual"
+		}
+		it["updated_at"] = now
+		items = append(items, it)
+	case "update":
+		id := fmt.Sprintf("%v", body["id"])
+		it, _ := body["item"].(map[string]interface{})
+		if id == "" || it == nil {
+			http.Error(w, "id and item required", http.StatusBadRequest)
+			return
+		}
+		updated := false
+		for _, row := range items {
+			if fmt.Sprintf("%v", row["id"]) == id {
+				for k, v := range it {
+					row[k] = v
+				}
+				row["id"] = id
+				row["updated_at"] = now
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+	case "delete":
+		id := fmt.Sprintf("%v", body["id"])
+		if id == "" {
+			http.Error(w, "id required", http.StatusBadRequest)
+			return
+		}
+		filtered := make([]map[string]interface{}, 0, len(items))
+		for _, row := range items {
+			if fmt.Sprintf("%v", row["id"]) != id {
+				filtered = append(filtered, row)
+			}
+		}
+		items = filtered
+	default:
+		http.Error(w, "unsupported action", http.StatusBadRequest)
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(tasksPath), 0755)
+	out, _ := json.MarshalIndent(items, "", "  ")
+	if err := os.WriteFile(tasksPath, out, 0644); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 }
 
 func (s *RegistryServer) handleWebUIExecApprovals(w http.ResponseWriter, r *http.Request) {
