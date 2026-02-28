@@ -34,6 +34,7 @@ const TaskAudit: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [draft, setDraft] = useState<any>({ id: '', content: '', priority: 'normal', status: 'todo', source: 'manual', due_at: '' });
   const [dailyReport, setDailyReport] = useState<string>('');
+  const [reportDate, setReportDate] = useState<string>(new Date().toISOString().slice(0,10));
 
   const fetchData = async () => {
     setLoading(true);
@@ -46,7 +47,8 @@ const TaskAudit: React.FC = () => {
       const sorted = arr.sort((a: any, b: any) => String(b.time || '').localeCompare(String(a.time || '')));
       setItems(sorted);
       if (sorted.length > 0) setSelected(sorted[0]);
-      const dr = await fetch(`/webui/api/task_daily_summary${q}`);
+      const rq = q ? `${q}&date=${encodeURIComponent(reportDate)}` : `?date=${encodeURIComponent(reportDate)}`;
+      const dr = await fetch(`/webui/api/task_daily_summary${rq}`);
       if (dr.ok) {
         const dj = await dr.json();
         setDailyReport(String(dj.report || ''));
@@ -62,9 +64,20 @@ const TaskAudit: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchData(); }, [q]);
+  useEffect(() => { fetchData(); }, [q, reportDate]);
 
 
+
+  const exportDailyReport = () => {
+    const content = dailyReport || '';
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `autonomy-daily-${reportDate}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const filteredItems = useMemo(() => items.filter((it) => {
     if (sourceFilter !== 'all' && String(it.source || '-') !== sourceFilter) return false;
     if (statusFilter !== 'all' && String(it.status || '-') !== statusFilter) return false;
@@ -125,7 +138,13 @@ const TaskAudit: React.FC = () => {
       </div>
 
       <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-3 text-sm">
-        <div className="text-xs text-zinc-400 uppercase tracking-wider mb-2">{t('dailySummary')}</div>
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+          <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('dailySummary')}</div>
+          <div className="flex items-center gap-2">
+            <input type="date" value={reportDate} onChange={(e)=>setReportDate(e.target.value)} className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs" />
+            <button onClick={exportDailyReport} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-xs">{t('export')}</button>
+          </div>
+        </div>
         <div className="whitespace-pre-wrap text-zinc-200">{dailyReport || t('noDailySummary')}</div>
       </div>
 
