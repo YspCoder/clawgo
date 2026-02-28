@@ -89,6 +89,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/sessions", s.handleWebUISessions)
 	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
+	mux.HandleFunc("/webui/api/task_queue", s.handleWebUITaskQueue)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
@@ -1382,6 +1383,60 @@ func (s *RegistryServer) handleWebUITaskAudit(w http.ResponseWriter, r *http.Req
 		}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": items})
+}
+
+func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": []map[string]interface{}{}, "items": []map[string]interface{}{}})
+		return
+	}
+	lines := strings.Split(string(b), "\n")
+	type agg struct {
+		Last map[string]interface{}
+		Logs []string
+	}
+	m := map[string]*agg{}
+	for _, ln := range lines {
+		if ln == "" {
+			continue
+		}
+		var row map[string]interface{}
+		if err := json.Unmarshal([]byte(ln), &row); err != nil {
+			continue
+		}
+		id := fmt.Sprintf("%v", row["task_id"])
+		if id == "" {
+			continue
+		}
+		if _, ok := m[id]; !ok {
+			m[id] = &agg{Last: row, Logs: []string{}}
+		}
+		m[id].Last = row
+		if lg := fmt.Sprintf("%v", row["log"]); lg != "" {
+			m[id].Logs = append(m[id].Logs, lg)
+		}
+	}
+	items := make([]map[string]interface{}, 0, len(m))
+	running := make([]map[string]interface{}, 0)
+	for _, a := range m {
+		row := a.Last
+		row["logs"] = a.Logs
+		items = append(items, row)
+		if fmt.Sprintf("%v", row["status"]) == "running" {
+			running = append(running, row)
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": running, "items": items})
 }
 
 func (s *RegistryServer) handleWebUIExecApprovals(w http.ResponseWriter, r *http.Request) {

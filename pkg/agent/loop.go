@@ -312,6 +312,7 @@ func (al *AgentLoop) lockSessionRun(sessionKey string) func() {
 func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage) {
 	taskID := fmt.Sprintf("%s-%d", shortSessionKey(msg.SessionKey), time.Now().Unix()%100000)
 	started := time.Now()
+	al.appendTaskAuditEvent(taskID, msg, "running", started, 0, "started", false)
 
 	response, err := al.processMessage(ctx, msg)
 	if err != nil {
@@ -342,27 +343,36 @@ func shortSessionKey(s string) string {
 }
 
 func (al *AgentLoop) appendTaskAudit(taskID string, msg bus.InboundMessage, started time.Time, runErr error, suppressed bool) {
+	status := "success"
+	logText := "completed"
+	if runErr != nil {
+		status = "error"
+		logText = runErr.Error()
+	} else if suppressed {
+		status = "suppressed"
+		logText = "suppressed"
+	}
+	al.appendTaskAuditEvent(taskID, msg, status, started, int(time.Since(started).Milliseconds()), logText, suppressed)
+}
+
+func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage, status string, started time.Time, durationMs int, logText string, suppressed bool) {
 	if al.workspace == "" {
 		return
 	}
 	path := filepath.Join(al.workspace, "memory", "task-audit.jsonl")
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	status := "success"
-	if runErr != nil {
-		status = "error"
-	} else if suppressed {
-		status = "suppressed"
-	}
 	row := map[string]interface{}{
-		"task_id":      taskID,
-		"time":         time.Now().UTC().Format(time.RFC3339),
-		"channel":      msg.Channel,
-		"session":      msg.SessionKey,
-		"chat_id":      msg.ChatID,
-		"sender_id":    msg.SenderID,
-		"status":       status,
-		"duration_ms":  int(time.Since(started).Milliseconds()),
-		"error":        func() string { if runErr != nil { return runErr.Error() }; return "" }(),
+		"task_id":       taskID,
+		"time":          time.Now().UTC().Format(time.RFC3339),
+		"channel":       msg.Channel,
+		"session":       msg.SessionKey,
+		"chat_id":       msg.ChatID,
+		"sender_id":     msg.SenderID,
+		"status":        status,
+		"duration_ms":   durationMs,
+		"suppressed":    suppressed,
+		"retry_count":   0,
+		"log":           logText,
 		"input_preview": truncate(strings.ReplaceAll(msg.Content, "\n", " "), 180),
 	}
 	b, _ := json.Marshal(row)
