@@ -740,14 +740,22 @@ func gatewayServiceControlCmd(action string) error {
 	return runSystemctl(scope, action, gatewayServiceName)
 }
 
+func gatewayScopePreference() string {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("CLAWGO_GATEWAY_SCOPE")))
+	if v == "user" || v == "system" {
+		return v
+	}
+	return ""
+}
+
 func detectGatewayServiceScopeAndPath() (string, string, error) {
 	if runtime.GOOS != "linux" {
 		return "", "", fmt.Errorf("gateway service registration currently supports Linux systemd only")
 	}
-	if strings.ToLower(strings.TrimSpace(os.Getenv("CLAWGO_GATEWAY_SCOPE"))) == "user" {
+	switch gatewayScopePreference() {
+	case "user":
 		return userGatewayUnitPath()
-	}
-	if strings.ToLower(strings.TrimSpace(os.Getenv("CLAWGO_GATEWAY_SCOPE"))) == "system" {
+	case "system":
 		return "system", "/etc/systemd/system/" + gatewayServiceName, nil
 	}
 	if os.Geteuid() == 0 {
@@ -781,7 +789,7 @@ func detectInstalledGatewayService() (string, string, error) {
 		userExists = true
 	}
 
-	preferredScope := strings.ToLower(strings.TrimSpace(os.Getenv("CLAWGO_GATEWAY_SCOPE")))
+	preferredScope := gatewayScopePreference()
 	switch preferredScope {
 	case "system":
 		if systemExists {
