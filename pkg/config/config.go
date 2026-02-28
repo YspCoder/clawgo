@@ -54,9 +54,10 @@ type AutonomyConfig struct {
 	NotifyCooldownSec           int    `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
 	NotifySameReasonCooldownSec int    `json:"notify_same_reason_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_SAME_REASON_COOLDOWN_SEC"`
 	QuietHours                  string `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
-	UserIdleResumeSec           int    `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
-	WaitingResumeDebounceSec    int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
-	AllowedTaskKeywords       []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
+	UserIdleResumeSec           int      `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
+	MaxRoundsWithoutUser       int      `json:"max_rounds_without_user" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
+	WaitingResumeDebounceSec   int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
+	AllowedTaskKeywords        []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
 	NotifyChannel               string `json:"notify_channel" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHANNEL"`
 	NotifyChatID                string `json:"notify_chat_id" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_CHAT_ID"`
 }
@@ -324,7 +325,9 @@ func DefaultConfig() *Config {
 					NotifySameReasonCooldownSec: 900,
 					QuietHours:                  "23:00-08:00",
 					UserIdleResumeSec:           20,
+					MaxRoundsWithoutUser:        12,
 					WaitingResumeDebounceSec:    5,
+					AllowedTaskKeywords:         []string{},
 					NotifyChannel:               "",
 					NotifyChatID:                "",
 				},

@@ -34,6 +34,7 @@ type Options struct {
 	QuietHours                  string
 	UserIdleResumeSec           int
 	WaitingResumeDebounceSec    int
+	MaxRoundsWithoutUser      int
 	AllowedTaskKeywords        []string
 	ImportantKeywords           []string
 	CompletionTemplate          string
@@ -69,6 +70,7 @@ type Engine struct {
 	state      map[string]*taskState
 	lastNotify map[string]time.Time
 	lockOwners map[string]string
+	roundsWithoutUser int
 }
 
 func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
@@ -98,6 +100,9 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	}
 	if opts.WaitingResumeDebounceSec <= 0 {
 		opts.WaitingResumeDebounceSec = 5
+	}
+	if opts.MaxRoundsWithoutUser < 0 {
+		opts.MaxRoundsWithoutUser = 0
 	}
 	return &Engine{
 		opts:       opts,
@@ -153,6 +158,7 @@ func (e *Engine) tick() {
 				e.writeTriggerAudit("waiting", st, "manual_pause")
 			}
 		}
+		e.roundsWithoutUser = 0
 		e.persistStateLocked()
 		e.mu.Unlock()
 		return
@@ -306,6 +312,14 @@ func (e *Engine) tick() {
 			}
 		}
 
+		if e.opts.MaxRoundsWithoutUser > 0 && e.roundsWithoutUser >= e.opts.MaxRoundsWithoutUser {
+			st.Status = "waiting"
+			st.BlockReason = "idle_round_budget"
+			st.WaitingSince = now
+			e.writeReflectLog("waiting", st, fmt.Sprintf("paused by idle round budget (%d)", e.opts.MaxRoundsWithoutUser))
+			e.writeTriggerAudit("waiting", st, "idle_round_budget")
+			continue
+		}
 		if !e.tryAcquireLocksLocked(st) {
 			st.Status = "waiting"
 			st.BlockReason = "resource_lock"
@@ -325,6 +339,7 @@ func (e *Engine) tick() {
 		st.LastAutonomyAt = now
 		e.writeReflectLog("dispatch", st, "task dispatched to agent loop")
 		e.writeTriggerAudit("dispatch", st, "")
+		e.roundsWithoutUser++
 		dispatched++
 	}
 	e.persistStateLocked()
