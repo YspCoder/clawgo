@@ -11,6 +11,7 @@ import Nodes from './pages/Nodes';
 import Logs from './pages/Logs';
 import Skills from './pages/Skills';
 import Memory from './pages/Memory';
+import TaskAudit from './pages/TaskAudit';
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
               <Route path="cron" element={<Cron />} />
               <Route path="nodes" element={<Nodes />} />
               <Route path="memory" element={<Memory />} />
+              <Route path="task-audit" element={<TaskAudit />} />
             </Route>
           </Routes>
         </BrowserRouter>
