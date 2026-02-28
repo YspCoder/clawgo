@@ -9,6 +9,7 @@ package channels
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -291,6 +292,11 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 			channel, exists := cur[msg.Channel]
 
 			if !exists {
+				ch := strings.ToLower(strings.TrimSpace(msg.Channel))
+				if ch == "system" || ch == "internal" || ch == "" {
+					// Internal/system pseudo channels are not externally dispatchable.
+					continue
+				}
 				logger.WarnCF("channels", "Unknown channel for outbound message", map[string]interface{}{
 					logger.FieldChannel: msg.Channel,
 				})
