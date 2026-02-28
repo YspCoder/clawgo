@@ -353,7 +353,7 @@ func schedulingScore(st *taskState, now time.Time) int {
 }
 
 func deriveResourceKeys(content string) []string {
-	raw := strings.TrimSpace(content)
+	raw := content
 	if raw == "" {
 		return nil
 	}
@@ -398,7 +398,7 @@ func parseExplicitResourceKeys(content string) []string {
 	if end < 0 {
 		return nil
 	}
-	body := strings.TrimSpace(rest[:end])
+	body := rest[:end]
 	if body == "" {
 		return nil
 	}
@@ -479,13 +479,13 @@ func (e *Engine) scanTodos() []todoItem {
 		for _, line := range strings.Split(string(data), "\n") {
 			t := strings.TrimSpace(line)
 			if strings.HasPrefix(t, "- [ ]") {
-				content := strings.TrimSpace(strings.TrimPrefix(t, "- [ ]"))
+				content := strings.TrimPrefix(t, "- [ ]")
 				priority, dueAt, normalized := parseTodoAttributes(content)
 				merge(todoItem{ID: hashID(normalized), Content: normalized, Priority: priority, DueAt: dueAt})
 				continue
 			}
 			if strings.HasPrefix(strings.ToLower(t), "todo:") {
-				content := strings.TrimSpace(t[5:])
+				content := t[5:]
 				priority, dueAt, normalized := parseTodoAttributes(content)
 				merge(todoItem{ID: hashID(normalized), Content: normalized, Priority: priority, DueAt: dueAt})
 			}
@@ -499,7 +499,7 @@ func (e *Engine) scanTodos() []todoItem {
 			if status == "done" {
 				continue
 			}
-			content := strings.TrimSpace(it.Content)
+			content := it.Content
 			if content == "" {
 				continue
 			}
@@ -511,7 +511,7 @@ func (e *Engine) scanTodos() []todoItem {
 			if priority == "" {
 				priority = "normal"
 			}
-			merge(todoItem{ID: id, Content: content, Priority: priority, DueAt: strings.TrimSpace(it.DueAt)})
+			merge(todoItem{ID: id, Content: content, Priority: priority, DueAt: it.DueAt})
 		}
 	}
 
@@ -571,7 +571,7 @@ func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
 		ChatID:  e.opts.DefaultNotifyChatID,
-		Content: fmt.Sprintf(tpl, shortTask(st.Content), strings.TrimSpace(reason), shortTask(st.Content)),
+		Content: fmt.Sprintf(tpl, shortTask(st.Content), reason, shortTask(st.Content)),
 	})
 }
 
@@ -615,7 +615,7 @@ func (e *Engine) writeTriggerAudit(action string, st *taskState, errText string)
 		"action":  action,
 		"session": "autonomy:" + st.ID,
 	}
-	if strings.TrimSpace(errText) != "" {
+	if errText != "" {
 		row["error"] = errText
 	}
 	if b, err := json.Marshal(row); err == nil {
@@ -641,7 +641,7 @@ func (e *Engine) writeTriggerAudit(action string, st *taskState, errText string)
 	act := strings.ToLower(strings.TrimSpace(action))
 	if act != "" {
 		stats.Counts["autonomy:"+act]++
-		reason := strings.ToLower(strings.TrimSpace(errText))
+		reason := strings.ToLower(errText)
 		if reason != "" {
 			reason = strings.ReplaceAll(reason, " ", "_")
 			reason = strings.ReplaceAll(reason, ":", "_")
@@ -742,7 +742,7 @@ func (e *Engine) persistStateLocked() {
 
 func parseTodoAttributes(content string) (priority, dueAt, normalized string) {
 	priority = "normal"
-	normalized = strings.TrimSpace(content)
+	normalized = content
 	l := strings.ToLower(normalized)
 	if strings.HasPrefix(l, "[high]") || strings.HasPrefix(l, "p1:") {
 		priority = "high"
@@ -763,7 +763,7 @@ func parseTodoAttributes(content string) (priority, dueAt, normalized string) {
 		normalized = strings.TrimSpace(normalized[:idx])
 	}
 	if normalized == "" {
-		normalized = strings.TrimSpace(content)
+		normalized = content
 	}
 	return priority, dueAt, normalized
 }
@@ -939,7 +939,7 @@ func (e *Engine) isHighValueCompletion(st *taskState) bool {
 	if strings.TrimSpace(st.DueAt) != "" {
 		return true
 	}
-	s := strings.ToLower(strings.TrimSpace(st.Content))
+	s := strings.ToLower(st.Content)
 	keywords := e.opts.ImportantKeywords
 	if len(keywords) == 0 {
 		keywords = []string{"urgent", "payment", "release", "deadline", "p0", "asap"}

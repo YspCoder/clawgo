@@ -137,7 +137,7 @@ func (s *RegistryServer) handleHeartbeat(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		ID string `json:"id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ID) == "" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
 		http.Error(w, "id required", http.StatusBadRequest)
 		return
 	}
@@ -593,7 +593,7 @@ func (s *RegistryServer) handleWebUINodes(w http.ResponseWriter, r *http.Request
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		action := strings.ToLower(strings.TrimSpace(body.Action))
+		action := strings.ToLower(body.Action)
 		if action != "delete" {
 			http.Error(w, "unsupported action", http.StatusBadRequest)
 			return
@@ -602,7 +602,7 @@ func (s *RegistryServer) handleWebUINodes(w http.ResponseWriter, r *http.Request
 			http.Error(w, "nodes manager unavailable", http.StatusInternalServerError)
 			return
 		}
-		id := strings.TrimSpace(body.ID)
+		id := body.ID
 		ok := s.mgr.Remove(id)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": ok, "id": id})
 	default:
@@ -665,7 +665,7 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	skillsDir := filepath.Join(strings.TrimSpace(s.workspacePath), "skills")
+	skillsDir := filepath.Join(s.workspacePath, "skills")
 	if strings.TrimSpace(skillsDir) == "" {
 		http.Error(w, "workspace not configured", http.StatusInternalServerError)
 		return
@@ -1225,7 +1225,7 @@ func (s *RegistryServer) handleWebUISessions(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	sessionsDir := filepath.Join(filepath.Dir(strings.TrimSpace(s.workspacePath)), "agents", "main", "sessions")
+	sessionsDir := filepath.Join(filepath.Dir(s.workspacePath), "agents", "main", "sessions")
 	_ = os.MkdirAll(sessionsDir, 0755)
 	type item struct {
 		Key     string `json:"key"`
@@ -1269,7 +1269,7 @@ func (s *RegistryServer) handleWebUIMemory(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	memoryDir := filepath.Join(strings.TrimSpace(s.workspacePath), "memory")
+	memoryDir := filepath.Join(s.workspacePath, "memory")
 	_ = os.MkdirAll(memoryDir, 0755)
 	switch r.Method {
 	case http.MethodGet:
@@ -1311,7 +1311,7 @@ func (s *RegistryServer) handleWebUIMemory(w http.ResponseWriter, r *http.Reques
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		clean := filepath.Clean(strings.TrimSpace(body.Path))
+		clean := filepath.Clean(body.Path)
 		if clean == "" || strings.HasPrefix(clean, "..") {
 			http.Error(w, "invalid path", http.StatusBadRequest)
 			return
@@ -1323,7 +1323,7 @@ func (s *RegistryServer) handleWebUIMemory(w http.ResponseWriter, r *http.Reques
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "path": clean})
 	case http.MethodDelete:
-		path := filepath.Clean(strings.TrimSpace(r.URL.Query().Get("path")))
+		path := filepath.Clean(r.URL.Query().Get("path"))
 		if path == "" || strings.HasPrefix(path, "..") {
 			http.Error(w, "invalid path", http.StatusBadRequest)
 			return
