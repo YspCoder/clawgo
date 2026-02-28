@@ -310,12 +310,16 @@ func (al *AgentLoop) lockSessionRun(sessionKey string) func() {
 }
 
 func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage) {
-	stopNotice := al.startLongRunNotice(ctx, msg)
+	taskID, noticeCount, stopNotice := al.startLongRunNotice(ctx, msg)
 	defer stopNotice()
 
 	response, err := al.processMessage(ctx, msg)
 	if err != nil {
 		response = fmt.Sprintf("Error processing message: %v", err)
+	}
+
+	if noticeCount != nil && *noticeCount > 0 && response != "" {
+		response = fmt.Sprintf("任务ID %s 已完成。\n\n%s", taskID, response)
 	}
 
 	trigger := al.getTrigger(msg)
@@ -333,7 +337,7 @@ func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage)
 	al.audit.Record(trigger, msg.Channel, msg.SessionKey, suppressed, err)
 }
 
-func (al *AgentLoop) startLongRunNotice(ctx context.Context, msg bus.InboundMessage) func() {
+func (al *AgentLoop) startLongRunNotice(ctx context.Context, msg bus.InboundMessage) (string, *int, func()) {
 	first := 45 * time.Second
 	interval := 45 * time.Second
 	if v := os.Getenv("CLAWGO_LONGRUN_NOTICE_SEC"); v != "" {
@@ -342,11 +346,12 @@ func (al *AgentLoop) startLongRunNotice(ctx context.Context, msg bus.InboundMess
 			interval = first
 		}
 	}
+	taskID := fmt.Sprintf("%s-%d", shortSessionKey(msg.SessionKey), time.Now().Unix()%100000)
 	stop := make(chan struct{})
+	notified := 0
 	go func() {
 		t := time.NewTimer(first)
 		defer t.Stop()
-		notified := 0
 		for {
 			select {
 			case <-ctx.Done():
@@ -355,7 +360,7 @@ func (al *AgentLoop) startLongRunNotice(ctx context.Context, msg bus.InboundMess
 				return
 			case <-t.C:
 				notified++
-				text := fmt.Sprintf("任务较复杂，正在持续执行中（第%d次进度通知）…", notified)
+				text := fmt.Sprintf("任务ID %s 正在执行中（第%d次进度通知）…", taskID, notified)
 				if outbound, ok := al.prepareOutbound(msg, text); ok {
 					al.bus.PublishOutbound(outbound)
 				}
@@ -363,7 +368,14 @@ func (al *AgentLoop) startLongRunNotice(ctx context.Context, msg bus.InboundMess
 			}
 		}
 	}()
-	return func() { close(stop) }
+	return taskID, &notified, func() { close(stop) }
+}
+
+func shortSessionKey(s string) string {
+	if len(s) <= 8 {
+		return s
+	}
+	return s[:8]
 }
 
 func sessionShardCount() int {
