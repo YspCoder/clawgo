@@ -34,6 +34,7 @@ const TaskAudit: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dailyReport, setDailyReport] = useState<string>('');
   const [reportDate, setReportDate] = useState<string>(new Date().toISOString().slice(0,10));
+  const [showDailyReport, setShowDailyReport] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -95,11 +96,6 @@ const TaskAudit: React.FC = () => {
     }
   };
 
-
-  const resetDraftForNew = () => {
-    setSelected(null);
-    setDraft({ id: '', content: '', priority: 'normal', status: 'todo', source: 'manual', due_at: '' });
-  };
   const selectedPretty = useMemo(() => selected ? JSON.stringify(selected, null, 2) : '', [selected]);
 
   return (
@@ -128,14 +124,17 @@ const TaskAudit: React.FC = () => {
       </div>
 
       <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-3 text-sm">
-        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('dailySummary')}</div>
           <div className="flex items-center gap-2">
             <input type="date" value={reportDate} onChange={(e)=>setReportDate(e.target.value)} className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs" />
+            <button onClick={() => setShowDailyReport(v => !v)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-xs">{showDailyReport ? 'Hide' : 'Show'}</button>
             <button onClick={exportDailyReport} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-xs">{t('export')}</button>
           </div>
         </div>
-        <div className="whitespace-pre-wrap text-zinc-200">{dailyReport || t('noDailySummary')}</div>
+        {showDailyReport && (
+          <div className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap text-zinc-200 border border-zinc-800 rounded-lg bg-zinc-950/30 p-2">{dailyReport || t('noDailySummary')}</div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
