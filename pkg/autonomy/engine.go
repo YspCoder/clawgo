@@ -71,6 +71,7 @@ type Engine struct {
 	lastNotify map[string]time.Time
 	lockOwners map[string]string
 	roundsWithoutUser int
+	lastDailyReportDate string
 }
 
 func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
@@ -343,6 +344,7 @@ func (e *Engine) tick() {
 		dispatched++
 	}
 	e.persistStateLocked()
+	e.maybeWriteDailyReportLocked(now)
 }
 
 func (e *Engine) tryAcquireLocksLocked(st *taskState) bool {
@@ -782,6 +784,68 @@ func (e *Engine) persistStateLocked() {
 		})
 	}
 	_ = e.taskStore.Save(items)
+}
+
+func (e *Engine) maybeWriteDailyReportLocked(now time.Time) {
+	date := now.UTC().Format("2006-01-02")
+	if e.lastDailyReportDate == date {
+		return
+	}
+	workspace := e.opts.Workspace
+	if workspace == "" {
+		return
+	}
+	auditPath := filepath.Join(workspace, "memory", "task-audit.jsonl")
+	f, err := os.Open(auditPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	counts := map[string]int{"total": 0, "success": 0, "error": 0, "suppressed": 0, "running": 0}
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := s.Bytes()
+		var row map[string]interface{}
+		if json.Unmarshal(line, &row) != nil {
+			continue
+		}
+		if fmt.Sprintf("%v", row["source"]) != "autonomy" {
+			continue
+		}
+		ts := fmt.Sprintf("%v", row["time"])
+		if len(ts) < 10 || ts[:10] != date {
+			continue
+		}
+		counts["total"]++
+		st := fmt.Sprintf("%v", row["status"])
+		if _, ok := counts[st]; ok {
+			counts[st]++
+		}
+	}
+	if counts["total"] == 0 {
+		e.lastDailyReportDate = date
+		return
+	}
+	reportLine := fmt.Sprintf("\n## Autonomy Daily Report (%s)\n- total: %d\n- success: %d\n- error: %d\n- suppressed: %d\n- running: %d\n", date, counts["total"], counts["success"], counts["error"], counts["suppressed"], counts["running"])
+	dailyPath := filepath.Join(workspace, "memory", date+".md")
+	_ = os.MkdirAll(filepath.Dir(dailyPath), 0755)
+	_ = appendUniqueReport(dailyPath, reportLine, date)
+	e.lastDailyReportDate = date
+}
+
+func appendUniqueReport(path, content, date string) error {
+	existing, _ := os.ReadFile(path)
+	marker := "Autonomy Daily Report (" + date + ")"
+	if strings.Contains(string(existing), marker) {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(content)
+	return err
 }
 
 func parseTodoAttributes(content string) (priority, dueAt, normalized string) {
