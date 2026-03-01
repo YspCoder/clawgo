@@ -12,6 +12,7 @@ import Logs from './pages/Logs';
 import Skills from './pages/Skills';
 import Memory from './pages/Memory';
 import TaskAudit from './pages/TaskAudit';
+import EKG from './pages/EKG';
 import Tasks from './pages/Tasks';
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
               <Route path="nodes" element={<Nodes />} />
               <Route path="memory" element={<Memory />} />
               <Route path="task-audit" element={<TaskAudit />} />
+              <Route path="ekg" element={<EKG />} />
               <Route path="tasks" element={<Tasks />} />
             </Route>
           </Routes>
