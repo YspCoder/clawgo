@@ -67,6 +67,21 @@
 - 未显式声明时，系统会从任务文本自动推断资源键。
 - 冲突任务进入 `resource_lock` 等待，默认 30 秒后重试抢锁，并带公平加权（等待越久优先级越高）。
 - 自治完成/阻塞通知不再使用 `autonomy.notify_channel` / `autonomy.notify_chat_id`；默认自动从已启用通道的 `allow_from` 推导目标（优先 Telegram）。
+- 入站消息去重：基于 `message_id` 进行通道级去重（默认 TTL 10 分钟），避免平台重试导致重复回复。
+
+### EKG（Execution Knowledge Graph）
+
+ClawGo 现已内置执行知识图谱能力（轻量 JSONL 事件流，不依赖外部图数据库）：
+
+- 事件存储：`memory/ekg-events.jsonl`
+- 错误签名归一化（路径/数字/hex 去噪）
+- 自治重复错误抑制（`ekg_consecutive_error_threshold`）
+- provider fallback 按历史效果排序（含 errsig-aware）
+- 任务审计支持 provider/model 可观测
+- EKG 统计按 source/channel 分层（heartbeat 与 workload 分离）
+
+> 为什么需要时间窗口：
+> 历史全量统计会被旧数据与 heartbeat 噪音稀释，导致当前阶段决策失真。建议默认观察近 24h（或 6h/7d 可切换），让 fallback 和告警更贴近“当前”系统状态。
 
 ## 🏁 快速开始
 

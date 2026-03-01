@@ -67,6 +67,21 @@ Autonomy now supports lock scheduling via `resource_keys`. You can explicitly de
 - Without explicit keys, the engine derives keys from task text heuristically.
 - Conflicting tasks enter `resource_lock` waiting, retry lock acquisition after 30s, and use fairness weighting (longer wait => higher scheduling priority).
 - Autonomy completion/blocked notifications no longer use `autonomy.notify_channel` / `autonomy.notify_chat_id`; target is derived from enabled channel `allow_from` (Telegram first).
+- Inbound dedupe: channel-level dedupe by `message_id` (default TTL: 10 minutes) to avoid duplicate replies from platform retries.
+
+### EKG (Execution Knowledge Graph)
+
+ClawGo now includes a built-in execution knowledge graph (lightweight JSONL event stream; no external graph DB required):
+
+- Event store: `memory/ekg-events.jsonl`
+- Normalized error signatures (path/number/hex denoise)
+- Repeated-error suppression for autonomy (`ekg_consecutive_error_threshold`)
+- Provider fallback ranking by historical outcomes (errsig-aware)
+- Task-audit visibility for provider/model
+- Source/channel-stratified EKG stats (heartbeat separated from workload)
+
+> Why time windows matter:
+> Full-history stats get diluted by stale data and heartbeat noise, which degrades current decisions. A recent window (e.g., 24h, optionally 6h/7d) keeps fallback and alerts aligned with present runtime behavior.
 
 ## 🏁 Quick Start
 
