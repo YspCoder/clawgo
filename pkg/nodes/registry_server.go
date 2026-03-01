@@ -1639,6 +1639,21 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 	}
 	workspace := strings.TrimSpace(s.workspacePath)
 	ekgPath := filepath.Join(workspace, "memory", "ekg-events.jsonl")
+	window := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("window")))
+	windowDur := 24 * time.Hour
+	switch window {
+	case "6h":
+		windowDur = 6 * time.Hour
+	case "24h", "":
+		windowDur = 24 * time.Hour
+	case "7d":
+		windowDur = 7 * 24 * time.Hour
+	}
+	selectedWindow := window
+	if selectedWindow == "" {
+		selectedWindow = "24h"
+	}
+	cutoff := time.Now().UTC().Add(-windowDur)
 	b, _ := os.ReadFile(ekgPath)
 	lines := strings.Split(string(b), "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
@@ -1666,6 +1681,14 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 		var row map[string]interface{}
 		if json.Unmarshal([]byte(ln), &row) != nil {
 			continue
+		}
+		ts := strings.TrimSpace(fmt.Sprintf("%v", row["time"]))
+		if ts != "" {
+			if tm, err := time.Parse(time.RFC3339, ts); err == nil {
+				if tm.Before(cutoff) {
+					continue
+				}
+			}
 		}
 		provider := strings.TrimSpace(fmt.Sprintf("%v", row["provider"]))
 		status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
@@ -1731,6 +1754,7 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":                       true,
+		"window":                   selectedWindow,
 		"provider_top":             toTopScore(providerScore, 5),
 		"provider_top_workload":    toTopScore(providerScoreWorkload, 5),
 		"errsig_top":               toTopCount(errSigCount, 5),

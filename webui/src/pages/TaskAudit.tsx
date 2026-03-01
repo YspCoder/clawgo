@@ -47,6 +47,7 @@ const TaskAudit: React.FC = () => {
   const [ekgSourceStats, setEkgSourceStats] = useState<Record<string, number>>({});
   const [ekgChannelStats, setEkgChannelStats] = useState<Record<string, number>>({});
   const [ekgEscalationCount, setEkgEscalationCount] = useState<number>(0);
+  const [ekgWindow, setEkgWindow] = useState<'6h' | '24h' | '7d'>('24h');
 
   const fetchData = async () => {
     setLoading(true);
@@ -67,7 +68,8 @@ const TaskAudit: React.FC = () => {
       } else {
         setDailyReport('');
       }
-      const ekgUrl = `/webui/api/ekg_stats${q || ''}`;
+      const ekgJoin = q ? `${q}&window=${encodeURIComponent(ekgWindow)}` : `?window=${encodeURIComponent(ekgWindow)}`;
+      const ekgUrl = `/webui/api/ekg_stats${ekgJoin}`;
       const er = await fetch(ekgUrl);
       if (er.ok) {
         const ej = await er.json();
@@ -89,7 +91,7 @@ const TaskAudit: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchData(); }, [q, reportDate]);
+  useEffect(() => { fetchData(); }, [q, reportDate, ekgWindow]);
 
 
 
@@ -149,7 +151,14 @@ const TaskAudit: React.FC = () => {
       </div>
 
       <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-3 text-sm">
-        <div className="text-xs text-zinc-400 uppercase tracking-wider mb-2">EKG Insights</div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-xs text-zinc-400 uppercase tracking-wider">EKG Insights</div>
+          <select value={ekgWindow} onChange={(e)=>setEkgWindow(e.target.value as '6h' | '24h' | '7d')} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
+            <option value="6h">6h</option>
+            <option value="24h">24h</option>
+            <option value="7d">7d</option>
+          </select>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
           <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
             <div className="text-zinc-500 mb-1">Escalations</div>
