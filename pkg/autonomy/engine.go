@@ -36,6 +36,7 @@ type Options struct {
 	QuietHours                  string
 	UserIdleResumeSec           int
 	WaitingResumeDebounceSec    int
+	IdleRoundBudgetReleaseSec int
 	MaxRoundsWithoutUser      int
 	TaskHistoryRetentionDays  int
 	AllowedTaskKeywords        []string
@@ -110,6 +111,9 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	}
 	if opts.MaxRoundsWithoutUser < 0 {
 		opts.MaxRoundsWithoutUser = 0
+	}
+	if opts.IdleRoundBudgetReleaseSec < 0 {
+		opts.IdleRoundBudgetReleaseSec = 0
 	}
 	if opts.TaskHistoryRetentionDays <= 0 {
 		opts.TaskHistoryRetentionDays = 3
@@ -302,8 +306,15 @@ func (e *Engine) tick() {
 				continue
 			}
 			if st.BlockReason == "idle_round_budget" && e.opts.MaxRoundsWithoutUser > 0 && e.roundsWithoutUser >= e.opts.MaxRoundsWithoutUser {
-				// Stay waiting until user activity resets round budget.
-				continue
+				// Optional auto-release without user dialog: allow one round after configured cooldown.
+				if e.opts.IdleRoundBudgetReleaseSec > 0 && !st.WaitingSince.IsZero() && now.Sub(st.WaitingSince) >= time.Duration(e.opts.IdleRoundBudgetReleaseSec)*time.Second {
+					e.roundsWithoutUser = e.opts.MaxRoundsWithoutUser - 1
+					e.writeReflectLog("resume", st, fmt.Sprintf("autonomy auto-resumed from idle round budget after %ds", e.opts.IdleRoundBudgetReleaseSec))
+					e.writeTriggerAudit("resume", st, "idle_round_budget_auto_release")
+				} else {
+					// Stay waiting until user activity resets round budget.
+					continue
+				}
 			}
 			// Debounce waiting/resume flapping
 			if !st.WaitingSince.IsZero() && now.Sub(st.WaitingSince) < time.Duration(e.opts.WaitingResumeDebounceSec)*time.Second {

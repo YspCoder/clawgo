@@ -589,6 +589,9 @@ func summarizeAutonomyChanges(oldCfg, newCfg *config.Config) []string {
 	if o.WaitingResumeDebounceSec != n.WaitingResumeDebounceSec {
 		changes = append(changes, "waiting_resume_debounce_sec")
 	}
+	if o.IdleRoundBudgetReleaseSec != n.IdleRoundBudgetReleaseSec {
+		changes = append(changes, "idle_round_budget_release_sec")
+	}
 	if strings.TrimSpace(o.QuietHours) != strings.TrimSpace(n.QuietHours) {
 		changes = append(changes, "quiet_hours")
 	}
@@ -967,6 +970,7 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		MaxRoundsWithoutUser:        a.MaxRoundsWithoutUser,
 		TaskHistoryRetentionDays:    a.TaskHistoryRetentionDays,
 		WaitingResumeDebounceSec:    a.WaitingResumeDebounceSec,
+		IdleRoundBudgetReleaseSec:   a.IdleRoundBudgetReleaseSec,
 		AllowedTaskKeywords:         a.AllowedTaskKeywords,
 		ImportantKeywords:           cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
 		CompletionTemplate:          cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,

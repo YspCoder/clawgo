@@ -117,6 +117,9 @@ func Validate(cfg *Config) []error {
 		if aut.WaitingResumeDebounceSec <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.waiting_resume_debounce_sec must be > 0 when enabled=true"))
 		}
+		if aut.IdleRoundBudgetReleaseSec < 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.idle_round_budget_release_sec must be >= 0 when enabled=true"))
+		}
 		if aut.TaskHistoryRetentionDays <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.task_history_retention_days must be > 0 when enabled=true"))
 		}

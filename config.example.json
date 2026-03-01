@@ -27,6 +27,7 @@
         "max_rounds_without_user": 12,
         "task_history_retention_days": 3,
         "waiting_resume_debounce_sec": 5,
+        "idle_round_budget_release_sec": 1800,
         "allowed_task_keywords": [],
         "ekg_consecutive_error_threshold": 3
       },

@@ -58,6 +58,7 @@ type AutonomyConfig struct {
 	MaxRoundsWithoutUser       int      `json:"max_rounds_without_user" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
 	TaskHistoryRetentionDays   int      `json:"task_history_retention_days" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TASK_HISTORY_RETENTION_DAYS"`
 	WaitingResumeDebounceSec   int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
+	IdleRoundBudgetReleaseSec  int      `json:"idle_round_budget_release_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_IDLE_ROUND_BUDGET_RELEASE_SEC"`
 	AllowedTaskKeywords        []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
 	EKGConsecutiveErrorThreshold int  `json:"ekg_consecutive_error_threshold" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_EKG_CONSECUTIVE_ERROR_THRESHOLD"`
 	// Deprecated: kept for backward compatibility with existing config files.
@@ -378,6 +379,7 @@ func DefaultConfig() *Config {
 					MaxRoundsWithoutUser:        12,
 					TaskHistoryRetentionDays:    3,
 					WaitingResumeDebounceSec:    5,
+					IdleRoundBudgetReleaseSec:   1800,
 					AllowedTaskKeywords:         []string{},
 					EKGConsecutiveErrorThreshold: 3,
 				},
