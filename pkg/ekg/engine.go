@@ -175,9 +175,14 @@ var (
 )
 
 func (e *Engine) RankProviders(candidates []string) []string {
+	return e.RankProvidersForError(candidates, "")
+}
+
+func (e *Engine) RankProvidersForError(candidates []string, errSig string) []string {
 	if len(candidates) <= 1 || e == nil {
 		return append([]string(nil), candidates...)
 	}
+	errSig = NormalizeErrorSignature(errSig)
 	events := e.readRecentEvents()
 	score := map[string]float64{}
 	for _, c := range candidates {
@@ -191,13 +196,22 @@ func (e *Engine) RankProviders(candidates []string) []string {
 		if _, ok := score[p]; !ok {
 			continue
 		}
+		weight := 1.0
+		evSig := NormalizeErrorSignature(ev.ErrSig)
+		if errSig != "" {
+			if evSig == errSig {
+				weight = 2.5
+			} else if evSig != "" {
+				weight = 0.4
+			}
+		}
 		switch strings.ToLower(strings.TrimSpace(ev.Status)) {
 		case "success":
-			score[p] += 1.0
+			score[p] += 1.0 * weight
 		case "suppressed":
-			score[p] += 0.2
+			score[p] += 0.2 * weight
 		case "error":
-			score[p] -= 1.0
+			score[p] -= 1.0 * weight
 		}
 	}
 	ordered := append([]string(nil), candidates...)

@@ -350,7 +350,11 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 	lastErr := primaryErr
 	candidates := append([]string(nil), al.providerNames[1:]...)
 	if al.ekg != nil {
-		candidates = al.ekg.RankProviders(candidates)
+		errSig := ""
+		if primaryErr != nil {
+			errSig = primaryErr.Error()
+		}
+		candidates = al.ekg.RankProvidersForError(candidates, errSig)
 	}
 	for _, name := range candidates {
 		p, ok := al.providerPool[name]
@@ -361,11 +365,13 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 		if al.ekg != nil {
 			st := "success"
 			lg := "fallback provider success"
+			errSig := ""
 			if err != nil {
 				st = "error"
 				lg = err.Error()
+				errSig = err.Error()
 			}
-			al.ekg.Record(ekg.Event{Session: msg.SessionKey, Channel: msg.Channel, Source: "provider_fallback", Status: st, Provider: name, Model: al.model, Log: lg})
+			al.ekg.Record(ekg.Event{Session: msg.SessionKey, Channel: msg.Channel, Source: "provider_fallback", Status: st, Provider: name, Model: al.model, ErrSig: errSig, Log: lg})
 		}
 		if err == nil {
 			logger.WarnCF("agent", "LLM fallback provider switched", map[string]interface{}{"provider": name})
