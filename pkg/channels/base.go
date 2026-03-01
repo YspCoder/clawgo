@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -83,27 +84,33 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 	return false
 }
 
-func (c *BaseChannel) isDuplicateInboundMessage(messageID string) bool {
-	messageID = strings.TrimSpace(messageID)
-	if messageID == "" {
+func (c *BaseChannel) seenRecently(key string, ttl time.Duration) bool {
+	key = strings.TrimSpace(key)
+	if key == "" {
 		return false
 	}
 	now := time.Now()
-	const ttl = 10 * time.Minute
 	c.recentMsgMu.Lock()
 	defer c.recentMsgMu.Unlock()
 	for id, ts := range c.recentMsg {
-		if now.Sub(ts) > ttl {
+		if now.Sub(ts) > 10*time.Minute {
 			delete(c.recentMsg, id)
 		}
 	}
-	if ts, ok := c.recentMsg[messageID]; ok {
+	if ts, ok := c.recentMsg[key]; ok {
 		if now.Sub(ts) <= ttl {
 			return true
 		}
 	}
-	c.recentMsg[messageID] = now
+	c.recentMsg[key] = now
 	return false
+}
+
+func messageDigest(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(s))
+	return fmt.Sprintf("%08x", h.Sum32())
 }
 
 func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []string, metadata map[string]string) {
@@ -118,7 +125,7 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 
 	if metadata != nil {
 		if messageID := strings.TrimSpace(metadata["message_id"]); messageID != "" {
-			if c.isDuplicateInboundMessage(c.name + ":" + messageID) {
+			if c.seenRecently(c.name+":"+messageID, 10*time.Minute) {
 				logger.WarnCF("channels", "Duplicate inbound message skipped", map[string]interface{}{
 					logger.FieldChannel: c.name,
 					"message_id":      messageID,
@@ -127,6 +134,15 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 				return
 			}
 		}
+	}
+	// Fallback dedupe when platform omits/changes message_id (short window, same sender/chat/content).
+	contentKey := c.name + ":content:" + chatID + ":" + senderID + ":" + messageDigest(content)
+	if c.seenRecently(contentKey, 12*time.Second) {
+		logger.WarnCF("channels", "Duplicate inbound content skipped", map[string]interface{}{
+			logger.FieldChannel: c.name,
+			logger.FieldChatID:  chatID,
+		})
+		return
 	}
 
 	// Build session key: channel:chatID

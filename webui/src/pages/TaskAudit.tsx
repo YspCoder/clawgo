@@ -17,6 +17,7 @@ type TaskAuditItem = {
   last_pause_at?: string;
   duration_ms?: number;
   retry_count?: number;
+  attempts?: number;
   error?: string;
   provider?: string;
   model?: string;
@@ -155,7 +156,7 @@ const TaskAudit: React.FC = () => {
                   className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/40 ${active ? 'bg-indigo-500/15' : ''}`}
                 >
                   <div className="text-sm font-medium text-zinc-100 truncate">{it.task_id || `task-${idx + 1}`}</div>
-                  <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'} · {it.provider || '-'} / {it.model || '-'}</div>
+                  <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · attempts:{it.attempts || 1} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'} · {it.provider || '-'} / {it.model || '-'}</div>
                   <div className="text-[11px] text-zinc-500 truncate">{it.time}</div>
                 </button>
               );
