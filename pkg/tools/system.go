@@ -6,7 +6,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"syscall"
 )
 
 type SystemInfoTool struct{}
@@ -87,15 +86,8 @@ func (t *SystemInfoTool) Execute(ctx context.Context, args map[string]interface{
 		}
 	}
 
-	// Disk usage for /
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs("/", &stat); err == nil {
-		bsize := uint64(stat.Bsize)
-		total := stat.Blocks * bsize
-		free := stat.Bfree * bsize
-		used := total - free
-		sb.WriteString(fmt.Sprintf("Disk (/): Used %.2f GB / Total %.2f GB (%.2f%%)\n",
-			float64(used)/1024/1024/1024, float64(total)/1024/1024/1024, float64(used)/float64(total)*100))
+	if diskLine := diskUsageRoot(); diskLine != "" {
+		sb.WriteString(diskLine)
 	}
 
 	return sb.String(), nil
