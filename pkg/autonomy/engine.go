@@ -340,6 +340,7 @@ func (e *Engine) tick() {
 						st.BlockReason = "repeated_error_signature"
 						st.RetryAfter = now.Add(5 * time.Minute)
 						e.enqueueAutoRepairTaskLocked(st, errSig)
+						e.appendMemoryIncidentLocked(st, errSig, advice.Reason)
 						e.sendFailureNotification(st, "repeated error signature detected; escalate")
 						continue
 					}
@@ -751,6 +752,34 @@ func (e *Engine) enqueueAutoRepairTaskLocked(st *taskState, errSig string) {
 	items = append(items, TaskItem{ID: id, Content: content, Priority: "high", Status: "todo", Source: "autonomy_repair", UpdatedAt: nowRFC3339()})
 	_ = e.taskStore.Save(items)
 	e.writeReflectLog("infer", st, "generated auto-repair task due to repeated error signature")
+}
+
+func (e *Engine) appendMemoryIncidentLocked(st *taskState, errSig string, reasons []string) {
+	if st == nil || strings.TrimSpace(e.opts.Workspace) == "" {
+		return
+	}
+	errSig = ekg.NormalizeErrorSignature(errSig)
+	if errSig == "" {
+		errSig = "unknown_error_signature"
+	}
+	marker := "[EKG_INCIDENT] errsig=" + errSig
+	line := fmt.Sprintf("- [EKG_INCIDENT] errsig=%s task=%s reason=%s time=%s", errSig, shortTask(st.Content), strings.Join(reasons, ";"), time.Now().UTC().Format(time.RFC3339))
+	appendIfMissing := func(path string) {
+		_ = os.MkdirAll(filepath.Dir(path), 0755)
+		b, _ := os.ReadFile(path)
+		if strings.Contains(string(b), marker) {
+			return
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		_, _ = f.WriteString(line + "\n")
+	}
+	dayPath := filepath.Join(e.opts.Workspace, "memory", time.Now().UTC().Format("2006-01-02")+".md")
+	appendIfMissing(dayPath)
+	appendIfMissing(filepath.Join(e.opts.Workspace, "MEMORY.md"))
 }
 
 func (e *Engine) sendFailureNotification(st *taskState, reason string) {

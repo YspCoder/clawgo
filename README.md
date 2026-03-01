@@ -79,6 +79,7 @@ ClawGo 现已内置执行知识图谱能力（轻量 JSONL 事件流，不依赖
 - provider fallback 按历史效果排序（含 errsig-aware）
 - 任务审计支持 provider/model 可观测
 - EKG 统计按 source/channel 分层（heartbeat 与 workload 分离）
+- EKG 与 Memory 联动：重复错误升级时自动写入 `memory/YYYY-MM-DD.md` 与 `MEMORY.md` 的结构化 incident，后续 advice 可提前触发抑制
 
 > 为什么需要时间窗口：
 > 历史全量统计会被旧数据与 heartbeat 噪音稀释，导致当前阶段决策失真。建议默认观察近 24h（或 6h/7d 可切换），让 fallback 和告警更贴近“当前”系统状态。

@@ -38,14 +38,16 @@ type Advice struct {
 }
 
 type Engine struct {
+	workspace                 string
 	path                      string
 	recentLines               int
 	consecutiveErrorThreshold int
 }
 
 func New(workspace string) *Engine {
-	p := filepath.Join(strings.TrimSpace(workspace), "memory", "ekg-events.jsonl")
-	return &Engine{path: p, recentLines: 2000, consecutiveErrorThreshold: 3}
+	ws := strings.TrimSpace(workspace)
+	p := filepath.Join(ws, "memory", "ekg-events.jsonl")
+	return &Engine{workspace: ws, path: p, recentLines: 2000, consecutiveErrorThreshold: 3}
 }
 
 func (e *Engine) SetConsecutiveErrorThreshold(v int) {
@@ -125,6 +127,14 @@ func (e *Engine) GetAdvice(ctx SignalContext) Advice {
 				adv.RetryBackoffSec = 300
 				adv.Reason = append(adv.Reason, "repeated_error_signature")
 				adv.Reason = append(adv.Reason, "same task and error signature exceeded threshold")
+				return adv
+			}
+			// Memory-linked fast path: if this errsig was documented as incident, escalate one step earlier.
+			if consecutive >= e.consecutiveErrorThreshold-1 && e.hasMemoryIncident(errSig) {
+				adv.ShouldEscalate = true
+				adv.RetryBackoffSec = 300
+				adv.Reason = append(adv.Reason, "memory_linked_repeated_error_signature")
+				adv.Reason = append(adv.Reason, "same errsig already recorded in memory incident")
 				return adv
 			}
 			continue
@@ -223,6 +233,33 @@ func (e *Engine) RankProvidersForError(candidates []string, errSig string) []str
 		return si > sj
 	})
 	return ordered
+}
+
+func (e *Engine) hasMemoryIncident(errSig string) bool {
+	if e == nil || strings.TrimSpace(e.workspace) == "" {
+		return false
+	}
+	errSig = NormalizeErrorSignature(errSig)
+	if errSig == "" {
+		return false
+	}
+	needle := "[EKG_INCIDENT]"
+	candidates := []string{
+		filepath.Join(e.workspace, "MEMORY.md"),
+		filepath.Join(e.workspace, "memory", time.Now().UTC().Format("2006-01-02")+".md"),
+		filepath.Join(e.workspace, "memory", time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")+".md"),
+	}
+	for _, p := range candidates {
+		b, err := os.ReadFile(p)
+		if err != nil || len(b) == 0 {
+			continue
+		}
+		txt := strings.ToLower(string(b))
+		if strings.Contains(txt, strings.ToLower(needle)) && strings.Contains(txt, errSig) {
+			return true
+		}
+	}
+	return false
 }
 
 func NormalizeErrorSignature(s string) string {
