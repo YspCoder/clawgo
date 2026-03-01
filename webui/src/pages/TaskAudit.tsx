@@ -40,7 +40,12 @@ const TaskAudit: React.FC = () => {
   const [reportDate, setReportDate] = useState<string>(new Date().toISOString().slice(0,10));
   const [showDailyReport, setShowDailyReport] = useState(false);
   const [ekgProviderTop, setEkgProviderTop] = useState<EKGKV[]>([]);
+  const [ekgProviderTopWorkload, setEkgProviderTopWorkload] = useState<EKGKV[]>([]);
   const [ekgErrsigTop, setEkgErrsigTop] = useState<EKGKV[]>([]);
+  const [ekgErrsigTopHeartbeat, setEkgErrsigTopHeartbeat] = useState<EKGKV[]>([]);
+  const [ekgErrsigTopWorkload, setEkgErrsigTopWorkload] = useState<EKGKV[]>([]);
+  const [ekgSourceStats, setEkgSourceStats] = useState<Record<string, number>>({});
+  const [ekgChannelStats, setEkgChannelStats] = useState<Record<string, number>>({});
   const [ekgEscalationCount, setEkgEscalationCount] = useState<number>(0);
 
   const fetchData = async () => {
@@ -67,7 +72,12 @@ const TaskAudit: React.FC = () => {
       if (er.ok) {
         const ej = await er.json();
         setEkgProviderTop(Array.isArray(ej.provider_top) ? ej.provider_top : []);
+        setEkgProviderTopWorkload(Array.isArray(ej.provider_top_workload) ? ej.provider_top_workload : []);
         setEkgErrsigTop(Array.isArray(ej.errsig_top) ? ej.errsig_top : []);
+        setEkgErrsigTopHeartbeat(Array.isArray(ej.errsig_top_heartbeat) ? ej.errsig_top_heartbeat : []);
+        setEkgErrsigTopWorkload(Array.isArray(ej.errsig_top_workload) ? ej.errsig_top_workload : []);
+        setEkgSourceStats(ej.source_stats && typeof ej.source_stats === 'object' ? ej.source_stats : {});
+        setEkgChannelStats(ej.channel_stats && typeof ej.channel_stats === 'object' ? ej.channel_stats : {});
         setEkgEscalationCount(Number(ej.escalation_count || 0));
       }
     } catch (e) {
@@ -145,8 +155,34 @@ const TaskAudit: React.FC = () => {
             <div className="text-zinc-500 mb-1">Escalations</div>
             <div className="text-zinc-100 text-base font-semibold">{ekgEscalationCount}</div>
           </div>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 md:col-span-2">
-            <div className="text-zinc-500 mb-1">Top Providers</div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+            <div className="text-zinc-500 mb-1">Source Stats</div>
+            <div className="space-y-1">
+              {Object.keys(ekgSourceStats).length === 0 ? <div className="text-zinc-500">-</div> : Object.entries(ekgSourceStats).map(([k, v]) => (
+                <div key={k} className="text-zinc-200">{k}: <span className="text-zinc-400">{v}</span></div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+            <div className="text-zinc-500 mb-1">Channel Stats</div>
+            <div className="space-y-1">
+              {Object.keys(ekgChannelStats).length === 0 ? <div className="text-zinc-500">-</div> : Object.entries(ekgChannelStats).map(([k, v]) => (
+                <div key={k} className="text-zinc-200">{k}: <span className="text-zinc-400">{v}</span></div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+            <div className="text-zinc-500 mb-1">Top Providers (workload)</div>
+            <div className="space-y-1">
+              {ekgProviderTopWorkload.length === 0 ? <div className="text-zinc-500">-</div> : ekgProviderTopWorkload.map((x, i) => (
+                <div key={`${x.key}-${i}`} className="text-zinc-200">{x.key} <span className="text-zinc-500">({Number(x.score || 0).toFixed(2)})</span></div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+            <div className="text-zinc-500 mb-1">Top Providers (all)</div>
             <div className="space-y-1">
               {ekgProviderTop.length === 0 ? <div className="text-zinc-500">-</div> : ekgProviderTop.map((x, i) => (
                 <div key={`${x.key}-${i}`} className="text-zinc-200">{x.key} <span className="text-zinc-500">({Number(x.score || 0).toFixed(2)})</span></div>
@@ -154,12 +190,30 @@ const TaskAudit: React.FC = () => {
             </div>
           </div>
         </div>
-        <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 text-xs">
-          <div className="text-zinc-500 mb-1">Top Error Signatures</div>
-          <div className="space-y-1 max-h-24 overflow-y-auto">
-            {ekgErrsigTop.length === 0 ? <div className="text-zinc-500">-</div> : ekgErrsigTop.map((x, i) => (
-              <div key={`${x.key}-${i}`} className="text-zinc-200 truncate">{x.key} <span className="text-zinc-500">(x{x.count || 0})</span></div>
-            ))}
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+            <div className="text-zinc-500 mb-1">Top Error Signatures (workload)</div>
+            <div className="space-y-1 max-h-24 overflow-y-auto">
+              {ekgErrsigTopWorkload.length === 0 ? <div className="text-zinc-500">-</div> : ekgErrsigTopWorkload.map((x, i) => (
+                <div key={`${x.key}-${i}`} className="text-zinc-200 truncate">{x.key} <span className="text-zinc-500">(x{x.count || 0})</span></div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+            <div className="text-zinc-500 mb-1">Top Error Signatures (heartbeat)</div>
+            <div className="space-y-1 max-h-24 overflow-y-auto">
+              {ekgErrsigTopHeartbeat.length === 0 ? <div className="text-zinc-500">-</div> : ekgErrsigTopHeartbeat.map((x, i) => (
+                <div key={`${x.key}-${i}`} className="text-zinc-200 truncate">{x.key} <span className="text-zinc-500">(x{x.count || 0})</span></div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+            <div className="text-zinc-500 mb-1">Top Error Signatures (all)</div>
+            <div className="space-y-1 max-h-24 overflow-y-auto">
+              {ekgErrsigTop.length === 0 ? <div className="text-zinc-500">-</div> : ekgErrsigTop.map((x, i) => (
+                <div key={`${x.key}-${i}`} className="text-zinc-200 truncate">{x.key} <span className="text-zinc-500">(x{x.count || 0})</span></div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

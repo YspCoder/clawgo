@@ -1637,8 +1637,18 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 	if len(lines) > 3000 {
 		lines = lines[len(lines)-3000:]
 	}
+	type kv struct {
+		Key   string  `json:"key"`
+		Score float64 `json:"score,omitempty"`
+		Count int     `json:"count,omitempty"`
+	}
 	providerScore := map[string]float64{}
+	providerScoreWorkload := map[string]float64{}
 	errSigCount := map[string]int{}
+	errSigHeartbeat := map[string]int{}
+	errSigWorkload := map[string]int{}
+	sourceStats := map[string]int{}
+	channelStats := map[string]int{}
 	for _, ln := range lines {
 		if strings.TrimSpace(ln) == "" {
 			continue
@@ -1650,40 +1660,52 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 		provider := strings.TrimSpace(fmt.Sprintf("%v", row["provider"]))
 		status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
 		errSig := strings.TrimSpace(fmt.Sprintf("%v", row["errsig"]))
+		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
+		channel := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["channel"])))
+		if source == "" {
+			source = "unknown"
+		}
+		if channel == "" {
+			channel = "unknown"
+		}
+		sourceStats[source]++
+		channelStats[channel]++
+		isHeartbeat := source == "heartbeat"
 		if provider != "" {
 			switch status {
 			case "success":
 				providerScore[provider] += 1
+				if !isHeartbeat { providerScoreWorkload[provider] += 1 }
 			case "suppressed":
 				providerScore[provider] += 0.2
+				if !isHeartbeat { providerScoreWorkload[provider] += 0.2 }
 			case "error":
 				providerScore[provider] -= 1
+				if !isHeartbeat { providerScoreWorkload[provider] -= 1 }
 			}
 		}
 		if errSig != "" {
 			errSigCount[errSig]++
+			if isHeartbeat {
+				errSigHeartbeat[errSig]++
+			} else {
+				errSigWorkload[errSig]++
+			}
 		}
 	}
-	type kv struct {
-		Key   string  `json:"key"`
-		Score float64 `json:"score,omitempty"`
-		Count int     `json:"count,omitempty"`
+	toTopScore := func(m map[string]float64, n int) []kv {
+		out := make([]kv, 0, len(m))
+		for k, v := range m { out = append(out, kv{Key:k, Score:v}) }
+		sort.Slice(out, func(i,j int) bool { return out[i].Score > out[j].Score })
+		if len(out) > n { out = out[:n] }
+		return out
 	}
-	providerTop := make([]kv, 0, len(providerScore))
-	for k, v := range providerScore {
-		providerTop = append(providerTop, kv{Key: k, Score: v})
-	}
-	sort.Slice(providerTop, func(i, j int) bool { return providerTop[i].Score > providerTop[j].Score })
-	if len(providerTop) > 5 {
-		providerTop = providerTop[:5]
-	}
-	errTop := make([]kv, 0, len(errSigCount))
-	for k, v := range errSigCount {
-		errTop = append(errTop, kv{Key: k, Count: v})
-	}
-	sort.Slice(errTop, func(i, j int) bool { return errTop[i].Count > errTop[j].Count })
-	if len(errTop) > 5 {
-		errTop = errTop[:5]
+	toTopCount := func(m map[string]int, n int) []kv {
+		out := make([]kv, 0, len(m))
+		for k, v := range m { out = append(out, kv{Key:k, Count:v}) }
+		sort.Slice(out, func(i,j int) bool { return out[i].Count > out[j].Count })
+		if len(out) > n { out = out[:n] }
+		return out
 	}
 	escalations := 0
 	tasksPath := filepath.Join(workspace, "memory", "tasks.json")
@@ -1698,10 +1720,15 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":              true,
-		"provider_top":    providerTop,
-		"errsig_top":      errTop,
-		"escalation_count": escalations,
+		"ok":                       true,
+		"provider_top":             toTopScore(providerScore, 5),
+		"provider_top_workload":    toTopScore(providerScoreWorkload, 5),
+		"errsig_top":               toTopCount(errSigCount, 5),
+		"errsig_top_heartbeat":     toTopCount(errSigHeartbeat, 5),
+		"errsig_top_workload":      toTopCount(errSigWorkload, 5),
+		"source_stats":             sourceStats,
+		"channel_stats":            channelStats,
+		"escalation_count":         escalations,
 	})
 }
 

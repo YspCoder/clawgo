@@ -41,9 +41,6 @@ type FeishuChannel struct {
 	tenantAccessToken string
 	tenantTokenExpire time.Time
 	tenantTokenErr    error
-
-	recentMsgMu sync.Mutex
-	recentMsg   map[string]time.Time
 }
 
 func (c *FeishuChannel) SupportsAction(action string) bool {
@@ -62,7 +59,6 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 		BaseChannel: base,
 		config:      cfg,
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret),
-		recentMsg:   map[string]time.Time{},
 	}, nil
 }
 
@@ -226,12 +222,6 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if sender != nil && sender.TenantKey != nil {
 		metadata["tenant_key"] = *sender.TenantKey
 	}
-	if messageID := metadata["message_id"]; messageID != "" {
-		if c.isDuplicateInboundMessage(messageID) {
-			logger.WarnCF("feishu", "Duplicate Feishu inbound message skipped", map[string]interface{}{"message_id": messageID, logger.FieldChatID: chatID})
-			return nil
-		}
-	}
 
 	logger.InfoCF("feishu", "Feishu message received", map[string]interface{}{
 		logger.FieldSenderID: senderID,
@@ -329,29 +319,6 @@ func (c *FeishuChannel) isAllowedChat(chatID, chatType string) bool {
 			return true
 		}
 	}
-	return false
-}
-
-func (c *FeishuChannel) isDuplicateInboundMessage(messageID string) bool {
-	messageID = strings.TrimSpace(messageID)
-	if messageID == "" {
-		return false
-	}
-	now := time.Now()
-	const ttl = 10 * time.Minute
-	c.recentMsgMu.Lock()
-	defer c.recentMsgMu.Unlock()
-	for id, ts := range c.recentMsg {
-		if now.Sub(ts) > ttl {
-			delete(c.recentMsg, id)
-		}
-	}
-	if ts, ok := c.recentMsg[messageID]; ok {
-		if now.Sub(ts) <= ttl {
-			return true
-		}
-	}
-	c.recentMsg[messageID] = now
 	return false
 }
 
