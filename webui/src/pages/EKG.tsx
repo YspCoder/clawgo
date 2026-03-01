@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 
 type EKGKV = { key?: string; score?: number; count?: number };
 
 const EKG: React.FC = () => {
+  const { t } = useTranslation();
   const { q } = useAppContext();
   const [loading, setLoading] = useState(false);
   const [ekgWindow, setEkgWindow] = useState<'6h' | '24h' | '7d'>(() => {
@@ -56,47 +58,47 @@ const EKG: React.FC = () => {
             <option value="24h">24h</option>
             <option value="7d">7d</option>
           </select>
-          <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? 'Loading...' : 'Refresh'}</button>
+          <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 text-xs">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-zinc-500 mb-1">Escalations</div>
+          <div className="text-zinc-500 mb-1">{t('ekgEscalations')}</div>
           <div className="text-zinc-100 text-2xl font-semibold">{escalationCount}</div>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-zinc-500 mb-1">Source Stats</div>
+          <div className="text-zinc-500 mb-1">{t('ekgSourceStats')}</div>
           <div className="space-y-1">{Object.keys(sourceStats).length === 0 ? <div className="text-zinc-500">-</div> : Object.entries(sourceStats).map(([k,v]) => <div key={k} className="text-zinc-200">{k}: <span className="text-zinc-400">{v}</span></div>)}</div>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-zinc-500 mb-1">Channel Stats</div>
+          <div className="text-zinc-500 mb-1">{t('ekgChannelStats')}</div>
           <div className="space-y-1">{Object.keys(channelStats).length === 0 ? <div className="text-zinc-500">-</div> : Object.entries(channelStats).map(([k,v]) => <div key={k} className="text-zinc-200">{k}: <span className="text-zinc-400">{v}</span></div>)}</div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 text-xs">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-zinc-500 mb-1">Top Providers (workload)</div>
+          <div className="text-zinc-500 mb-1">{t('ekgTopProvidersWorkload')}</div>
           <div className="space-y-1">{providerTopWorkload.length === 0 ? <div className="text-zinc-500">-</div> : providerTopWorkload.map((x,i)=><div key={i} className="text-zinc-200">{x.key} <span className="text-zinc-500">({Number(x.score||0).toFixed(2)})</span></div>)}</div>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="text-zinc-500 mb-1">Top Providers (all)</div>
+          <div className="text-zinc-500 mb-1">{t('ekgTopProvidersAll')}</div>
           <div className="space-y-1">{providerTop.length === 0 ? <div className="text-zinc-500">-</div> : providerTop.map((x,i)=><div key={i} className="text-zinc-200">{x.key} <span className="text-zinc-500">({Number(x.score||0).toFixed(2)})</span></div>)}</div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 text-xs flex-1 min-h-0">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 overflow-y-auto">
-          <div className="text-zinc-500 mb-1">Top Error Signatures (workload)</div>
+          <div className="text-zinc-500 mb-1">{t('ekgTopErrsigWorkload')}</div>
           <div className="space-y-1">{errsigTopWorkload.length === 0 ? <div className="text-zinc-500">-</div> : errsigTopWorkload.map((x,i)=><div key={i} className="text-zinc-200 truncate">{x.key} <span className="text-zinc-500">(x{x.count||0})</span></div>)}</div>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 overflow-y-auto">
-          <div className="text-zinc-500 mb-1">Top Error Signatures (heartbeat)</div>
+          <div className="text-zinc-500 mb-1">{t('ekgTopErrsigHeartbeat')}</div>
           <div className="space-y-1">{errsigTopHeartbeat.length === 0 ? <div className="text-zinc-500">-</div> : errsigTopHeartbeat.map((x,i)=><div key={i} className="text-zinc-200 truncate">{x.key} <span className="text-zinc-500">(x{x.count||0})</span></div>)}</div>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 overflow-y-auto">
-          <div className="text-zinc-500 mb-1">Top Error Signatures (all)</div>
+          <div className="text-zinc-500 mb-1">{t('ekgTopErrsigAll')}</div>
           <div className="space-y-1">{errsigTop.length === 0 ? <div className="text-zinc-500">-</div> : errsigTop.map((x,i)=><div key={i} className="text-zinc-200 truncate">{x.key} <span className="text-zinc-500">(x{x.count||0})</span></div>)}</div>
         </div>
       </div>
