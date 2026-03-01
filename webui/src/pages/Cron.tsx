@@ -15,12 +15,47 @@ const initialCronForm = {
   enabled: true,
 };
 
+const isNonGroupRecipient = (channel: string, id: string) => {
+  const ch = String(channel || '').toLowerCase();
+  const v = String(id || '').trim();
+  if (!v) return false;
+  if (ch === 'telegram') {
+    if (v.startsWith('-')) return false;
+    if (v.startsWith('telegram:')) {
+      const raw = v.slice('telegram:'.length);
+      if (raw.startsWith('-')) return false;
+    }
+  }
+  if (ch === 'discord') {
+    if (v.startsWith('#') || v.startsWith('discord:channel:')) return false;
+  }
+  return true;
+};
+
 const Cron: React.FC = () => {
   const { t } = useTranslation();
-  const { cron, refreshCron, q } = useAppContext();
+  const { cron, refreshCron, q, cfg } = useAppContext();
   const [isCronModalOpen, setIsCronModalOpen] = useState(false);
   const [editingCron, setEditingCron] = useState<CronJob | null>(null);
   const [cronForm, setCronForm] = useState(initialCronForm);
+
+  const enabledChannels = React.useMemo(() => {
+    const channels = (cfg as any)?.channels || {};
+    return Object.keys(channels).filter((k) => {
+      const v = channels[k];
+      return v && typeof v === 'object' && v.enabled === true;
+    });
+  }, [cfg]);
+
+  const channelRecipients = React.useMemo(() => {
+    const channels = (cfg as any)?.channels || {};
+    const out: Record<string, string[]> = {};
+    enabledChannels.forEach((ch) => {
+      const arr = Array.isArray(channels?.[ch]?.allow_from) ? channels[ch].allow_from : [];
+      out[ch] = arr.map((x: any) => String(x || '').trim()).filter((id: string) => isNonGroupRecipient(ch, id));
+    });
+    return out;
+  }, [cfg, enabledChannels]);
 
   async function cronAction(action: 'delete' | 'enable' | 'disable', id: string) {
     try {
@@ -57,7 +92,9 @@ const Cron: React.FC = () => {
       }
     } else {
       setEditingCron(null);
-      setCronForm(initialCronForm);
+      const defaultChannel = enabledChannels[0] || initialCronForm.channel;
+      const defaultTo = (channelRecipients[defaultChannel] && channelRecipients[defaultChannel][0]) || '';
+      setCronForm({ ...initialCronForm, channel: defaultChannel, to: defaultTo });
     }
     setIsCronModalOpen(true);
   }
@@ -223,21 +260,42 @@ const Cron: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <label className="block">
                     <span className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('channel')}</span>
-                    <input
-                      type="text"
+                    <select
                       value={cronForm.channel}
-                      onChange={(e) => setCronForm({ ...cronForm, channel: e.target.value })}
+                      onChange={(e) => {
+                        const nextChannel = e.target.value;
+                        const candidates = channelRecipients[nextChannel] || [];
+                        const nextTo = candidates.includes(cronForm.to) ? cronForm.to : (candidates[0] || '');
+                        setCronForm({ ...cronForm, channel: nextChannel, to: nextTo });
+                      }}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
-                    />
+                    >
+                      {(enabledChannels.length > 0 ? enabledChannels : [cronForm.channel]).map((ch) => (
+                        <option key={ch} value={ch}>{ch}</option>
+                      ))}
+                    </select>
                   </label>
                   <label className="block">
                     <span className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('to')}</span>
-                    <input
-                      type="text"
-                      value={cronForm.to}
-                      onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
-                    />
+                    {((channelRecipients[cronForm.channel] || []).length > 0) ? (
+                      <select
+                        value={cronForm.to}
+                        onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                      >
+                        {(channelRecipients[cronForm.channel] || []).map((id) => (
+                          <option key={id} value={id}>{id}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={cronForm.to}
+                        onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
+                        placeholder="recipient id"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                      />
+                    )}
                   </label>
                 </div>
 
