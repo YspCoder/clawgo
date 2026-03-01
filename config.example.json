@@ -81,6 +81,9 @@
     }
   },
   "channels": {
+    "inbound_message_id_dedupe_ttl_seconds": 600,
+    "inbound_content_dedupe_window_seconds": 12,
+    "outbound_dedupe_window_seconds": 12,
     "telegram": {
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",

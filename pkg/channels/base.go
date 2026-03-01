@@ -29,12 +29,26 @@ type ActionCapable interface {
 	SupportsAction(action string) bool
 }
 
+var (
+	inboundMessageIDDedupeTTL = 10 * time.Minute
+	inboundContentDedupeTTL   = 12 * time.Second
+)
+
+func setInboundDedupeWindows(messageIDTTL, contentTTL time.Duration) {
+	if messageIDTTL > 0 {
+		inboundMessageIDDedupeTTL = messageIDTTL
+	}
+	if contentTTL > 0 {
+		inboundContentDedupeTTL = contentTTL
+	}
+}
+
 type BaseChannel struct {
-	config    interface{}
-	bus       *bus.MessageBus
-	running   atomic.Bool
-	name      string
-	allowList []string
+	config      interface{}
+	bus         *bus.MessageBus
+	running     atomic.Bool
+	name        string
+	allowList   []string
 	recentMsgMu sync.Mutex
 	recentMsg   map[string]time.Time
 }
@@ -93,7 +107,7 @@ func (c *BaseChannel) seenRecently(key string, ttl time.Duration) bool {
 	c.recentMsgMu.Lock()
 	defer c.recentMsgMu.Unlock()
 	for id, ts := range c.recentMsg {
-		if now.Sub(ts) > 10*time.Minute {
+		if now.Sub(ts) > inboundMessageIDDedupeTTL {
 			delete(c.recentMsg, id)
 		}
 	}
@@ -125,7 +139,7 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 
 	if metadata != nil {
 		if messageID := strings.TrimSpace(metadata["message_id"]); messageID != "" {
-			if c.seenRecently(c.name+":"+messageID, 10*time.Minute) {
+			if c.seenRecently(c.name+":"+messageID, inboundMessageIDDedupeTTL) {
 				logger.WarnCF("channels", "Duplicate inbound message skipped", map[string]interface{}{
 					logger.FieldChannel: c.name,
 					"message_id":      messageID,
@@ -137,7 +151,7 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 	}
 	// Fallback dedupe when platform omits/changes message_id (short window, same sender/chat/content).
 	contentKey := c.name + ":content:" + chatID + ":" + senderID + ":" + messageDigest(content)
-	if c.seenRecently(contentKey, 12*time.Second) {
+	if c.seenRecently(contentKey, inboundContentDedupeTTL) {
 		logger.WarnCF("channels", "Duplicate inbound content skipped", map[string]interface{}{
 			logger.FieldChannel: c.name,
 			logger.FieldChatID:  chatID,

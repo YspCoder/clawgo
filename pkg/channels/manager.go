@@ -8,6 +8,7 @@ package channels
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"strings"
@@ -23,16 +24,17 @@ import (
 )
 
 type Manager struct {
-	channels      map[string]Channel
-	bus           *bus.MessageBus
-	config        *config.Config
-	dispatchTask  *asyncTask
-	dispatchSem   chan struct{}
-	outboundLimit *rate.Limiter
-	mu            sync.RWMutex
-	snapshot      atomic.Value // map[string]Channel
+	channels       map[string]Channel
+	bus            *bus.MessageBus
+	config         *config.Config
+	dispatchTask   *asyncTask
+	dispatchSem    chan struct{}
+	outboundLimit  *rate.Limiter
+	mu             sync.RWMutex
+	snapshot       atomic.Value // map[string]Channel
 	outboundSeenMu sync.Mutex
 	outboundSeen   map[string]time.Time
+	outboundTTL    time.Duration
 }
 
 type asyncTask struct {
@@ -48,8 +50,18 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus) (*Manager, error
 		dispatchSem:   make(chan struct{}, 32),
 		outboundLimit: rate.NewLimiter(rate.Limit(40), 80),
 		outboundSeen:  map[string]time.Time{},
+		outboundTTL:   12 * time.Second,
 	}
 	m.snapshot.Store(map[string]Channel{})
+	if cfg != nil {
+		if v := cfg.Channels.OutboundDedupeWindowSeconds; v > 0 {
+			m.outboundTTL = time.Duration(v) * time.Second
+		}
+		setInboundDedupeWindows(
+			time.Duration(cfg.Channels.InboundMessageIDDedupeTTLSeconds)*time.Second,
+			time.Duration(cfg.Channels.InboundContentDedupeWindowSeconds)*time.Second,
+		)
+	}
 
 	if err := m.initChannels(); err != nil {
 		return nil, err
@@ -286,6 +298,11 @@ func outboundDigest(msg bus.OutboundMessage) string {
 	_, _ = h.Write([]byte("|" + strings.TrimSpace(msg.Content)))
 	_, _ = h.Write([]byte("|" + strings.TrimSpace(msg.Media)))
 	_, _ = h.Write([]byte("|" + strings.TrimSpace(msg.ReplyToID)))
+	if len(msg.Buttons) > 0 {
+		if b, err := json.Marshal(msg.Buttons); err == nil {
+			_, _ = h.Write([]byte("|" + string(b)))
+		}
+	}
 	return fmt.Sprintf("%08x", h.Sum32())
 }
 
@@ -299,7 +316,10 @@ func (m *Manager) shouldSkipOutboundDuplicate(msg bus.OutboundMessage) bool {
 	}
 	key := outboundDigest(msg)
 	now := time.Now()
-	const ttl = 12 * time.Second
+	ttl := m.outboundTTL
+	if ttl <= 0 {
+		ttl = 12 * time.Second
+	}
 	m.outboundSeenMu.Lock()
 	defer m.outboundSeenMu.Unlock()
 	for k, ts := range m.outboundSeen {

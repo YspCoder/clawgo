@@ -77,3 +77,28 @@ func TestBaseChannel_HandleMessage_ContentHashFallbackDedupe(t *testing.T) {
 		t.Fatalf("expected duplicate inbound to be dropped")
 	}
 }
+
+
+func TestDispatchOutbound_DifferentButtonsShouldNotDeduplicate(t *testing.T) {
+	mb := bus.NewMessageBus()
+	mgr, err := NewManager(&config.Config{}, mb)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	rc := &recordingChannel{}
+	mgr.RegisterChannel("test", rc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mgr.dispatchOutbound(ctx)
+
+	msg1 := bus.OutboundMessage{Channel: "test", ChatID: "c1", Content: "choose", Action: "send", Buttons: [][]bus.Button{{{Text: "A", Data: "a"}}}}
+	msg2 := bus.OutboundMessage{Channel: "test", ChatID: "c1", Content: "choose", Action: "send", Buttons: [][]bus.Button{{{Text: "B", Data: "b"}}}}
+	mb.PublishOutbound(msg1)
+	mb.PublishOutbound(msg2)
+	time.Sleep(220 * time.Millisecond)
+
+	if got := rc.count(); got != 2 {
+		t.Fatalf("expected 2 sends when buttons differ, got %d", got)
+	}
+}

@@ -127,13 +127,16 @@ type ContextCompactionConfig struct {
 }
 
 type ChannelsConfig struct {
-	WhatsApp WhatsAppConfig `json:"whatsapp"`
-	Telegram TelegramConfig `json:"telegram"`
-	Feishu   FeishuConfig   `json:"feishu"`
-	Discord  DiscordConfig  `json:"discord"`
-	MaixCam  MaixCamConfig  `json:"maixcam"`
-	QQ       QQConfig       `json:"qq"`
-	DingTalk DingTalkConfig `json:"dingtalk"`
+	InboundMessageIDDedupeTTLSeconds int            `json:"inbound_message_id_dedupe_ttl_seconds" env:"CLAWGO_CHANNELS_INBOUND_MESSAGE_ID_DEDUPE_TTL_SECONDS"`
+	InboundContentDedupeWindowSeconds int           `json:"inbound_content_dedupe_window_seconds" env:"CLAWGO_CHANNELS_INBOUND_CONTENT_DEDUPE_WINDOW_SECONDS"`
+	OutboundDedupeWindowSeconds       int           `json:"outbound_dedupe_window_seconds" env:"CLAWGO_CHANNELS_OUTBOUND_DEDUPE_WINDOW_SECONDS"`
+	WhatsApp                          WhatsAppConfig `json:"whatsapp"`
+	Telegram                          TelegramConfig `json:"telegram"`
+	Feishu                            FeishuConfig   `json:"feishu"`
+	Discord                           DiscordConfig  `json:"discord"`
+	MaixCam                           MaixCamConfig  `json:"maixcam"`
+	QQ                                QQConfig       `json:"qq"`
+	DingTalk                          DingTalkConfig `json:"dingtalk"`
 }
 
 type WhatsAppConfig struct {
@@ -386,6 +389,9 @@ func DefaultConfig() *Config {
 			},
 		},
 		Channels: ChannelsConfig{
+			InboundMessageIDDedupeTTLSeconds: 600,
+			InboundContentDedupeWindowSeconds: 12,
+			OutboundDedupeWindowSeconds:       12,
 			WhatsApp: WhatsAppConfig{
 				Enabled:   false,
 				BridgeURL: "ws://localhost:3001",

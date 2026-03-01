@@ -260,6 +260,15 @@ func Validate(cfg *Config) []error {
 		errs = append(errs, fmt.Errorf("memory.recent_days must be > 0"))
 	}
 
+	if cfg.Channels.InboundMessageIDDedupeTTLSeconds <= 0 {
+		errs = append(errs, fmt.Errorf("channels.inbound_message_id_dedupe_ttl_seconds must be > 0"))
+	}
+	if cfg.Channels.InboundContentDedupeWindowSeconds <= 0 {
+		errs = append(errs, fmt.Errorf("channels.inbound_content_dedupe_window_seconds must be > 0"))
+	}
+	if cfg.Channels.OutboundDedupeWindowSeconds <= 0 {
+		errs = append(errs, fmt.Errorf("channels.outbound_dedupe_window_seconds must be > 0"))
+	}
 	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token == "" {
 		errs = append(errs, fmt.Errorf("channels.telegram.token is required when channels.telegram.enabled=true"))
 	}
