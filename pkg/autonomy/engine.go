@@ -763,11 +763,33 @@ func (e *Engine) appendMemoryIncidentLocked(st *taskState, errSig string, reason
 		errSig = "unknown_error_signature"
 	}
 	marker := "[EKG_INCIDENT] errsig=" + errSig
-	line := fmt.Sprintf("- [EKG_INCIDENT] errsig=%s task=%s reason=%s time=%s", errSig, shortTask(st.Content), strings.Join(reasons, ";"), time.Now().UTC().Format(time.RFC3339))
-	appendIfMissing := func(path string) {
+	now := time.Now().UTC()
+	line := fmt.Sprintf("- [EKG_INCIDENT] errsig=%s task=%s reason=%s time=%s", errSig, shortTask(st.Content), strings.Join(reasons, ";"), now.Format(time.RFC3339))
+	cooldown := 6 * time.Hour
+	hasRecentIncident := func(content string) bool {
+		for _, ln := range strings.Split(content, "\n") {
+			if !strings.Contains(ln, marker) {
+				continue
+			}
+			idx := strings.LastIndex(ln, "time=")
+			if idx < 0 {
+				return true
+			}
+			ts := strings.TrimSpace(ln[idx+len("time="):])
+			if tm, err := time.Parse(time.RFC3339, ts); err == nil {
+				if now.Sub(tm) < cooldown {
+					return true
+				}
+				continue
+			}
+			return true
+		}
+		return false
+	}
+	appendIfDue := func(path string) {
 		_ = os.MkdirAll(filepath.Dir(path), 0755)
 		b, _ := os.ReadFile(path)
-		if strings.Contains(string(b), marker) {
+		if hasRecentIncident(string(b)) {
 			return
 		}
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -777,9 +799,9 @@ func (e *Engine) appendMemoryIncidentLocked(st *taskState, errSig string, reason
 		defer f.Close()
 		_, _ = f.WriteString(line + "\n")
 	}
-	dayPath := filepath.Join(e.opts.Workspace, "memory", time.Now().UTC().Format("2006-01-02")+".md")
-	appendIfMissing(dayPath)
-	appendIfMissing(filepath.Join(e.opts.Workspace, "MEMORY.md"))
+	dayPath := filepath.Join(e.opts.Workspace, "memory", now.Format("2006-01-02")+".md")
+	appendIfDue(dayPath)
+	appendIfDue(filepath.Join(e.opts.Workspace, "MEMORY.md"))
 }
 
 func (e *Engine) sendFailureNotification(st *taskState, reason string) {

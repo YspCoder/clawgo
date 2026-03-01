@@ -80,6 +80,8 @@ ClawGo now includes a built-in execution knowledge graph (lightweight JSONL even
 - Task-audit visibility for provider/model
 - Source/channel-stratified EKG stats (heartbeat separated from workload)
 - EKG-memory integration: repeated-error escalation writes structured incidents to `memory/YYYY-MM-DD.md` and `MEMORY.md`, and future advice can escalate earlier for known signatures
+- EKG snapshot: auto-maintains `memory/ekg-snapshot.json` to reduce cold-start JSONL scanning cost
+- Incident write throttling: same errsig is not re-written to memory within a default 6-hour cooldown
 
 > Why time windows matter:
 > Full-history stats get diluted by stale data and heartbeat noise, which degrades current decisions. A recent window (e.g., 24h, optionally 6h/7d) keeps fallback and alerts aligned with present runtime behavior.
