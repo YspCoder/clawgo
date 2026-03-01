@@ -47,7 +47,10 @@ const TaskAudit: React.FC = () => {
   const [ekgSourceStats, setEkgSourceStats] = useState<Record<string, number>>({});
   const [ekgChannelStats, setEkgChannelStats] = useState<Record<string, number>>({});
   const [ekgEscalationCount, setEkgEscalationCount] = useState<number>(0);
-  const [ekgWindow, setEkgWindow] = useState<'6h' | '24h' | '7d'>('24h');
+  const [ekgWindow, setEkgWindow] = useState<'6h' | '24h' | '7d'>(() => {
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem('taskAudit.ekgWindow') : null;
+    return saved === '6h' || saved === '24h' || saved === '7d' ? saved : '24h';
+  });
 
   const fetchData = async () => {
     setLoading(true);
@@ -92,6 +95,12 @@ const TaskAudit: React.FC = () => {
   };
 
   useEffect(() => { fetchData(); }, [q, reportDate, ekgWindow]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('taskAudit.ekgWindow', ekgWindow);
+    }
+  }, [ekgWindow]);
 
 
 
