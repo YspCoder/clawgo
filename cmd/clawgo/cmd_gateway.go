@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"clawgo/pkg/agent"
@@ -203,7 +202,7 @@ func gatewayCmd() {
 		return out
 	})
 	registryServer.SetConfigAfterHook(func() {
-		_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
+		_ = requestGatewayReloadSignal()
 	})
 	registryServer.SetCronHandler(func(action string, args map[string]interface{}) (interface{}, error) {
 		getStr := func(k string) string {
@@ -353,11 +352,11 @@ func gatewayCmd() {
 	go runGatewayBootstrapInit(ctx, cfg, agentLoop)
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(sigChan, gatewayNotifySignals()...)
 	for {
 		sig := <-sigChan
-		switch sig {
-		case syscall.SIGHUP:
+		switch {
+		case isGatewayReloadSignal(sig):
 			fmt.Println("\n↻ Reloading config...")
 			newCfg, err := config.LoadConfig(getConfigPath())
 			if err != nil {
