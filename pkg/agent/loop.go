@@ -1184,6 +1184,21 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			if strings.Contains(errText, "no tool call found for function call output") {
 				removed := al.sessions.PurgeOrphanToolOutputs(sessionKey)
 				logger.WarnCF("agent", "Purged orphan tool outputs after provider pairing error (system)", map[string]interface{}{"session_key": sessionKey, "removed": removed})
+				if removed > 0 {
+					// Rebuild context from cleaned history and retry current iteration.
+					history = al.sessions.GetHistory(sessionKey)
+					summary = al.sessions.GetSummary(sessionKey)
+					messages = al.contextBuilder.BuildMessages(
+						history,
+						summary,
+						msg.Content,
+						nil,
+						originChannel,
+						originChatID,
+						responseLang,
+					)
+					continue
+				}
 			}
 			logger.ErrorCF("agent", "LLM call failed in system message",
 				map[string]interface{}{
