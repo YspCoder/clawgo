@@ -67,24 +67,28 @@
 - 未显式声明时，系统会从任务文本自动推断资源键。
 - 冲突任务进入 `resource_lock` 等待，默认 30 秒后重试抢锁，并带公平加权（等待越久优先级越高）。
 - 自治完成/阻塞通知不再使用 `autonomy.notify_channel` / `autonomy.notify_chat_id`；默认自动从已启用通道的 `allow_from` 推导目标（优先 Telegram）。
-- 入站消息去重：基于 `message_id` 进行通道级去重（默认 TTL 10 分钟），避免平台重试导致重复回复。
 
-### EKG（Execution Knowledge Graph）
+### EKG（Execution Knowledge Graph）与审计治理
 
-ClawGo 现已内置执行知识图谱能力（轻量 JSONL 事件流，不依赖外部图数据库）：
+ClawGo 内置轻量执行知识图谱（JSONL 事件流 + 快照缓存），用于降低重复错误与无效重试：
 
 - 事件存储：`memory/ekg-events.jsonl`
+- 快照缓存：`memory/ekg-snapshot.json`（降低冷启动扫描开销）
 - 错误签名归一化（路径/数字/hex 去噪）
-- 自治重复错误抑制（`ekg_consecutive_error_threshold`）
-- provider fallback 按历史效果排序（含 errsig-aware）
-- 任务审计支持 provider/model 可观测
-- EKG 统计按 source/channel 分层（heartbeat 与 workload 分离）
-- EKG 与 Memory 联动：重复错误升级时自动写入 `memory/YYYY-MM-DD.md` 与 `MEMORY.md` 的结构化 incident，后续 advice 可提前触发抑制
-- EKG 快照：自动维护 `memory/ekg-snapshot.json`，降低重启后扫描 JSONL 的开销
-- Incident 写入节流：同 errsig 默认 6 小时内不重复写 memory
+- 自治重复错误抑制：`agents.defaults.autonomy.ekg_consecutive_error_threshold`
+- Provider fallback 排序：按历史成功/失败排序，并支持 errsig-aware 加权
+- EKG 与 Memory 联动：重复错误升级时写入结构化 incident（`[EKG_INCIDENT]`），后续可提前触发抑制
+- Incident 节流：同 errsig 默认 6 小时内不重复写入 memory
 
-> 为什么需要时间窗口：
-> 历史全量统计会被旧数据与 heartbeat 噪音稀释，导致当前阶段决策失真。建议默认观察近 24h（或 6h/7d 可切换），让 fallback 和告警更贴近“当前”系统状态。
+### Task Audit / Queue 降噪策略
+
+- 默认过滤 heartbeat 记录（API 可通过 `include_heartbeat=1` 查看完整数据）
+- 自动任务使用稳定 task_id 合并追加，避免同任务产生大量碎片记录
+- 审计记录补充 provider/model 字段，便于快速定位问题链路
+- WebUI EKG 统计按 source/channel 分层（heartbeat 与 workload 分离），支持时间窗口 `6h/24h/7d`
+
+> 时间窗口必要性：
+> 全量历史会被旧数据与心跳噪音稀释，导致当前策略不敏感；建议默认看 24h，并按需切到 6h/7d。
 
 ## 🏁 快速开始
 

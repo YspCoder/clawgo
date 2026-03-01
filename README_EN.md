@@ -61,30 +61,34 @@ Implementation:
 
 ### Parallel task conflict control (Autonomy)
 
-Autonomy now supports lock scheduling via `resource_keys`. You can explicitly declare keys in task text for precise conflict detection:
+Autonomy supports lock scheduling via `resource_keys` for deterministic conflict control:
 
 - Example: `[keys: repo:clawgo, file:pkg/agent/loop.go, branch:main] fix dialog flow`
 - Without explicit keys, the engine derives keys from task text heuristically.
-- Conflicting tasks enter `resource_lock` waiting, retry lock acquisition after 30s, and use fairness weighting (longer wait => higher scheduling priority).
-- Autonomy completion/blocked notifications no longer use `autonomy.notify_channel` / `autonomy.notify_chat_id`; target is derived from enabled channel `allow_from` (Telegram first).
-- Inbound dedupe: channel-level dedupe by `message_id` (default TTL: 10 minutes) to avoid duplicate replies from platform retries.
+- Conflicting tasks enter `resource_lock`, retry lock acquisition after 30s, and use fairness weighting (longer wait => higher scheduling priority).
+- Autonomy completion/blocked notifications no longer rely on `autonomy.notify_channel` / `autonomy.notify_chat_id`; target is derived from enabled channel `allow_from` (Telegram first).
 
-### EKG (Execution Knowledge Graph)
+### EKG (Execution Knowledge Graph) and audit governance
 
-ClawGo now includes a built-in execution knowledge graph (lightweight JSONL event stream; no external graph DB required):
+ClawGo includes a lightweight execution knowledge graph (JSONL event stream + snapshot cache) to reduce repeated failures and ineffective retries:
 
 - Event store: `memory/ekg-events.jsonl`
+- Snapshot cache: `memory/ekg-snapshot.json` (reduces cold-start scan cost)
 - Normalized error signatures (path/number/hex denoise)
-- Repeated-error suppression for autonomy (`ekg_consecutive_error_threshold`)
-- Provider fallback ranking by historical outcomes (errsig-aware)
-- Task-audit visibility for provider/model
-- Source/channel-stratified EKG stats (heartbeat separated from workload)
-- EKG-memory integration: repeated-error escalation writes structured incidents to `memory/YYYY-MM-DD.md` and `MEMORY.md`, and future advice can escalate earlier for known signatures
-- EKG snapshot: auto-maintains `memory/ekg-snapshot.json` to reduce cold-start JSONL scanning cost
-- Incident write throttling: same errsig is not re-written to memory within a default 6-hour cooldown
+- Repeated-error suppression for autonomy: `agents.defaults.autonomy.ekg_consecutive_error_threshold`
+- Provider fallback ranking by historical outcomes (including errsig-aware weighting)
+- EKG-memory integration: repeated-error escalation writes structured `[EKG_INCIDENT]` entries to memory and enables earlier suppression on known signatures
+- Incident write throttling: same errsig is not re-written within a default 6-hour cooldown
+
+### Task Audit / Queue noise-control strategy
+
+- Heartbeat records are filtered by default (use `include_heartbeat=1` to view full data)
+- Recurring autonomy runs are merged via stable task IDs (append instead of fragment explosion)
+- Task-audit rows include provider/model for faster root-cause tracing
+- WebUI EKG stats are stratified by source/channel (heartbeat vs workload) and support `6h/24h/7d` windows
 
 > Why time windows matter:
-> Full-history stats get diluted by stale data and heartbeat noise, which degrades current decisions. A recent window (e.g., 24h, optionally 6h/7d) keeps fallback and alerts aligned with present runtime behavior.
+> Full-history metrics are diluted by stale data and heartbeat noise. A recent window (default 24h; optional 6h/7d) keeps fallback and alerts aligned with current runtime behavior.
 
 ## 🏁 Quick Start
 
