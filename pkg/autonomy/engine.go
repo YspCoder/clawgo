@@ -350,6 +350,11 @@ func (e *Engine) tick() {
 					continue
 				}
 			}
+			// Keep running tasks intact across ticks/restarts until pending timeout,
+			// so a gateway restart won't immediately redispatch from scratch.
+			if !st.LastRunAt.IsZero() && now.Sub(st.LastRunAt) <= time.Duration(e.opts.MaxPendingDurationSec)*time.Second {
+				continue
+			}
 		}
 		if st.Status == "blocked" {
 			e.releaseLocksLocked(st.ID)
