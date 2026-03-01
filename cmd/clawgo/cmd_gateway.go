@@ -938,14 +938,7 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 
 func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
 	a := cfg.Agents.Defaults.Autonomy
-	notifyChannel := strings.ToLower(strings.TrimSpace(a.NotifyChannel))
-	notifyChatID := strings.TrimSpace(a.NotifyChatID)
-	if notifyChannel == "" || notifyChatID == "" {
-		if ch, chat := inferAutonomyNotifyTarget(cfg); ch != "" && chat != "" {
-			notifyChannel = ch
-			notifyChatID = chat
-		}
-	}
+	notifyChannel, notifyChatID := inferAutonomyNotifyTarget(cfg)
 	notifyAllowFrom := []string{}
 	switch notifyChannel {
 	case "telegram":
