@@ -62,6 +62,8 @@ type AgentLoop struct {
 	providerNames         []string
 	providerPool          map[string]providers.LLMProvider
 	ekg                   *ekg.Engine
+	providerMu            sync.RWMutex
+	sessionProvider       map[string]string
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -239,6 +241,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		intentHints:           map[string]string{},
 		sessionRunLocks:       map[string]*sync.Mutex{},
 		ekg:                   ekg.New(workspace),
+		sessionProvider:       map[string]string{},
 	}
 
 	// Initialize provider fallback chain (primary + proxy_fallbacks).
@@ -343,9 +346,9 @@ func (al *AgentLoop) lockSessionRun(sessionKey string) func() {
 	return func() { mu.Unlock() }
 }
 
-func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMessage, messages []providers.Message, toolDefs []providers.ToolDefinition, options map[string]interface{}, primaryErr error) (*providers.LLMResponse, error) {
+func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMessage, messages []providers.Message, toolDefs []providers.ToolDefinition, options map[string]interface{}, primaryErr error) (*providers.LLMResponse, string, error) {
 	if len(al.providerNames) <= 1 {
-		return nil, primaryErr
+		return nil, "", primaryErr
 	}
 	lastErr := primaryErr
 	candidates := append([]string(nil), al.providerNames[1:]...)
@@ -375,11 +378,30 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 		}
 		if err == nil {
 			logger.WarnCF("agent", "LLM fallback provider switched", map[string]interface{}{"provider": name})
-			return resp, nil
+			return resp, name, nil
 		}
 		lastErr = err
 	}
-	return nil, lastErr
+	return nil, "", lastErr
+}
+
+func (al *AgentLoop) setSessionProvider(sessionKey, provider string) {
+	key := strings.TrimSpace(sessionKey)
+	if key == "" { return }
+	provider = strings.TrimSpace(provider)
+	if provider == "" { return }
+	al.providerMu.Lock()
+	al.sessionProvider[key] = provider
+	al.providerMu.Unlock()
+}
+
+func (al *AgentLoop) getSessionProvider(sessionKey string) string {
+	key := strings.TrimSpace(sessionKey)
+	if key == "" { return "" }
+	al.providerMu.RLock()
+	v := al.sessionProvider[key]
+	al.providerMu.RUnlock()
+	return v
 }
 
 func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage) {
@@ -455,6 +477,8 @@ func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage,
 		"input_preview": truncate(strings.ReplaceAll(msg.Content, "\n", " "), 180),
 		"media_count":   len(msg.MediaItems),
 		"media_items":   msg.MediaItems,
+		"provider":      al.getSessionProvider(msg.SessionKey),
+		"model":         al.model,
 	}
 	if al.ekg != nil {
 		al.ekg.Record(ekg.Event{
@@ -591,6 +615,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 	unlock := al.lockSessionRun(msg.SessionKey)
 	defer unlock()
+	if len(al.providerNames) > 0 {
+		al.setSessionProvider(msg.SessionKey, al.providerNames[0])
+	}
 	// Add message preview to log
 	preview := truncate(msg.Content, 80)
 	logger.InfoCF("agent", fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, preview),
@@ -771,9 +798,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 
 		if err != nil {
-			if fb, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
+			if fb, fbProvider, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
 				response = fb
 				err = nil
+				if fbProvider != "" {
+					al.setSessionProvider(msg.SessionKey, fbProvider)
+				}
 			} else {
 				err = ferr
 			}
@@ -1114,9 +1144,12 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
 
 		if err != nil {
-			if fb, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
+			if fb, fbProvider, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
 				response = fb
 				err = nil
+				if fbProvider != "" {
+					al.setSessionProvider(msg.SessionKey, fbProvider)
+				}
 			} else {
 				err = ferr
 			}

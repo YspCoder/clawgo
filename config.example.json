@@ -27,7 +27,8 @@
         "max_rounds_without_user": 12,
         "task_history_retention_days": 3,
         "waiting_resume_debounce_sec": 5,
-        "allowed_task_keywords": []
+        "allowed_task_keywords": [],
+        "ekg_consecutive_error_threshold": 3
       },
       "texts": {
         "no_response_fallback": "I've completed processing but have no response to give.",

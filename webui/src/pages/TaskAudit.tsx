@@ -18,6 +18,8 @@ type TaskAuditItem = {
   duration_ms?: number;
   retry_count?: number;
   error?: string;
+  provider?: string;
+  model?: string;
   input_preview?: string;
   logs?: string[];
   media_items?: Array<{ source?: string; type?: string; ref?: string; path?: string; channel?: string }>;
@@ -152,7 +154,7 @@ const TaskAudit: React.FC = () => {
                   className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/40 ${active ? 'bg-indigo-500/15' : ''}`}
                 >
                   <div className="text-sm font-medium text-zinc-100 truncate">{it.task_id || `task-${idx + 1}`}</div>
-                  <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'}</div>
+                  <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'} · {it.provider || '-'} / {it.model || '-'}</div>
                   <div className="text-[11px] text-zinc-500 truncate">{it.time}</div>
                 </button>
               );
@@ -182,6 +184,8 @@ const TaskAudit: React.FC = () => {
                   <div><div className="text-zinc-500 text-xs">Duration</div><div>{selected.duration_ms || 0}ms</div></div>
                   <div><div className="text-zinc-500 text-xs">Channel</div><div>{selected.channel}</div></div>
                   <div><div className="text-zinc-500 text-xs">Session</div><div className="font-mono break-all">{selected.session}</div></div>
+                  <div><div className="text-zinc-500 text-xs">Provider</div><div>{selected.provider || '-'}</div></div>
+                  <div><div className="text-zinc-500 text-xs">Model</div><div>{selected.model || '-'}</div></div>
                   <div><div className="text-zinc-500 text-xs">Time</div><div>{selected.time}</div></div>
                 </div>
 

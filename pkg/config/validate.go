@@ -120,6 +120,9 @@ func Validate(cfg *Config) []error {
 		if aut.TaskHistoryRetentionDays <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.task_history_retention_days must be > 0 when enabled=true"))
 		}
+		if aut.EKGConsecutiveErrorThreshold <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.ekg_consecutive_error_threshold must be > 0 when enabled=true"))
+		}
 	}
 	texts := cfg.Agents.Defaults.Texts
 	if strings.TrimSpace(texts.NoResponseFallback) == "" {

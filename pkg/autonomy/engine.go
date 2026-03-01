@@ -339,6 +339,7 @@ func (e *Engine) tick() {
 					if advice.ShouldEscalate {
 						st.BlockReason = "repeated_error_signature"
 						st.RetryAfter = now.Add(5 * time.Minute)
+						e.enqueueAutoRepairTaskLocked(st, errSig)
 						e.sendFailureNotification(st, "repeated error signature detected; escalate")
 						continue
 					}
@@ -723,6 +724,33 @@ func (e *Engine) enqueueInferredNextTasksLocked(st *taskState) {
 		_ = e.taskStore.Save(items)
 		e.writeReflectLog("infer", st, fmt.Sprintf("generated %d follow-up task(s)", added))
 	}
+}
+
+func (e *Engine) enqueueAutoRepairTaskLocked(st *taskState, errSig string) {
+	if st == nil {
+		return
+	}
+	errSig = strings.TrimSpace(errSig)
+	if errSig == "" {
+		errSig = "unknown_error_signature"
+	}
+	content := fmt.Sprintf("[auto-repair] 排查任务 %s 的重复错误签名并给出修复步骤（errsig=%s）", shortTask(st.Content), shortTask(errSig))
+	existing := map[string]bool{}
+	for _, cur := range e.state {
+		existing[strings.TrimSpace(cur.Content)] = true
+	}
+	items, _ := e.taskStore.Load()
+	for _, it := range items {
+		existing[strings.TrimSpace(it.Content)] = true
+	}
+	if existing[content] {
+		return
+	}
+	id := hashID(content)
+	e.state[id] = &taskState{ID: id, Content: content, Priority: "high", Status: "idle"}
+	items = append(items, TaskItem{ID: id, Content: content, Priority: "high", Status: "todo", Source: "autonomy_repair", UpdatedAt: nowRFC3339()})
+	_ = e.taskStore.Save(items)
+	e.writeReflectLog("infer", st, "generated auto-repair task due to repeated error signature")
 }
 
 func (e *Engine) sendFailureNotification(st *taskState, reason string) {
