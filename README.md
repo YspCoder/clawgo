@@ -173,6 +173,16 @@ clawgo skills ...                  技能安装/查看/卸载
 clawgo uninstall [--purge] [--remove-bin]
 ```
 
+Make 多平台构建：
+
+```bash
+make build-all
+# 自定义目标矩阵（示例）
+make build-all BUILD_TARGETS="linux/amd64 linux/arm64 darwin/arm64 windows/amd64"
+# 产物打包 + 校验和
+make package-all
+```
+
 全局参数：
 
 ```bash

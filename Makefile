@@ -1,4 +1,4 @@
-.PHONY: all build build-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts
+.PHONY: all build build-all package-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts
 
 # Build variables
 BINARY_NAME=clawgo
@@ -20,6 +20,9 @@ LDFLAGS=-ldflags "$(BASE_LDFLAGS)$(EXTRA_LDFLAGS)"
 # Go variables
 GO?=go
 GOFLAGS?=-v
+
+# Cross-platform build matrix (space-separated GOOS/GOARCH pairs)
+BUILD_TARGETS?=linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 # Installation
 INSTALL_PREFIX?=/usr/local
@@ -79,17 +82,44 @@ build: sync-embed-workspace
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
-## build-all: Build clawgo for all platforms
+## build-all: Build clawgo for all configured platforms (override with BUILD_TARGETS="linux/amd64 ...")
 build-all: sync-embed-workspace
-	@echo "Building for multiple platforms..."
+	@echo "Building for multiple platforms: $(BUILD_TARGETS)"
 	@mkdir -p $(BUILD_DIR)
 	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
-	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR); \
-	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR); \
-	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR); \
-# 	GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./$(CMD_DIR)
-	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
+	for target in $(BUILD_TARGETS); do \
+		goos="$${target%/*}"; \
+		goarch="$${target#*/}"; \
+		out="$(BUILD_DIR)/$(BINARY_NAME)-$$goos-$$goarch"; \
+		if [ "$$goos" = "windows" ]; then out="$$out.exe"; fi; \
+		echo " -> $$goos/$$goarch"; \
+		CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch $(GO) build $(GOFLAGS) $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
+	done
 	@echo "All builds complete"
+
+## package-all: Create compressed archives and checksums for all build targets
+package-all: build-all
+	@echo "Packaging build artifacts..."
+	@set -e; cd $(BUILD_DIR); \
+	for target in $(BUILD_TARGETS); do \
+		goos="$${target%/*}"; \
+		goarch="$${target#*/}"; \
+		bin="$(BINARY_NAME)-$$goos-$$goarch"; \
+		if [ "$$goos" = "windows" ]; then \
+			bin="$$bin.exe"; \
+			archive="$(BINARY_NAME)-$$goos-$$goarch.zip"; \
+			zip -q -j "$$archive" "$$bin"; \
+		else \
+			archive="$(BINARY_NAME)-$$goos-$$goarch.tar.gz"; \
+			tar -czf "$$archive" "$$bin"; \
+		fi; \
+	done; \
+	if command -v sha256sum >/dev/null 2>&1; then \
+		sha256sum *.tar.gz *.zip 2>/dev/null | tee checksums.txt || true; \
+	elif command -v shasum >/dev/null 2>&1; then \
+		shasum -a 256 *.tar.gz *.zip 2>/dev/null | tee checksums.txt || true; \
+	fi
+	@echo "Package complete: $(BUILD_DIR)"
 
 ## sync-embed-workspace: Sync root workspace files into cmd/clawgo/workspace for go:embed
 sync-embed-workspace:

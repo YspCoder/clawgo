@@ -154,6 +154,16 @@ clawgo skills ...                  Skill install/list/remove/show
 clawgo uninstall [--purge] [--remove-bin]
 ```
 
+Make cross-platform build:
+
+```bash
+make build-all
+# Override build matrix (example)
+make build-all BUILD_TARGETS="linux/amd64 linux/arm64 darwin/arm64 windows/amd64"
+# Package artifacts + checksums
+make package-all
+```
+
 Global flags:
 
 ```bash
