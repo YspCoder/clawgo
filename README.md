@@ -1,444 +1,226 @@
-# ClawGo: 高性能 Go 语言 AI 助手 (Linux Server 专用)
+# ClawGo
+
+高性能、可长期运行的 Go 原生 AI Agent（支持多平台构建与多通道接入）。
 
 [English](./README_EN.md)
 
-**ClawGo** 是一个面向 Linux 服务器的 Go 原生 AI Agent。它提供单二进制部署、多通道接入与可热更新配置，适合长期在线自动化任务。
+---
 
-## 🚀 功能总览
+## 一句话介绍
 
-- **双运行模式**：支持本地交互模式（`agent`）与服务化网关模式（`gateway`）。
-- **多通道接入**：支持 Telegram、Discord、Feishu、WhatsApp、QQ、DingTalk、MaixCam。
-- **自主协作能力**：支持自然语言驱动的自主执行、自动学习与启动自检。
-- **多智能体编排**：支持 Pipeline 协议（`role + goal + depends_on + shared_state`）。
-- **记忆与上下文治理**：支持分层记忆、`memory_search` 与自动上下文压缩。
-- **可靠性增强**：支持代理内模型切换与跨代理切换（`proxy_fallbacks`），覆盖配额、路由、网关瞬时错误等场景。
-- **稳定性保障**：Sentinel 巡检与自动修复能力。
-- **技能扩展**：支持内置技能与 GitHub 技能安装，支持原子脚本执行。
+**ClawGo = 单二进制网关 + 多通道消息 + 工具调用 + 自治执行 + 可审计记忆。**
 
-## 🧠 架构级优化（Go 特性）
+适合：
+- 私有化 AI 助手
+- 持续巡检/自动任务
+- 多通道机器人（Telegram/Feishu/Discord 等）
+- 需要可控、可追踪、可回滚的 Agent 系统
 
-近期已完成一轮架构增强，重点利用 Go 并发与类型系统能力：
+---
 
-1. **Actor 化关键路径（process）**
-   - process 元数据持久化改为异步队列（`persistQ`）串行落盘。
-   - channel 启停编排使用 `errgroup.WithContext` 并发+统一取消。
-2. **Typed Events 事件总线**
-   - 新增 `pkg/events/typed_bus.go` 泛型事件总线。
-   - process 生命周期事件（start/exit/kill）可发布订阅。
-3. **日志批量刷盘**
-   - process 日志由 `logWriter` 批量 flush（时间片 + 大小阈值），减少高频 I/O。
-   - outbound 分发增加 `rate.Limiter`（令牌桶）平滑突发流量。
-4. **Context 分层取消传播**
-   - 后台进程改为 `exec.CommandContext`，通过父 `ctx` 统一取消。
-5. **原子配置快照**
-   - 新增 `pkg/runtimecfg/snapshot.go`，网关启动与热重载时原子替换配置快照。
+## 核心能力
 
-这些优化提升了高并发场景下的稳定性、可观测性与可维护性。
+- **双模式运行**
+  - `clawgo agent`：本地交互模式
+  - `clawgo gateway`：服务化网关模式（推荐长期运行）
 
-### 多节点 / 设备控制（Phase-1）
+- **多通道支持**
+  - Telegram / Feishu / Discord / WhatsApp / QQ / DingTalk / MaixCam
 
-已新增 `nodes` 工具控制平面（PoC）：
+- **工具与技能体系**
+  - 内置工具调用、技能安装与执行
+  - 支持任务编排与子任务协同
 
-- `action=status|describe`：查看已配对节点状态与能力矩阵
-- `action=run|invoke|camera_snap|screen_record|location_get`：已接入路由框架
-- `mode=auto|p2p|relay`：默认 `auto`（优先 p2p，失败回退 relay）
-- relay 已支持 HTTP 节点桥接：按 action 路由到 `/run` `/camera/snap` `/screen/record` `/location/get` `/canvas/*`（未知 action 回退 `/invoke`）
-- 主节点网关支持节点注册：`POST http://<gateway_host>:<gateway_port>/nodes/register`
-- 支持节点续租：`POST /nodes/heartbeat`（配合 TTL 自动离线）
-- 可在 `gateway.token` 配置网关注册令牌；子节点注册/续租需带 `Authorization: Bearer <token>`
-- 可在 `NodeInfo` 中配置 `token`，relay 会自动附加 `Authorization: Bearer <token>`
-- `nodes` 工具支持设备快捷参数：`facing`、`duration_ms`、`command`
-- 设备动作响应统一：`ok/code/error/payload`（code 示例：`ok` `unsupported_action` `transport_error`）
-- 设备 `payload` 规范字段：`media_type` `storage` `url|path|image` `meta`
-- 支持 `agent_task`：主节点可向具备 `model` 能力的子节点下发任务，子节点返回执行结果
-- 节点分发审计写入：`memory/nodes-dispatch-audit.jsonl`
-- `/status` 展示节点分发统计（total/ok/fail/avg_ms/top_action）
+- **自治与任务治理**
+  - 会话级自治（idle 预算、暂停/恢复）
+  - Task Queue / Task Audit 分层治理
+  - 自治任务冲突锁（resource_keys）
 
-实现位置：
-- `pkg/nodes/types.go`
-- `pkg/nodes/manager.go`
-- `pkg/tools/nodes_tool.go`
+- **记忆与上下文治理**
+  - `memory_search` / 分层记忆
+  - 自动上下文压缩
+  - 启动自检与任务续跑
 
-### 并行任务冲突控制（Autonomy）
+- **可靠性增强**
+  - Provider fallback（含 errsig-aware 排序）
+  - 入站/出站去重（防重复收发）
+  - 审计可观测（provider/model/source/channel）
 
-支持基于 `resource_keys` 的锁调度。任务可在内容中显式声明资源键，提升并行判冲突精度：
+---
 
-- 示例：`[keys: repo:clawgo, file:pkg/agent/loop.go, branch:main] 修复对话流程`
-- 未显式声明时，系统会从任务文本自动推断资源键。
-- 冲突任务进入 `resource_lock` 等待，默认 30 秒后重试抢锁，并带公平加权（等待越久优先级越高）。
-- 自治完成/阻塞通知不再使用 `autonomy.notify_channel` / `autonomy.notify_chat_id`；默认自动从已启用通道的 `allow_from` 推导目标（优先 Telegram）。
+## EKG（Execution Knowledge Graph）
 
-### EKG（Execution Knowledge Graph）与审计治理
+ClawGo 内置轻量 EKG（无需外部图数据库），用于降低重复错误与无效重试：
 
-ClawGo 内置轻量执行知识图谱（JSONL 事件流 + 快照缓存），用于降低重复错误与无效重试：
-
-- 事件存储：`memory/ekg-events.jsonl`
-- 快照缓存：`memory/ekg-snapshot.json`（降低冷启动扫描开销）
+- 事件流：`memory/ekg-events.jsonl`
+- 快照：`memory/ekg-snapshot.json`
 - 错误签名归一化（路径/数字/hex 去噪）
-- 自治重复错误抑制：`agents.defaults.autonomy.ekg_consecutive_error_threshold`
-- Provider fallback 排序：按历史成功/失败排序，并支持 errsig-aware 加权
-- EKG 与 Memory 联动：重复错误升级时写入结构化 incident（`[EKG_INCIDENT]`），后续可提前触发抑制
-- Incident 节流：同 errsig 默认 6 小时内不重复写入 memory
+- 重复错误抑制（可配置阈值）
+- Provider fallback 历史打分（含错误签名维度）
+- 与 Memory 联动（`[EKG_INCIDENT]` 结构化沉淀，支持提前拦截）
+- WebUI 支持按 `6h/24h/7d` 时间窗口查看
 
-### Task Audit / Queue 降噪策略
+---
 
-- 默认过滤 heartbeat 记录（API 可通过 `include_heartbeat=1` 查看完整数据）
-- 自动任务使用稳定 task_id 合并追加，避免同任务产生大量碎片记录
-- 审计记录补充 provider/model 字段，便于快速定位问题链路
-- WebUI EKG 统计按 source/channel 分层（heartbeat 与 workload 分离），支持时间窗口 `6h/24h/7d`
+## 快速开始
 
-> 时间窗口必要性：
-> 全量历史会被旧数据与心跳噪音稀释，导致当前策略不敏感；建议默认看 24h，并按需切到 6h/7d。
-
-## 🏁 快速开始
-
-1. 初始化配置与工作区
+### 1) 初始化
 
 ```bash
 clawgo onboard
 ```
 
-2. 配置上游代理（必需）
+### 2) 配置上游模型/代理
 
 ```bash
 clawgo login
 ```
 
-3. 检查当前状态
+### 3) 查看状态
 
 ```bash
 clawgo status
 ```
 
-4. 交互式使用（本地）
+### 4) 本地模式
 
 ```bash
 clawgo agent
-# 或单轮消息
 clawgo agent -m "Hello"
 ```
 
-5. 启动网关服务（用于 Telegram/Discord 等）
+### 5) 网关模式
 
 ```bash
-# 注册服务（systemd）
+# 注册并启用 systemd 服务
 clawgo gateway
-
-# 服务管理
 clawgo gateway start
-clawgo gateway restart
-clawgo gateway stop
 clawgo gateway status
 
 # 前台运行
 clawgo gateway run
-
-# 自治开关（运行态）
-clawgo gateway autonomy status
-clawgo gateway autonomy on
-clawgo gateway autonomy off
 ```
 
-## 🖥️ WebUI（控制台）
+---
 
-ClawGo 提供内置 WebUI（React + Vite 构建产物由网关直接托管）：
+## WebUI
 
-- 访问入口：`http://<host>:<port>/webui?token=<gateway.token>`
-- 移动端适配：侧边抽屉导航、紧凑头部、日志页可读模式
-- 页面：Dashboard / Chat / Logs / Skills / Config / Cron / Nodes / Memory
-
-常用 WebUI API（均需 token）：
-
-- 配置：`GET/POST /webui/api/config`
-- 聊天：`POST /webui/api/chat`、`POST /webui/api/chat/stream`
-- 日志：`GET /webui/api/logs/recent`、`GET /webui/api/logs/stream`
-- 定时任务：`GET /webui/api/cron`、`POST /webui/api/cron`
-- 节点：`GET /webui/api/nodes`、`POST /webui/api/nodes`
-- 技能：`GET/POST/DELETE /webui/api/skills`
-- 会话：`GET /webui/api/sessions`
-- 记忆文件：`GET/POST/DELETE /webui/api/memory`
-
-## 📌 命令总览
+访问：
 
 ```text
-clawgo onboard                     初始化配置和工作区
-clawgo login                       配置 CLIProxyAPI 上游
-clawgo status                      查看配置、工作区、模型和日志状态
-clawgo agent [-m "..."]           本地交互模式
-clawgo gateway [...]               注册/运行/管理网关服务
-clawgo config set|get|check|reload 配置读写、校验与热更新
-clawgo channel test ...            通道连通性测试
-clawgo cron ...                    定时任务管理
-clawgo skills ...                  技能安装/查看/卸载
-clawgo uninstall [--purge] [--remove-bin]
+http://<host>:<port>/webui?token=<gateway.token>
 ```
 
-Make 多平台构建：
+主要页面：
+- Dashboard
+- Chat
+- Logs
+- Skills
+- Config
+- Cron
+- Nodes
+- Memory
+- Task Audit
+- Tasks
+- EKG
+
+---
+
+## 多平台构建（Make）
+
+### 构建所有默认平台
 
 ```bash
 make build-all
-# 自定义目标矩阵（示例）
+```
+
+默认矩阵：
+- linux/amd64
+- linux/arm64
+- linux/riscv64
+- darwin/amd64
+- darwin/arm64
+- windows/amd64
+- windows/arm64
+
+### 自定义平台矩阵
+
+```bash
 make build-all BUILD_TARGETS="linux/amd64 linux/arm64 darwin/arm64 windows/amd64"
-# 产物打包 + 校验和
+```
+
+### 打包与校验
+
+```bash
 make package-all
 ```
 
-全局参数：
+输出：
+- `build/*.tar.gz`（Linux/macOS）
+- `build/*.zip`（Windows）
+- `build/checksums.txt`
+
+---
+
+## GitHub Release 自动发布
+
+已内置 `.github/workflows/release.yml`：
+
+触发方式：
+- 推送 tag：`v*`（如 `v0.0.1`）
+- 手动触发（workflow_dispatch）
+
+自动完成：
+- 多平台编译
+- 产物打包
+- checksums 生成
+- WebUI dist 打包
+- 发布到 GitHub Releases
+
+示例：
 
 ```bash
-clawgo --config /path/to/config.json <command>
-clawgo --debug <command>
+git tag v0.0.2
+git push origin v0.0.2
 ```
 
-## ⚙️ 配置管理与热更新
+---
 
-支持命令行直接修改配置，并向运行中的网关发送热更新信号：
-
-```bash
-clawgo config set channels.telegram.enable true
-clawgo config get channels.telegram.enabled
-clawgo config check
-clawgo config reload
-```
-
-说明：
-- `enable` 会自动映射到 `enabled`。
-- `config set` 使用原子写入。
-- 网关运行时若热更新失败，会自动回滚备份，避免损坏配置。
-- `--config` 指定的自定义配置路径会被 `config` 命令与通道内 `/config` 指令一致使用。
-- 配置加载使用严格 JSON 解析：未知字段与多余 JSON 内容会直接报错，避免拼写错误被静默忽略。
-
-## 🌐 通道与消息控制
-
-通道中支持以下斜杠命令：
+## 常用命令
 
 ```text
-/help
-/stop
-/status
-/status run [run_id|latest]
-/status wait <run_id|latest> [timeout_seconds]
-/config get <path>
-/config set <path> <value>
-/reload
-/pipeline list
-/pipeline status <pipeline_id>
-/pipeline ready <pipeline_id>
+clawgo onboard
+clawgo login
+clawgo status
+clawgo agent [-m "..."]
+clawgo gateway [run|start|stop|restart|status]
+clawgo config set|get|check|reload
+clawgo channel test ...
+clawgo cron ...
+clawgo skills ...
+clawgo uninstall [--purge] [--remove-bin]
 ```
 
-自主与学习控制默认使用自然语言，不再依赖斜杠命令。例如：
-- `开始自主模式，每 30 分钟巡检一次`
-- `停止自动学习`
-- `看看最新 run 的状态`
-- `等待 run-1739950000000000000-8 完成后告诉我结果`
+---
 
-调度语义（按 `session_key`）：
-- 同会话严格 FIFO 串行处理。
-- `/stop` 会中断当前回复并继续队列后续消息。
-- 不同会话并发执行，互不阻塞。
+## 配置与热更新
 
-通道连通测试：
+- 支持 `clawgo config set/get/check/reload`
+- 严格 JSON 解析（未知字段会报错）
+- 配置热更新失败自动回滚备份
 
-```bash
-clawgo channel test --channel telegram --to <chat_id> -m "ping"
-```
+---
 
-## 🧠 记忆、自主与上下文压缩
+## 稳定性与审计建议
 
-- 启动会读取 `AGENTS.md`、`SOUL.md`、`USER.md` 作为行为约束与语义上下文。
-- 网关启动后会执行一次自检任务，结合历史会话与 `HEARTBEAT.md` 判断是否继续未完成任务。
-- 上下文压缩同时按消息数量阈值和上下文体积阈值触发，控制 token 成本与长会话稳定性。
-- 上下文压缩模式支持 `summary`、`responses_compact`、`hybrid`；`responses_compact` 需要代理配置 `protocol=responses` 且 `supports_responses_compact=true`。
-- 分层记忆支持 `profile / project / procedures / recent notes`。
+生产建议开启：
+- 通道去重窗口配置
+- task-audit heartbeat 默认过滤
+- EKG 时间窗口观察（默认 24h）
+- 定期查看 EKG Top errsig 与 provider 分数
 
-心跳与上下文压缩配置示例：
+---
 
-```json
-"agents": {
-  "defaults": {
-    "heartbeat": {
-      "enabled": true,
-      "every_sec": 1800,
-      "ack_max_chars": 64,
-      "prompt_template": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK."
-    },
-    "texts": {
-      "no_response_fallback": "I've completed processing but have no response to give.",
-      "think_only_fallback": "Thinking process completed.",
-      "memory_recall_keywords": ["remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision"],
-      "lang_usage": "Usage: /lang <code>",
-      "lang_invalid": "Invalid language code.",
-      "lang_updated_template": "Language preference updated to %s",
-      "subagents_none": "No subagents.",
-      "sessions_none": "No sessions.",
-      "unsupported_action": "unsupported action",
-      "system_rewrite_template": "Rewrite the following internal system update in concise user-facing language:\n\n%s",
-      "runtime_compaction_note": "[runtime-compaction] removed %d old messages, kept %d recent messages",
-      "startup_compaction_note": "[startup-compaction] removed %d old messages, kept %d recent messages"
-    },
-    "context_compaction": {
-      "enabled": true,
-      "mode": "summary",
-      "trigger_messages": 60,
-      "keep_recent_messages": 20,
-      "max_summary_chars": 6000,
-      "max_transcript_chars": 20000
-    }
-  }
-}
-```
+## License
 
-运行控制配置示例（自主循环守卫 / 运行态保留）：
-
-```json
-"agents": {
-  "defaults": {
-    "runtime_control": {
-      "intent_max_input_chars": 1200,
-      "autonomy_tick_interval_sec": 20,
-      "autonomy_min_run_interval_sec": 20,
-      "autonomy_idle_threshold_sec": 20,
-      "autonomy_max_rounds_without_user": 120,
-      "autonomy_max_pending_duration_sec": 180,
-      "autonomy_max_consecutive_stalls": 3,
-      "autolearn_max_rounds_without_user": 200,
-      "run_state_ttl_seconds": 1800,
-      "run_state_max": 500,
-      "tool_parallel_safe_names": ["read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"],
-      "tool_max_parallel_calls": 2
-    }
-  }
-}
-```
-
-## 🤖 多智能体编排 (Pipeline)
-
-内置标准化编排工具：
-- `pipeline_create`
-- `pipeline_status`
-- `pipeline_state_set`
-- `pipeline_dispatch`
-- `spawn`（支持 `pipeline_id/task_id/role`）
-
-适用于拆解复杂任务、跨角色协作和共享状态推进。
-
-## 🛡️ 稳定性
-
-- **Proxy/Model fallback**：先在当前代理中按 `models` 顺序切换，全部失败后再按 `proxy_fallbacks` 切换代理。
-- **HTTP 兼容处理**：可识别非 JSON 错页并给出响应预览；兼容从 `<function_call>` 文本块提取工具调用。
-- **Sentinel**：周期巡检配置/内存/日志目录，支持自动修复与告警转发。
-
-Sentinel 配置示例：
-
-```json
-"sentinel": {
-  "enabled": true,
-  "interval_sec": 60,
-  "auto_heal": true,
-  "notify_channel": "",
-  "notify_chat_id": ""
-}
-```
-
-## ⏱️ 定时任务 (Cron)
-
-```bash
-clawgo cron list
-clawgo cron add -n "daily-check" -m "检查待办" -c "0 9 * * *"
-clawgo cron add -n "heartbeat" -m "汇报状态" -e 300
-clawgo cron enable <job_id>
-clawgo cron disable <job_id>
-clawgo cron remove <job_id>
-```
-
-`cron add` 支持：
-- `-n, --name` 任务名
-- `-m, --message` 发给 agent 的消息
-- `-e, --every` 每 N 秒执行
-- `-c, --cron` cron 表达式
-- `-d, --deliver --channel <name> --to <id>` 投递到消息通道
-
-## 🧩 技能系统
-
-技能管理命令：
-
-```bash
-clawgo skills list
-clawgo skills search
-clawgo skills show <name>
-clawgo skills install <github-repo>
-clawgo skills remove <name>
-clawgo skills install-builtin
-clawgo skills list-builtin
-```
-
-说明：
-- 支持从 GitHub 仓库安装技能（例如 `owner/repo/skill`）。
-- 支持安装内置技能到工作区。
-- 支持 `skill_exec` 原子执行 `skills/<name>/scripts/*`。
-
-## 🗂️ 工作区与文档同步
-
-默认工作区通常为 `~/.clawgo/workspace`，关键目录：
-
-```text
-workspace/
-  memory/
-    MEMORY.md
-    HEARTBEAT.md
-  skills/
-  AGENTS.md
-  SOUL.md
-  USER.md
-```
-
-`clawgo onboard` 与 `make install` 会同步 `AGENTS.md`、`SOUL.md`、`USER.md`：
-- 文件不存在则创建。
-- 文件存在则仅更新 `CLAWGO MANAGED BLOCK` 区块，保留用户自定义内容。
-
-## 🧾 日志
-
-默认启用文件日志，支持轮转和保留：
-
-```json
-"logging": {
-  "enabled": true,
-  "dir": "~/.clawgo/logs",
-  "filename": "clawgo.log",
-  "max_size_mb": 20,
-  "retention_days": 3
-}
-```
-
-推荐统一检索的结构化字段：
-`channel`、`chat_id`、`sender_id`、`preview`、`error`、`message_content_length`、`assistant_content_length`、`output_content_length`、`transcript_length`。
-
-## 🛠️ 安装与构建（Linux）
-
-```bash
-cd clawgo
-make build
-make install
-```
-
-可选构建参数：
-
-```bash
-# 默认 1：剥离符号，减小体积
-make build STRIP_SYMBOLS=1
-
-# 保留调试符号
-make build STRIP_SYMBOLS=0
-```
-
-## 🧹 卸载
-
-```bash
-clawgo uninstall
-clawgo uninstall --purge
-clawgo uninstall --remove-bin
-```
-
-## 📜 许可证
-
-MIT License.
+请参考仓库中的 License 文件。

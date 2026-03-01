@@ -1,425 +1,226 @@
-# ClawGo: High-Performance AI Agent (Linux Server Only)
+# ClawGo
+
+A high-performance, long-running Go-native AI Agent with multi-platform builds and multi-channel messaging.
 
 [中文](./README.md)
 
-**ClawGo** is a Go-native AI agent for Linux servers. It provides single-binary deployment, multi-channel integration, and hot-reloadable config for long-running autonomous workflows.
+---
 
-## 🚀 Feature Overview
+## What is ClawGo?
 
-- **Dual runtime modes**: local interactive mode (`agent`) and service-oriented gateway mode (`gateway`).
-- **Multi-channel integration**: Telegram, Discord, Feishu, WhatsApp, QQ, DingTalk, MaixCam.
-- **Autonomous collaboration**: natural-language autonomy, auto-learning, and startup self-check.
-- **Multi-agent orchestration**: built-in Pipeline protocol (`role + goal + depends_on + shared_state`).
-- **Memory and context governance**: layered memory, `memory_search`, and automatic context compaction.
-- **Reliability enhancements**: in-proxy model switching and cross-proxy fallback (`proxy_fallbacks`) for quota, routing, and transient gateway failures.
-- **Stability controls**: Sentinel inspection and auto-heal support.
-- **Skill extensibility**: built-in skills plus GitHub skill installation and atomic script execution.
+**ClawGo = single-binary gateway + channel integrations + tool calling + autonomy + auditable memory.**
 
-## 🧠 Architecture-Level Optimizations (Go)
+Best for:
+- Self-hosted AI assistants
+- Continuous automation / inspections
+- Multi-channel bots (Telegram/Feishu/Discord/...)
+- Agent systems requiring control, traceability, and rollback safety
 
-A recent architecture pass leveraged core Go strengths:
+---
 
-1. **Actor-style process path**
-   - Process metadata persistence is serialized via async queue (`persistQ`).
-   - Channel start/stop orchestration uses `errgroup.WithContext` for concurrent + unified cancellation.
-2. **Typed Events bus**
-   - Added generic typed pub/sub bus (`pkg/events/typed_bus.go`).
-   - Process lifecycle events (start/exit/kill) are now publishable.
-3. **Batched log flushing**
-   - Process logs are flushed by `logWriter` with time/size thresholds to reduce I/O churn.
-   - Outbound dispatch adds a token-bucket `rate.Limiter` for burst smoothing.
-4. **Context hierarchy + cancellation propagation**
-   - Background exec now uses `exec.CommandContext` with parent `ctx` propagation.
-5. **Atomic runtime config snapshot**
-   - Added `pkg/runtimecfg/snapshot.go`; gateway startup/reload atomically swaps config snapshot.
+## Core Capabilities
 
-These changes improve stability, observability, and maintainability under concurrency.
+- **Dual runtime modes**
+  - `clawgo agent`: local interactive mode
+  - `clawgo gateway`: service mode for long-running workloads
 
-### Multi-node / device control (Phase-1)
+- **Multi-channel support**
+  - Telegram / Feishu / Discord / WhatsApp / QQ / DingTalk / MaixCam
 
-A `nodes` tool control-plane PoC is now available:
+- **Tools & skills**
+  - Built-in tool-calling and skill execution
+  - Task orchestration support
 
-- `action=status|describe`: inspect paired node status and capability matrix
-- `action=run|invoke|camera_snap|screen_record|location_get`: routing framework is in place
-- `mode=auto|p2p|relay`: default `auto` (prefer p2p, fallback to relay)
-- relay now supports HTTP node bridging with action-specific routes: `/run`, `/camera/snap`, `/screen/record`, `/location/get`, `/canvas/*` (unknown action falls back to `/invoke`)
-- gateway supports node registration: `POST http://<gateway_host>:<gateway_port>/nodes/register`
-- supports node lease renew: `POST /nodes/heartbeat` (TTL-based offline marking)
-- configure `gateway.token` as registration token; child nodes must send `Authorization: Bearer <token>` for register/heartbeat
-- `NodeInfo.token` is supported; relay automatically sets `Authorization: Bearer <token>`
-- `nodes` tool supports device shortcuts: `facing`, `duration_ms`, `command`
-- unified device response envelope: `ok/code/error/payload` (code examples: `ok`, `unsupported_action`, `transport_error`)
-- device `payload` normalized fields: `media_type` `storage` `url|path|image` `meta`
-- supports `agent_task`: parent node can dispatch tasks to child nodes with `model` capability and receive execution results
-- node dispatch audit is persisted to `memory/nodes-dispatch-audit.jsonl`
-- `/status` shows node dispatch stats (total/ok/fail/avg_ms/top_action)
+- **Autonomy & task governance**
+  - Session-level autonomy (idle budget, pause/resume)
+  - Task Queue + Task Audit governance
+  - Resource-key locking for conflict control
 
-Implementation:
-- `pkg/nodes/types.go`
-- `pkg/nodes/manager.go`
-- `pkg/tools/nodes_tool.go`
+- **Memory & context governance**
+  - `memory_search` and layered memory
+  - Automatic context compaction
+  - Startup self-check and task continuation
 
-### Parallel task conflict control (Autonomy)
+- **Reliability hardening**
+  - Provider fallback (errsig-aware ranking)
+  - Inbound/outbound dedupe protection
+  - Better observability (provider/model/source/channel)
 
-Autonomy supports lock scheduling via `resource_keys` for deterministic conflict control:
+---
 
-- Example: `[keys: repo:clawgo, file:pkg/agent/loop.go, branch:main] fix dialog flow`
-- Without explicit keys, the engine derives keys from task text heuristically.
-- Conflicting tasks enter `resource_lock`, retry lock acquisition after 30s, and use fairness weighting (longer wait => higher scheduling priority).
-- Autonomy completion/blocked notifications no longer rely on `autonomy.notify_channel` / `autonomy.notify_chat_id`; target is derived from enabled channel `allow_from` (Telegram first).
+## EKG (Execution Knowledge Graph)
 
-### EKG (Execution Knowledge Graph) and audit governance
+ClawGo includes a lightweight EKG (no external graph DB required):
 
-ClawGo includes a lightweight execution knowledge graph (JSONL event stream + snapshot cache) to reduce repeated failures and ineffective retries:
-
-- Event store: `memory/ekg-events.jsonl`
-- Snapshot cache: `memory/ekg-snapshot.json` (reduces cold-start scan cost)
+- Event log: `memory/ekg-events.jsonl`
+- Snapshot cache: `memory/ekg-snapshot.json`
 - Normalized error signatures (path/number/hex denoise)
-- Repeated-error suppression for autonomy: `agents.defaults.autonomy.ekg_consecutive_error_threshold`
-- Provider fallback ranking by historical outcomes (including errsig-aware weighting)
-- EKG-memory integration: repeated-error escalation writes structured `[EKG_INCIDENT]` entries to memory and enables earlier suppression on known signatures
-- Incident write throttling: same errsig is not re-written within a default 6-hour cooldown
+- Repeated-error suppression (configurable threshold)
+- Historical provider scoring (including error-signature dimension)
+- Memory linkage (`[EKG_INCIDENT]` structured notes for earlier suppression)
+- WebUI time windows: `6h / 24h / 7d`
 
-### Task Audit / Queue noise-control strategy
+---
 
-- Heartbeat records are filtered by default (use `include_heartbeat=1` to view full data)
-- Recurring autonomy runs are merged via stable task IDs (append instead of fragment explosion)
-- Task-audit rows include provider/model for faster root-cause tracing
-- WebUI EKG stats are stratified by source/channel (heartbeat vs workload) and support `6h/24h/7d` windows
+## Quick Start
 
-> Why time windows matter:
-> Full-history metrics are diluted by stale data and heartbeat noise. A recent window (default 24h; optional 6h/7d) keeps fallback and alerts aligned with current runtime behavior.
-
-## 🏁 Quick Start
-
-1. Initialize config and workspace
+### 1) Initialize
 
 ```bash
 clawgo onboard
 ```
 
-2. Configure upstream proxy (required)
+### 2) Configure upstream model/proxy
 
 ```bash
 clawgo login
 ```
 
-3. Check runtime status
+### 3) Check status
 
 ```bash
 clawgo status
 ```
 
-4. Run local interactive mode
+### 4) Local mode
 
 ```bash
 clawgo agent
-# or one-shot message
 clawgo agent -m "Hello"
 ```
 
-5. Start gateway service (for Telegram/Discord/etc.)
+### 5) Gateway mode
 
 ```bash
-# register systemd service
+# register + enable systemd service
 clawgo gateway
-
-# service control
 clawgo gateway start
-clawgo gateway restart
-clawgo gateway stop
 clawgo gateway status
 
-# foreground run
+# foreground mode
 clawgo gateway run
-
-# runtime autonomy switches
-clawgo gateway autonomy status
-clawgo gateway autonomy on
-clawgo gateway autonomy off
 ```
 
-## 📌 Command Reference
+---
+
+## WebUI
+
+Access:
 
 ```text
-clawgo onboard                     Initialize config and workspace
-clawgo login                       Configure CLIProxyAPI upstream
-clawgo status                      Show config/workspace/model/logging status
-clawgo agent [-m "..."]           Local interactive mode
-clawgo gateway [...]               Register/run/manage gateway service
-clawgo config set|get|check|reload Config CRUD, validation, hot reload
-clawgo channel test ...            Channel connectivity test
-clawgo cron ...                    Scheduled job management
-clawgo skills ...                  Skill install/list/remove/show
-clawgo uninstall [--purge] [--remove-bin]
+http://<host>:<port>/webui?token=<gateway.token>
 ```
 
-Make cross-platform build:
+Main pages:
+- Dashboard
+- Chat
+- Logs
+- Skills
+- Config
+- Cron
+- Nodes
+- Memory
+- Task Audit
+- Tasks
+- EKG
+
+---
+
+## Multi-Platform Build (Make)
+
+### Build all default targets
 
 ```bash
 make build-all
-# Override build matrix (example)
+```
+
+Default matrix:
+- linux/amd64
+- linux/arm64
+- linux/riscv64
+- darwin/amd64
+- darwin/arm64
+- windows/amd64
+- windows/arm64
+
+### Custom build matrix
+
+```bash
 make build-all BUILD_TARGETS="linux/amd64 linux/arm64 darwin/arm64 windows/amd64"
-# Package artifacts + checksums
+```
+
+### Package + checksums
+
+```bash
 make package-all
 ```
 
-Global flags:
+Outputs:
+- `build/*.tar.gz` (Linux/macOS)
+- `build/*.zip` (Windows)
+- `build/checksums.txt`
+
+---
+
+## GitHub Release Automation
+
+Built-in workflow: `.github/workflows/release.yml`
+
+Triggers:
+- tag push: `v*` (e.g. `v0.0.1`)
+- manual dispatch (workflow_dispatch)
+
+Pipeline includes:
+- Multi-platform compilation
+- Artifact packaging
+- Checksum generation
+- WebUI dist packaging
+- GitHub Releases publishing
+
+Example:
 
 ```bash
-clawgo --config /path/to/config.json <command>
-clawgo --debug <command>
+git tag v0.0.2
+git push origin v0.0.2
 ```
 
-## ⚙️ Config Management and Hot Reload
+---
 
-Update config values directly from CLI and trigger gateway hot reload:
-
-```bash
-clawgo config set channels.telegram.enable true
-clawgo config get channels.telegram.enabled
-clawgo config check
-clawgo config reload
-```
-
-Notes:
-- `enable` is normalized to `enabled`.
-- `config set` uses atomic write.
-- If gateway reload fails while running, config auto-rolls back from backup.
-- Custom `--config` path is consistently used by CLI config commands and in-channel `/config` commands.
-- Config loading uses strict JSON decoding: unknown fields and trailing JSON content now fail fast.
-
-## 🌐 Channels and Message Control
-
-Supported in-channel slash commands:
+## Common Commands
 
 ```text
-/help
-/stop
-/status
-/status run [run_id|latest]
-/status wait <run_id|latest> [timeout_seconds]
-/config get <path>
-/config set <path> <value>
-/reload
-/pipeline list
-/pipeline status <pipeline_id>
-/pipeline ready <pipeline_id>
+clawgo onboard
+clawgo login
+clawgo status
+clawgo agent [-m "..."]
+clawgo gateway [run|start|stop|restart|status]
+clawgo config set|get|check|reload
+clawgo channel test ...
+clawgo cron ...
+clawgo skills ...
+clawgo uninstall [--purge] [--remove-bin]
 ```
 
-Autonomy and auto-learn control now default to natural language (no slash commands required). Examples:
-- `start autonomy mode and check every 30 minutes`
-- `stop auto-learn`
-- `show latest run status`
-- `wait for run-1739950000000000000-8 and report when done`
+---
 
-Scheduling semantics (`session_key` based):
-- Strict FIFO processing per session.
-- `/stop` interrupts current response and continues queued messages.
-- Different sessions are processed concurrently.
+## Config & Hot Reload
 
-Channel test example:
+- Supports `clawgo config set/get/check/reload`
+- Strict JSON parsing (unknown fields fail fast)
+- Auto rollback on failed hot reload
 
-```bash
-clawgo channel test --channel telegram --to <chat_id> -m "ping"
-```
+---
 
-## 🧠 Memory, Autonomy, and Context Compaction
+## Stability / Operations Notes
 
-- On startup, the agent loads `AGENTS.md`, `SOUL.md`, and `USER.md` as behavior and semantic constraints.
-- Gateway startup triggers a self-check task using history and `HEARTBEAT.md` to decide whether unfinished tasks should continue.
-- Context compaction is triggered by both message-count and transcript-size thresholds.
-- Compaction modes are `summary`, `responses_compact`, and `hybrid`; `responses_compact` requires `protocol=responses` and `supports_responses_compact=true` on the active proxy.
-- Layered memory supports `profile / project / procedures / recent notes`.
+Recommended for production:
+- tune channel dedupe windows
+- keep heartbeat filtered in task-audit by default
+- monitor EKG with 24h window baseline
+- review Top errsig/provider score periodically
 
-Heartbeat + context compaction config example:
+---
 
-```json
-"agents": {
-  "defaults": {
-    "heartbeat": {
-      "enabled": true,
-      "every_sec": 1800,
-      "ack_max_chars": 64,
-      "prompt_template": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK."
-    },
-    "texts": {
-      "no_response_fallback": "I've completed processing but have no response to give.",
-      "think_only_fallback": "Thinking process completed.",
-      "memory_recall_keywords": ["remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision"],
-      "lang_usage": "Usage: /lang <code>",
-      "lang_invalid": "Invalid language code.",
-      "lang_updated_template": "Language preference updated to %s",
-      "subagents_none": "No subagents.",
-      "sessions_none": "No sessions.",
-      "unsupported_action": "unsupported action",
-      "system_rewrite_template": "Rewrite the following internal system update in concise user-facing language:\n\n%s",
-      "runtime_compaction_note": "[runtime-compaction] removed %d old messages, kept %d recent messages",
-      "startup_compaction_note": "[startup-compaction] removed %d old messages, kept %d recent messages"
-    },
-    "context_compaction": {
-      "enabled": true,
-      "mode": "summary",
-      "trigger_messages": 60,
-      "keep_recent_messages": 20,
-      "max_summary_chars": 6000,
-      "max_transcript_chars": 20000
-    }
-  }
-}
-```
+## License
 
-Runtime-control config example (autonomy guards / run-state retention):
-
-```json
-"agents": {
-  "defaults": {
-    "runtime_control": {
-      "intent_max_input_chars": 1200,
-      "autonomy_tick_interval_sec": 20,
-      "autonomy_min_run_interval_sec": 20,
-      "autonomy_idle_threshold_sec": 20,
-      "autonomy_max_rounds_without_user": 120,
-      "autonomy_max_pending_duration_sec": 180,
-      "autonomy_max_consecutive_stalls": 3,
-      "autolearn_max_rounds_without_user": 200,
-      "run_state_ttl_seconds": 1800,
-      "run_state_max": 500,
-      "tool_parallel_safe_names": ["read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"],
-      "tool_max_parallel_calls": 2
-    }
-  }
-}
-```
-
-## 🤖 Multi-Agent Orchestration (Pipeline)
-
-Built-in orchestration tools:
-- `pipeline_create`
-- `pipeline_status`
-- `pipeline_state_set`
-- `pipeline_dispatch`
-- `spawn` (supports `pipeline_id/task_id/role`)
-
-Useful for complex task decomposition, role-based execution, and shared state workflows.
-
-## 🛡️ Reliability
-
-- **Proxy/model fallback**: retries models in the current proxy first, then switches proxies in `proxy_fallbacks` when all models fail.
-- **HTTP compatibility handling**: detects non-JSON error pages with body preview; parses tool calls from `<function_call>` blocks.
-- **Sentinel**: periodic checks for config/memory/log resources with optional auto-heal and notifications.
-
-Sentinel config example:
-
-```json
-"sentinel": {
-  "enabled": true,
-  "interval_sec": 60,
-  "auto_heal": true,
-  "notify_channel": "",
-  "notify_chat_id": ""
-}
-```
-
-## ⏱️ Scheduled Jobs (Cron)
-
-```bash
-clawgo cron list
-clawgo cron add -n "daily-check" -m "check todo" -c "0 9 * * *"
-clawgo cron add -n "heartbeat" -m "report status" -e 300
-clawgo cron enable <job_id>
-clawgo cron disable <job_id>
-clawgo cron remove <job_id>
-```
-
-`cron add` options:
-- `-n, --name` job name
-- `-m, --message` agent input message
-- `-e, --every` run every N seconds
-- `-c, --cron` cron expression
-- `-d, --deliver --channel <name> --to <id>` deliver response to a channel
-
-## 🧩 Skills
-
-Skill management commands:
-
-```bash
-clawgo skills list
-clawgo skills search
-clawgo skills show <name>
-clawgo skills install <github-repo>
-clawgo skills remove <name>
-clawgo skills install-builtin
-clawgo skills list-builtin
-```
-
-Notes:
-- Install skills from GitHub (for example `owner/repo/skill`).
-- Install built-in skills into workspace.
-- Execute atomic scripts through `skill_exec` from `skills/<name>/scripts/*`.
-
-## 🗂️ Workspace and Managed Docs
-
-Default workspace is typically `~/.clawgo/workspace`:
-
-```text
-workspace/
-  memory/
-    MEMORY.md
-    HEARTBEAT.md
-  skills/
-  AGENTS.md
-  SOUL.md
-  USER.md
-```
-
-`clawgo onboard` and `make install` sync `AGENTS.md`, `SOUL.md`, `USER.md`:
-- Create file if missing.
-- Update only `CLAWGO MANAGED BLOCK` if file exists, preserving user custom sections.
-
-## 🧾 Logging
-
-File logging is enabled by default with rotation and retention:
-
-```json
-"logging": {
-  "enabled": true,
-  "dir": "~/.clawgo/logs",
-  "filename": "clawgo.log",
-  "max_size_mb": 20,
-  "retention_days": 3
-}
-```
-
-Recommended structured fields for querying/alerting:
-`channel`, `chat_id`, `sender_id`, `preview`, `error`, `message_content_length`, `assistant_content_length`, `output_content_length`, `transcript_length`.
-
-## 🛠️ Build and Install (Linux)
-
-```bash
-cd clawgo
-make build
-make install
-```
-
-Optional build flag:
-
-```bash
-# default: strip symbols for smaller binary
-make build STRIP_SYMBOLS=1
-
-# keep debug symbols
-make build STRIP_SYMBOLS=0
-```
-
-## 🧹 Uninstall
-
-```bash
-clawgo uninstall
-clawgo uninstall --purge
-clawgo uninstall --remove-bin
-```
-
-## 📜 License
-
-MIT License.
+See repository License file.
