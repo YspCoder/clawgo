@@ -1447,6 +1447,7 @@ func (s *RegistryServer) handleWebUITaskAudit(w http.ResponseWriter, r *http.Req
 	}
 
 path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+	includeHeartbeat := r.URL.Query().Get("include_heartbeat") == "1"
 	limit := 100
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -1475,6 +1476,10 @@ path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.
 		}
 		var row map[string]interface{}
 		if err := json.Unmarshal([]byte(ln), &row); err == nil {
+			source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
+			if !includeHeartbeat && source == "heartbeat" {
+				continue
+			}
 			items = append(items, row)
 		}
 	}
@@ -1491,6 +1496,7 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 		return
 	}
 	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+	includeHeartbeat := r.URL.Query().Get("include_heartbeat") == "1"
 	b, err := os.ReadFile(path)
 	if err != nil {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": []map[string]interface{}{}, "items": []map[string]interface{}{}})
@@ -1508,6 +1514,10 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 		}
 		var row map[string]interface{}
 		if err := json.Unmarshal([]byte(ln), &row); err != nil {
+			continue
+		}
+		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
+		if !includeHeartbeat && source == "heartbeat" {
 			continue
 		}
 		id := fmt.Sprintf("%v", row["task_id"])

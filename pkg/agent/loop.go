@@ -405,7 +405,7 @@ func (al *AgentLoop) getSessionProvider(sessionKey string) string {
 }
 
 func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage) {
-	taskID := fmt.Sprintf("%s-%d", shortSessionKey(msg.SessionKey), time.Now().Unix()%100000)
+	taskID := buildAuditTaskID(msg)
 	started := time.Now()
 	al.appendTaskAuditEvent(taskID, msg, "running", started, 0, "started", false)
 
@@ -435,6 +435,31 @@ func shortSessionKey(s string) string {
 		return s
 	}
 	return s[:8]
+}
+
+func buildAuditTaskID(msg bus.InboundMessage) string {
+	trigger := ""
+	if msg.Metadata != nil {
+		trigger = strings.ToLower(strings.TrimSpace(msg.Metadata["trigger"]))
+	}
+	sessionPart := shortSessionKey(msg.SessionKey)
+	switch trigger {
+	case "heartbeat":
+		if sessionPart == "" {
+			sessionPart = "default"
+		}
+		return "heartbeat:" + sessionPart
+	case "autonomy":
+		norm := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(msg.Content, "\n", " ")))
+		if len(norm) > 180 {
+			norm = norm[:180]
+		}
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(msg.SessionKey + "|" + norm))
+		return fmt.Sprintf("autonomy:%08x", h.Sum32())
+	default:
+		return fmt.Sprintf("%s-%d", sessionPart, time.Now().Unix()%100000)
+	}
 }
 
 func (al *AgentLoop) appendTaskAudit(taskID string, msg bus.InboundMessage, started time.Time, runErr error, suppressed bool) {
