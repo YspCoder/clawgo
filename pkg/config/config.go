@@ -198,6 +198,49 @@ type ProvidersConfig struct {
 	Proxies map[string]ProviderConfig `json:"proxies"`
 }
 
+type providerProxyItem struct {
+	Name string `json:"name"`
+	ProviderConfig
+}
+
+func (p *ProvidersConfig) UnmarshalJSON(data []byte) error {
+	var tmp struct {
+		Proxy   ProviderConfig  `json:"proxy"`
+		Proxies json.RawMessage `json:"proxies"`
+	}
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	p.Proxy = tmp.Proxy
+	p.Proxies = map[string]ProviderConfig{}
+	if len(bytes.TrimSpace(tmp.Proxies)) == 0 || string(bytes.TrimSpace(tmp.Proxies)) == "null" {
+		return nil
+	}
+	// Preferred format: object map
+	var asMap map[string]ProviderConfig
+	if err := json.Unmarshal(tmp.Proxies, &asMap); err == nil {
+		for k, v := range asMap {
+			if k == "" {
+				continue
+			}
+			p.Proxies[k] = v
+		}
+		return nil
+	}
+	// Compatibility format: array [{name, ...provider fields...}]
+	var asArr []providerProxyItem
+	if err := json.Unmarshal(tmp.Proxies, &asArr); err == nil {
+		for _, it := range asArr {
+			if it.Name == "" {
+				continue
+			}
+			p.Proxies[it.Name] = it.ProviderConfig
+		}
+		return nil
+	}
+	return fmt.Errorf("providers.proxies must be object map or array of {name,...}")
+}
+
 type ProviderConfig struct {
 	APIKey                   string   `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
 	APIBase                  string   `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`

@@ -24,6 +24,7 @@ const Config: React.FC = () => {
   const [basicMode, setBasicMode] = useState(true);
   const [hotOnly, setHotOnly] = useState(false);
   const [search, setSearch] = useState('');
+  const [newProxyName, setNewProxyName] = useState('');
 
   const hotPrefixes = useMemo(() => hotReloadFieldDetails.map((x) => String(x.path || '').replace(/\.\*$/, '')).filter(Boolean), [hotReloadFieldDetails]);
 
@@ -83,6 +84,45 @@ const Config: React.FC = () => {
       setBaseline(JSON.parse(JSON.stringify(cfg)));
     }
   }, [cfg, baseline]);
+
+  function updateProxyField(name: string, field: string, value: any) {
+    setCfg((v) => setPath(v, `providers.proxies.${name}.${field}`, value));
+  }
+
+  function removeProxy(name: string) {
+    setCfg((v) => {
+      const next = JSON.parse(JSON.stringify(v || {}));
+      if (next?.providers?.proxies && typeof next.providers.proxies === 'object') {
+        delete next.providers.proxies[name];
+      }
+      return next;
+    });
+  }
+
+  function addProxy() {
+    const name = newProxyName.trim();
+    if (!name) return;
+    setCfg((v) => {
+      const next = JSON.parse(JSON.stringify(v || {}));
+      if (!next.providers || typeof next.providers !== 'object') next.providers = {};
+      if (!next.providers.proxies || typeof next.providers.proxies !== 'object' || Array.isArray(next.providers.proxies)) {
+        next.providers.proxies = {};
+      }
+      if (!next.providers.proxies[name]) {
+        next.providers.proxies[name] = {
+          api_key: '',
+          api_base: '',
+          protocol: 'responses',
+          models: [],
+          supports_responses_compact: false,
+          auth: 'bearer',
+          timeout_sec: 120,
+        };
+      }
+      return next;
+    });
+    setNewProxyName('');
+  }
 
   async function saveConfig() {
     try {
@@ -158,7 +198,33 @@ const Config: React.FC = () => {
               </div>
             </aside>
 
-            <div className="flex-1 p-4 md:p-6 overflow-y-auto">
+            <div className="flex-1 p-4 md:p-6 overflow-y-auto space-y-4">
+              {activeTop === 'providers' && !showRaw && (
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-sm font-semibold text-zinc-200">Proxies</div>
+                    <div className="flex items-center gap-2">
+                      <input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder="new provider name" className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs" />
+                      <button onClick={addProxy} className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-xs">Add</button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {Object.entries(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).map(([name, p]) => (
+                      <div key={name} className="grid grid-cols-1 md:grid-cols-8 gap-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 text-xs">
+                        <div className="md:col-span-1 font-mono text-zinc-300 flex items-center">{name}</div>
+                        <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder="api_base" className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder="api_key" className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <input value={String(p?.protocol || '')} onChange={(e)=>updateProxyField(name, 'protocol', e.target.value)} placeholder="protocol" className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder="models,a,b" className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <button onClick={()=>removeProxy(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">Delete</button>
+                      </div>
+                    ))}
+                    {Object.keys(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).length === 0 && (
+                      <div className="text-xs text-zinc-500">No custom providers yet.</div>
+                    )}
+                  </div>
+                </div>
+              )}
               {activeTop ? (
                 <RecursiveConfig
                   data={(cfg as any)?.[activeTop] || {}}
