@@ -59,6 +59,10 @@ type AutonomyConfig struct {
 	TaskHistoryRetentionDays   int      `json:"task_history_retention_days" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TASK_HISTORY_RETENTION_DAYS"`
 	WaitingResumeDebounceSec   int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
 	AllowedTaskKeywords        []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
+	// Deprecated: kept for backward compatibility with existing config files.
+	NotifyChannel              string `json:"notify_channel,omitempty"`
+	// Deprecated: kept for backward compatibility with existing config files.
+	NotifyChatID               string `json:"notify_chat_id,omitempty"`
 }
 
 type AgentTextConfig struct {
