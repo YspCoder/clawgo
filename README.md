@@ -66,6 +66,7 @@
 - 示例：`[keys: repo:clawgo, file:pkg/agent/loop.go, branch:main] 修复对话流程`
 - 未显式声明时，系统会从任务文本自动推断资源键。
 - 冲突任务进入 `resource_lock` 等待，默认 30 秒后重试抢锁，并带公平加权（等待越久优先级越高）。
+- 自治完成/阻塞通知不再使用 `autonomy.notify_channel` / `autonomy.notify_chat_id`；默认自动从已启用通道的 `allow_from` 推导目标（优先 Telegram）。
 
 ## 🏁 快速开始
 

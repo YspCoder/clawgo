@@ -66,6 +66,7 @@ Autonomy now supports lock scheduling via `resource_keys`. You can explicitly de
 - Example: `[keys: repo:clawgo, file:pkg/agent/loop.go, branch:main] fix dialog flow`
 - Without explicit keys, the engine derives keys from task text heuristically.
 - Conflicting tasks enter `resource_lock` waiting, retry lock acquisition after 30s, and use fairness weighting (longer wait => higher scheduling priority).
+- Autonomy completion/blocked notifications no longer use `autonomy.notify_channel` / `autonomy.notify_chat_id`; target is derived from enabled channel `allow_from` (Telegram first).
 
 ## 🏁 Quick Start
 
