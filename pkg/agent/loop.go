@@ -343,18 +343,30 @@ func (al *AgentLoop) lockSessionRun(sessionKey string) func() {
 	return func() { mu.Unlock() }
 }
 
-func (al *AgentLoop) tryFallbackProviders(ctx context.Context, messages []providers.Message, toolDefs []providers.ToolDefinition, options map[string]interface{}, primaryErr error) (*providers.LLMResponse, error) {
+func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMessage, messages []providers.Message, toolDefs []providers.ToolDefinition, options map[string]interface{}, primaryErr error) (*providers.LLMResponse, error) {
 	if len(al.providerNames) <= 1 {
 		return nil, primaryErr
 	}
 	lastErr := primaryErr
-	for i := 1; i < len(al.providerNames); i++ {
-		name := al.providerNames[i]
+	candidates := append([]string(nil), al.providerNames[1:]...)
+	if al.ekg != nil {
+		candidates = al.ekg.RankProviders(candidates)
+	}
+	for _, name := range candidates {
 		p, ok := al.providerPool[name]
 		if !ok || p == nil {
 			continue
 		}
 		resp, err := p.Chat(ctx, messages, toolDefs, al.model, options)
+		if al.ekg != nil {
+			st := "success"
+			lg := "fallback provider success"
+			if err != nil {
+				st = "error"
+				lg = err.Error()
+			}
+			al.ekg.Record(ekg.Event{Session: msg.SessionKey, Channel: msg.Channel, Source: "provider_fallback", Status: st, Provider: name, Model: al.model, Log: lg})
+		}
 		if err == nil {
 			logger.WarnCF("agent", "LLM fallback provider switched", map[string]interface{}{"provider": name})
 			return resp, nil
@@ -753,7 +765,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 
 		if err != nil {
-			if fb, ferr := al.tryFallbackProviders(ctx, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
+			if fb, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
 				response = fb
 				err = nil
 			} else {
@@ -1096,7 +1108,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
 
 		if err != nil {
-			if fb, ferr := al.tryFallbackProviders(ctx, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
+			if fb, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
 				response = fb
 				err = nil
 			} else {
