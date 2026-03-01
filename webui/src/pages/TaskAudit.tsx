@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 
+type EKGKV = { key?: string; score?: number; count?: number };
+
 type TaskAuditItem = {
   task_id?: string;
   time?: string;
@@ -37,6 +39,9 @@ const TaskAudit: React.FC = () => {
   const [dailyReport, setDailyReport] = useState<string>('');
   const [reportDate, setReportDate] = useState<string>(new Date().toISOString().slice(0,10));
   const [showDailyReport, setShowDailyReport] = useState(false);
+  const [ekgProviderTop, setEkgProviderTop] = useState<EKGKV[]>([]);
+  const [ekgErrsigTop, setEkgErrsigTop] = useState<EKGKV[]>([]);
+  const [ekgEscalationCount, setEkgEscalationCount] = useState<number>(0);
 
   const fetchData = async () => {
     setLoading(true);
@@ -56,6 +61,14 @@ const TaskAudit: React.FC = () => {
         setDailyReport(String(dj.report || ''));
       } else {
         setDailyReport('');
+      }
+      const ekgUrl = `/webui/api/ekg_stats${q || ''}`;
+      const er = await fetch(ekgUrl);
+      if (er.ok) {
+        const ej = await er.json();
+        setEkgProviderTop(Array.isArray(ej.provider_top) ? ej.provider_top : []);
+        setEkgErrsigTop(Array.isArray(ej.errsig_top) ? ej.errsig_top : []);
+        setEkgEscalationCount(Number(ej.escalation_count || 0));
       }
     } catch (e) {
       console.error(e);
@@ -122,6 +135,32 @@ const TaskAudit: React.FC = () => {
             <option value="suppressed">suppressed</option>
           </select>
           <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
+        </div>
+      </div>
+
+      <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-3 text-sm">
+        <div className="text-xs text-zinc-400 uppercase tracking-wider mb-2">EKG Insights</div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+            <div className="text-zinc-500 mb-1">Escalations</div>
+            <div className="text-zinc-100 text-base font-semibold">{ekgEscalationCount}</div>
+          </div>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 md:col-span-2">
+            <div className="text-zinc-500 mb-1">Top Providers</div>
+            <div className="space-y-1">
+              {ekgProviderTop.length === 0 ? <div className="text-zinc-500">-</div> : ekgProviderTop.map((x, i) => (
+                <div key={`${x.key}-${i}`} className="text-zinc-200">{x.key} <span className="text-zinc-500">({Number(x.score || 0).toFixed(2)})</span></div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 text-xs">
+          <div className="text-zinc-500 mb-1">Top Error Signatures</div>
+          <div className="space-y-1 max-h-24 overflow-y-auto">
+            {ekgErrsigTop.length === 0 ? <div className="text-zinc-500">-</div> : ekgErrsigTop.map((x, i) => (
+              <div key={`${x.key}-${i}`} className="text-zinc-200 truncate">{x.key} <span className="text-zinc-500">(x{x.count || 0})</span></div>
+            ))}
+          </div>
         </div>
       </div>
 
