@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	cfgpkg "clawgo/pkg/config"
@@ -357,7 +356,7 @@ func (s *RegistryServer) handleWebUIConfig(w http.ResponseWriter, r *http.Reques
 		if s.onConfigAfter != nil {
 			s.onConfigAfter()
 		} else {
-			_ = syscall.Kill(os.Getpid(), syscall.SIGHUP)
+			_ = requestSelfReloadSignal()
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reloaded": true})
 	default:
