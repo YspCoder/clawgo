@@ -23,6 +23,7 @@ import (
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
 	"clawgo/pkg/cron"
+	"clawgo/pkg/ekg"
 	"clawgo/pkg/logger"
 	"clawgo/pkg/nodes"
 	"clawgo/pkg/providers"
@@ -60,6 +61,7 @@ type AgentLoop struct {
 	sessionRunLocks       map[string]*sync.Mutex
 	providerNames         []string
 	providerPool          map[string]providers.LLMProvider
+	ekg                   *ekg.Engine
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -236,6 +238,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		running:               false,
 		intentHints:           map[string]string{},
 		sessionRunLocks:       map[string]*sync.Mutex{},
+		ekg:                   ekg.New(workspace),
 	}
 
 	// Initialize provider fallback chain (primary + proxy_fallbacks).
@@ -435,6 +438,17 @@ func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage,
 		"media_count":   len(msg.MediaItems),
 		"media_items":   msg.MediaItems,
 	}
+	if al.ekg != nil {
+		al.ekg.Record(ekg.Event{
+			TaskID:  taskID,
+			Session: msg.SessionKey,
+			Channel: msg.Channel,
+			Source:  source,
+			Status:  status,
+			Log:     logText,
+		})
+	}
+
 	b, _ := json.Marshal(row)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {

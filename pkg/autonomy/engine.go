@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"clawgo/pkg/bus"
+	"clawgo/pkg/ekg"
 	"clawgo/pkg/lifecycle"
 )
 
@@ -41,6 +42,7 @@ type Options struct {
 	ImportantKeywords           []string
 	CompletionTemplate          string
 	BlockedTemplate             string
+	EKGConsecutiveErrorThreshold int
 }
 
 type taskState struct {
@@ -75,6 +77,7 @@ type Engine struct {
 	roundsWithoutUser int
 	lastDailyReportDate string
 	lastHistoryCleanupAt time.Time
+	ekg                 *ekg.Engine
 }
 
 func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
@@ -111,7 +114,10 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	if opts.TaskHistoryRetentionDays <= 0 {
 		opts.TaskHistoryRetentionDays = 3
 	}
-	return &Engine{
+	if opts.EKGConsecutiveErrorThreshold <= 0 {
+		opts.EKGConsecutiveErrorThreshold = 3
+	}
+	eng := &Engine{
 		opts:       opts,
 		bus:        msgBus,
 		runner:     lifecycle.NewLoopRunner(),
@@ -119,7 +125,12 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 		state:      map[string]*taskState{},
 		lastNotify: map[string]time.Time{},
 		lockOwners: map[string]string{},
+		ekg:        ekg.New(opts.Workspace),
 	}
+	if eng.ekg != nil {
+		eng.ekg.SetConsecutiveErrorThreshold(opts.EKGConsecutiveErrorThreshold)
+	}
+	return eng
 }
 
 func (e *Engine) Start() {
@@ -319,7 +330,18 @@ func (e *Engine) tick() {
 					continue
 				}
 				if outcome == "error" {
+					errSig := e.latestErrorSignature(st.ID, st.LastRunAt)
+					advice := ekg.Advice{}
+					if e.ekg != nil {
+						advice = e.ekg.GetAdvice(ekg.SignalContext{TaskID: st.ID, ErrSig: errSig, Source: "autonomy", Channel: "system"})
+					}
 					st.Status = "blocked"
+					if advice.ShouldEscalate {
+						st.BlockReason = "repeated_error_signature"
+						st.RetryAfter = now.Add(5 * time.Minute)
+						e.sendFailureNotification(st, "repeated error signature detected; escalate")
+						continue
+					}
 					st.BlockReason = "last_run_error"
 					st.RetryAfter = now.Add(blockedRetryBackoff(st.ConsecutiveStall+1, e.opts.MinRunIntervalSec))
 					e.sendFailureNotification(st, "last run ended with error")
@@ -1111,6 +1133,47 @@ func (e *Engine) detectRunOutcome(taskID string, since time.Time) (string, bool)
 		return "", false
 	}
 	return latest, true
+}
+
+func (e *Engine) latestErrorSignature(taskID string, since time.Time) string {
+	if e.opts.Workspace == "" || taskID == "" {
+		return ""
+	}
+	path := filepath.Join(e.opts.Workspace, "memory", "task-audit.jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sessionKey := "autonomy:" + taskID
+	latestAt := time.Time{}
+	latestErr := ""
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		var row map[string]interface{}
+		if json.Unmarshal(s.Bytes(), &row) != nil {
+			continue
+		}
+		if fmt.Sprintf("%v", row["session"]) != sessionKey {
+			continue
+		}
+		if fmt.Sprintf("%v", row["status"]) != "error" {
+			continue
+		}
+		ts := fmt.Sprintf("%v", row["time"])
+		tm, err := time.Parse(time.RFC3339, ts)
+		if err != nil {
+			continue
+		}
+		if !since.IsZero() && tm.Before(since) {
+			continue
+		}
+		if latestAt.IsZero() || tm.After(latestAt) {
+			latestAt = tm
+			latestErr = fmt.Sprintf("%v", row["log"])
+		}
+	}
+	return ekg.NormalizeErrorSignature(latestErr)
 }
 
 func parseTodoAttributes(content string) (priority, dueAt, normalized string) {

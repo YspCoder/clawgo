@@ -972,6 +972,7 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		ImportantKeywords:           cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
 		CompletionTemplate:          cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
 		BlockedTemplate:             cfg.Agents.Defaults.Texts.AutonomyBlockedTemplate,
+		EKGConsecutiveErrorThreshold: 3,
 		Workspace:                   cfg.WorkspacePath(),
 		DefaultNotifyChannel:        notifyChannel,
 		DefaultNotifyChatID:         notifyChatID,
