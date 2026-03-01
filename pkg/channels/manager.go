@@ -9,9 +9,11 @@ package channels
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -29,6 +31,8 @@ type Manager struct {
 	outboundLimit *rate.Limiter
 	mu            sync.RWMutex
 	snapshot      atomic.Value // map[string]Channel
+	outboundSeenMu sync.Mutex
+	outboundSeen   map[string]time.Time
 }
 
 type asyncTask struct {
@@ -43,6 +47,7 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus) (*Manager, error
 		// Limit concurrent outbound sends to avoid unbounded goroutine growth.
 		dispatchSem:   make(chan struct{}, 32),
 		outboundLimit: rate.NewLimiter(rate.Limit(40), 80),
+		outboundSeen:  map[string]time.Time{},
 	}
 	m.snapshot.Store(map[string]Channel{})
 
@@ -273,6 +278,42 @@ func (m *Manager) RestartChannel(ctx context.Context, name string) error {
 	return channel.Start(ctx)
 }
 
+func outboundDigest(msg bus.OutboundMessage) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(strings.ToLower(strings.TrimSpace(msg.Channel))))
+	_, _ = h.Write([]byte("|" + strings.TrimSpace(msg.ChatID)))
+	_, _ = h.Write([]byte("|" + strings.TrimSpace(msg.Action)))
+	_, _ = h.Write([]byte("|" + strings.TrimSpace(msg.Content)))
+	_, _ = h.Write([]byte("|" + strings.TrimSpace(msg.Media)))
+	_, _ = h.Write([]byte("|" + strings.TrimSpace(msg.ReplyToID)))
+	return fmt.Sprintf("%08x", h.Sum32())
+}
+
+func (m *Manager) shouldSkipOutboundDuplicate(msg bus.OutboundMessage) bool {
+	action := strings.ToLower(strings.TrimSpace(msg.Action))
+	if action == "" {
+		action = "send"
+	}
+	if action != "send" {
+		return false
+	}
+	key := outboundDigest(msg)
+	now := time.Now()
+	const ttl = 12 * time.Second
+	m.outboundSeenMu.Lock()
+	defer m.outboundSeenMu.Unlock()
+	for k, ts := range m.outboundSeen {
+		if now.Sub(ts) > 20*time.Second {
+			delete(m.outboundSeen, k)
+		}
+	}
+	if ts, ok := m.outboundSeen[key]; ok && now.Sub(ts) <= ttl {
+		return true
+	}
+	m.outboundSeen[key] = now
+	return false
+}
+
 func (m *Manager) dispatchOutbound(ctx context.Context) {
 	logger.InfoC("channels", "Outbound dispatcher started")
 
@@ -286,6 +327,13 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 			if !ok {
 				logger.InfoC("channels", "Outbound dispatcher stopped (bus closed)")
 				return
+			}
+			if m.shouldSkipOutboundDuplicate(msg) {
+				logger.WarnCF("channels", "Duplicate outbound message skipped", map[string]interface{}{
+					logger.FieldChannel: msg.Channel,
+					logger.FieldChatID:  msg.ChatID,
+				})
+				continue
 			}
 
 			cur, _ := m.snapshot.Load().(map[string]Channel)
