@@ -940,6 +940,14 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 
 func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
 	a := cfg.Agents.Defaults.Autonomy
+	maxRoundsWithoutUser := a.MaxRoundsWithoutUser
+	if maxRoundsWithoutUser == 0 && cfg.Agents.Defaults.RuntimeControl.AutonomyMaxRoundsWithoutUser > 0 {
+		maxRoundsWithoutUser = cfg.Agents.Defaults.RuntimeControl.AutonomyMaxRoundsWithoutUser
+	}
+	idleRoundBudgetReleaseSec := a.IdleRoundBudgetReleaseSec
+	if idleRoundBudgetReleaseSec == 0 {
+		idleRoundBudgetReleaseSec = 1800
+	}
 	notifyChannel, notifyChatID := inferAutonomyNotifyTarget(cfg)
 	notifyAllowFrom := []string{}
 	switch notifyChannel {
@@ -967,10 +975,10 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		NotifySameReasonCooldownSec: a.NotifySameReasonCooldownSec,
 		QuietHours:                  a.QuietHours,
 		UserIdleResumeSec:           a.UserIdleResumeSec,
-		MaxRoundsWithoutUser:        a.MaxRoundsWithoutUser,
+		MaxRoundsWithoutUser:        maxRoundsWithoutUser,
 		TaskHistoryRetentionDays:    a.TaskHistoryRetentionDays,
 		WaitingResumeDebounceSec:    a.WaitingResumeDebounceSec,
-		IdleRoundBudgetReleaseSec:   a.IdleRoundBudgetReleaseSec,
+		IdleRoundBudgetReleaseSec:   idleRoundBudgetReleaseSec,
 		AllowedTaskKeywords:         a.AllowedTaskKeywords,
 		ImportantKeywords:           cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
 		CompletionTemplate:          cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
