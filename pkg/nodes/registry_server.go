@@ -980,7 +980,6 @@ func buildSkillMarkdown(name, desc string, tools []string, systemPrompt string) 
 	}
 	toolLines := make([]string, 0, len(tools))
 	for _, t := range tools {
-		t = t
 		if t == "" {
 			continue
 		}
@@ -1188,7 +1187,6 @@ func normalizeCronJobs(v interface{}) []map[string]interface{} {
 }
 
 func queryClawHubSkillVersion(ctx context.Context, skill string) (found bool, version string, err error) {
-	skill = skill
 	if skill == "" {
 		return false, "", fmt.Errorf("skill empty")
 	}
