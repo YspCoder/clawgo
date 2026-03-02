@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -104,6 +105,27 @@ func TestProcessSystemMessage_UsesOriginSessionKey(t *testing.T) {
 	want := "[System: cron] " + rewriteSystemMessageContent("system task", loop.systemRewriteTemplate)
 	if !containsUserContent(second, want) {
 		t.Fatalf("expected system marker in follow-up history, want=%q got=%v", want, summarizeUsers(second))
+	}
+}
+
+func TestProcessInbound_SystemMessagePublishesToOriginChannel(t *testing.T) {
+	rp := &recordingProvider{}
+	loop := setupLoop(t, rp)
+
+	in := bus.InboundMessage{Channel: "system", SenderID: "cron", ChatID: "telegram:chat-1", Content: "system task"}
+	loop.processInbound(context.Background(), in)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, ok := loop.bus.SubscribeOutbound(ctx)
+	if !ok {
+		t.Fatalf("expected outbound message")
+	}
+	if out.Channel != "telegram" {
+		t.Fatalf("expected outbound channel telegram, got %q", out.Channel)
+	}
+	if out.ChatID != "chat-1" {
+		t.Fatalf("expected outbound chat_id chat-1, got %q", out.ChatID)
 	}
 }
 

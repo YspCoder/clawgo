@@ -616,12 +616,16 @@ func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (b
 	if al.shouldSuppressOutbound(msg, clean) {
 		return bus.OutboundMessage{}, false
 	}
-	return bus.OutboundMessage{
-		Channel:   msg.Channel,
-		ChatID:    msg.ChatID,
-		Content:   clean,
-		ReplyToID: strings.TrimSpace(replyToID),
-	}, true
+	outbound := bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Content: clean, ReplyToID: strings.TrimSpace(replyToID)}
+	if msg.Channel == "system" {
+		if originChannel, originChatID, ok := strings.Cut(msg.ChatID, ":"); ok && strings.TrimSpace(originChannel) != "" {
+			outbound.Channel = originChannel
+			outbound.ChatID = originChatID
+		} else {
+			outbound.Channel = "cli"
+		}
+	}
+	return outbound, true
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
