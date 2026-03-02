@@ -9,20 +9,31 @@ import (
 	"time"
 )
 
+type TaskAttempt struct {
+	Time    string `json:"time"`
+	Status  string `json:"status"`
+	Session string `json:"session,omitempty"`
+	Note    string `json:"note,omitempty"`
+}
+
 type TaskItem struct {
-	ID          string `json:"id"`
-	Content     string `json:"content"`
-	Priority    string `json:"priority"`
-	DueAt       string `json:"due_at,omitempty"`
-	Status      string `json:"status"` // todo|doing|waiting|blocked|done
-	BlockReason string `json:"block_reason,omitempty"`
-	RetryAfter  string `json:"retry_after,omitempty"`
-	Source      string `json:"source"`
-	DedupeHits   int      `json:"dedupe_hits,omitempty"`
-	ResourceKeys []string `json:"resource_keys,omitempty"`
-	LastPauseReason string `json:"last_pause_reason,omitempty"`
-	LastPauseAt     string `json:"last_pause_at,omitempty"`
-	UpdatedAt    string   `json:"updated_at"`
+	ID            string        `json:"id"`
+	ParentTaskID  string        `json:"parent_task_id,omitempty"`
+	Content       string        `json:"content"`
+	Priority      string        `json:"priority"`
+	DueAt         string        `json:"due_at,omitempty"`
+	Status        string        `json:"status"` // todo|doing|waiting|blocked|done|paused|canceled
+	BlockReason   string        `json:"block_reason,omitempty"`
+	RetryAfter    string        `json:"retry_after,omitempty"`
+	Source        string        `json:"source"`
+	DedupeHits    int           `json:"dedupe_hits,omitempty"`
+	ResourceKeys  []string      `json:"resource_keys,omitempty"`
+	LastPauseReason string      `json:"last_pause_reason,omitempty"`
+	LastPauseAt     string      `json:"last_pause_at,omitempty"`
+	MemoryRefs    []string      `json:"memory_refs,omitempty"`
+	AuditRefs     []string      `json:"audit_refs,omitempty"`
+	Attempts      []TaskAttempt `json:"attempts,omitempty"`
+	UpdatedAt     string        `json:"updated_at"`
 }
 
 type TaskStore struct {
@@ -65,7 +76,7 @@ func (s *TaskStore) Save(items []TaskItem) error {
 func normalizeStatus(v string) string {
 	s := strings.ToLower(strings.TrimSpace(v))
 	switch s {
-	case "todo", "doing", "blocked", "done":
+	case "todo", "doing", "waiting", "blocked", "done", "paused", "canceled":
 		return s
 	default:
 		return "todo"
