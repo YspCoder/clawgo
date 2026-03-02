@@ -9,11 +9,18 @@ import (
 )
 
 type RemindTool struct {
-	cs *cron.CronService
+	cs             *cron.CronService
+	defaultChannel string
+	defaultChatID  string
 }
 
 func NewRemindTool(cs *cron.CronService) *RemindTool {
 	return &RemindTool{cs: cs}
+}
+
+func (t *RemindTool) SetContext(channel, chatID string) {
+	t.defaultChannel = channel
+	t.defaultChatID = chatID
 }
 
 func (t *RemindTool) Name() string {
@@ -63,7 +70,7 @@ func (t *RemindTool) Execute(ctx context.Context, args map[string]interface{}) (
 			Kind: "at",
 			AtMS: &at,
 		}
-		job, err := t.cs.AddJob("Reminder", schedule, message, true, "", "") // deliver=true, channel="" means default
+		job, err := t.cs.AddJob("Reminder", schedule, message, true, t.defaultChannel, t.defaultChatID)
 		if err != nil {
 			return "", fmt.Errorf("failed to schedule reminder: %w", err)
 		}
@@ -113,7 +120,7 @@ func (t *RemindTool) Execute(ctx context.Context, args map[string]interface{}) (
 		AtMS: &at,
 	}
 
-	job, err := t.cs.AddJob("Reminder", schedule, message, true, "", "")
+	job, err := t.cs.AddJob("Reminder", schedule, message, true, t.defaultChannel, t.defaultChatID)
 	if err != nil {
 		return "", fmt.Errorf("failed to schedule reminder: %w", err)
 	}
