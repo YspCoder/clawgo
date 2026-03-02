@@ -6,6 +6,13 @@ export type CronJob = {
   name: string; 
   enabled: boolean;
   expr?: string;
+  schedule?: {
+    kind?: string;
+    atMs?: number;
+    everyMs?: number;
+    expr?: string;
+    tz?: string;
+  };
   message?: string;
   deliver?: boolean;
   channel?: string;

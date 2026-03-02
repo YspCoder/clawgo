@@ -32,6 +32,20 @@ const isNonGroupRecipient = (channel: string, id: string) => {
   return true;
 };
 
+const formatSchedule = (job: CronJob, t: (key: string) => string) => {
+  const kind = String(job.schedule?.kind || '').toLowerCase();
+  if (kind === 'at' && job.schedule?.atMs) {
+    return {
+      label: t('runAt'),
+      value: new Date(job.schedule.atMs).toLocaleString(),
+    };
+  }
+  return {
+    label: t('cronExpression'),
+    value: job.expr || '-',
+  };
+};
+
 const Cron: React.FC = () => {
   const { t } = useTranslation();
   const { cron, refreshCron, q, cfg } = useAppContext();
@@ -76,10 +90,11 @@ const Cron: React.FC = () => {
         const r = await fetch(`/webui/api/cron${q}&id=${job.id}`);
         if (r.ok) {
           const details = await r.json();
+          const isAtSchedule = String(details.job?.schedule?.kind || '').toLowerCase() === 'at';
           setEditingCron(details.job);
           setCronForm({
             name: details.job.name || '',
-            expr: details.job.expr || '',
+            expr: isAtSchedule ? '' : (details.job.expr || ''),
             message: details.job.message || '',
             deliver: details.job.deliver || false,
             channel: details.job.channel || 'telegram',
@@ -141,7 +156,9 @@ const Cron: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {cron.map((j) => (
+        {cron.map((j) => {
+          const schedule = formatSchedule(j, t);
+          return (
           <div key={j.id} className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-6 flex flex-col shadow-sm group hover:border-zinc-700/50 transition-colors">
             <div className="flex items-start justify-between mb-4">
               <div>
@@ -164,8 +181,8 @@ const Cron: React.FC = () => {
             <div className="flex-1 space-y-3 mb-6">
               <div className="text-sm text-zinc-400 line-clamp-2 italic">"{j.message}"</div>
               <div className="bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
-                <div className="text-[10px] text-zinc-500 uppercase mb-0.5">{t('cronExpression')}</div>
-                <div className="text-xs text-zinc-300 font-medium break-all">{j.expr || '-'}</div>
+                <div className="text-[10px] text-zinc-500 uppercase mb-0.5">{schedule.label}</div>
+                <div className="text-xs text-zinc-300 font-medium break-all">{schedule.value}</div>
               </div>
             </div>
 
@@ -192,7 +209,8 @@ const Cron: React.FC = () => {
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
         {cron.length === 0 && (
           <div className="col-span-full py-20 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-3xl flex flex-col items-center justify-center text-zinc-500">
             <Clock className="w-12 h-12 mb-4 opacity-20" />

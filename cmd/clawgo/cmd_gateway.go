@@ -70,42 +70,7 @@ func gatewayCmd() {
 	msgBus := bus.NewMessageBus()
 	cronStorePath := filepath.Join(filepath.Dir(getConfigPath()), "cron", "jobs.json")
 	cronService := cron.NewCronService(cronStorePath, func(job *cron.CronJob) (string, error) {
-		if job == nil {
-			return "", nil
-		}
-
-		targetChannel := strings.TrimSpace(job.Payload.Channel)
-		targetChatID := strings.TrimSpace(job.Payload.To)
-		message := strings.TrimSpace(job.Payload.Message)
-
-		if job.Payload.Deliver && targetChannel != "" && targetChatID != "" && message != "" {
-			msgBus.PublishOutbound(bus.OutboundMessage{
-				Channel: targetChannel,
-				ChatID:  targetChatID,
-				Content: message,
-			})
-			return "delivered", nil
-		}
-
-		if message == "" {
-			return "", nil
-		}
-		if targetChannel == "" || targetChatID == "" {
-			targetChannel = "internal"
-			targetChatID = "cron"
-		}
-		msgBus.PublishInbound(bus.InboundMessage{
-			Channel:    "system",
-			SenderID:   "cron",
-			ChatID:     fmt.Sprintf("%s:%s", targetChannel, targetChatID),
-			Content:    message,
-			SessionKey: fmt.Sprintf("cron:%s", job.ID),
-			Metadata: map[string]string{
-				"trigger": "cron",
-				"job_id":  job.ID,
-			},
-		})
-		return "scheduled", nil
+		return dispatchCronJob(msgBus, job), nil
 	})
 	configureCronServiceRuntime(cronService, cfg)
 	heartbeatService := buildHeartbeatService(cfg, msgBus)
@@ -902,6 +867,56 @@ func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.Me
 	}
 
 	return agentLoop, channelManager, nil
+}
+
+func normalizeCronTargetChatID(channel, chatID string) string {
+	ch := strings.ToLower(strings.TrimSpace(channel))
+	target := strings.TrimSpace(chatID)
+	if ch == "" || target == "" {
+		return target
+	}
+	prefix := ch + ":"
+	if strings.HasPrefix(strings.ToLower(target), prefix) {
+		return strings.TrimSpace(target[len(prefix):])
+	}
+	return target
+}
+
+func dispatchCronJob(msgBus *bus.MessageBus, job *cron.CronJob) string {
+	if job == nil {
+		return ""
+	}
+	message := strings.TrimSpace(job.Payload.Message)
+	if message == "" {
+		return ""
+	}
+	targetChannel := strings.TrimSpace(job.Payload.Channel)
+	targetChatID := normalizeCronTargetChatID(targetChannel, job.Payload.To)
+
+	if targetChannel != "" && targetChatID != "" {
+		msgBus.PublishOutbound(bus.OutboundMessage{
+			Channel: targetChannel,
+			ChatID:  targetChatID,
+			Content: message,
+		})
+		if job.Payload.Deliver {
+			return "delivered"
+		}
+		return "delivered_targeted"
+	}
+
+	msgBus.PublishInbound(bus.InboundMessage{
+		Channel:    "system",
+		SenderID:   "cron",
+		ChatID:     "internal:cron",
+		Content:    message,
+		SessionKey: fmt.Sprintf("cron:%s", job.ID),
+		Metadata: map[string]string{
+			"trigger": "cron",
+			"job_id":  job.ID,
+		},
+	})
+	return "scheduled"
 }
 
 func configureCronServiceRuntime(cs *cron.CronService, cfg *config.Config) {
