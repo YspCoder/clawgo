@@ -179,7 +179,7 @@ func gatewayCmd() {
 	registryServer.SetConfigPath(getConfigPath())
 	registryServer.SetWorkspacePath(cfg.WorkspacePath())
 	registryServer.SetLogFilePath(cfg.LogFilePath())
-	registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui-dist"))
+	registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
 	registryServer.SetChatHandler(func(cctx context.Context, sessionKey, content string) (string, error) {
 		if strings.TrimSpace(content) == "" {
 			return "", nil
@@ -965,29 +965,29 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.DingTalk.AllowFrom...)
 	}
 	return autonomy.NewEngine(autonomy.Options{
-		Enabled:                     a.Enabled,
-		TickIntervalSec:             a.TickIntervalSec,
-		MinRunIntervalSec:           a.MinRunIntervalSec,
-		MaxPendingDurationSec:       a.MaxPendingDurationSec,
-		MaxConsecutiveStalls:        a.MaxConsecutiveStalls,
-		MaxDispatchPerTick:          a.MaxDispatchPerTick,
-		NotifyCooldownSec:           a.NotifyCooldownSec,
-		NotifySameReasonCooldownSec: a.NotifySameReasonCooldownSec,
-		QuietHours:                  a.QuietHours,
-		UserIdleResumeSec:           a.UserIdleResumeSec,
-		MaxRoundsWithoutUser:        maxRoundsWithoutUser,
-		TaskHistoryRetentionDays:    a.TaskHistoryRetentionDays,
-		WaitingResumeDebounceSec:    a.WaitingResumeDebounceSec,
-		IdleRoundBudgetReleaseSec:   idleRoundBudgetReleaseSec,
-		AllowedTaskKeywords:         a.AllowedTaskKeywords,
-		ImportantKeywords:           cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
-		CompletionTemplate:          cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
-		BlockedTemplate:             cfg.Agents.Defaults.Texts.AutonomyBlockedTemplate,
+		Enabled:                      a.Enabled,
+		TickIntervalSec:              a.TickIntervalSec,
+		MinRunIntervalSec:            a.MinRunIntervalSec,
+		MaxPendingDurationSec:        a.MaxPendingDurationSec,
+		MaxConsecutiveStalls:         a.MaxConsecutiveStalls,
+		MaxDispatchPerTick:           a.MaxDispatchPerTick,
+		NotifyCooldownSec:            a.NotifyCooldownSec,
+		NotifySameReasonCooldownSec:  a.NotifySameReasonCooldownSec,
+		QuietHours:                   a.QuietHours,
+		UserIdleResumeSec:            a.UserIdleResumeSec,
+		MaxRoundsWithoutUser:         maxRoundsWithoutUser,
+		TaskHistoryRetentionDays:     a.TaskHistoryRetentionDays,
+		WaitingResumeDebounceSec:     a.WaitingResumeDebounceSec,
+		IdleRoundBudgetReleaseSec:    idleRoundBudgetReleaseSec,
+		AllowedTaskKeywords:          a.AllowedTaskKeywords,
+		ImportantKeywords:            cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
+		CompletionTemplate:           cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
+		BlockedTemplate:              cfg.Agents.Defaults.Texts.AutonomyBlockedTemplate,
 		EKGConsecutiveErrorThreshold: a.EKGConsecutiveErrorThreshold,
-		Workspace:                   cfg.WorkspacePath(),
-		DefaultNotifyChannel:        notifyChannel,
-		DefaultNotifyChatID:         notifyChatID,
-		NotifyAllowFrom:             notifyAllowFrom,
+		Workspace:                    cfg.WorkspacePath(),
+		DefaultNotifyChannel:         notifyChannel,
+		DefaultNotifyChatID:          notifyChatID,
+		NotifyAllowFrom:              notifyAllowFrom,
 	}, msgBus)
 }
 

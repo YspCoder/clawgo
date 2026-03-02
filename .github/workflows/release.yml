@@ -54,7 +54,7 @@ jobs:
             npm install --prefix webui
           fi
           npm run build --prefix webui
-          tar -czf build/clawgo-webui-dist-${{ github.sha }}.tar.gz -C webui dist
+          tar -czf build/webui.tar.gz -C webui dist
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
