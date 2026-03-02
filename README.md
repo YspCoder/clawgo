@@ -64,6 +64,15 @@ ClawGo 内置轻量 EKG（无需外部图数据库），用于降低重复错误
 
 ## 快速开始
 
+### 一键安装（install.sh）
+
+- GitHub 脚本链接：<https://github.com/YspCoder/clawgo/blob/main/install.sh>
+- 一键安装命令：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YspCoder/clawgo/main/install.sh | bash
+```
+
 ### 1) 初始化
 
 ```bash

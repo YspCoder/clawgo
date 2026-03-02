@@ -64,6 +64,15 @@ ClawGo includes a lightweight EKG (no external graph DB required):
 
 ## Quick Start
 
+### One-Click Install (install.sh)
+
+- GitHub script link: <https://github.com/YspCoder/clawgo/blob/main/install.sh>
+- One-click install command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YspCoder/clawgo/main/install.sh | bash
+```
+
 ### 1) Initialize
 
 ```bash
