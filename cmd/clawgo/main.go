@@ -19,7 +19,9 @@ import (
 //go:embed workspace
 var embeddedFiles embed.FS
 
-const version = "0.1.0"
+var version = "0.1.0"
+var buildTime = "unknown"
+
 const logo = "🦞"
 const gatewayServiceName = "clawgo-gateway.service"
 const envRootGranted = "CLAWGO_ROOT_GRANTED"

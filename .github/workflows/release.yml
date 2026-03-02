@@ -32,12 +32,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y zip
 
+      - name: Resolve build version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            raw="${{ inputs.tag }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            raw="${GITHUB_REF_NAME}"
+          else
+            raw="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+          fi
+          version="${raw#v}"
+          echo "raw=$raw" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Build version: $version (from $raw)"
+
       - name: Build all platforms
         run: |
-          make build-all BUILD_TARGETS="linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+          make build-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
 
       - name: Package artifacts
-        run: make package-all BUILD_TARGETS="linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+        run: make package-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
