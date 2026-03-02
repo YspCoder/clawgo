@@ -1199,6 +1199,20 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 					)
 					continue
 				}
+				if strings.ToLower(strings.TrimSpace(msg.Metadata["trigger"])) == "heartbeat" {
+					al.sessions.ResetSession(sessionKey)
+					messages = al.contextBuilder.BuildMessages(
+						[]providers.Message{},
+						"",
+						msg.Content,
+						nil,
+						originChannel,
+						originChatID,
+						responseLang,
+					)
+					logger.WarnCF("agent", "Heartbeat session reset after repeated provider pairing error", map[string]interface{}{"session_key": sessionKey})
+					continue
+				}
 			}
 			logger.ErrorCF("agent", "LLM call failed in system message",
 				map[string]interface{}{

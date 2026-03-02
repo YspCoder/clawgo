@@ -321,6 +321,24 @@ func (sm *SessionManager) rewriteSessionFileLocked(session *Session) error {
 	return nil
 }
 
+func (sm *SessionManager) ResetSession(key string) {
+	sm.mu.RLock()
+	session, ok := sm.sessions[key]
+	sm.mu.RUnlock()
+	if !ok {
+		return
+	}
+	session.mu.Lock()
+	session.Messages = []providers.Message{}
+	session.Summary = ""
+	session.Updated = time.Now()
+	if sm.storage != "" {
+		_ = sm.rewriteSessionFileLocked(session)
+		_ = sm.writeOpenClawSessionsIndex()
+	}
+	session.mu.Unlock()
+}
+
 func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	sm.mu.RLock()
 	session, ok := sm.sessions[key]

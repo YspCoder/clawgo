@@ -1029,6 +1029,7 @@ func (e *Engine) persistStateLocked() {
 		existingMap[it.ID] = it
 	}
 	items := make([]TaskItem, 0, len(e.state))
+	built := map[string]struct{}{}
 	for _, st := range e.state {
 		status := "todo"
 		switch st.Status {
@@ -1056,6 +1057,7 @@ func (e *Engine) persistStateLocked() {
 		if strings.TrimSpace(source) == "" {
 			source = "memory_todo"
 		}
+		built[st.ID] = struct{}{}
 		items = append(items, TaskItem{
 			ID:              st.ID,
 			ParentTaskID:    prev.ParentTaskID,
@@ -1075,6 +1077,18 @@ func (e *Engine) persistStateLocked() {
 			Attempts:        append([]TaskAttempt(nil), prev.Attempts...),
 			UpdatedAt:       nowRFC3339(),
 		})
+	}
+	for _, old := range existing {
+		if old.ID == "" {
+			continue
+		}
+		if _, ok := built[old.ID]; ok {
+			continue
+		}
+		st := strings.ToLower(strings.TrimSpace(old.Status))
+		if st == "done" || st == "canceled" || st == "paused" {
+			items = append(items, old)
+		}
 	}
 	_ = e.taskStore.Save(items)
 }
