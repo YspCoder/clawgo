@@ -143,6 +143,16 @@ http://<host>:<port>/webui?token=<gateway.token>
 make build-all
 ```
 
+### Linux 专项瘦身构建（不禁用通道）
+
+```bash
+make build-linux-slim
+```
+
+说明（仅 Linux）：
+- 在不禁用任何通道能力前提下，启用 `purego,netgo,osusergo` 与 `CGO_ENABLED=0`，降低体积并减少动态库依赖。
+- 可选叠加 `COMPRESS_BINARY=1`（若安装 upx）做进一步压缩。
+
 默认矩阵：
 - linux/amd64
 - linux/arm64
@@ -157,6 +167,17 @@ make build-all
 ```bash
 make build-all BUILD_TARGETS="linux/amd64 linux/arm64 darwin/arm64 windows/amd64"
 ```
+
+### 极致瘦身构建（目标 <10MB）
+
+```bash
+make build COMPRESS_BINARY=1
+```
+
+说明：
+- 默认已启用 `-trimpath -buildvcs=false -s -w`，可减少路径与符号信息。
+- `COMPRESS_BINARY=1` 时会尝试使用 `upx --best --lzma` 进一步压缩可执行文件。
+- 若环境未安装 `upx`，会自动跳过并给出提示，不影响构建成功。
 
 ### 打包与校验
 

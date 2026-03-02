@@ -163,7 +163,6 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 			return "sessions history unavailable", nil
 		}
 		key, _ := args["key"].(string)
-		key = key
 		if key == "" {
 			return "key is required for history", nil
 		}

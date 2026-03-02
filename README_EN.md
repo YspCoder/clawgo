@@ -143,6 +143,16 @@ Main pages:
 make build-all
 ```
 
+### Linux slim build (without disabling channels)
+
+```bash
+make build-linux-slim
+```
+
+Notes (Linux only):
+- Keeps all channel capabilities while enabling `purego,netgo,osusergo` with `CGO_ENABLED=0` to reduce size and dynamic library coupling.
+- Optionally combine with `COMPRESS_BINARY=1` (if `upx` is installed) for additional compression.
+
 Default matrix:
 - linux/amd64
 - linux/arm64
@@ -157,6 +167,17 @@ Default matrix:
 ```bash
 make build-all BUILD_TARGETS="linux/amd64 linux/arm64 darwin/arm64 windows/amd64"
 ```
+
+### Ultra-slim build (target <10MB)
+
+```bash
+make build COMPRESS_BINARY=1
+```
+
+Notes:
+- Default build now uses `-trimpath -buildvcs=false -s -w` to remove path/symbol overhead.
+- With `COMPRESS_BINARY=1`, the build will try `upx --best --lzma` for further executable compression.
+- If `upx` is unavailable, build still succeeds and prints a warning.
 
 ### Package + checksums
 

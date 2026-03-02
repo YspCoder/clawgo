@@ -1,4 +1,4 @@
-.PHONY: all build build-all package-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts
+.PHONY: all build build-linux-slim build-all package-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts
 
 # Build variables
 BINARY_NAME=clawgo
@@ -15,11 +15,21 @@ EXTRA_LDFLAGS=
 ifeq ($(STRIP_SYMBOLS),1)
 	EXTRA_LDFLAGS+= -s -w
 endif
-LDFLAGS=-ldflags "$(BASE_LDFLAGS)$(EXTRA_LDFLAGS)"
+LDFLAGS=-ldflags "$(BASE_LDFLAGS) $(EXTRA_LDFLAGS)"
 
 # Go variables
 GO?=go
-GOFLAGS?=-v
+GOFLAGS?=
+BUILD_FLAGS?=-trimpath -buildvcs=false
+COMPRESS_BINARY?=0
+UPX_FLAGS?=--best --lzma
+
+# Linux slim build knobs (opt-in, keeps default behavior unchanged)
+LINUX_SLIM_TAGS?=purego,netgo,osusergo
+LINUX_SLIM_CGO?=0
+LINUX_SLIM_LDFLAGS?=-buildid=
+LINUX_SLIM_BUILD_FLAGS?=-trimpath -buildvcs=false -tags "$(LINUX_SLIM_TAGS)"
+LINUX_SLIM_PATH=$(BUILD_DIR)/$(BINARY_NAME)-linux-$(ARCH)-slim
 
 # Cross-platform build matrix (space-separated GOOS/GOARCH pairs)
 BUILD_TARGETS?=linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
@@ -78,9 +88,33 @@ build: sync-embed-workspace
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
 	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
+	$(GO) build $(GOFLAGS) $(BUILD_FLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR); \
+	if [ "$(COMPRESS_BINARY)" = "1" ]; then \
+		if command -v upx >/dev/null 2>&1; then \
+			upx $(UPX_FLAGS) "$(BINARY_PATH)" >/dev/null; \
+			echo "Compressed binary with upx ($(UPX_FLAGS))"; \
+		else \
+			echo "Warning: COMPRESS_BINARY=1 but upx not found, skipping compression"; \
+		fi; \
+	fi
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
+
+## build-linux-slim: Build a Linux-only slim binary (no feature trimming, no channel disabling)
+build-linux-slim: sync-embed-workspace
+	@echo "Building $(BINARY_NAME) slim profile for linux/$(ARCH)..."
+	@mkdir -p $(BUILD_DIR)
+	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
+	CGO_ENABLED=$(LINUX_SLIM_CGO) GOOS=linux GOARCH=$(ARCH) $(GO) build $(GOFLAGS) $(LINUX_SLIM_BUILD_FLAGS) -ldflags "$(BASE_LDFLAGS) $(EXTRA_LDFLAGS) $(LINUX_SLIM_LDFLAGS)" -o $(LINUX_SLIM_PATH) ./$(CMD_DIR); \
+	if [ "$(COMPRESS_BINARY)" = "1" ]; then \
+		if command -v upx >/dev/null 2>&1; then \
+			upx $(UPX_FLAGS) "$(LINUX_SLIM_PATH)" >/dev/null; \
+			echo "Compressed slim binary with upx ($(UPX_FLAGS))"; \
+		else \
+			echo "Warning: COMPRESS_BINARY=1 but upx not found, skipping compression"; \
+		fi; \
+	fi
+	@echo "Build complete: $(LINUX_SLIM_PATH)"
 
 ## build-all: Build clawgo for all configured platforms (override with BUILD_TARGETS="linux/amd64 ...")
 build-all: sync-embed-workspace
@@ -93,7 +127,10 @@ build-all: sync-embed-workspace
 		out="$(BUILD_DIR)/$(BINARY_NAME)-$$goos-$$goarch"; \
 		if [ "$$goos" = "windows" ]; then out="$$out.exe"; fi; \
 		echo " -> $$goos/$$goarch"; \
-		CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch $(GO) build $(GOFLAGS) $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
+		CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch $(GO) build $(GOFLAGS) $(BUILD_FLAGS) $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
+		if [ "$(COMPRESS_BINARY)" = "1" ] && command -v upx >/dev/null 2>&1; then \
+			upx $(UPX_FLAGS) "$$out" >/dev/null; \
+		fi; \
 	done
 	@echo "All builds complete"
 

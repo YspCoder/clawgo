@@ -47,12 +47,55 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Build version: $version (from $raw)"
 
-      - name: Build all platforms
+      - name: Build release binaries (Linux minimal, others default)
         run: |
-          make build-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+          set -euo pipefail
+          mkdir -p build
+          make sync-embed-workspace
+          trap 'make cleanup-embed-workspace' EXIT
+
+          # Build non-Linux targets with default flags.
+          for target in darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            out="build/clawgo-${goos}-${goarch}"
+            if [ "${goos}" = "windows" ]; then out="${out}.exe"; fi
+            CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" go build \
+              -trimpath -buildvcs=false \
+              -ldflags "-X main.version=${{ steps.ver.outputs.version }} -X main.buildTime=$(date +%FT%T%z) -s -w" \
+              -o "${out}" ./cmd/clawgo
+          done
+
+          # Linux targets use slimmer flags without disabling channel capabilities.
+          for arch in amd64 arm64 riscv64; do
+            out="build/clawgo-linux-${arch}"
+            CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build \
+              -trimpath -buildvcs=false -tags "purego,netgo,osusergo" \
+              -ldflags "-X main.version=${{ steps.ver.outputs.version }} -X main.buildTime=$(date +%FT%T%z) -s -w -buildid=" \
+              -o "${out}" ./cmd/clawgo
+          done
 
       - name: Package artifacts
-        run: make package-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+        run: |
+          set -euo pipefail
+          rm -f build/checksums.txt
+          for target in linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            bin="clawgo-${goos}-${goarch}"
+            if [ "${goos}" = "windows" ]; then
+              bin="${bin}.exe"
+              zip -q -j "build/clawgo-${goos}-${goarch}.zip" "build/${bin}"
+            else
+              tar -czf "build/clawgo-${goos}-${goarch}.tar.gz" -C build "${bin}"
+            fi
+          done
+
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd build && sha256sum *.tar.gz *.zip | tee checksums.txt)
+          else
+            (cd build && shasum -a 256 *.tar.gz *.zip | tee checksums.txt)
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
