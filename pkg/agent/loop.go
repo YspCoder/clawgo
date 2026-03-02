@@ -387,9 +387,13 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 
 func (al *AgentLoop) setSessionProvider(sessionKey, provider string) {
 	key := strings.TrimSpace(sessionKey)
-	if key == "" { return }
+	if key == "" {
+		return
+	}
 	provider = strings.TrimSpace(provider)
-	if provider == "" { return }
+	if provider == "" {
+		return
+	}
 	al.providerMu.Lock()
 	al.sessionProvider[key] = provider
 	al.providerMu.Unlock()
@@ -397,7 +401,9 @@ func (al *AgentLoop) setSessionProvider(sessionKey, provider string) {
 
 func (al *AgentLoop) getSessionProvider(sessionKey string) string {
 	key := strings.TrimSpace(sessionKey)
-	if key == "" { return "" }
+	if key == "" {
+		return ""
+	}
 	al.providerMu.RLock()
 	v := al.sessionProvider[key]
 	al.providerMu.RUnlock()
@@ -701,6 +707,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if tool, ok := al.tools.Get("spawn"); ok {
 		if st, ok := tool.(*tools.SpawnTool); ok {
 			st.SetContext(msg.Channel, msg.ChatID)
+		}
+	}
+	if tool, ok := al.tools.Get("remind"); ok {
+		if rt, ok := tool.(*tools.RemindTool); ok {
+			rt.SetContext(msg.Channel, msg.ChatID)
 		}
 	}
 
