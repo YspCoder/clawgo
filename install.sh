@@ -102,8 +102,15 @@ if curl -fSL "$WEBUI_URL" -o "$WEBUI_OUT"; then
   mkdir -p "$WEBUI_TMP"
   tar -xzf "$WEBUI_OUT" -C "$WEBUI_TMP"
 
+  WEBUI_DIST_DIR=""
   if [[ -d "$WEBUI_TMP/dist" ]]; then
-    rsync -a --delete "$WEBUI_TMP/dist/" "$WEBUI_DIR/"
+    WEBUI_DIST_DIR="$WEBUI_TMP/dist"
+  else
+    WEBUI_DIST_DIR="$(find "$WEBUI_TMP" -mindepth 2 -maxdepth 4 -type d -name dist | head -n1)"
+  fi
+
+  if [[ -n "$WEBUI_DIST_DIR" && -d "$WEBUI_DIST_DIR" ]]; then
+    rsync -a --delete "$WEBUI_DIST_DIR/" "$WEBUI_DIR/"
   else
     rsync -a --delete "$WEBUI_TMP/" "$WEBUI_DIR/"
   fi
