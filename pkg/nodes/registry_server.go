@@ -916,7 +916,18 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 				http.Error(w, "clawhub is not installed. please install clawhub first.", http.StatusPreconditionFailed)
 				return
 			}
-			cmd := exec.CommandContext(r.Context(), clawhubPath, "install", name)
+			ignoreSuspicious := false
+			switch v := body["ignore_suspicious"].(type) {
+			case bool:
+				ignoreSuspicious = v
+			case string:
+				ignoreSuspicious = strings.EqualFold(strings.TrimSpace(v), "true") || strings.TrimSpace(v) == "1"
+			}
+			args := []string{"install", name}
+			if ignoreSuspicious {
+				args = append(args, "--force")
+			}
+			cmd := exec.CommandContext(r.Context(), clawhubPath, args...)
 			cmd.Dir = strings.TrimSpace(s.workspacePath)
 			out, err := cmd.CombinedOutput()
 			if err != nil {

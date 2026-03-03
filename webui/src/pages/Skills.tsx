@@ -11,6 +11,7 @@ const Skills: React.FC = () => {
   const ui = useUI();
   const [installName, setInstallName] = useState('');
   const [installingSkill, setInstallingSkill] = useState(false);
+  const [ignoreSuspicious, setIgnoreSuspicious] = useState(false);
   const qp = (k: string, v: string) => `${q}${q ? '&' : '?'}${k}=${encodeURIComponent(v)}`;
 
   const [isFileModalOpen, setIsFileModalOpen] = useState(false);
@@ -76,7 +77,7 @@ const Skills: React.FC = () => {
       const r = await fetch(`/webui/api/skills${q}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'install', name }),
+        body: JSON.stringify({ action: 'install', name, ignore_suspicious: ignoreSuspicious }),
       });
       if (!r.ok) {
         ui.hideLoading();
@@ -190,6 +191,15 @@ const Skills: React.FC = () => {
         <div className="flex items-center gap-2">
           <input disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm disabled:opacity-60" />
           <button disabled={installingSkill} onClick={installSkill} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium">{installingSkill ? t('loading') : t('install')}</button>
+          <label className="flex items-center gap-2 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              checked={ignoreSuspicious}
+              disabled={installingSkill}
+              onChange={(e) => setIgnoreSuspicious(e.target.checked)}
+            />
+            {t('skillsIgnoreSuspicious')}
+          </label>
         </div>
         <div className="flex items-center gap-3">
           <div className={`text-xs px-2 py-1 rounded-md border ${clawhubInstalled ? 'text-emerald-300 border-emerald-700/50 bg-emerald-900/20' : 'text-amber-300 border-amber-700/50 bg-amber-900/20'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
