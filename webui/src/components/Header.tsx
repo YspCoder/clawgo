@@ -47,7 +47,7 @@ const Header: React.FC = () => {
           className="flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 px-3 py-1.5 rounded-lg"
         >
           <Globe className="w-4 h-4" />
-          {i18n.language === 'en' ? '中文' : 'English'}
+          {i18n.language === 'en' ? t('languageZh') : t('languageEn')}
         </button>
       </div>
     </header>

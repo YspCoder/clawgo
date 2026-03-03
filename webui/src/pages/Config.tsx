@@ -26,6 +26,11 @@ const Config: React.FC = () => {
   const [search, setSearch] = useState('');
   const [newProxyName, setNewProxyName] = useState('');
 
+  const configLabels = useMemo(
+    () => t('configLabels', { returnObjects: true }) as Record<string, string>,
+    [t]
+  );
+
   const hotPrefixes = useMemo(() => hotReloadFieldDetails.map((x) => String(x.path || '').replace(/\.\*$/, '')).filter(Boolean), [hotReloadFieldDetails]);
 
   const allTopKeys = useMemo(() => Object.keys(cfg || {}).filter(k => typeof (cfg as any)?.[k] === 'object' && (cfg as any)?.[k] !== null), [cfg]);
@@ -63,7 +68,7 @@ const Config: React.FC = () => {
     const walk = (a: any, b: any, p: string) => {
       const keys = new Set([...(a && typeof a === 'object' ? Object.keys(a) : []), ...(b && typeof b === 'object' ? Object.keys(b) : [])]);
       if (keys.size === 0) {
-        if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ path: p || '(root)', before: a, after: b });
+        if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ path: p || t('configRoot'), before: a, after: b });
         return;
       }
       keys.forEach((k) => {
@@ -193,7 +198,7 @@ const Config: React.FC = () => {
                     onClick={() => setSelectedTop(k)}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTop === k ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'text-zinc-300 hover:bg-zinc-800/60'}`}
                   >
-                    {k}
+                    {configLabels[k] || k}
                   </button>
                 ))}
               </div>
@@ -216,7 +221,7 @@ const Config: React.FC = () => {
                         <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
                         <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
                         <input value={String(p?.protocol || '')} onChange={(e)=>updateProxyField(name, 'protocol', e.target.value)} placeholder={t('configLabels.protocol')} className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
-                        <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')},a,b`} className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`} className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
                         <button onClick={()=>removeProxy(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
                       </div>
                     ))}
@@ -229,7 +234,7 @@ const Config: React.FC = () => {
               {activeTop ? (
                 <RecursiveConfig
                   data={(cfg as any)?.[activeTop] || {}}
-                  labels={t('configLabels', { returnObjects: true }) as Record<string, string>}
+                  labels={configLabels}
                   path={activeTop}
                   hotPaths={hotReloadFieldDetails.map((x) => x.path)}
                   onlyHot={hotOnly}
