@@ -130,89 +130,90 @@ if [[ "$MIGRATE" == "y" || "$MIGRATE" == "Y" ]]; then
   echo "2. Remote migration"
   read -p "Enter your choice (1 or 2): " MIGRATION_TYPE
 
-  if [[ "$MIGRATION_TYPE" == "1" ]]; then
-    echo "Proceeding with local migration..."
+  case "$MIGRATION_TYPE" in
+    1)
+      echo "Proceeding with local migration..."
 
-    # Default paths for local migration
-    SRC_DEFAULT="$HOME/.openclaw/workspace"
-    DST_DEFAULT="$HOME/.clawgo/workspace"
-    SRC="${SRC_DEFAULT}"
-    DST="${DST_DEFAULT}"
+      # Default paths for local migration
+      SRC_DEFAULT="$HOME/.openclaw/workspace"
+      DST_DEFAULT="$HOME/.clawgo/workspace"
+      SRC="${SRC_DEFAULT}"
+      DST="${DST_DEFAULT}"
 
-    # Prompt user about overwriting existing data
-    echo "Warning: Migration will overwrite the contents of $DST"
-    read -p "Are you sure you want to continue? (y/n): " CONFIRM
-    if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-      echo "Migration canceled."
-      exit 0
-    fi
-
-    echo "[INFO] source: $SRC"
-    echo "[INFO] target: $DST"
-
-    mkdir -p "$DST" "$DST/memory"
-    TS="$(date -u +%Y%m%dT%H%M%SZ)"
-    BACKUP_DIR="$DST/.migration-backup-$TS"
-    mkdir -p "$BACKUP_DIR"
-
-    # Backup existing key files if present
-    for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
-      if [[ -f "$DST/$f" ]]; then
-        cp -a "$DST/$f" "$BACKUP_DIR/$f"
+      # Prompt user about overwriting existing data
+      echo "Warning: Migration will overwrite the contents of $DST"
+      read -p "Are you sure you want to continue? (y/n): " CONFIRM
+      if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+        echo "Migration canceled."
+        exit 0
       fi
-    done
-    if [[ -d "$DST/memory" ]]; then
-      cp -a "$DST/memory" "$BACKUP_DIR/memory" || true
-    fi
 
-    # Migrate core persona/context files
-    for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
-      if [[ -f "$SRC/$f" ]]; then
-        cp -a "$SRC/$f" "$DST/$f"
-        echo "[OK] migrated $f"
-      fi
-    done
+      echo "[INFO] source: $SRC"
+      echo "[INFO] target: $DST"
 
-    # Merge memory directory
-    if [[ -d "$SRC/memory" ]]; then
-      rsync -a "$SRC/memory/" "$DST/memory/"
-      echo "[OK] migrated memory/"
-    fi
+      mkdir -p "$DST" "$DST/memory"
+      TS="$(date -u +%Y%m%dT%H%M%SZ)"
+      BACKUP_DIR="$DST/.migration-backup-$TS"
+      mkdir -p "$BACKUP_DIR"
 
-    # Optional: sync into embedded workspace template used by clawgo builds
-    echo "[INFO] Syncing embed workspace template..."
-    if [[ -d "$DST" ]]; then
-      mkdir -p "$DST"
+      # Backup existing key files if present
       for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
         if [[ -f "$DST/$f" ]]; then
-          cp -a "$DST/$f" "$DST/$f"
+          cp -a "$DST/$f" "$BACKUP_DIR/$f"
         fi
       done
       if [[ -d "$DST/memory" ]]; then
-        mkdir -p "$DST/memory"
-        rsync -a "$DST/memory/" "$DST/memory/"
+        cp -a "$DST/memory" "$BACKUP_DIR/memory" || true
       fi
-      echo "[OK] synced embed workspace template"
-    fi
 
-    echo "[DONE] migration complete"
+      # Migrate core persona/context files
+      for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
+        if [[ -f "$SRC/$f" ]]; then
+          cp -a "$SRC/$f" "$DST/$f"
+          echo "[OK] migrated $f"
+        fi
+      done
 
-  elif [[ "$MIGRATION_TYPE" == "2" ]]; then
-    echo "Proceeding with remote migration..."
+      # Merge memory directory
+      if [[ -d "$SRC/memory" ]]; then
+        rsync -a "$SRC/memory/" "$DST/memory/"
+        echo "[OK] migrated memory/"
+      fi
 
-    read -p "Enter remote host (e.g., user@hostname): " REMOTE_HOST
-    read -p "Enter remote port (default 22): " REMOTE_PORT
-    REMOTE_PORT="${REMOTE_PORT:-22}"
-    read -sp "Enter remote password: " REMOTE_PASS
-    echo
+      # Optional: sync into embedded workspace template used by clawgo builds
+      echo "[INFO] Syncing embed workspace template..."
+      if [[ -d "$DST" ]]; then
+        mkdir -p "$DST"
+        for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
+          if [[ -f "$DST/$f" ]]; then
+            cp -a "$DST/$f" "$DST/$f"
+          fi
+        done
+        if [[ -d "$DST/memory" ]]; then
+          mkdir -p "$DST/memory"
+          rsync -a "$DST/memory/" "$DST/memory/"
+        fi
+        echo "[OK] synced embed workspace template"
+      fi
 
-    # Create a temporary SSH key for non-interactive SSH authentication (assuming sshpass is installed)
-    SSH_KEY=$(mktemp)
-    sshpass -p "$REMOTE_PASS" ssh-copy-id -i "$SSH_KEY" "$REMOTE_HOST -p $REMOTE_PORT"
+      echo "[DONE] migration complete"
+      ;;
+    2)
+      echo "Proceeding with remote migration..."
 
-    # Prepare migration script
-    MIGRATION_SCRIPT="$TMPDIR/openclaw2clawgo.sh"
-    cat << 'EOF' > "$MIGRATION_SCRIPT"
+      read -p "Enter remote host (e.g., user@hostname): " REMOTE_HOST
+      read -p "Enter remote port (default 22): " REMOTE_PORT
+      REMOTE_PORT="${REMOTE_PORT:-22}"
+      read -sp "Enter remote password: " REMOTE_PASS
+      echo
+
+      # Create a temporary SSH key for non-interactive SSH authentication (assuming sshpass is installed)
+      SSH_KEY=$(mktemp)
+      sshpass -p "$REMOTE_PASS" ssh-copy-id -i "$SSH_KEY" -p "$REMOTE_PORT" "$REMOTE_HOST"
+
+      # Prepare migration script
+      MIGRATION_SCRIPT="$TMPDIR/openclaw2clawgo.sh"
+      cat << 'EOF' > "$MIGRATION_SCRIPT"
 #!/bin/bash
 set -e
 
@@ -256,15 +257,16 @@ fi
 echo "[DONE] migration complete"
 EOF
 
-    # Copy migration script to remote server and execute it
-    sshpass -p "$REMOTE_PASS" scp -P "$REMOTE_PORT" "$MIGRATION_SCRIPT" "$REMOTE_HOST:/tmp/openclaw2clawgo.sh"
-    sshpass -p "$REMOTE_PASS" ssh -p "$REMOTE_PORT" "$REMOTE_HOST" "bash /tmp/openclaw2clawgo.sh"
+      # Copy migration script to remote server and execute it
+      sshpass -p "$REMOTE_PASS" scp -P "$REMOTE_PORT" "$MIGRATION_SCRIPT" "$REMOTE_HOST:/tmp/openclaw2clawgo.sh"
+      sshpass -p "$REMOTE_PASS" ssh -p "$REMOTE_PORT" "$REMOTE_HOST" "bash /tmp/openclaw2clawgo.sh"
 
-    echo "[INFO] Remote migration completed."
-
-  else
-    echo "Invalid choice. Skipping migration."
-  fi
+      echo "[INFO] Remote migration completed."
+      ;;
+    *)
+      echo "Invalid choice. Skipping migration."
+      ;;
+  esac
 fi
 
 echo "Cleaning up..."
