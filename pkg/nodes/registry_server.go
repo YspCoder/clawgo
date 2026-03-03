@@ -795,7 +795,9 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		seenDirs := map[string]struct{}{}
 		seenSkills := map[string]struct{}{}
 		items := make([]skillItem, 0)
-		checkUpdates := strings.TrimSpace(r.URL.Query().Get("check_updates")) != "0"
+		// Default off to avoid hammering clawhub search API on each UI refresh.
+		// Enable explicitly with ?check_updates=1 when needed.
+		checkUpdates := strings.TrimSpace(r.URL.Query().Get("check_updates")) == "1"
 
 		for _, dir := range candDirs {
 			dir = strings.TrimSpace(dir)
@@ -918,7 +920,13 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 			cmd.Dir = strings.TrimSpace(s.workspacePath)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
-				http.Error(w, fmt.Sprintf("install failed: %v\n%s", err, string(out)), http.StatusInternalServerError)
+				outText := string(out)
+				lower := strings.ToLower(outText)
+				if strings.Contains(lower, "rate limit exceeded") || strings.Contains(lower, "too many requests") {
+					http.Error(w, fmt.Sprintf("clawhub rate limit exceeded. please retry later or configure auth token.\n%s", outText), http.StatusTooManyRequests)
+					return
+				}
+				http.Error(w, fmt.Sprintf("install failed: %v\n%s", err, outText), http.StatusInternalServerError)
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "installed": name, "output": string(out)})

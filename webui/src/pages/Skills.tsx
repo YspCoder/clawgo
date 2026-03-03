@@ -10,6 +10,7 @@ const Skills: React.FC = () => {
   const { skills, refreshSkills, q, clawhubInstalled, clawhubPath } = useAppContext();
   const ui = useUI();
   const [installName, setInstallName] = useState('');
+  const [installingSkill, setInstallingSkill] = useState(false);
   const qp = (k: string, v: string) => `${q}${q ? '&' : '?'}${k}=${encodeURIComponent(v)}`;
 
   const [isFileModalOpen, setIsFileModalOpen] = useState(false);
@@ -47,35 +48,49 @@ const Skills: React.FC = () => {
       });
       const text = await r.text();
       if (!r.ok) {
+        ui.hideLoading();
         await ui.notify({ title: t('skillsInstallFailedTitle'), message: text || t('skillsInstallFailedMessage') });
         return false;
       }
+      ui.hideLoading();
       await ui.notify({ title: t('skillsInstallDoneTitle'), message: t('skillsInstallDoneMessage') });
       await refreshSkills();
       return true;
     } finally {
+      // loading is explicitly closed before notify, keep this as fallback.
       ui.hideLoading();
     }
   }
 
   async function installSkill() {
+    if (installingSkill) return;
     const name = installName.trim();
     if (!name) return;
 
-    const ready = await installClawHubIfNeeded();
-    if (!ready) return;
+    setInstallingSkill(true);
+    ui.showLoading(t('skillsInstallingSkill'));
+    try {
+      const ready = await installClawHubIfNeeded();
+      if (!ready) return;
 
-    const r = await fetch(`/webui/api/skills${q}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'install', name }),
-    });
-    if (!r.ok) {
-      await ui.notify({ title: t('requestFailed'), message: await r.text() });
-      return;
+      const r = await fetch(`/webui/api/skills${q}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'install', name }),
+      });
+      if (!r.ok) {
+        ui.hideLoading();
+        await ui.notify({ title: t('requestFailed'), message: await r.text() });
+        return;
+      }
+      setInstallName('');
+      await refreshSkills();
+      ui.hideLoading();
+      await ui.notify({ title: t('skillsInstallSkillDoneTitle'), message: t('skillsInstallSkillDoneMessage', { name }) });
+    } finally {
+      ui.hideLoading();
+      setInstallingSkill(false);
     }
-    setInstallName('');
-    await refreshSkills();
   }
 
   async function onAddSkillClick() {
@@ -173,8 +188,8 @@ const Skills: React.FC = () => {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold tracking-tight">{t('skills')}</h1>
         <div className="flex items-center gap-2">
-          <input value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm" />
-          <button onClick={installSkill} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">{t('install')}</button>
+          <input disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm disabled:opacity-60" />
+          <button disabled={installingSkill} onClick={installSkill} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium">{installingSkill ? t('loading') : t('install')}</button>
         </div>
         <div className="flex items-center gap-3">
           <div className={`text-xs px-2 py-1 rounded-md border ${clawhubInstalled ? 'text-emerald-300 border-emerald-700/50 bg-emerald-900/20' : 'text-amber-300 border-amber-700/50 bg-amber-900/20'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
