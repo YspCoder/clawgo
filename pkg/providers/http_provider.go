@@ -51,7 +51,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 		return nil, fmt.Errorf("API base not configured")
 	}
 
-	logger.DebugCF("provider", "HTTP chat request", map[string]interface{}{
+	logger.DebugCF("provider", logger.C0133, map[string]interface{}{
 		"api_base":       p.apiBase,
 		"protocol":       p.protocol,
 		"model":          model,
@@ -421,7 +421,7 @@ func (p *HTTPProvider) callChatCompletionsStream(ctx context.Context, messages [
 	}
 	body, _ := json.Marshal(map[string]interface{}{
 		"choices": []map[string]interface{}{{
-			"message": map[string]interface{}{"content": fullText.String()},
+			"message":       map[string]interface{}{"content": fullText.String()},
 			"finish_reason": "stop",
 		}},
 	})

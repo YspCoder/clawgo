@@ -17,14 +17,14 @@ import (
 type AlertFunc func(msg string)
 
 type Service struct {
-	cfgPath    string
-	workspace  string
-	interval   time.Duration
-	autoHeal   bool
-	onAlert    AlertFunc
-	runner     *lifecycle.LoopRunner
-	mu         sync.RWMutex
-	lastAlerts map[string]time.Time
+	cfgPath         string
+	workspace       string
+	interval        time.Duration
+	autoHeal        bool
+	onAlert         AlertFunc
+	runner          *lifecycle.LoopRunner
+	mu              sync.RWMutex
+	lastAlerts      map[string]time.Time
 	mgr             *channels.Manager
 	healingChannels map[string]bool
 }
@@ -34,13 +34,13 @@ func NewService(cfgPath, workspace string, intervalSec int, autoHeal bool, onAle
 		intervalSec = 60
 	}
 	return &Service{
-		cfgPath:    cfgPath,
-		workspace:  workspace,
-		interval:   time.Duration(intervalSec) * time.Second,
-		autoHeal:   autoHeal,
-		onAlert:    onAlert,
-		runner:     lifecycle.NewLoopRunner(),
-		lastAlerts: map[string]time.Time{},
+		cfgPath:         cfgPath,
+		workspace:       workspace,
+		interval:        time.Duration(intervalSec) * time.Second,
+		autoHeal:        autoHeal,
+		onAlert:         onAlert,
+		runner:          lifecycle.NewLoopRunner(),
+		lastAlerts:      map[string]time.Time{},
 		healingChannels: map[string]bool{},
 	}
 }
@@ -53,7 +53,7 @@ func (s *Service) Start() {
 	if !s.runner.Start(s.loop) {
 		return
 	}
-	logger.InfoCF("sentinel", "Sentinel started", map[string]interface{}{
+	logger.InfoCF("sentinel", logger.C0134, map[string]interface{}{
 		"interval":  s.interval.String(),
 		"auto_heal": s.autoHeal,
 	})
@@ -63,7 +63,7 @@ func (s *Service) Stop() {
 	if !s.runner.Stop() {
 		return
 	}
-	logger.InfoC("sentinel", "Sentinel stopped")
+	logger.InfoC("sentinel", logger.C0135)
 }
 
 func (s *Service) loop(stopCh <-chan struct{}) {
@@ -124,12 +124,12 @@ func (s *Service) checkChannels() []string {
 						delete(s.healingChannels, n)
 						s.mu.Unlock()
 					}()
-					logger.InfoCF("sentinel", "Attempting auto-heal for channel", map[string]interface{}{"channel": n})
+					logger.InfoCF("sentinel", logger.C0136, map[string]interface{}{"channel": n})
 					// Use a fresh context for restart to avoid being canceled by sentinel loop
 					if rErr := s.mgr.RestartChannel(context.Background(), n); rErr != nil {
-						logger.ErrorCF("sentinel", "Auto-heal restart failed", map[string]interface{}{"channel": n, "error": rErr.Error()})
+						logger.ErrorCF("sentinel", logger.C0137, map[string]interface{}{"channel": n, "error": rErr.Error()})
 					} else {
-						logger.InfoCF("sentinel", "Auto-heal successful", map[string]interface{}{"channel": n})
+						logger.InfoCF("sentinel", logger.C0138, map[string]interface{}{"channel": n})
 					}
 				}(name)
 			}
@@ -210,7 +210,7 @@ func (s *Service) alert(msg string) {
 	s.lastAlerts[msg] = now
 	s.mu.Unlock()
 
-	logger.WarnCF("sentinel", msg, nil)
+	logger.WarnCF("sentinel", logger.C0170, map[string]interface{}{"alert": msg})
 	if s.onAlert != nil {
 		s.onAlert(msg)
 	}

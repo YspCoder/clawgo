@@ -40,7 +40,7 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 }
 
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) (string, error) {
-	logger.InfoCF("tool", "Tool execution started",
+	logger.InfoCF("tool", logger.C0164,
 		map[string]interface{}{
 			"tool": name,
 			"args": args,
@@ -48,7 +48,7 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 
 	tool, ok := r.Get(name)
 	if !ok {
-		logger.ErrorCF("tool", "Tool not found",
+		logger.ErrorCF("tool", logger.C0165,
 			map[string]interface{}{
 				"tool": name,
 			})
@@ -60,14 +60,14 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 	duration := time.Since(start)
 
 	if err != nil {
-		logger.ErrorCF("tool", "Tool execution failed",
+		logger.ErrorCF("tool", logger.C0166,
 			map[string]interface{}{
 				"tool":            name,
 				"duration":        duration.Milliseconds(),
 				logger.FieldError: err.Error(),
 			})
 	} else {
-		logger.InfoCF("tool", "Tool execution completed",
+		logger.InfoCF("tool", logger.C0167,
 			map[string]interface{}{
 				"tool":                          name,
 				"duration_ms":                   duration.Milliseconds(),

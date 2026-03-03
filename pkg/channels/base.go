@@ -129,7 +129,7 @@ func messageDigest(s string) string {
 
 func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []string, metadata map[string]string) {
 	if !c.IsAllowed(senderID) {
-		logger.WarnCF("channels", "Message rejected by allowlist", map[string]interface{}{
+		logger.WarnCF("channels", logger.C0001, map[string]interface{}{
 			logger.FieldChannel:  c.name,
 			logger.FieldSenderID: senderID,
 			logger.FieldChatID:   chatID,
@@ -140,10 +140,10 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 	if metadata != nil {
 		if messageID := strings.TrimSpace(metadata["message_id"]); messageID != "" {
 			if c.seenRecently(c.name+":"+messageID, inboundMessageIDDedupeTTL) {
-				logger.WarnCF("channels", "Duplicate inbound message skipped", map[string]interface{}{
+				logger.WarnCF("channels", logger.C0002, map[string]interface{}{
 					logger.FieldChannel: c.name,
-					"message_id":      messageID,
-					logger.FieldChatID: chatID,
+					"message_id":        messageID,
+					logger.FieldChatID:  chatID,
 				})
 				return
 			}
@@ -152,7 +152,7 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 	// Fallback dedupe when platform omits/changes message_id (short window, same sender/chat/content).
 	contentKey := c.name + ":content:" + chatID + ":" + senderID + ":" + messageDigest(content)
 	if c.seenRecently(contentKey, inboundContentDedupeTTL) {
-		logger.WarnCF("channels", "Duplicate inbound content skipped", map[string]interface{}{
+		logger.WarnCF("channels", logger.C0003, map[string]interface{}{
 			logger.FieldChannel: c.name,
 			logger.FieldChatID:  chatID,
 		})

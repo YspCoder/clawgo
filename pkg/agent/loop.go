@@ -326,7 +326,7 @@ func (al *AgentLoop) buildSessionShards(ctx context.Context) []chan bus.InboundM
 			}
 		}(shards[i])
 	}
-	logger.InfoCF("agent", "Session-sharded dispatcher enabled", map[string]interface{}{"shards": count})
+	logger.InfoCF("agent", logger.C0149, map[string]interface{}{"shards": count})
 	return shards
 }
 
@@ -377,7 +377,7 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 			al.ekg.Record(ekg.Event{Session: msg.SessionKey, Channel: msg.Channel, Source: "provider_fallback", Status: st, Provider: name, Model: al.model, ErrSig: errSig, Log: lg})
 		}
 		if err == nil {
-			logger.WarnCF("agent", "LLM fallback provider switched", map[string]interface{}{"provider": name})
+			logger.WarnCF("agent", logger.C0150, map[string]interface{}{"provider": name})
 			return resp, name, nil
 		}
 		lastErr = err
@@ -655,12 +655,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 	// Add message preview to log
 	preview := truncate(msg.Content, 80)
-	logger.InfoCF("agent", fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, preview),
+	logger.InfoCF("agent", logger.C0171,
 		map[string]interface{}{
 			"channel":     msg.Channel,
 			"chat_id":     msg.ChatID,
 			"sender_id":   msg.SenderID,
 			"session_key": msg.SessionKey,
+			"preview":     preview,
 		})
 
 	// Route system messages to processSystemMessage
@@ -769,7 +770,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	for iteration < maxAllowed {
 		iteration++
 
-		logger.DebugCF("agent", "LLM iteration",
+		logger.DebugCF("agent", logger.C0151,
 			map[string]interface{}{
 				"iteration": iteration,
 				"max":       al.maxIterations,
@@ -789,7 +790,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 
 		// Log LLM request details
-		logger.DebugCF("agent", "LLM request",
+		logger.DebugCF("agent", logger.C0152,
 			map[string]interface{}{
 				"iteration":         iteration,
 				"model":             al.model,
@@ -801,7 +802,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			})
 
 		// Log full messages (detailed)
-		logger.DebugCF("agent", "Full LLM request",
+		logger.DebugCF("agent", logger.C0153,
 			map[string]interface{}{
 				"iteration":     iteration,
 				"messages_json": formatMessagesForLog(messages),
@@ -852,9 +853,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			errText := strings.ToLower(err.Error())
 			if strings.Contains(errText, "no tool call found for function call output") {
 				removed := al.sessions.PurgeOrphanToolOutputs(msg.SessionKey)
-				logger.WarnCF("agent", "Purged orphan tool outputs after provider pairing error", map[string]interface{}{"session_key": msg.SessionKey, "removed": removed})
+				logger.WarnCF("agent", logger.C0154, map[string]interface{}{"session_key": msg.SessionKey, "removed": removed})
 			}
-			logger.ErrorCF("agent", "LLM call failed",
+			logger.ErrorCF("agent", logger.C0155,
 				map[string]interface{}{
 					"iteration": iteration,
 					"error":     err.Error(),
@@ -864,7 +865,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
-			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
+			logger.InfoCF("agent", logger.C0156,
 				map[string]interface{}{
 					"iteration":     iteration,
 					"content_chars": len(finalContent),
@@ -876,7 +877,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		for _, tc := range response.ToolCalls {
 			toolNames = append(toolNames, tc.Name)
 		}
-		logger.InfoCF("agent", "LLM requested tool calls",
+		logger.InfoCF("agent", logger.C0157,
 			map[string]interface{}{
 				"tools":     toolNames,
 				"count":     len(toolNames),
@@ -918,9 +919,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			// Log tool call with arguments preview
 			argsJSON, _ := json.Marshal(tc.Arguments)
 			argsPreview := truncate(string(argsJSON), 200)
-			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
+			logger.InfoCF("agent", logger.C0172,
 				map[string]interface{}{
 					"tool":      tc.Name,
+					"args":      argsPreview,
 					"iteration": iteration,
 				})
 
@@ -996,8 +998,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Log response preview (original content)
 	responsePreview := truncate(finalContent, 120)
-	logger.InfoCF("agent", fmt.Sprintf("Response to %s:%s: %s", msg.Channel, msg.SenderID, responsePreview),
+	logger.InfoCF("agent", logger.C0173,
 		map[string]interface{}{
+			"channel":      msg.Channel,
+			"sender_id":    msg.SenderID,
+			"preview":      responsePreview,
 			"iterations":   iteration,
 			"final_length": len(finalContent),
 			"user_length":  len(userContent),
@@ -1030,7 +1035,7 @@ func (al *AgentLoop) appendDailySummaryLog(msg bus.InboundMessage, response stri
 		truncate(strings.ReplaceAll(respText, "\n", " "), 220),
 	)
 	if err := ms.AppendToday(line); err != nil {
-		logger.WarnCF("agent", "append daily summary log failed", map[string]interface{}{logger.FieldError: err.Error()})
+		logger.WarnCF("agent", logger.C0158, map[string]interface{}{logger.FieldError: err.Error()})
 	}
 }
 
@@ -1089,7 +1094,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		return "", fmt.Errorf("processSystemMessage called with non-system message channel: %s", msg.Channel)
 	}
 
-	logger.InfoCF("agent", "Processing system message",
+	logger.InfoCF("agent", logger.C0159,
 		map[string]interface{}{
 			"sender_id": msg.SenderID,
 			"chat_id":   msg.ChatID,
@@ -1158,7 +1163,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		}
 
 		// Log LLM request details
-		logger.DebugCF("agent", "LLM request",
+		logger.DebugCF("agent", logger.C0152,
 			map[string]interface{}{
 				"iteration":         iteration,
 				"model":             al.model,
@@ -1170,7 +1175,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			})
 
 		// Log full messages (detailed)
-		logger.DebugCF("agent", "Full LLM request",
+		logger.DebugCF("agent", logger.C0153,
 			map[string]interface{}{
 				"iteration":     iteration,
 				"messages_json": formatMessagesForLog(messages),
@@ -1198,7 +1203,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			errText := strings.ToLower(err.Error())
 			if strings.Contains(errText, "no tool call found for function call output") {
 				removed := al.sessions.PurgeOrphanToolOutputs(sessionKey)
-				logger.WarnCF("agent", "Purged orphan tool outputs after provider pairing error (system)", map[string]interface{}{"session_key": sessionKey, "removed": removed})
+				logger.WarnCF("agent", logger.C0160, map[string]interface{}{"session_key": sessionKey, "removed": removed})
 				if removed > 0 {
 					// Rebuild context from cleaned history and retry current iteration.
 					history = al.sessions.GetHistory(sessionKey)
@@ -1225,11 +1230,11 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 						originChatID,
 						responseLang,
 					)
-					logger.WarnCF("agent", "Heartbeat session reset after repeated provider pairing error", map[string]interface{}{"session_key": sessionKey})
+					logger.WarnCF("agent", logger.C0161, map[string]interface{}{"session_key": sessionKey})
 					continue
 				}
 			}
-			logger.ErrorCF("agent", "LLM call failed in system message",
+			logger.ErrorCF("agent", logger.C0162,
 				map[string]interface{}{
 					"iteration": iteration,
 					"error":     err.Error(),
@@ -1297,7 +1302,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 	al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
 
-	logger.InfoCF("agent", "System message processing completed",
+	logger.InfoCF("agent", logger.C0163,
 		map[string]interface{}{
 			"iterations":   iteration,
 			"final_length": len(finalContent),

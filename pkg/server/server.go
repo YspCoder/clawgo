@@ -32,16 +32,16 @@ func (s *Server) Start() error {
 		Handler: s.withCORS(mux),
 	}
 
-	logger.InfoCF("server", "Starting HTTP server", map[string]interface{}{
+	logger.InfoCF("server", logger.C0139, map[string]interface{}{
 		"addr": addr,
 	})
 
 	// Check/log indicating it's ready for reverse proxying (per requirement)
-	logger.InfoC("server", "Server ready for reverse proxying")
+	logger.InfoC("server", logger.C0140)
 
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.ErrorCF("server", "HTTP server failed", map[string]interface{}{
+			logger.ErrorCF("server", logger.C0141, map[string]interface{}{
 				logger.FieldError: err.Error(),
 			})
 		}
@@ -52,7 +52,7 @@ func (s *Server) Start() error {
 
 func (s *Server) Stop(ctx context.Context) error {
 	if s.server != nil {
-		logger.InfoC("server", "Stopping HTTP server")
+		logger.InfoC("server", logger.C0142)
 		return s.server.Shutdown(ctx)
 	}
 	return nil

@@ -33,15 +33,15 @@ const (
 
 type TelegramChannel struct {
 	*BaseChannel
-	bot          *telego.Bot
-	config       config.TelegramConfig
-	chatIDs      map[string]int64
-	chatIDsMu    sync.RWMutex
-	updates      <-chan telego.Update
-	runCancel    cancelGuard
-	handleSem    chan struct{}
-	handleWG     sync.WaitGroup
-	botUsername  string
+	bot         *telego.Bot
+	config      config.TelegramConfig
+	chatIDs     map[string]int64
+	chatIDsMu   sync.RWMutex
+	updates     <-chan telego.Update
+	runCancel   cancelGuard
+	handleSem   chan struct{}
+	handleWG    sync.WaitGroup
+	botUsername string
 }
 
 func (c *TelegramChannel) SupportsAction(action string) bool {
@@ -62,11 +62,11 @@ func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*Telegr
 	base := NewBaseChannel("telegram", cfg, bus, cfg.AllowFrom)
 
 	return &TelegramChannel{
-		BaseChannel:  base,
-		bot:          bot,
-		config:       cfg,
-		chatIDs:   make(map[string]int64),
-		handleSem: make(chan struct{}, telegramMaxConcurrentHandlers),
+		BaseChannel: base,
+		bot:         bot,
+		config:      cfg,
+		chatIDs:     make(map[string]int64),
+		handleSem:   make(chan struct{}, telegramMaxConcurrentHandlers),
 	}, nil
 }
 
@@ -91,7 +91,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	if c.IsRunning() {
 		return nil
 	}
-	logger.InfoC("telegram", "Starting Telegram bot (polling mode)")
+	logger.InfoC("telegram", logger.C0054)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	c.runCancel.set(cancel)
@@ -111,7 +111,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to get bot info: %w", err)
 	}
 	c.botUsername = strings.ToLower(strings.TrimSpace(botInfo.Username))
-	logger.InfoCF("telegram", "Telegram bot connected", map[string]interface{}{
+	logger.InfoCF("telegram", logger.C0055, map[string]interface{}{
 		"username": botInfo.Username,
 	})
 
@@ -122,7 +122,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 				return
 			case update, ok := <-updates:
 				if !ok {
-					logger.WarnC("telegram", "Updates channel closed unexpectedly, attempting to restart polling...")
+					logger.WarnC("telegram", logger.C0056)
 					c.setRunning(false)
 
 					select {
@@ -133,7 +133,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 					newUpdates, err := c.bot.UpdatesViaLongPolling(runCtx, nil)
 					if err != nil {
-						logger.ErrorCF("telegram", "Failed to restart updates polling", map[string]interface{}{
+						logger.ErrorCF("telegram", logger.C0057, map[string]interface{}{
 							logger.FieldError: err.Error(),
 						})
 						continue
@@ -142,7 +142,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 					updates = newUpdates
 					c.updates = newUpdates
 					c.setRunning(true)
-					logger.InfoC("telegram", "Updates polling restarted successfully")
+					logger.InfoC("telegram", logger.C0058)
 					continue
 				}
 				if update.Message != nil {
@@ -161,7 +161,7 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	if !c.IsRunning() {
 		return nil
 	}
-	logger.InfoC("telegram", "Stopping Telegram bot")
+	logger.InfoC("telegram", logger.C0059)
 	c.setRunning(false)
 	c.runCancel.cancelAndClear()
 
@@ -173,7 +173,7 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	select {
 	case <-done:
 	case <-time.After(telegramStopWaitHandlersPeriod):
-		logger.WarnC("telegram", "Timeout waiting for telegram message handlers to stop")
+		logger.WarnC("telegram", logger.C0060)
 	}
 
 	return nil
@@ -195,7 +195,7 @@ func (c *TelegramChannel) dispatchHandleMessage(runCtx context.Context, message 
 		defer func() { <-c.handleSem }()
 		defer func() {
 			if r := recover(); r != nil {
-				logger.ErrorCF("telegram", "Recovered panic in telegram message handler", map[string]interface{}{
+				logger.ErrorCF("telegram", logger.C0061, map[string]interface{}{
 					"panic": fmt.Sprintf("%v", r),
 				})
 			}
@@ -219,7 +219,7 @@ func (c *TelegramChannel) handleCallbackQuery(ctx context.Context, query *telego
 	})
 	cancel()
 
-	logger.InfoCF("telegram", "Callback query received", map[string]interface{}{
+	logger.InfoCF("telegram", logger.C0062, map[string]interface{}{
 		"sender_id": senderID,
 		"data":      query.Data,
 	})
@@ -308,7 +308,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	cancelSend()
 
 	if err != nil {
-		logger.WarnCF("telegram", "HTML parse failed, fallback to plain text", map[string]interface{}{
+		logger.WarnCF("telegram", logger.C0063, map[string]interface{}{
 			logger.FieldError: err.Error(),
 		})
 		plain := plainTextFromTelegramHTML(htmlContent)
@@ -472,7 +472,7 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 		return
 	}
 	if user.IsBot {
-		logger.DebugCF("telegram", "Ignoring bot-originated message", map[string]interface{}{
+		logger.DebugCF("telegram", logger.C0064, map[string]interface{}{
 			"user_id": user.ID,
 		})
 		return
@@ -549,27 +549,27 @@ func (c *TelegramChannel) handleMessage(runCtx context.Context, message *telego.
 	}
 
 	if !c.isAllowedChat(chatID, message.Chat.Type) {
-		logger.WarnCF("telegram", "Telegram message rejected by chat allowlist", map[string]interface{}{
+		logger.WarnCF("telegram", logger.C0065, map[string]interface{}{
 			logger.FieldSenderID: senderID,
 			logger.FieldChatID:   chatID,
 		})
 		return
 	}
 	if !c.shouldHandleGroupMessage(message, content) {
-		logger.DebugCF("telegram", "Ignoring group message without mention/command", map[string]interface{}{
+		logger.DebugCF("telegram", logger.C0048, map[string]interface{}{
 			logger.FieldSenderID: senderID,
 			logger.FieldChatID:   chatID,
 		})
 		return
 	}
 
-	logger.InfoCF("telegram", "Telegram message received", map[string]interface{}{
+	logger.InfoCF("telegram", logger.C0066, map[string]interface{}{
 		logger.FieldSenderID: senderID,
 		logger.FieldPreview:  truncateString(content, 50),
 	})
 
 	if !c.IsAllowed(senderID) {
-		logger.WarnCF("telegram", "Telegram message rejected by allowlist", map[string]interface{}{
+		logger.WarnCF("telegram", logger.C0067, map[string]interface{}{
 			logger.FieldSenderID: senderID,
 			logger.FieldChatID:   chatID,
 		})
@@ -632,7 +632,6 @@ func min(a, b int) int {
 	}
 	return b
 }
-
 
 func splitTelegramMarkdown(s string, maxRunes int) []string {
 	if s == "" {

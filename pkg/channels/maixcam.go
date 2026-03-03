@@ -38,7 +38,7 @@ func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamC
 }
 
 func (c *MaixCamChannel) Start(ctx context.Context) error {
-	logger.InfoC("maixcam", "Starting MaixCam channel server")
+	logger.InfoC("maixcam", logger.C0079)
 
 	addr := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
 	listener, err := net.Listen("tcp", addr)
@@ -49,7 +49,7 @@ func (c *MaixCamChannel) Start(ctx context.Context) error {
 	c.listener = listener
 	c.setRunning(true)
 
-	logger.InfoCF("maixcam", "MaixCam server listening", map[string]interface{}{
+	logger.InfoCF("maixcam", logger.C0080, map[string]interface{}{
 		"host": c.config.Host,
 		"port": c.config.Port,
 	})
@@ -60,25 +60,25 @@ func (c *MaixCamChannel) Start(ctx context.Context) error {
 }
 
 func (c *MaixCamChannel) acceptConnections(ctx context.Context) {
-	logger.DebugC("maixcam", "Starting connection acceptor")
+	logger.DebugC("maixcam", logger.C0081)
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.InfoC("maixcam", "Stopping connection acceptor")
+			logger.InfoC("maixcam", logger.C0082)
 			return
 		default:
 			conn, err := c.listener.Accept()
 			if err != nil {
 				if c.IsRunning() {
-					logger.ErrorCF("maixcam", "Failed to accept connection", map[string]interface{}{
+					logger.ErrorCF("maixcam", logger.C0083, map[string]interface{}{
 						logger.FieldError: err.Error(),
 					})
 				}
 				return
 			}
 
-			logger.InfoCF("maixcam", "New connection from MaixCam device", map[string]interface{}{
+			logger.InfoCF("maixcam", logger.C0084, map[string]interface{}{
 				"remote_addr": conn.RemoteAddr().String(),
 			})
 
@@ -92,14 +92,14 @@ func (c *MaixCamChannel) acceptConnections(ctx context.Context) {
 }
 
 func (c *MaixCamChannel) handleConnection(conn net.Conn, ctx context.Context) {
-	logger.DebugC("maixcam", "Handling MaixCam connection")
+	logger.DebugC("maixcam", logger.C0085)
 
 	defer func() {
 		conn.Close()
 		c.clientsMux.Lock()
 		delete(c.clients, conn)
 		c.clientsMux.Unlock()
-		logger.DebugC("maixcam", "Connection closed")
+		logger.DebugC("maixcam", logger.C0086)
 	}()
 
 	decoder := json.NewDecoder(conn)
@@ -112,7 +112,7 @@ func (c *MaixCamChannel) handleConnection(conn net.Conn, ctx context.Context) {
 			var msg MaixCamMessage
 			if err := decoder.Decode(&msg); err != nil {
 				if err.Error() != "EOF" {
-					logger.ErrorCF("maixcam", "Failed to decode message", map[string]interface{}{
+					logger.ErrorCF("maixcam", logger.C0087, map[string]interface{}{
 						logger.FieldError: err.Error(),
 					})
 				}
@@ -129,18 +129,18 @@ func (c *MaixCamChannel) processMessage(msg MaixCamMessage, conn net.Conn) {
 	case "person_detected":
 		c.handlePersonDetection(msg)
 	case "heartbeat":
-		logger.DebugC("maixcam", "Received heartbeat")
+		logger.DebugC("maixcam", logger.C0088)
 	case "status":
 		c.handleStatusUpdate(msg)
 	default:
-		logger.WarnCF("maixcam", "Unknown message type", map[string]interface{}{
+		logger.WarnCF("maixcam", logger.C0089, map[string]interface{}{
 			"message_type": msg.Type,
 		})
 	}
 }
 
 func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
-	logger.InfoCF("maixcam", "Person detected event", map[string]interface{}{
+	logger.InfoCF("maixcam", logger.C0090, map[string]interface{}{
 		logger.FieldSenderID: "maixcam",
 		logger.FieldChatID:   "default",
 		"timestamp":          msg.Timestamp,
@@ -178,13 +178,13 @@ func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
 }
 
 func (c *MaixCamChannel) handleStatusUpdate(msg MaixCamMessage) {
-	logger.InfoCF("maixcam", "Status update from MaixCam", map[string]interface{}{
+	logger.InfoCF("maixcam", logger.C0091, map[string]interface{}{
 		"status": msg.Data,
 	})
 }
 
 func (c *MaixCamChannel) Stop(ctx context.Context) error {
-	logger.InfoC("maixcam", "Stopping MaixCam channel")
+	logger.InfoC("maixcam", logger.C0092)
 	c.setRunning(false)
 
 	if c.listener != nil {
@@ -199,7 +199,7 @@ func (c *MaixCamChannel) Stop(ctx context.Context) error {
 	}
 	c.clients = make(map[net.Conn]bool)
 
-	logger.InfoC("maixcam", "MaixCam channel stopped")
+	logger.InfoC("maixcam", logger.C0093)
 	return nil
 }
 
@@ -212,7 +212,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	defer c.clientsMux.RUnlock()
 
 	if len(c.clients) == 0 {
-		logger.WarnC("maixcam", "No MaixCam devices connected")
+		logger.WarnC("maixcam", logger.C0094)
 		return fmt.Errorf("no connected MaixCam devices")
 	}
 
@@ -231,7 +231,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 	var sendErr error
 	for conn := range c.clients {
 		if _, err := conn.Write(data); err != nil {
-			logger.ErrorCF("maixcam", "Failed to send to client", map[string]interface{}{
+			logger.ErrorCF("maixcam", logger.C0095, map[string]interface{}{
 				"client":          conn.RemoteAddr().String(),
 				logger.FieldError: err.Error(),
 			})

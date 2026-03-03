@@ -64,7 +64,7 @@ const Chat: React.FC = () => {
         const ur = await fetch(`/webui/api/upload${q}`, { method: 'POST', body: fd });
         const uj = await ur.json(); media = uj.path || '';
       } catch (e) {
-        console.error('Upload failed', e);
+        console.error('L0053', e);
       }
     }
 

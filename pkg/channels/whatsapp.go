@@ -41,7 +41,7 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 	if c.IsRunning() {
 		return nil
 	}
-	logger.InfoCF("whatsapp", "Starting WhatsApp channel", map[string]interface{}{
+	logger.InfoCF("whatsapp", logger.C0121, map[string]interface{}{
 		"url": c.url,
 	})
 	runCtx, cancel := context.WithCancel(ctx)
@@ -61,7 +61,7 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 	c.mu.Unlock()
 
 	c.setRunning(true)
-	logger.InfoC("whatsapp", "WhatsApp channel connected")
+	logger.InfoC("whatsapp", logger.C0122)
 
 	go c.listen(runCtx)
 
@@ -72,7 +72,7 @@ func (c *WhatsAppChannel) Stop(ctx context.Context) error {
 	if !c.IsRunning() {
 		return nil
 	}
-	logger.InfoC("whatsapp", "Stopping WhatsApp channel")
+	logger.InfoC("whatsapp", logger.C0123)
 	c.runCancel.cancelAndClear()
 
 	c.mu.Lock()
@@ -80,7 +80,7 @@ func (c *WhatsAppChannel) Stop(ctx context.Context) error {
 
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil {
-			logger.WarnCF("whatsapp", "Error closing WhatsApp connection", map[string]interface{}{
+			logger.WarnCF("whatsapp", logger.C0124, map[string]interface{}{
 				logger.FieldError: err.Error(),
 			})
 		}
@@ -146,12 +146,12 @@ func (c *WhatsAppChannel) listen(ctx context.Context) {
 					return
 				}
 				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) || errors.Is(err, net.ErrClosed) {
-					logger.InfoCF("whatsapp", "WhatsApp connection closed", map[string]interface{}{
+					logger.InfoCF("whatsapp", logger.C0125, map[string]interface{}{
 						logger.FieldError: err.Error(),
 					})
 					return
 				}
-				logger.WarnCF("whatsapp", "WhatsApp read error", map[string]interface{}{
+				logger.WarnCF("whatsapp", logger.C0126, map[string]interface{}{
 					logger.FieldError: err.Error(),
 				})
 				if !sleepWithContext(ctx, backoff) {
@@ -164,7 +164,7 @@ func (c *WhatsAppChannel) listen(ctx context.Context) {
 
 			var msg map[string]interface{}
 			if err := json.Unmarshal(message, &msg); err != nil {
-				logger.WarnCF("whatsapp", "Failed to unmarshal WhatsApp message", map[string]interface{}{
+				logger.WarnCF("whatsapp", logger.C0127, map[string]interface{}{
 					logger.FieldError: err.Error(),
 				})
 				continue
@@ -216,7 +216,7 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]interface{}) {
 		metadata["user_name"] = userName
 	}
 
-	logger.InfoCF("whatsapp", "WhatsApp message received", map[string]interface{}{
+	logger.InfoCF("whatsapp", logger.C0128, map[string]interface{}{
 		logger.FieldSenderID: senderID,
 		logger.FieldPreview:  truncateString(content, 50),
 	})

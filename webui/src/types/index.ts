@@ -25,7 +25,9 @@ export type Lang = 'en' | 'zh';
 export type LogEntry = {
   time: string;
   level: string;
+  code?: number;
   msg: string;
+  message?: string;
   [key: string]: any;
 };
 

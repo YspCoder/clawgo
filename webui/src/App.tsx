@@ -14,6 +14,7 @@ import Memory from './pages/Memory';
 import TaskAudit from './pages/TaskAudit';
 import EKG from './pages/EKG';
 import Tasks from './pages/Tasks';
+import LogCodes from './pages/LogCodes';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="chat" element={<Chat />} />
               <Route path="logs" element={<Logs />} />
+              <Route path="log-codes" element={<LogCodes />} />
               <Route path="skills" element={<Skills />} />
               <Route path="config" element={<Config />} />
               <Route path="cron" element={<Cron />} />

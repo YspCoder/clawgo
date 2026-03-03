@@ -49,7 +49,7 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 	if c.IsRunning() {
 		return nil
 	}
-	logger.InfoC("dingtalk", "Starting DingTalk channel (Stream Mode)")
+	logger.InfoC("dingtalk", logger.C0115)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	c.runCancel.set(cancel)
@@ -72,7 +72,7 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 	}
 
 	c.setRunning(true)
-	logger.InfoC("dingtalk", "DingTalk channel started (Stream Mode)")
+	logger.InfoC("dingtalk", logger.C0116)
 	return nil
 }
 
@@ -81,7 +81,7 @@ func (c *DingTalkChannel) Stop(ctx context.Context) error {
 	if !c.IsRunning() {
 		return nil
 	}
-	logger.InfoC("dingtalk", "Stopping DingTalk channel")
+	logger.InfoC("dingtalk", logger.C0117)
 
 	c.runCancel.cancelAndClear()
 
@@ -90,7 +90,7 @@ func (c *DingTalkChannel) Stop(ctx context.Context) error {
 	}
 
 	c.setRunning(false)
-	logger.InfoC("dingtalk", "DingTalk channel stopped")
+	logger.InfoC("dingtalk", logger.C0118)
 	return nil
 }
 
@@ -111,7 +111,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		return fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
 	}
 
-	logger.InfoCF("dingtalk", "DingTalk outbound message", map[string]interface{}{
+	logger.InfoCF("dingtalk", logger.C0119, map[string]interface{}{
 		logger.FieldChatID:  msg.ChatID,
 		logger.FieldPreview: truncateString(msg.Content, 100),
 		"platform":          "dingtalk",
@@ -159,7 +159,7 @@ func (c *DingTalkChannel) onChatBotMessageReceived(ctx context.Context, data *ch
 		"session_webhook":   data.SessionWebhook,
 	}
 
-	logger.InfoCF("dingtalk", "DingTalk inbound message", map[string]interface{}{
+	logger.InfoCF("dingtalk", logger.C0120, map[string]interface{}{
 		"sender_name":        senderNick,
 		logger.FieldSenderID: senderID,
 		logger.FieldChatID:   chatID,

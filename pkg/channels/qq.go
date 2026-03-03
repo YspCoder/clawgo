@@ -47,7 +47,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("QQ app_id and app_secret not configured")
 	}
 
-	logger.InfoC("qq", "Starting QQ bot (WebSocket mode)")
+	logger.InfoC("qq", logger.C0099)
 
 	// Create token source
 	credentials := &token.QQBotCredentials{
@@ -80,7 +80,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to get websocket info: %w", err)
 	}
 
-	logger.InfoCF("qq", "Got WebSocket info", map[string]interface{}{
+	logger.InfoCF("qq", logger.C0100, map[string]interface{}{
 		"shards": wsInfo.Shards,
 	})
 
@@ -95,7 +95,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	})
 
 	c.setRunning(true)
-	logger.InfoC("qq", "QQ bot started successfully")
+	logger.InfoC("qq", logger.C0101)
 
 	return nil
 }
@@ -104,7 +104,7 @@ func (c *QQChannel) Stop(ctx context.Context) error {
 	if !c.IsRunning() {
 		return nil
 	}
-	logger.InfoC("qq", "Stopping QQ bot")
+	logger.InfoC("qq", logger.C0102)
 	c.setRunning(false)
 
 	c.runCancel.cancelAndClear()
@@ -124,7 +124,7 @@ func (c *QQChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	// Send C2C message
 	_, err := c.api.PostC2CMessage(ctx, msg.ChatID, msgToCreate)
 	if err != nil {
-		logger.ErrorCF("qq", "Failed to send C2C message", map[string]interface{}{
+		logger.ErrorCF("qq", logger.C0103, map[string]interface{}{
 			logger.FieldError: err.Error(),
 		})
 		return err
@@ -146,18 +146,18 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		if data.Author != nil && data.Author.ID != "" {
 			senderID = data.Author.ID
 		} else {
-			logger.WarnC("qq", "Received message with no sender ID")
+			logger.WarnC("qq", logger.C0104)
 			return nil
 		}
 
 		// Extract message content
 		content := data.Content
 		if content == "" {
-			logger.DebugC("qq", "Received empty message, ignoring")
+			logger.DebugC("qq", logger.C0105)
 			return nil
 		}
 
-		logger.InfoCF("qq", "Received C2C message", map[string]interface{}{
+		logger.InfoCF("qq", logger.C0106, map[string]interface{}{
 			logger.FieldSenderID:             senderID,
 			logger.FieldChatID:               senderID,
 			logger.FieldMessageContentLength: len(content),
@@ -187,18 +187,18 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		if data.Author != nil && data.Author.ID != "" {
 			senderID = data.Author.ID
 		} else {
-			logger.WarnC("qq", "Received group message with no sender ID")
+			logger.WarnC("qq", logger.C0107)
 			return nil
 		}
 
 		// Extract message content (remove bot mention)
 		content := data.Content
 		if content == "" {
-			logger.DebugC("qq", "Received empty group message, ignoring")
+			logger.DebugC("qq", logger.C0108)
 			return nil
 		}
 
-		logger.InfoCF("qq", "Received group AT message", map[string]interface{}{
+		logger.InfoCF("qq", logger.C0109, map[string]interface{}{
 			logger.FieldSenderID:             senderID,
 			"group_id":                       data.GroupID,
 			logger.FieldMessageContentLength: len(content),

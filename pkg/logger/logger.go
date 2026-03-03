@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,7 +50,8 @@ type LogEntry struct {
 	Level     string                 `json:"level"`
 	Timestamp string                 `json:"timestamp"`
 	Component string                 `json:"component,omitempty"`
-	Message   string                 `json:"message"`
+	Code      int                    `json:"code,omitempty"`
+	Message   string                 `json:"message,omitempty"`
 	Fields    map[string]interface{} `json:"fields,omitempty"`
 	Caller    string                 `json:"caller,omitempty"`
 }
@@ -106,9 +108,9 @@ func EnableFileLoggingWithRotation(filePath string, maxSizeMB, maxAgeDays int) e
 	logger.maxSizeBytes = int64(maxSizeMB) * 1024 * 1024
 	logger.maxAgeDays = maxAgeDays
 	if err := logger.cleanupOldLogFiles(); err != nil {
-		log.Println("Failed to clean up old log files:", err)
+		log.Println(C0145, err)
 	}
-	log.Println("File logging enabled:", filePath)
+	log.Println(C0146, filePath)
 	return nil
 }
 
@@ -122,20 +124,28 @@ func DisableFileLogging() {
 		logger.filePath = ""
 		logger.maxSizeBytes = 0
 		logger.maxAgeDays = 0
-		log.Println("File logging disabled")
+		log.Println(C0147)
 	}
 }
 
-func logMessage(level LogLevel, component string, message string, fields map[string]interface{}) {
+func logMessage(level LogLevel, component string, code CodeID, fields map[string]interface{}) {
 	if level < currentLevel {
 		return
 	}
+
+	if fields == nil {
+		fields = map[string]interface{}{}
+	}
+
+	entryCode := int(code)
+	entryMessage := extractSystemError(fields)
 
 	entry := LogEntry{
 		Level:     logLevelNames[level],
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Component: component,
-		Message:   message,
+		Code:      entryCode,
+		Message:   entryMessage,
 		Fields:    fields,
 	}
 
@@ -150,7 +160,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		jsonData, err := json.Marshal(entry)
 		if err == nil {
 			if err := logger.writeLine(append(jsonData, '\n')); err != nil {
-				log.Println("Failed to write file log:", err)
+				log.Println(C0148, err)
 			}
 		}
 	}
@@ -164,15 +174,36 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		entry.Timestamp,
 		logLevelNames[level],
 		formatComponent(component),
-		message,
+		formatCode(entry.Code),
 		fieldStr,
 	)
+	if entry.Message != "" {
+		logLine += " msg=" + entry.Message
+	}
 
 	log.Println(logLine)
 
 	if level == FATAL {
 		os.Exit(1)
 	}
+}
+
+func extractSystemError(fields map[string]interface{}) string {
+	if fields == nil {
+		return ""
+	}
+	v, ok := fields[FieldError]
+	if !ok || v == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprintf("%v", v))
+}
+
+func formatCode(code int) string {
+	if code <= 0 {
+		return "code=0"
+	}
+	return "code=" + strconv.Itoa(code)
 }
 
 func (l *Logger) writeLine(line []byte) error {
@@ -272,82 +303,82 @@ func formatFields(fields map[string]interface{}) string {
 	return fmt.Sprintf("{%s}", strings.Join(parts, ", "))
 }
 
-func Debug(message string) {
-	logMessage(DEBUG, "", message, nil)
+func Debug(code CodeID) {
+	logMessage(DEBUG, "", code, nil)
 }
 
-func DebugC(component string, message string) {
-	logMessage(DEBUG, component, message, nil)
+func DebugC(component string, code CodeID) {
+	logMessage(DEBUG, component, code, nil)
 }
 
-func DebugF(message string, fields map[string]interface{}) {
-	logMessage(DEBUG, "", message, fields)
+func DebugF(code CodeID, fields map[string]interface{}) {
+	logMessage(DEBUG, "", code, fields)
 }
 
-func DebugCF(component string, message string, fields map[string]interface{}) {
-	logMessage(DEBUG, component, message, fields)
+func DebugCF(component string, code CodeID, fields map[string]interface{}) {
+	logMessage(DEBUG, component, code, fields)
 }
 
-func Info(message string) {
-	logMessage(INFO, "", message, nil)
+func Info(code CodeID) {
+	logMessage(INFO, "", code, nil)
 }
 
-func InfoC(component string, message string) {
-	logMessage(INFO, component, message, nil)
+func InfoC(component string, code CodeID) {
+	logMessage(INFO, component, code, nil)
 }
 
-func InfoF(message string, fields map[string]interface{}) {
-	logMessage(INFO, "", message, fields)
+func InfoF(code CodeID, fields map[string]interface{}) {
+	logMessage(INFO, "", code, fields)
 }
 
-func InfoCF(component string, message string, fields map[string]interface{}) {
-	logMessage(INFO, component, message, fields)
+func InfoCF(component string, code CodeID, fields map[string]interface{}) {
+	logMessage(INFO, component, code, fields)
 }
 
-func Warn(message string) {
-	logMessage(WARN, "", message, nil)
+func Warn(code CodeID) {
+	logMessage(WARN, "", code, nil)
 }
 
-func WarnC(component string, message string) {
-	logMessage(WARN, component, message, nil)
+func WarnC(component string, code CodeID) {
+	logMessage(WARN, component, code, nil)
 }
 
-func WarnF(message string, fields map[string]interface{}) {
-	logMessage(WARN, "", message, fields)
+func WarnF(code CodeID, fields map[string]interface{}) {
+	logMessage(WARN, "", code, fields)
 }
 
-func WarnCF(component string, message string, fields map[string]interface{}) {
-	logMessage(WARN, component, message, fields)
+func WarnCF(component string, code CodeID, fields map[string]interface{}) {
+	logMessage(WARN, component, code, fields)
 }
 
-func Error(message string) {
-	logMessage(ERROR, "", message, nil)
+func Error(code CodeID) {
+	logMessage(ERROR, "", code, nil)
 }
 
-func ErrorC(component string, message string) {
-	logMessage(ERROR, component, message, nil)
+func ErrorC(component string, code CodeID) {
+	logMessage(ERROR, component, code, nil)
 }
 
-func ErrorF(message string, fields map[string]interface{}) {
-	logMessage(ERROR, "", message, fields)
+func ErrorF(code CodeID, fields map[string]interface{}) {
+	logMessage(ERROR, "", code, fields)
 }
 
-func ErrorCF(component string, message string, fields map[string]interface{}) {
-	logMessage(ERROR, component, message, fields)
+func ErrorCF(component string, code CodeID, fields map[string]interface{}) {
+	logMessage(ERROR, component, code, fields)
 }
 
-func Fatal(message string) {
-	logMessage(FATAL, "", message, nil)
+func Fatal(code CodeID) {
+	logMessage(FATAL, "", code, nil)
 }
 
-func FatalC(component string, message string) {
-	logMessage(FATAL, component, message, nil)
+func FatalC(component string, code CodeID) {
+	logMessage(FATAL, component, code, nil)
 }
 
-func FatalF(message string, fields map[string]interface{}) {
-	logMessage(FATAL, "", message, fields)
+func FatalF(code CodeID, fields map[string]interface{}) {
+	logMessage(FATAL, "", code, fields)
 }
 
-func FatalCF(component string, message string, fields map[string]interface{}) {
-	logMessage(FATAL, component, message, fields)
+func FatalCF(component string, code CodeID, fields map[string]interface{}) {
+	logMessage(FATAL, component, code, fields)
 }

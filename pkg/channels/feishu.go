@@ -86,7 +86,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	c.mu.Unlock()
 
 	c.setRunning(true)
-	logger.InfoC("feishu", "Feishu channel started (websocket mode)")
+	logger.InfoC("feishu", logger.C0043)
 
 	runChannelTask("feishu", "websocket", func() error {
 		return wsClient.Start(runCtx)
@@ -107,7 +107,7 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 	c.runCancel.cancelAndClear()
 
 	c.setRunning(false)
-	logger.InfoC("feishu", "Feishu channel stopped")
+	logger.InfoC("feishu", logger.C0044)
 	return nil
 }
 
@@ -132,7 +132,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		for i, t := range tables {
 			link, lerr := c.createFeishuSheetFromTable(ctx, t.Name, t.Rows)
 			if lerr != nil {
-				logger.WarnCF("feishu", "create sheet from markdown table failed", map[string]interface{}{logger.FieldError: lerr.Error(), logger.FieldChatID: msg.ChatID})
+				logger.WarnCF("feishu", logger.C0045, map[string]interface{}{logger.FieldError: lerr.Error(), logger.FieldChatID: msg.ChatID})
 				continue
 			}
 			links = append(links, fmt.Sprintf("表格%d: %s", i+1, link))
@@ -160,7 +160,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return err
 	}
 
-	logger.InfoCF("feishu", "Feishu message sent", map[string]interface{}{
+	logger.InfoCF("feishu", logger.C0046, map[string]interface{}{
 		logger.FieldChatID: msg.ChatID,
 		"msg_type":         msgType,
 		"has_media":        strings.TrimSpace(workMsg.Media) != "",
@@ -184,7 +184,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	}
 	chatType := strings.ToLower(strings.TrimSpace(stringValue(message.ChatType)))
 	if !c.isAllowedChat(chatID, chatType) {
-		logger.WarnCF("feishu", "Feishu message rejected by chat allowlist", map[string]interface{}{
+		logger.WarnCF("feishu", logger.C0047, map[string]interface{}{
 			logger.FieldSenderID: extractFeishuSenderID(sender),
 			logger.FieldChatID:   chatID,
 			"chat_type":          chatType,
@@ -202,7 +202,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		content = "[empty message]"
 	}
 	if !c.shouldHandleGroupMessage(chatType, content) {
-		logger.DebugCF("feishu", "Ignoring group message without mention/command", map[string]interface{}{
+		logger.DebugCF("feishu", logger.C0048, map[string]interface{}{
 			logger.FieldSenderID: senderID,
 			logger.FieldChatID:   chatID,
 		})
@@ -223,7 +223,7 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		metadata["tenant_key"] = *sender.TenantKey
 	}
 
-	logger.InfoCF("feishu", "Feishu message received", map[string]interface{}{
+	logger.InfoCF("feishu", logger.C0049, map[string]interface{}{
 		logger.FieldSenderID: senderID,
 		logger.FieldChatID:   chatID,
 		logger.FieldPreview:  truncateString(content, 80),
@@ -246,7 +246,7 @@ func (c *FeishuChannel) resolveInboundMedia(ctx context.Context, mediaRefs []str
 			if path, err := c.downloadFeishuMediaByKey(ctx, "image", key); err == nil {
 				out = append(out, path)
 			} else {
-				logger.WarnCF("feishu", "download inbound image failed", map[string]interface{}{logger.FieldError: err.Error(), "image_key": key})
+				logger.WarnCF("feishu", logger.C0050, map[string]interface{}{logger.FieldError: err.Error(), "image_key": key})
 				out = append(out, ref)
 			}
 			continue
@@ -256,7 +256,7 @@ func (c *FeishuChannel) resolveInboundMedia(ctx context.Context, mediaRefs []str
 			if path, err := c.downloadFeishuMediaByKey(ctx, "file", key); err == nil {
 				out = append(out, path)
 			} else {
-				logger.WarnCF("feishu", "download inbound file failed", map[string]interface{}{logger.FieldError: err.Error(), "file_key": key})
+				logger.WarnCF("feishu", logger.C0051, map[string]interface{}{logger.FieldError: err.Error(), "file_key": key})
 				out = append(out, ref)
 			}
 			continue
@@ -674,7 +674,7 @@ func (c *FeishuChannel) createFeishuSheetFromTable(ctx context.Context, name str
 		}
 	}
 	if err := c.setFeishuSheetPublicEditable(ctx, spToken); err != nil {
-		logger.WarnCF("feishu", "set sheet permission failed", map[string]interface{}{logger.FieldError: err.Error(), "sheet_token": spToken})
+		logger.WarnCF("feishu", logger.C0052, map[string]interface{}{logger.FieldError: err.Error(), "sheet_token": spToken})
 	}
 	if createResp.Data.Spreadsheet.Url != nil && strings.TrimSpace(*createResp.Data.Spreadsheet.Url) != "" {
 		return strings.TrimSpace(*createResp.Data.Spreadsheet.Url), nil

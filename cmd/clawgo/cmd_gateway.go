@@ -614,7 +614,7 @@ func runGatewayStartupCompactionCheck(parent context.Context, agentLoop *agent.A
 	defer cancel()
 
 	report := agentLoop.RunStartupSelfCheckAllSessions(checkCtx)
-	logger.InfoCF("gateway", "Startup compaction check completed", map[string]interface{}{
+	logger.InfoCF("gateway", logger.C0110, map[string]interface{}{
 		"sessions_total":     report.TotalSessions,
 		"sessions_compacted": report.CompactedSessions,
 	})
@@ -641,20 +641,20 @@ func runGatewayBootstrapInit(parent context.Context, cfg *config.Config, agentLo
 	prompt := "System startup bootstrap: read BOOTSTRAP.md and perform one-time self-initialization checks now. If already initialized, return concise status only."
 	resp, err := agentLoop.ProcessDirect(initCtx, prompt, "system:bootstrap:init")
 	if err != nil {
-		logger.ErrorCF("gateway", "Bootstrap init model call failed", map[string]interface{}{logger.FieldError: err.Error()})
+		logger.ErrorCF("gateway", logger.C0111, map[string]interface{}{logger.FieldError: err.Error()})
 		return
 	}
 	line := fmt.Sprintf("%s\n%s\n", time.Now().UTC().Format(time.RFC3339), strings.TrimSpace(resp))
 	if err := os.WriteFile(markerPath, []byte(line), 0644); err != nil {
-		logger.ErrorCF("gateway", "Bootstrap init marker write failed", map[string]interface{}{logger.FieldError: err.Error()})
+		logger.ErrorCF("gateway", logger.C0112, map[string]interface{}{logger.FieldError: err.Error()})
 		return
 	}
 	// Bootstrap only runs once. After successful initialization marker is written,
 	// remove BOOTSTRAP.md to avoid repeated first-run guidance.
 	if err := os.Remove(bootstrapPath); err != nil && !os.IsNotExist(err) {
-		logger.WarnCF("gateway", "Bootstrap file cleanup failed", map[string]interface{}{logger.FieldError: err.Error()})
+		logger.WarnCF("gateway", logger.C0113, map[string]interface{}{logger.FieldError: err.Error()})
 	}
-	logger.InfoC("gateway", "Bootstrap init model call completed")
+	logger.InfoC("gateway", logger.C0114)
 }
 
 func applyMaximumPermissionPolicy(cfg *config.Config) {
@@ -854,7 +854,7 @@ func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.Me
 	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
 	fmt.Printf("  • Skills: %d/%d available\n", skillsInfo["available"], skillsInfo["total"])
 
-	logger.InfoCF("agent", "Agent initialized",
+	logger.InfoCF("agent", logger.C0098,
 		map[string]interface{}{
 			"tools_count":      toolsInfo["count"],
 			"skills_total":     skillsInfo["total"],

@@ -37,7 +37,7 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 }
 
 func (c *DiscordChannel) Start(ctx context.Context) error {
-	logger.InfoC("discord", "Starting Discord bot")
+	logger.InfoC("discord", logger.C0069)
 
 	c.session.AddHandler(c.handleMessage)
 
@@ -51,7 +51,7 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get bot user: %w", err)
 	}
-	logger.InfoCF("discord", "Discord bot connected", map[string]interface{}{
+	logger.InfoCF("discord", logger.C0070, map[string]interface{}{
 		"username": botUser.Username,
 		"user_id":  botUser.ID,
 	})
@@ -60,7 +60,7 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 }
 
 func (c *DiscordChannel) Stop(ctx context.Context) error {
-	logger.InfoC("discord", "Stopping Discord bot")
+	logger.InfoC("discord", logger.C0071)
 	c.setRunning(false)
 
 	if err := c.session.Close(); err != nil {
@@ -145,7 +145,7 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		content = "[media only]"
 	}
 
-	logger.DebugCF("discord", "Received message", map[string]interface{}{
+	logger.DebugCF("discord", logger.C0072, map[string]interface{}{
 		"sender_name":        senderName,
 		logger.FieldSenderID: senderID,
 		logger.FieldPreview:  truncateString(content, 50),
@@ -186,7 +186,7 @@ func isAudioFile(filename, contentType string) bool {
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	mediaDir := filepath.Join(os.TempDir(), "clawgo_media")
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
-		logger.WarnCF("discord", "Failed to create media directory", map[string]interface{}{
+		logger.WarnCF("discord", logger.C0073, map[string]interface{}{
 			logger.FieldError: err.Error(),
 		})
 		return ""
@@ -196,7 +196,7 @@ func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		logger.WarnCF("discord", "Failed to download attachment", map[string]interface{}{
+		logger.WarnCF("discord", logger.C0074, map[string]interface{}{
 			logger.FieldError: err.Error(),
 		})
 		return ""
@@ -204,7 +204,7 @@ func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.WarnCF("discord", "Attachment download returned non-200", map[string]interface{}{
+		logger.WarnCF("discord", logger.C0075, map[string]interface{}{
 			"status_code": resp.StatusCode,
 		})
 		return ""
@@ -212,7 +212,7 @@ func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 
 	out, err := os.Create(localPath)
 	if err != nil {
-		logger.WarnCF("discord", "Failed to create local attachment file", map[string]interface{}{
+		logger.WarnCF("discord", logger.C0076, map[string]interface{}{
 			logger.FieldError: err.Error(),
 		})
 		return ""
@@ -221,13 +221,13 @@ func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		logger.WarnCF("discord", "Failed to write local attachment file", map[string]interface{}{
+		logger.WarnCF("discord", logger.C0077, map[string]interface{}{
 			logger.FieldError: err.Error(),
 		})
 		return ""
 	}
 
-	logger.DebugCF("discord", "Attachment downloaded successfully", map[string]interface{}{
+	logger.DebugCF("discord", logger.C0078, map[string]interface{}{
 		"path": localPath,
 	})
 	return localPath

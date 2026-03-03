@@ -52,12 +52,14 @@ func runChannelTask(name, taskName string, task func() error, onFailure func(err
 	go func() {
 		if err := task(); err != nil {
 			if errors.Is(err, context.Canceled) {
-				logger.InfoCF(name, taskName+" stopped", map[string]interface{}{
-					"reason": "context canceled",
+				logger.InfoCF(name, logger.C0168, map[string]interface{}{
+					"task_name": taskName,
+					"reason":    "context canceled",
 				})
 				return
 			}
-			logger.ErrorCF(name, taskName+" failed", map[string]interface{}{
+			logger.ErrorCF(name, logger.C0169, map[string]interface{}{
+				"task_name":       taskName,
 				logger.FieldError: err.Error(),
 			})
 			if onFailure != nil {

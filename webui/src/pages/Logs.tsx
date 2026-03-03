@@ -8,6 +8,7 @@ const Logs: React.FC = () => {
   const { t } = useTranslation();
   const { q } = useAppContext();
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [codeMap, setCodeMap] = useState<Record<number, string>>({});
   const [isStreaming, setIsStreaming] = useState(true);
   const [showRaw, setShowRaw] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -22,7 +23,7 @@ const Logs: React.FC = () => {
         setLogs(j.logs.map(normalizeLog));
       }
     } catch (e) {
-      console.error('load recent logs failed', e);
+      console.error('L0096', e);
     }
   };
 
@@ -59,10 +60,37 @@ const Logs: React.FC = () => {
       }
     } catch (e: any) {
       if (e.name !== 'AbortError') {
-        console.error('Log stream error:', e);
+        console.error('L0097', e);
       }
     }
   };
+
+  const loadCodeMap = async () => {
+    try {
+      const paths = [`/webui/log-codes.json${q}`, '/log-codes.json'];
+      for (const p of paths) {
+        const r = await fetch(p);
+        if (!r.ok) continue;
+        const j = await r.json();
+        if (Array.isArray(j?.items)) {
+          const m: Record<number, string> = {};
+          j.items.forEach((it: any) => {
+            if (typeof it?.code === 'number' && typeof it?.text === 'string') {
+              m[it.code] = it.text;
+            }
+          });
+          setCodeMap(m);
+          return;
+        }
+      }
+    } catch {
+      setCodeMap({});
+    }
+  };
+
+  useEffect(() => {
+    loadCodeMap();
+  }, [q]);
 
   useEffect(() => {
     loadRecent();
@@ -84,12 +112,28 @@ const Logs: React.FC = () => {
   const clearLogs = () => setLogs([]);
 
   const normalizeLog = (v: any): LogEntry => ({
-    time: typeof v?.time === 'string' && v.time ? v.time : new Date().toISOString(),
+    time: typeof v?.time === 'string' && v.time ? v.time : (typeof v?.timestamp === 'string' && v.timestamp ? v.timestamp : new Date().toISOString()),
     level: typeof v?.level === 'string' && v.level ? v.level : 'INFO',
-    msg: typeof v?.msg === 'string' ? v.msg : JSON.stringify(v),
+    code: typeof v?.code === 'number' ? v.code : undefined,
+    msg: typeof v?.msg === 'string' ? v.msg : (typeof v?.message === 'string' ? v.message : JSON.stringify(v)),
     __raw: JSON.stringify(v),
     ...v,
   });
+
+  const toCode = (v: any): number | undefined => {
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+    if (typeof v === 'string') {
+      if (/^L\d{4}$/.test(v)) return Number(v.slice(1));
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return undefined;
+  };
+  const decode = (v: any) => {
+    const c = toCode(v);
+    if (!c) return v;
+    return codeMap[c] || v;
+  };
 
   const formatTime = (raw: string) => {
     try {
@@ -189,16 +233,19 @@ const Logs: React.FC = () => {
               <tbody>
                 {logs.map((log, i) => {
                   const lvl = (log.level || 'INFO').toUpperCase();
-                  const errText = (log as any).error || (lvl === 'ERROR' ? log.msg : '');
-                  const message = lvl === 'ERROR' ? ((log as any).message || log.msg || '') : ((log as any).message || log.msg || '');
+                  const rawCode = (log as any).code ?? (log as any).message ?? log.msg ?? '';
+                  const message = String(decode(rawCode) || '');
+                  const errRaw = (log as any).message || (log as any).error || (lvl === 'ERROR' ? rawCode : '');
+                  const errText = String(decode(errRaw) || '');
                   const caller = (log as any).caller || (log as any).source || '';
+                  const code = toCode(rawCode);
                   return (
                     <tr key={i} className="border-b border-zinc-900 hover:bg-zinc-900/40 align-top">
                       <td className="p-2 text-zinc-500 whitespace-nowrap">{formatTime(log.time)}</td>
                       <td className={`p-2 font-semibold whitespace-nowrap ${getLevelColor(lvl)}`}>{lvl}</td>
                       <td className="p-2 text-zinc-200 break-all">{message}</td>
                       <td className="p-2 text-red-300 break-all">{errText}</td>
-                      <td className="p-2 text-zinc-500 break-all">{caller}</td>
+                      <td className="p-2 text-zinc-500 break-all">{code ? `${code} | ${caller}` : caller}</td>
                     </tr>
                   );
                 })}

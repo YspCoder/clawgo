@@ -196,7 +196,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	}
 
 	// Log system prompt summary for debugging (debug mode only)
-	logger.DebugCF("agent", "System prompt built",
+	logger.DebugCF("agent", logger.C0143,
 		map[string]interface{}{
 			"total_chars":   len(systemPrompt),
 			"total_lines":   strings.Count(systemPrompt, "\n") + 1,
@@ -208,7 +208,7 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 	if len(preview) > 500 {
 		preview = preview[:500] + "... (truncated)"
 	}
-	logger.DebugCF("agent", "System prompt preview",
+	logger.DebugCF("agent", logger.C0144,
 		map[string]interface{}{
 			"preview": preview,
 		})

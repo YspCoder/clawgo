@@ -62,7 +62,7 @@ func agentCmd() {
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, cronService)
 
 	startupInfo := agentLoop.GetStartupInfo()
-	logger.InfoCF("agent", "Agent initialized",
+	logger.InfoCF("agent", logger.C0098,
 		map[string]interface{}{
 			"tools_count":      startupInfo["tools"].(map[string]interface{})["count"],
 			"skills_total":     startupInfo["skills"].(map[string]interface{})["total"],

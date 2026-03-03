@@ -103,7 +103,7 @@ const Cron: React.FC = () => {
           });
         }
       } catch (e) {
-        console.error('Failed to fetch job details', e);
+        console.error('L0068', e);
       }
     } else {
       setEditingCron(null);
