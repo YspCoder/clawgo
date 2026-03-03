@@ -51,7 +51,7 @@ const EKG: React.FC = () => {
   return (
     <div className="h-full p-4 md:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h1 className="text-xl md:text-2xl font-semibold">EKG</h1>
+        <h1 className="text-xl md:text-2xl font-semibold">{t('ekg')}</h1>
         <div className="flex items-center gap-2">
           <select value={ekgWindow} onChange={(e)=>setEkgWindow(e.target.value as '6h' | '24h' | '7d')} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
             <option value="6h">6h</option>

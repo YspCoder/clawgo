@@ -134,10 +134,10 @@ const Cron: React.FC = () => {
         await refreshCron();
       } else {
         const err = await r.text();
-        alert('Action failed: ' + err);
+        alert(`${t('actionFailed')}: ${err}`);
       }
     } catch (e) {
-      alert('Action failed: ' + e);
+      alert(`${t('actionFailed')}: ${e}`);
     }
   }
 
@@ -164,7 +164,7 @@ const Cron: React.FC = () => {
               <div>
                 <h3 className="font-semibold text-zinc-100 mb-1">{j.name || j.id}</h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider bg-zinc-800/50 px-2 py-0.5 rounded">ID: {j.id.slice(-6)}</span>
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider bg-zinc-800/50 px-2 py-0.5 rounded">{t('id')}: {j.id.slice(-6)}</span>
                 </div>
               </div>
               {j.enabled ? (
@@ -259,7 +259,7 @@ const Cron: React.FC = () => {
                       type="text"
                       value={cronForm.expr}
                       onChange={(e) => setCronForm({ ...cronForm, expr: e.target.value })}
-                      placeholder="*/5 * * * *"
+                      placeholder={t('cronExpressionPlaceholder')}
                       className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
                     />
                   </label>
@@ -310,7 +310,7 @@ const Cron: React.FC = () => {
                         type="text"
                         value={cronForm.to}
                         onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
-                        placeholder="recipient id"
+                        placeholder={t('recipientId')}
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
                       />
                     )}

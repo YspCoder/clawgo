@@ -69,8 +69,8 @@ const Tasks: React.FC = () => {
 
         <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
           <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('taskCrud')}</div>
-          <input value={draft.id || ''} onChange={(e)=>setDraft({ ...draft, id: e.target.value })} placeholder="id" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-          <textarea value={draft.content || ''} onChange={(e)=>setDraft({ ...draft, content: e.target.value })} placeholder="content" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[120px]" />
+          <input value={draft.id || ''} onChange={(e)=>setDraft({ ...draft, id: e.target.value })} placeholder={t('id')} className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
+          <textarea value={draft.content || ''} onChange={(e)=>setDraft({ ...draft, content: e.target.value })} placeholder={t('content')} className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[120px]" />
           
           <div className="flex items-center gap-2">
             <button onClick={()=>save('create')} className="px-2 py-1 text-xs rounded bg-emerald-700/70 hover:bg-emerald-600">{t('createTask')}</button>

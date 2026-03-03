@@ -33,15 +33,15 @@ const Chat: React.FC = () => {
         else if (baseRole === 'system') role = 'system';
 
         let text = m.content || '';
-        let label = role === 'user' ? 'User' : role === 'tool' ? 'Exec' : role === 'system' ? 'System' : 'Agent';
+        let label = role === 'user' ? t('user') : role === 'tool' ? t('exec') : role === 'system' ? t('system') : t('agent');
 
         if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
           role = 'exec';
-          label = 'Exec';
+          label = t('exec');
           text = `${text}\n[tool calls: ${m.tool_calls.map((x: any) => x?.function?.name || x?.name).filter(Boolean).join(', ')}]`;
         }
         if (baseRole === 'tool') {
-          text = `[tool output]\n${text}`;
+          text = `[${t('toolOutput')}]\n${text}`;
         }
         return { role, text, label };
       });
@@ -69,7 +69,7 @@ const Chat: React.FC = () => {
     }
 
     const userText = msg + (media ? `\n[Attached File: ${f?.name}]` : '');
-    setChat((prev) => [...prev, { role: 'user', text: userText, label: 'User' }]);
+    setChat((prev) => [...prev, { role: 'user', text: userText, label: t('user') }]);
 
     const currentMsg = msg;
     setMsg('');
@@ -89,7 +89,7 @@ const Chat: React.FC = () => {
       const decoder = new TextDecoder();
       let assistantText = '';
 
-      setChat((prev) => [...prev, { role: 'assistant', text: '', label: 'Agent' }]);
+      setChat((prev) => [...prev, { role: 'assistant', text: '', label: t('agent') }]);
 
       while (true) {
         const { value, done } = await reader.read();
@@ -98,7 +98,7 @@ const Chat: React.FC = () => {
         assistantText += chunk;
         setChat((prev) => {
           const next = [...prev];
-          next[next.length - 1] = { role: 'assistant', text: assistantText, label: 'Agent' };
+          next[next.length - 1] = { role: 'assistant', text: assistantText, label: t('agent') };
           return next;
         });
       }
@@ -106,7 +106,7 @@ const Chat: React.FC = () => {
       // refresh full persisted history (includes tool/internal traces)
       loadHistory();
     } catch (e) {
-      setChat((prev) => [...prev, { role: 'system', text: 'Error: Failed to get response from server.', label: 'System' }]);
+      setChat((prev) => [...prev, { role: 'system', text: t('chatServerError'), label: t('system') }]);
     }
   }
 
@@ -126,12 +126,12 @@ const Chat: React.FC = () => {
       <div className="flex-1 flex flex-col bg-zinc-950/50">
         <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm text-zinc-300 font-medium">Session</h2>
+            <h2 className="text-sm text-zinc-300 font-medium">{t('session')}</h2>
             <select value={sessionKey} onChange={(e)=>setSessionKey(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200">
               {(sessions || []).map((s:any)=> <option key={s.key} value={s.key}>{s.key}</option>)}
             </select>
           </div>
-          <button onClick={loadHistory} className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3"/>Reload History</button>
+          <button onClick={loadHistory} className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3"/>{t('reloadHistory')}</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -173,7 +173,7 @@ const Chat: React.FC = () => {
                   <div className={`flex items-start gap-2 max-w-[96%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                     <div className={`w-7 h-7 mt-1 rounded-full text-xs font-bold flex items-center justify-center shrink-0 ${avatarClass}`}>{avatar}</div>
                     <div className={`max-w-[92%] rounded-2xl px-4 py-3 shadow-sm ${bubbleClass}`}>
-                      <div className="text-[11px] opacity-80 mb-1">{m.label || (isUser ? 'User' : isExec ? 'Exec' : isSystem ? 'System' : 'Agent')}</div>
+                      <div className="text-[11px] opacity-80 mb-1">{m.label || (isUser ? t('user') : isExec ? t('exec') : isSystem ? t('system') : t('agent'))}</div>
                       <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{m.text}</p>
                     </div>
                   </div>

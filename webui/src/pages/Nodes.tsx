@@ -36,12 +36,12 @@ const Nodes: React.FC = () => {
                       <div className="flex items-center gap-4">
                         <div className={`w-3 h-3 rounded-full ${node.online ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
                         <div>
-                          <div className="font-semibold text-zinc-200">{node.name || node.id || `Node ${i + 1}`}</div>
+                          <div className="font-semibold text-zinc-200">{node.name || node.id || `${t('node')} ${i + 1}`}</div>
                           <div className="text-xs text-zinc-500 font-mono mt-0.5">{node.id}</div>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-xs font-mono text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded">{node.ip || 'Unknown IP'}</div>
+                        <div className="text-xs font-mono text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded">{node.ip || t('unknownIp')}</div>
                         <div className="text-[10px] text-zinc-600 mt-1 font-mono uppercase tracking-widest">v{node.version || '0.0.0'}</div>
                       </div>
                     </div>

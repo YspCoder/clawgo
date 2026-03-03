@@ -25,6 +25,7 @@ const PrimitiveArrayEditor: React.FC<{
   path: string;
   onChange: (next: any[]) => void;
 }> = ({ value, path, onChange }) => {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState('');
   const [selected, setSelected] = useState('');
 
@@ -54,7 +55,7 @@ const PrimitiveArrayEditor: React.FC<{
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {value.length === 0 && <span className="text-xs text-zinc-500 italic">(empty)</span>}
+        {value.length === 0 && <span className="text-xs text-zinc-500 italic">{t('empty')}</span>}
         {value.map((item, idx) => (
           <span key={`${item}-${idx}`} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs font-mono text-zinc-200">
             {String(item)}
@@ -68,7 +69,7 @@ const PrimitiveArrayEditor: React.FC<{
           list={`${path}-suggestions`}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="输入新值后添加"
+          placeholder={t('recursiveAddValuePlaceholder')}
           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
         />
         <datalist id={`${path}-suggestions`}>
@@ -84,7 +85,7 @@ const PrimitiveArrayEditor: React.FC<{
           }}
           className="px-3 py-2 text-xs rounded-lg bg-zinc-800 hover:bg-zinc-700"
         >
-          添加
+          {t('add')}
         </button>
 
         <select
@@ -96,7 +97,7 @@ const PrimitiveArrayEditor: React.FC<{
           }}
           className="px-3 py-2 text-xs rounded-lg bg-zinc-950 border border-zinc-800"
         >
-          <option value="">下拉选择</option>
+          <option value="">{t('recursiveSelectOption')}</option>
           {suggestions.filter((s) => !value.includes(s)).map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}

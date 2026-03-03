@@ -18,6 +18,8 @@ interface AppContextType {
   setCron: (cron: CronJob[]) => void;
   skills: Skill[];
   setSkills: (skills: Skill[]) => void;
+  clawhubInstalled: boolean;
+  clawhubPath: string;
   sessions: Session[];
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>;
   refreshAll: () => Promise<void>;
@@ -53,6 +55,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [nodes, setNodes] = useState('[]');
   const [cron, setCron] = useState<CronJob[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [clawhubInstalled, setClawhubInstalled] = useState(false);
+  const [clawhubPath, setClawhubPath] = useState('');
   const [sessions, setSessions] = useState<Session[]>([{ key: 'main', title: 'main' }]);
   const [gatewayVersion, setGatewayVersion] = useState('unknown');
   const [webuiVersion, setWebuiVersion] = useState('unknown');
@@ -121,6 +125,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!r.ok) throw new Error('Failed to load skills');
       const j = await r.json();
       setSkills(Array.isArray(j.skills) ? j.skills : []);
+      setClawhubInstalled(!!j.clawhub_installed);
+      setClawhubPath(typeof j.clawhub_path === 'string' ? j.clawhub_path : '');
       setIsGatewayOnline(true);
     } catch (e) {
       setIsGatewayOnline(false);
@@ -174,7 +180,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider value={{
       token, setToken, sidebarOpen, setSidebarOpen, isGatewayOnline, setIsGatewayOnline,
       cfg, setCfg, cfgRaw, setCfgRaw, nodes, setNodes,
-      cron, setCron, skills, setSkills,
+      cron, setCron, skills, setSkills, clawhubInstalled, clawhubPath,
       sessions, setSessions,
       refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion, loadConfig,
       gatewayVersion, webuiVersion, hotReloadFields, hotReloadFieldDetails, q

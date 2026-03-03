@@ -1,10 +1,14 @@
 package nodes
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -729,6 +734,8 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 
 	switch r.Method {
 	case http.MethodGet:
+		clawhubPath := strings.TrimSpace(resolveClawHubBinary(r.Context()))
+		clawhubInstalled := clawhubPath != ""
 		if id := strings.TrimSpace(r.URL.Query().Get("id")); id != "" {
 			skillPath, err := resolveSkillPath(id)
 			if err != nil {
@@ -834,8 +841,8 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 				if tools == nil {
 					tools = []string{}
 				}
-				it := skillItem{ID: baseName, Name: baseName, Description: desc, Tools: tools, SystemPrompt: sys, Enabled: enabled, UpdateChecked: checkUpdates, Source: dir}
-				if checkUpdates {
+				it := skillItem{ID: baseName, Name: baseName, Description: desc, Tools: tools, SystemPrompt: sys, Enabled: enabled, UpdateChecked: checkUpdates && clawhubInstalled, Source: dir}
+				if checkUpdates && clawhubInstalled {
 					found, version, checkErr := queryClawHubSkillVersion(r.Context(), baseName)
 					it.RemoteFound = found
 					it.RemoteVersion = version
@@ -846,9 +853,26 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 				items = append(items, it)
 			}
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "skills": items, "source": "clawhub"})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":                true,
+			"skills":            items,
+			"source":            "clawhub",
+			"clawhub_installed": clawhubInstalled,
+			"clawhub_path":      clawhubPath,
+		})
 
 	case http.MethodPost:
+		ct := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+		if strings.Contains(ct, "multipart/form-data") {
+			imported, err := importSkillArchiveFromMultipart(r, skillsDir)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "imported": imported})
+			return
+		}
+
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -856,6 +880,20 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 		}
 		action, _ := body["action"].(string)
 		action = strings.ToLower(strings.TrimSpace(action))
+		if action == "install_clawhub" {
+			output, err := ensureClawHubReady(r.Context())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":           true,
+				"output":       output,
+				"installed":    true,
+				"clawhub_path": resolveClawHubBinary(r.Context()),
+			})
+			return
+		}
 		id, _ := body["id"].(string)
 		name, _ := body["name"].(string)
 		if strings.TrimSpace(name) == "" {
@@ -871,7 +909,12 @@ func (s *RegistryServer) handleWebUISkills(w http.ResponseWriter, r *http.Reques
 
 		switch action {
 		case "install":
-			cmd := exec.CommandContext(r.Context(), "clawhub", "install", name)
+			clawhubPath := strings.TrimSpace(resolveClawHubBinary(r.Context()))
+			if clawhubPath == "" {
+				http.Error(w, "clawhub is not installed. please install clawhub first.", http.StatusPreconditionFailed)
+				return
+			}
+			cmd := exec.CommandContext(r.Context(), clawhubPath, "install", name)
 			cmd.Dir = strings.TrimSpace(s.workspacePath)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -1190,9 +1233,13 @@ func queryClawHubSkillVersion(ctx context.Context, skill string) (found bool, ve
 	if skill == "" {
 		return false, "", fmt.Errorf("skill empty")
 	}
+	clawhubPath := strings.TrimSpace(resolveClawHubBinary(ctx))
+	if clawhubPath == "" {
+		return false, "", fmt.Errorf("clawhub not installed")
+	}
 	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(cctx, "clawhub", "search", skill, "--json")
+	cmd := exec.CommandContext(cctx, clawhubPath, "search", skill, "--json")
 	out, runErr := cmd.Output()
 	if runErr != nil {
 		return false, "", runErr
@@ -1233,6 +1280,491 @@ func queryClawHubSkillVersion(ctx context.Context, skill string) (found bool, ve
 	}
 	ok, ver := walk(payload)
 	return ok, ver, nil
+}
+
+func resolveClawHubBinary(ctx context.Context) string {
+	if p, err := exec.LookPath("clawhub"); err == nil {
+		return p
+	}
+	prefix := strings.TrimSpace(npmGlobalPrefix(ctx))
+	if prefix != "" {
+		cand := filepath.Join(prefix, "bin", "clawhub")
+		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
+			return cand
+		}
+	}
+	cands := []string{
+		"/usr/local/bin/clawhub",
+		"/opt/homebrew/bin/clawhub",
+		filepath.Join(os.Getenv("HOME"), ".npm-global", "bin", "clawhub"),
+	}
+	for _, cand := range cands {
+		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
+			return cand
+		}
+	}
+	return ""
+}
+
+func npmGlobalPrefix(ctx context.Context) string {
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(cctx, "npm", "config", "get", "prefix").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func runInstallCommand(ctx context.Context, cmdline string) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "sh", "-c", cmdline)
+	out, err := cmd.CombinedOutput()
+	msg := strings.TrimSpace(string(out))
+	if err != nil {
+		if msg == "" {
+			msg = err.Error()
+		}
+		return msg, fmt.Errorf("%s", msg)
+	}
+	return msg, nil
+}
+
+func ensureNodeRuntime(ctx context.Context) (string, error) {
+	if nodePath, err := exec.LookPath("node"); err == nil {
+		if _, err := exec.LookPath("npm"); err == nil {
+			if major, verr := detectNodeMajor(ctx, nodePath); verr == nil && major == 22 {
+				return "node@22 and npm already installed", nil
+			}
+		}
+	}
+
+	var output []string
+	switch runtime.GOOS {
+	case "darwin":
+		if _, err := exec.LookPath("brew"); err != nil {
+			return strings.Join(output, "\n"), fmt.Errorf("nodejs/npm missing and Homebrew not found; please install Homebrew then retry")
+		}
+		out, err := runInstallCommand(ctx, "brew install node@22 && brew link --overwrite --force node@22")
+		if out != "" {
+			output = append(output, out)
+		}
+		if err != nil {
+			return strings.Join(output, "\n"), err
+		}
+	case "linux":
+		var out string
+		var err error
+		switch {
+		case commandExists("apt-get"):
+			if commandExists("curl") {
+				out, err = runInstallCommand(ctx, "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs")
+			} else if commandExists("wget") {
+				out, err = runInstallCommand(ctx, "wget -qO- https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs")
+			} else {
+				err = fmt.Errorf("missing curl/wget required for NodeSource setup_22.x")
+			}
+		case commandExists("dnf"):
+			if commandExists("curl") {
+				out, err = runInstallCommand(ctx, "curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && dnf install -y nodejs")
+			} else if commandExists("wget") {
+				out, err = runInstallCommand(ctx, "wget -qO- https://rpm.nodesource.com/setup_22.x | bash - && dnf install -y nodejs")
+			} else {
+				err = fmt.Errorf("missing curl/wget required for NodeSource setup_22.x")
+			}
+		case commandExists("yum"):
+			if commandExists("curl") {
+				out, err = runInstallCommand(ctx, "curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && yum install -y nodejs")
+			} else if commandExists("wget") {
+				out, err = runInstallCommand(ctx, "wget -qO- https://rpm.nodesource.com/setup_22.x | bash - && yum install -y nodejs")
+			} else {
+				err = fmt.Errorf("missing curl/wget required for NodeSource setup_22.x")
+			}
+		case commandExists("pacman"):
+			out, err = runInstallCommand(ctx, "pacman -Sy --noconfirm nodejs npm")
+		case commandExists("apk"):
+			out, err = runInstallCommand(ctx, "apk add --no-cache nodejs npm")
+		default:
+			return strings.Join(output, "\n"), fmt.Errorf("nodejs/npm missing and no supported package manager found")
+		}
+		if out != "" {
+			output = append(output, out)
+		}
+		if err != nil {
+			return strings.Join(output, "\n"), err
+		}
+	default:
+		return strings.Join(output, "\n"), fmt.Errorf("unsupported OS for auto install: %s", runtime.GOOS)
+	}
+
+	if _, err := exec.LookPath("node"); err != nil {
+		return strings.Join(output, "\n"), fmt.Errorf("node installation completed but `node` still not found in PATH")
+	}
+	if _, err := exec.LookPath("npm"); err != nil {
+		return strings.Join(output, "\n"), fmt.Errorf("node installation completed but `npm` still not found in PATH")
+	}
+	nodePath, _ := exec.LookPath("node")
+	major, err := detectNodeMajor(ctx, nodePath)
+	if err != nil {
+		return strings.Join(output, "\n"), fmt.Errorf("failed to detect node major version: %w", err)
+	}
+	if major != 22 {
+		return strings.Join(output, "\n"), fmt.Errorf("node version is %d, expected 22", major)
+	}
+	output = append(output, "node@22/npm installed")
+	return strings.Join(output, "\n"), nil
+}
+
+func commandExists(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+func detectNodeMajor(ctx context.Context, nodePath string) (int, error) {
+	nodePath = strings.TrimSpace(nodePath)
+	if nodePath == "" {
+		return 0, fmt.Errorf("node path empty")
+	}
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(cctx, nodePath, "-p", "process.versions.node.split('.')[0]").Output()
+	if err != nil {
+		return 0, err
+	}
+	majorStr := strings.TrimSpace(string(out))
+	if majorStr == "" {
+		return 0, fmt.Errorf("empty node major version")
+	}
+	v, err := strconv.Atoi(majorStr)
+	if err != nil {
+		return 0, err
+	}
+	return v, nil
+}
+
+func ensureClawHubReady(ctx context.Context) (string, error) {
+	outs := make([]string, 0, 4)
+	if p := resolveClawHubBinary(ctx); p != "" {
+		return "clawhub already installed at: " + p, nil
+	}
+	nodeOut, err := ensureNodeRuntime(ctx)
+	if nodeOut != "" {
+		outs = append(outs, nodeOut)
+	}
+	if err != nil {
+		return strings.Join(outs, "\n"), err
+	}
+	clawOut, err := runInstallCommand(ctx, "npm i -g clawhub")
+	if clawOut != "" {
+		outs = append(outs, clawOut)
+	}
+	if err != nil {
+		return strings.Join(outs, "\n"), err
+	}
+	if p := resolveClawHubBinary(ctx); p != "" {
+		outs = append(outs, "clawhub installed at: "+p)
+		return strings.Join(outs, "\n"), nil
+	}
+	return strings.Join(outs, "\n"), fmt.Errorf("installed clawhub but executable still not found in PATH")
+}
+
+func importSkillArchiveFromMultipart(r *http.Request, skillsDir string) ([]string, error) {
+	if err := r.ParseMultipartForm(128 << 20); err != nil {
+		return nil, err
+	}
+	f, h, err := r.FormFile("file")
+	if err != nil {
+		return nil, fmt.Errorf("file required")
+	}
+	defer f.Close()
+
+	uploadDir := filepath.Join(os.TempDir(), "clawgo_skill_uploads")
+	_ = os.MkdirAll(uploadDir, 0755)
+	archivePath := filepath.Join(uploadDir, fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(h.Filename)))
+	out, err := os.Create(archivePath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(out, f); err != nil {
+		_ = out.Close()
+		_ = os.Remove(archivePath)
+		return nil, err
+	}
+	_ = out.Close()
+	defer os.Remove(archivePath)
+
+	extractDir, err := os.MkdirTemp("", "clawgo_skill_extract_*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(extractDir)
+
+	if err := extractArchive(archivePath, extractDir); err != nil {
+		return nil, err
+	}
+
+	type candidate struct {
+		name string
+		dir  string
+	}
+	candidates := make([]candidate, 0)
+	seen := map[string]struct{}{}
+	err = filepath.WalkDir(extractDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(d.Name(), "SKILL.md") {
+			dir := filepath.Dir(path)
+			rel, relErr := filepath.Rel(extractDir, dir)
+			if relErr != nil {
+				return nil
+			}
+			rel = filepath.ToSlash(strings.TrimSpace(rel))
+			if rel == "" {
+				rel = "."
+			}
+			name := filepath.Base(rel)
+			if rel == "." {
+				name = archiveBaseName(h.Filename)
+			}
+			name = sanitizeSkillName(name)
+			if name == "" {
+				return nil
+			}
+			if _, ok := seen[name]; ok {
+				return nil
+			}
+			seen[name] = struct{}{}
+			candidates = append(candidates, candidate{name: name, dir: dir})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no SKILL.md found in archive")
+	}
+
+	imported := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		dst := filepath.Join(skillsDir, c.name)
+		if _, err := os.Stat(dst); err == nil {
+			return nil, fmt.Errorf("skill already exists: %s", c.name)
+		}
+		if _, err := os.Stat(dst + ".disabled"); err == nil {
+			return nil, fmt.Errorf("disabled skill already exists: %s", c.name)
+		}
+		if err := copyDir(c.dir, dst); err != nil {
+			return nil, err
+		}
+		imported = append(imported, c.name)
+	}
+	sort.Strings(imported)
+	return imported, nil
+}
+
+func archiveBaseName(filename string) string {
+	name := filepath.Base(strings.TrimSpace(filename))
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(lower, ".tar.gz"):
+		return name[:len(name)-len(".tar.gz")]
+	case strings.HasSuffix(lower, ".tgz"):
+		return name[:len(name)-len(".tgz")]
+	case strings.HasSuffix(lower, ".zip"):
+		return name[:len(name)-len(".zip")]
+	case strings.HasSuffix(lower, ".tar"):
+		return name[:len(name)-len(".tar")]
+	default:
+		ext := filepath.Ext(name)
+		return strings.TrimSuffix(name, ext)
+	}
+}
+
+func sanitizeSkillName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, ch := range strings.ToLower(name) {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			b.WriteRune(ch)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" || out == "." {
+		return ""
+	}
+	return out
+}
+
+func extractArchive(archivePath, targetDir string) error {
+	lower := strings.ToLower(archivePath)
+	switch {
+	case strings.HasSuffix(lower, ".zip"):
+		return extractZip(archivePath, targetDir)
+	case strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"):
+		return extractTarGz(archivePath, targetDir)
+	case strings.HasSuffix(lower, ".tar"):
+		return extractTar(archivePath, targetDir)
+	default:
+		return fmt.Errorf("unsupported archive format: %s", filepath.Base(archivePath))
+	}
+}
+
+func extractZip(archivePath, targetDir string) error {
+	zr, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+
+	for _, f := range zr.File {
+		if err := writeArchivedEntry(targetDir, f.Name, f.FileInfo().IsDir(), func() (io.ReadCloser, error) {
+			return f.Open()
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func extractTarGz(archivePath, targetDir string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+	return extractTarReader(tar.NewReader(gz), targetDir)
+}
+
+func extractTar(archivePath, targetDir string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return extractTarReader(tar.NewReader(f), targetDir)
+}
+
+func extractTarReader(tr *tar.Reader, targetDir string) error {
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := writeArchivedEntry(targetDir, hdr.Name, true, nil); err != nil {
+				return err
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			name := hdr.Name
+			if err := writeArchivedEntry(targetDir, name, false, func() (io.ReadCloser, error) {
+				return io.NopCloser(tr), nil
+			}); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func writeArchivedEntry(targetDir, name string, isDir bool, opener func() (io.ReadCloser, error)) error {
+	clean := filepath.Clean(strings.TrimSpace(name))
+	clean = strings.TrimPrefix(clean, string(filepath.Separator))
+	clean = strings.TrimPrefix(clean, "/")
+	for strings.HasPrefix(clean, "../") {
+		clean = strings.TrimPrefix(clean, "../")
+	}
+	if clean == "." || clean == "" {
+		return nil
+	}
+	dst := filepath.Join(targetDir, clean)
+	absTarget, _ := filepath.Abs(targetDir)
+	absDst, _ := filepath.Abs(dst)
+	if !strings.HasPrefix(absDst, absTarget+string(filepath.Separator)) && absDst != absTarget {
+		return fmt.Errorf("invalid archive entry path: %s", name)
+	}
+	if isDir {
+		return os.MkdirAll(dst, 0755)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	rc, err := opener()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, rc)
+	return err
+}
+
+func copyDir(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		srcPath := filepath.Join(src, e.Name())
+		dstPath := filepath.Join(dst, e.Name())
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
+		in, err := os.Open(srcPath)
+		if err != nil {
+			return err
+		}
+		out, err := os.Create(dstPath)
+		if err != nil {
+			_ = in.Close()
+			return err
+		}
+		if _, err := io.Copy(out, in); err != nil {
+			_ = out.Close()
+			_ = in.Close()
+			return err
+		}
+		_ = out.Close()
+		_ = in.Close()
+	}
+	return nil
 }
 
 func anyToString(v interface{}) string {
@@ -1382,7 +1914,7 @@ func (s *RegistryServer) handleWebUITaskAudit(w http.ResponseWriter, r *http.Req
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-		if r.Method == http.MethodPost {
+	if r.Method == http.MethodPost {
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -1449,7 +1981,7 @@ func (s *RegistryServer) handleWebUITaskAudit(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
 	includeHeartbeat := r.URL.Query().Get("include_heartbeat") == "1"
 	limit := 100
 	if v := r.URL.Query().Get("limit"); v != "" {
@@ -1573,17 +2105,17 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 					continue
 				}
 				row := map[string]interface{}{
-					"task_id":          id,
-					"time":             t["updated_at"],
-					"status":           t["status"],
-					"source":           t["source"],
-					"idle_run":         true,
-					"input_preview":    t["content"],
-					"block_reason":     t["block_reason"],
+					"task_id":           id,
+					"time":              t["updated_at"],
+					"status":            t["status"],
+					"source":            t["source"],
+					"idle_run":          true,
+					"input_preview":     t["content"],
+					"block_reason":      t["block_reason"],
 					"last_pause_reason": t["last_pause_reason"],
 					"last_pause_at":     t["last_pause_at"],
-					"logs":             []string{fmt.Sprintf("autonomy state: %v", t["status"])},
-					"retry_count":      0,
+					"logs":              []string{fmt.Sprintf("autonomy state: %v", t["status"])},
+					"retry_count":       0,
 				}
 				items = append(items, row)
 				if fmt.Sprintf("%v", row["status"]) == "running" {
@@ -1749,13 +2281,19 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 			switch status {
 			case "success":
 				providerScore[provider] += 1
-				if !isHeartbeat { providerScoreWorkload[provider] += 1 }
+				if !isHeartbeat {
+					providerScoreWorkload[provider] += 1
+				}
 			case "suppressed":
 				providerScore[provider] += 0.2
-				if !isHeartbeat { providerScoreWorkload[provider] += 0.2 }
+				if !isHeartbeat {
+					providerScoreWorkload[provider] += 0.2
+				}
 			case "error":
 				providerScore[provider] -= 1
-				if !isHeartbeat { providerScoreWorkload[provider] -= 1 }
+				if !isHeartbeat {
+					providerScoreWorkload[provider] -= 1
+				}
 			}
 		}
 		if errSig != "" {
@@ -1769,16 +2307,24 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 	}
 	toTopScore := func(m map[string]float64, n int) []kv {
 		out := make([]kv, 0, len(m))
-		for k, v := range m { out = append(out, kv{Key:k, Score:v}) }
-		sort.Slice(out, func(i,j int) bool { return out[i].Score > out[j].Score })
-		if len(out) > n { out = out[:n] }
+		for k, v := range m {
+			out = append(out, kv{Key: k, Score: v})
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+		if len(out) > n {
+			out = out[:n]
+		}
 		return out
 	}
 	toTopCount := func(m map[string]int, n int) []kv {
 		out := make([]kv, 0, len(m))
-		for k, v := range m { out = append(out, kv{Key:k, Count:v}) }
-		sort.Slice(out, func(i,j int) bool { return out[i].Count > out[j].Count })
-		if len(out) > n { out = out[:n] }
+		for k, v := range m {
+			out = append(out, kv{Key: k, Count: v})
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+		if len(out) > n {
+			out = out[:n]
+		}
 		return out
 	}
 	escalations := 0
@@ -1794,16 +2340,16 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":                       true,
-		"window":                   selectedWindow,
-		"provider_top":             toTopScore(providerScore, 5),
-		"provider_top_workload":    toTopScore(providerScoreWorkload, 5),
-		"errsig_top":               toTopCount(errSigCount, 5),
-		"errsig_top_heartbeat":     toTopCount(errSigHeartbeat, 5),
-		"errsig_top_workload":      toTopCount(errSigWorkload, 5),
-		"source_stats":             sourceStats,
-		"channel_stats":            channelStats,
-		"escalation_count":         escalations,
+		"ok":                    true,
+		"window":                selectedWindow,
+		"provider_top":          toTopScore(providerScore, 5),
+		"provider_top_workload": toTopScore(providerScoreWorkload, 5),
+		"errsig_top":            toTopCount(errSigCount, 5),
+		"errsig_top_heartbeat":  toTopCount(errSigHeartbeat, 5),
+		"errsig_top_workload":   toTopCount(errSigWorkload, 5),
+		"source_stats":          sourceStats,
+		"channel_stats":         channelStats,
+		"escalation_count":      escalations,
 	})
 }
 
@@ -1824,7 +2370,9 @@ func (s *RegistryServer) handleWebUITasks(w http.ResponseWriter, r *http.Request
 			http.Error(w, "invalid tasks file", http.StatusInternalServerError)
 			return
 		}
-		sort.Slice(items, func(i, j int) bool { return fmt.Sprintf("%v", items[i]["updated_at"]) > fmt.Sprintf("%v", items[j]["updated_at"]) })
+		sort.Slice(items, func(i, j int) bool {
+			return fmt.Sprintf("%v", items[i]["updated_at"]) > fmt.Sprintf("%v", items[j]["updated_at"])
+		})
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": items})
 		return
 	}

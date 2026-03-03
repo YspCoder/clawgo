@@ -21,7 +21,7 @@ const Header: React.FC = () => {
         <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
           <Terminal className="w-4 h-4 md:w-5 md:h-5 text-white" />
         </div>
-        <span className="hidden md:inline font-semibold text-lg md:text-xl tracking-tight truncate">ClawGo</span>
+        <span className="hidden md:inline font-semibold text-lg md:text-xl tracking-tight truncate">{t('appName')}</span>
       </div>
       
       <div className="flex items-center gap-2 md:gap-6">

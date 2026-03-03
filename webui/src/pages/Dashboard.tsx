@@ -22,7 +22,7 @@ const Dashboard: React.FC = () => {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl md:text-2xl font-semibold tracking-tight">{t('dashboard')}</h1>
-          <div className="mt-1 text-xs text-zinc-500">Gateway: {gatewayVersion} · WebUI: {webuiVersion}</div>
+          <div className="mt-1 text-xs text-zinc-500">{t('gateway')}: {gatewayVersion} · {t('webui')}: {webuiVersion}</div>
         </div>
         <button onClick={refreshAll} className="flex items-center gap-2 px-3 md:px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors shrink-0">
           <RefreshCw className="w-4 h-4" /> {t('refreshAll')}

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 
 const Memory: React.FC = () => {
+  const { t } = useTranslation();
   const { q } = useAppContext();
   const [files, setFiles] = useState<string[]>([]);
   const [active, setActive] = useState('');
@@ -42,7 +44,7 @@ const Memory: React.FC = () => {
   }
 
   async function createFile() {
-    const name = prompt('memory file name', `note-${Date.now()}.md`);
+    const name = prompt(t('memoryFileNamePrompt'), `note-${Date.now()}.md`);
     if (!name) return;
     await fetch(`/webui/api/memory${q}`, {
       method: 'POST',
@@ -61,7 +63,7 @@ const Memory: React.FC = () => {
     <div className="flex h-full">
       <aside className="w-72 border-r border-zinc-800 p-4 space-y-2 overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Memory Files</h2>
+          <h2 className="font-semibold">{t('memoryFiles')}</h2>
           <button onClick={createFile} className="px-2 py-1 rounded bg-zinc-800">+</button>
         </div>
         {files.map((f) => (
@@ -73,8 +75,8 @@ const Memory: React.FC = () => {
       </aside>
       <main className="flex-1 p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">{active || 'No file selected'}</h2>
-          <button onClick={saveFile} className="px-3 py-1 rounded bg-indigo-600">Save</button>
+          <h2 className="font-semibold">{active || t('noFileSelected')}</h2>
+          <button onClick={saveFile} className="px-3 py-1 rounded bg-indigo-600">{t('save')}</button>
         </div>
         <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[80vh] bg-zinc-900 border border-zinc-800 rounded p-3" />
       </main>

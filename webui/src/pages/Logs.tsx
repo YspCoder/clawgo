@@ -174,7 +174,7 @@ const Logs: React.FC = () => {
             isStreaming ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-zinc-800 text-zinc-500 border-zinc-700'
           }`}>
             <div className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
-            {isStreaming ? 'Live' : 'Paused'}
+            {isStreaming ? t('live') : t('paused')}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -182,7 +182,7 @@ const Logs: React.FC = () => {
             onClick={() => setShowRaw(!showRaw)}
             className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors text-zinc-300"
           >
-            {showRaw ? 'Pretty' : 'Raw'}
+            {showRaw ? t('pretty') : t('raw')}
           </button>
           <button 
             onClick={() => setIsStreaming(!isStreaming)}
@@ -190,10 +190,10 @@ const Logs: React.FC = () => {
               isStreaming ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
             }`}
           >
-            {isStreaming ? <><Square className="w-4 h-4" /> Pause</> : <><Play className="w-4 h-4" /> Resume</>}
+            {isStreaming ? <><Square className="w-4 h-4" /> {t('pause')}</> : <><Play className="w-4 h-4" /> {t('resume')}</>}
           </button>
           <button onClick={clearLogs} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors text-zinc-300">
-            <Trash2 className="w-4 h-4" /> Clear
+            <Trash2 className="w-4 h-4" /> {t('clear')}
           </button>
         </div>
       </div>
@@ -202,15 +202,15 @@ const Logs: React.FC = () => {
         <div className="bg-zinc-900/50 px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-zinc-500" />
-            <span className="text-xs font-mono text-zinc-500">system.log</span>
+            <span className="text-xs font-mono text-zinc-500">{t('systemLog')}</span>
           </div>
-          <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">{logs.length} entries</span>
+          <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">{logs.length} {t('entries')}</span>
         </div>
         <div className="flex-1 overflow-auto selection:bg-indigo-500/30">
           {logs.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2 p-4">
               <Terminal className="w-8 h-8 opacity-10" />
-              <p>Waiting for logs...</p>
+              <p>{t('waitingForLogs')}</p>
             </div>
           ) : showRaw ? (
             <div className="p-3 font-mono text-xs space-y-1">
@@ -223,11 +223,11 @@ const Logs: React.FC = () => {
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-zinc-900/95 border-b border-zinc-800">
                 <tr className="text-zinc-400">
-                  <th className="text-left p-2 font-medium">Time</th>
-                  <th className="text-left p-2 font-medium">Level</th>
-                  <th className="text-left p-2 font-medium">Message</th>
-                  <th className="text-left p-2 font-medium">Error</th>
-                  <th className="text-left p-2 font-medium">Code/Caller</th>
+                  <th className="text-left p-2 font-medium">{t('time')}</th>
+                  <th className="text-left p-2 font-medium">{t('level')}</th>
+                  <th className="text-left p-2 font-medium">{t('message')}</th>
+                  <th className="text-left p-2 font-medium">{t('error')}</th>
+                  <th className="text-left p-2 font-medium">{t('codeCaller')}</th>
                 </tr>
               </thead>
               <tbody>

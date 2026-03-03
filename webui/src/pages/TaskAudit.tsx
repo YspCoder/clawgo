@@ -109,19 +109,19 @@ const TaskAudit: React.FC = () => {
         <div className="flex items-center gap-2">
           <select value={sourceFilter} onChange={(e)=>setSourceFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
             <option value="all">{t('allSources')}</option>
-            <option value="autonomy">autonomy</option>
-            <option value="direct">direct</option>
-            <option value="memory_todo">memory_todo</option>
+            <option value="autonomy">{t('sourceAutonomy')}</option>
+            <option value="direct">{t('sourceDirect')}</option>
+            <option value="memory_todo">{t('sourceMemoryTodo')}</option>
             <option value="-">-</option>
           </select>
           <select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
             <option value="all">{t('allStatus')}</option>
-            <option value="running">running</option>
-            <option value="waiting">waiting</option>
-            <option value="blocked">blocked</option>
-            <option value="success">success</option>
-            <option value="error">error</option>
-            <option value="suppressed">suppressed</option>
+            <option value="running">{t('statusRunning')}</option>
+            <option value="waiting">{t('statusWaiting')}</option>
+            <option value="blocked">{t('statusBlocked')}</option>
+            <option value="success">{t('statusSuccess')}</option>
+            <option value="error">{t('statusError')}</option>
+            <option value="suppressed">{t('statusSuppressed')}</option>
           </select>
           <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
         </div>
@@ -132,7 +132,7 @@ const TaskAudit: React.FC = () => {
           <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('dailySummary')}</div>
           <div className="flex items-center gap-2">
             <input type="date" value={reportDate} onChange={(e)=>setReportDate(e.target.value)} className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs" />
-            <button onClick={() => setShowDailyReport(v => !v)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-xs">{showDailyReport ? 'Hide' : 'Show'}</button>
+            <button onClick={() => setShowDailyReport(v => !v)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-xs">{showDailyReport ? t('hide') : t('show')}</button>
             <button onClick={exportDailyReport} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-xs">{t('export')}</button>
           </div>
         </div>
@@ -180,19 +180,19 @@ const TaskAudit: React.FC = () => {
             ) : (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <div><div className="text-zinc-500 text-xs">Task ID</div><div className="font-mono break-all">{selected.task_id}</div></div>
-                  <div><div className="text-zinc-500 text-xs">Status</div><div>{selected.status}</div></div>
-                  <div><div className="text-zinc-500 text-xs">Source</div><div>{selected.source || '-'}</div></div>
-                  <div><div className="text-zinc-500 text-xs">Duration</div><div>{selected.duration_ms || 0}ms</div></div>
-                  <div><div className="text-zinc-500 text-xs">Channel</div><div>{selected.channel}</div></div>
-                  <div><div className="text-zinc-500 text-xs">Session</div><div className="font-mono break-all">{selected.session}</div></div>
-                  <div><div className="text-zinc-500 text-xs">Provider</div><div>{selected.provider || '-'}</div></div>
-                  <div><div className="text-zinc-500 text-xs">Model</div><div>{selected.model || '-'}</div></div>
-                  <div><div className="text-zinc-500 text-xs">Time</div><div>{selected.time}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('taskId')}</div><div className="font-mono break-all">{selected.task_id}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('status')}</div><div>{selected.status}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('source')}</div><div>{selected.source || '-'}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('duration')}</div><div>{selected.duration_ms || 0}ms</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('channel')}</div><div>{selected.channel}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('session')}</div><div className="font-mono break-all">{selected.session}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('provider')}</div><div>{selected.provider || '-'}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('model')}</div><div>{selected.model || '-'}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('time')}</div><div>{selected.time}</div></div>
                 </div>
 
                 <div>
-                  <div className="text-zinc-500 text-xs mb-1">Input Preview</div>
+                  <div className="text-zinc-500 text-xs mb-1">{t('inputPreview')}</div>
                   <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap">{selected.input_preview || '-'}</div>
                 </div>
 
@@ -202,7 +202,7 @@ const TaskAudit: React.FC = () => {
                 </div>
 
                 <div>
-                  <div className="text-zinc-500 text-xs mb-1">Block Reason</div>
+                  <div className="text-zinc-500 text-xs mb-1">{t('blockReason')}</div>
                   <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-amber-200">{selected.block_reason || '-'}</div>
                 </div>
 

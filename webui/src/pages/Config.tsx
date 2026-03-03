@@ -135,7 +135,7 @@ const Config: React.FC = () => {
       setBaseline(JSON.parse(JSON.stringify(payload)));
       setShowDiff(false);
     } catch (e) {
-      alert('Failed to save config: ' + e);
+      alert(`${t('saveConfigFailed')}: ${e}`);
     }
   }
 
@@ -154,15 +154,15 @@ const Config: React.FC = () => {
           <button onClick={async () => { await loadConfig(); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
             <RefreshCw className="w-4 h-4" /> {t('reload')}
           </button>
-          <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">差异预览</button>
+          <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">{t('configDiffPreview')}</button>
           <button onClick={() => setBasicMode(v => !v)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">
-            {basicMode ? '基础模式' : '高级模式'}
+            {basicMode ? t('configBasicMode') : t('configAdvancedMode')}
           </button>
           <label className="flex items-center gap-2 text-sm text-zinc-300">
             <input type="checkbox" checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
-            仅热更新字段
+            {t('configHotOnly')}
           </label>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索分类..." className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm" />
         </div>
         <button onClick={saveConfig} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
           <Save className="w-4 h-4" /> {t('saveChanges')}
@@ -170,7 +170,7 @@ const Config: React.FC = () => {
       </div>
 
       <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-4">
-        <div className="text-sm font-semibold text-zinc-300 mb-2">热更新字段（完整）</div>
+        <div className="text-sm font-semibold text-zinc-300 mb-2">{t('configHotFieldsFull')}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
           {hotReloadFieldDetails.map((it) => (
             <div key={it.path} className="p-2 rounded bg-zinc-950 border border-zinc-800">
@@ -185,7 +185,7 @@ const Config: React.FC = () => {
         {!showRaw ? (
           <div className="flex-1 flex min-h-0">
             <aside className="w-44 md:w-56 border-r border-zinc-800 bg-zinc-950/40 p-2 md:p-3 overflow-y-auto shrink-0">
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-2 px-2">Top Level</div>
+              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-2 px-2">{t('configTopLevel')}</div>
               <div className="space-y-1">
                 {filteredTopKeys.map((k) => (
                   <button
@@ -203,25 +203,25 @@ const Config: React.FC = () => {
               {activeTop === 'providers' && !showRaw && (
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="text-sm font-semibold text-zinc-200">Proxies</div>
+                    <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
                     <div className="flex items-center gap-2">
-                      <input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder="new provider name" className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs" />
-                      <button onClick={addProxy} className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-xs">Add</button>
+                      <input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder={t('configNewProviderName')} className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs" />
+                      <button onClick={addProxy} className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-xs">{t('add')}</button>
                     </div>
                   </div>
                   <div className="space-y-2">
                     {Object.entries(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).map(([name, p]) => (
                       <div key={name} className="grid grid-cols-1 md:grid-cols-8 gap-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 text-xs">
                         <div className="md:col-span-1 font-mono text-zinc-300 flex items-center">{name}</div>
-                        <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder="api_base" className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
-                        <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder="api_key" className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
-                        <input value={String(p?.protocol || '')} onChange={(e)=>updateProxyField(name, 'protocol', e.target.value)} placeholder="protocol" className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
-                        <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder="models,a,b" className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
-                        <button onClick={()=>removeProxy(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">Delete</button>
+                        <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <input value={String(p?.protocol || '')} onChange={(e)=>updateProxyField(name, 'protocol', e.target.value)} placeholder={t('configLabels.protocol')} className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')},a,b`} className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <button onClick={()=>removeProxy(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
                       </div>
                     ))}
                     {Object.keys(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).length === 0 && (
-                      <div className="text-xs text-zinc-500">No custom providers yet.</div>
+                      <div className="text-xs text-zinc-500">{t('configNoCustomProviders')}</div>
                     )}
                   </div>
                 </div>
@@ -236,7 +236,7 @@ const Config: React.FC = () => {
                   onChange={(path, val) => setCfg(v => setPath(v, path, val))}
                 />
               ) : (
-                <div className="text-zinc-500 text-sm">No config groups found.</div>
+                <div className="text-zinc-500 text-sm">{t('configNoGroups')}</div>
               )}
             </div>
           </div>
@@ -254,16 +254,16 @@ const Config: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
           <div className="w-full max-w-4xl max-h-[85vh] bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-              <div className="font-semibold">配置差异预览（{diffRows.length}项）</div>
-              <button className="px-3 py-1 rounded bg-zinc-800" onClick={() => setShowDiff(false)}>关闭</button>
+              <div className="font-semibold">{t('configDiffPreviewCount', { count: diffRows.length })}</div>
+              <button className="px-3 py-1 rounded bg-zinc-800" onClick={() => setShowDiff(false)}>{t('close')}</button>
             </div>
             <div className="overflow-auto text-xs">
               <table className="w-full">
                 <thead className="sticky top-0 bg-zinc-900 text-zinc-300">
                   <tr>
-                    <th className="text-left p-2">Path</th>
-                    <th className="text-left p-2">Before</th>
-                    <th className="text-left p-2">After</th>
+                    <th className="text-left p-2">{t('path')}</th>
+                    <th className="text-left p-2">{t('before')}</th>
+                    <th className="text-left p-2">{t('after')}</th>
                   </tr>
                 </thead>
                 <tbody>

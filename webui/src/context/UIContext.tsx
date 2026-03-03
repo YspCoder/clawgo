@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { GlobalDialog, DialogOptions } from '../components/GlobalDialog';
 
 type UIContextType = {
@@ -15,15 +16,16 @@ type UIContextType = {
 const UIContext = createContext<UIContextType | undefined>(undefined);
 
 export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const [loadingText, setLoadingText] = useState('Loading...');
+  const [loadingText, setLoadingText] = useState(t('loading'));
   const [dialog, setDialog] = useState<null | { kind: 'notice' | 'confirm'; options: DialogOptions; resolve: (v: any) => void }>(null);
   const [customModal, setCustomModal] = useState<null | { title?: string; node: React.ReactNode }>(null);
 
   const value = useMemo<UIContextType>(() => ({
     loading,
     showLoading: (text?: string) => {
-      setLoadingText(text || 'Loading...');
+      setLoadingText(text || t('loading'));
       setLoading(true);
     },
     hideLoading: () => setLoading(false),
@@ -37,7 +39,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }),
     openModal: (node, title) => setCustomModal({ node, title }),
     closeModal: () => setCustomModal(null),
-  }), [loading]);
+  }), [loading, t]);
 
   const closeDialog = (result: boolean) => {
     if (!dialog) return;
@@ -76,7 +78,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             <motion.div className="w-full max-w-4xl rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden"
               initial={{ scale: 0.96 }} animate={{ scale: 1 }} exit={{ scale: 0.96 }}>
               <div className="px-5 py-3 border-b border-zinc-800 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-zinc-100">{customModal.title || 'Modal'}</h3>
+                <h3 className="text-sm font-semibold text-zinc-100">{customModal.title || t('modal')}</h3>
                 <button onClick={() => setCustomModal(null)} className="text-zinc-400 hover:text-zinc-200">✕</button>
               </div>
               <div className="p-4 max-h-[80vh] overflow-auto">{customModal.node}</div>

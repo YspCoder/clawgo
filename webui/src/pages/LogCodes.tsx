@@ -46,7 +46,7 @@ const LogCodes: React.FC = () => {
         <input
           value={kw}
           onChange={(e) => setKw(e.target.value)}
-          placeholder="Search code/text"
+          placeholder={t('logCodesSearchPlaceholder')}
           className="w-72 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
         />
       </div>
@@ -55,8 +55,8 @@ const LogCodes: React.FC = () => {
         <table className="w-full text-sm">
           <thead className="bg-zinc-900/90 border-b border-zinc-800">
             <tr className="text-zinc-400">
-              <th className="text-left p-3 font-medium w-40">Code</th>
-              <th className="text-left p-3 font-medium">Template</th>
+              <th className="text-left p-3 font-medium w-40">{t('code')}</th>
+              <th className="text-left p-3 font-medium">{t('template')}</th>
             </tr>
           </thead>
           <tbody>
@@ -68,7 +68,7 @@ const LogCodes: React.FC = () => {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td className="p-6 text-zinc-500" colSpan={2}>No codes</td>
+                <td className="p-6 text-zinc-500" colSpan={2}>{t('logCodesNoCodes')}</td>
               </tr>
             )}
           </tbody>
