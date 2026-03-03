@@ -239,6 +239,12 @@ clawgo uninstall [--purge] [--remove-bin]
 - Strict JSON parsing (unknown fields fail fast)
 - Auto rollback on failed hot reload
 
+New provider switch (`providers.proxy` / `providers.proxies.<name>`):
+
+- `cross_session_call_id` (bool, default `false`)
+  - `true`: keep using `call_id` with `function_call_output`
+  - `false`: do not send `call_id`; pass tool results as plain content (recommended for cross-session/aggregator routing)
+
 ---
 
 ## Stability / Operations Notes

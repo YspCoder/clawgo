@@ -26,19 +26,21 @@ type HTTPProvider struct {
 	apiBase                  string
 	protocol                 string
 	defaultModel             string
+	crossSessionCallID       bool
 	supportsResponsesCompact bool
 	authMode                 string
 	timeout                  time.Duration
 	httpClient               *http.Client
 }
 
-func NewHTTPProvider(apiKey, apiBase, protocol, defaultModel string, supportsResponsesCompact bool, authMode string, timeout time.Duration) *HTTPProvider {
+func NewHTTPProvider(apiKey, apiBase, protocol, defaultModel string, crossSessionCallID bool, supportsResponsesCompact bool, authMode string, timeout time.Duration) *HTTPProvider {
 	normalizedBase := normalizeAPIBase(apiBase)
 	return &HTTPProvider{
 		apiKey:                   apiKey,
 		apiBase:                  normalizedBase,
 		protocol:                 normalizeProtocol(protocol),
 		defaultModel:             strings.TrimSpace(defaultModel),
+		crossSessionCallID:       crossSessionCallID,
 		supportsResponsesCompact: supportsResponsesCompact,
 		authMode:                 authMode,
 		timeout:                  timeout,
@@ -143,7 +145,7 @@ func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, to
 	input := make([]map[string]interface{}, 0, len(messages))
 	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls)...)
+		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls, p.crossSessionCallID)...)
 	}
 	requestBody := map[string]interface{}{
 		"model": model,
@@ -243,10 +245,10 @@ func toChatCompletionsContent(msg Message) []map[string]interface{} {
 }
 
 func toResponsesInputItems(msg Message) []map[string]interface{} {
-	return toResponsesInputItemsWithState(msg, nil)
+	return toResponsesInputItemsWithState(msg, nil, true)
 }
 
-func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{}) []map[string]interface{} {
+func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{}, crossSessionCallID bool) []map[string]interface{} {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
 	case "system", "developer", "user":
@@ -302,6 +304,12 @@ func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{
 		}
 		return items
 	case "tool":
+		if !crossSessionCallID {
+			if strings.TrimSpace(msg.Content) == "" {
+				return nil
+			}
+			return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
+		}
 		callID := msg.ToolCallID
 		if callID == "" {
 			return nil
@@ -432,7 +440,7 @@ func (p *HTTPProvider) callResponsesStream(ctx context.Context, messages []Messa
 	input := make([]map[string]interface{}, 0, len(messages))
 	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls)...)
+		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls, p.crossSessionCallID)...)
 	}
 	requestBody := map[string]interface{}{
 		"model":  model,
@@ -915,7 +923,7 @@ func (p *HTTPProvider) BuildSummaryViaResponsesCompact(ctx context.Context, mode
 	}
 	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls)...)
+		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls, p.crossSessionCallID)...)
 	}
 	if len(input) == 0 {
 		return strings.TrimSpace(existingSummary), nil
@@ -1022,7 +1030,7 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 	if len(pc.Models) > 0 {
 		defaultModel = pc.Models[0]
 	}
-	return NewHTTPProvider(pc.APIKey, pc.APIBase, pc.Protocol, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second), nil
+	return NewHTTPProvider(pc.APIKey, pc.APIBase, pc.Protocol, defaultModel, pc.CrossSessionCallID, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second), nil
 }
 
 func CreateProviders(cfg *config.Config) (map[string]LLMProvider, error) {

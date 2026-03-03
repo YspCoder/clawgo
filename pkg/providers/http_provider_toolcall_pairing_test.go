@@ -6,7 +6,7 @@ func TestToResponsesInputItemsWithState_DropsOrphanToolOutputs(t *testing.T) {
 	pending := map[string]struct{}{}
 
 	orphan := Message{Role: "tool", ToolCallID: "call-orphan", Content: "orphan output"}
-	if got := toResponsesInputItemsWithState(orphan, pending); len(got) != 0 {
+	if got := toResponsesInputItemsWithState(orphan, pending, true); len(got) != 0 {
 		t.Fatalf("expected orphan tool output to be dropped, got: %#v", got)
 	}
 
@@ -20,7 +20,7 @@ func TestToResponsesInputItemsWithState_DropsOrphanToolOutputs(t *testing.T) {
 			},
 		}},
 	}
-	items := toResponsesInputItemsWithState(assistant, pending)
+	items := toResponsesInputItemsWithState(assistant, pending, true)
 	if len(items) == 0 {
 		t.Fatalf("assistant tool call should produce responses items")
 	}
@@ -29,7 +29,7 @@ func TestToResponsesInputItemsWithState_DropsOrphanToolOutputs(t *testing.T) {
 	}
 
 	matched := Message{Role: "tool", ToolCallID: "call-1", Content: "file content"}
-	matchedItems := toResponsesInputItemsWithState(matched, pending)
+	matchedItems := toResponsesInputItemsWithState(matched, pending, true)
 	if len(matchedItems) != 1 {
 		t.Fatalf("expected matched tool output item, got %#v", matchedItems)
 	}
@@ -38,5 +38,26 @@ func TestToResponsesInputItemsWithState_DropsOrphanToolOutputs(t *testing.T) {
 	}
 	if _, ok := pending["call-1"]; ok {
 		t.Fatalf("matched tool output should clear pending call id")
+	}
+}
+
+func TestToResponsesInputItemsWithState_ToolResultAsUserInputWhenCallIDDisabled(t *testing.T) {
+	pending := map[string]struct{}{
+		"call-1": {},
+	}
+	msg := Message{Role: "tool", ToolCallID: "call-1", Content: "file content"}
+
+	items := toResponsesInputItemsWithState(msg, pending, false)
+	if len(items) != 1 {
+		t.Fatalf("expected one fallback tool result item, got %#v", items)
+	}
+	if items[0]["type"] != "message" {
+		t.Fatalf("expected message item, got %#v", items[0])
+	}
+	if items[0]["role"] != "user" {
+		t.Fatalf("expected fallback role=user, got %#v", items[0])
+	}
+	if _, ok := pending["call-1"]; !ok {
+		t.Fatalf("pending call state should remain untouched when call_id mode is disabled")
 	}
 }

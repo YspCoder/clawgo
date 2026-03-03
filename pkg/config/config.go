@@ -246,6 +246,7 @@ type ProviderConfig struct {
 	APIKey                   string   `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
 	APIBase                  string   `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
 	Protocol                 string   `json:"protocol" env:"CLAWGO_PROVIDERS_{{.Name}}_PROTOCOL"`
+	CrossSessionCallID       bool     `json:"cross_session_call_id" env:"CLAWGO_PROVIDERS_{{.Name}}_CROSS_SESSION_CALL_ID"`
 	Models                   []string `json:"models" env:"CLAWGO_PROVIDERS_{{.Name}}_MODELS"`
 	SupportsResponsesCompact bool     `json:"supports_responses_compact" env:"CLAWGO_PROVIDERS_{{.Name}}_SUPPORTS_RESPONSES_COMPACT"`
 	Auth                     string   `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`

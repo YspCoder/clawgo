@@ -113,6 +113,7 @@ const Config: React.FC = () => {
           api_key: '',
           api_base: '',
           protocol: 'responses',
+          cross_session_call_id: false,
           models: [],
           supports_responses_compact: false,
           auth: 'bearer',
