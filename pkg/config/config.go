@@ -93,19 +93,23 @@ type HeartbeatConfig struct {
 }
 
 type RuntimeControlConfig struct {
-	IntentMaxInputChars           int                       `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
-	AutonomyTickIntervalSec       int                       `json:"autonomy_tick_interval_sec" env:"CLAWGO_AUTONOMY_TICK_INTERVAL_SEC"`
-	AutonomyMinRunIntervalSec     int                       `json:"autonomy_min_run_interval_sec" env:"CLAWGO_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
-	AutonomyIdleThresholdSec      int                       `json:"autonomy_idle_threshold_sec" env:"CLAWGO_AUTONOMY_IDLE_THRESHOLD_SEC"`
-	AutonomyMaxRoundsWithoutUser  int                       `json:"autonomy_max_rounds_without_user" env:"CLAWGO_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
-	AutonomyMaxPendingDurationSec int                       `json:"autonomy_max_pending_duration_sec" env:"CLAWGO_AUTONOMY_MAX_PENDING_DURATION_SEC"`
-	AutonomyMaxConsecutiveStalls  int                       `json:"autonomy_max_consecutive_stalls" env:"CLAWGO_AUTONOMY_MAX_STALLS"`
-	AutoLearnMaxRoundsWithoutUser int                       `json:"autolearn_max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
-	RunStateTTLSeconds            int                       `json:"run_state_ttl_seconds" env:"CLAWGO_RUN_STATE_TTL_SECONDS"`
-	RunStateMax                   int                       `json:"run_state_max" env:"CLAWGO_RUN_STATE_MAX"`
-	ToolParallelSafeNames         []string                  `json:"tool_parallel_safe_names"`
-	ToolMaxParallelCalls          int                       `json:"tool_max_parallel_calls"`
-	SystemSummary                 SystemSummaryPolicyConfig `json:"system_summary"`
+	IntentMaxInputChars              int                       `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
+	AutonomyTickIntervalSec          int                       `json:"autonomy_tick_interval_sec" env:"CLAWGO_AUTONOMY_TICK_INTERVAL_SEC"`
+	AutonomyMinRunIntervalSec        int                       `json:"autonomy_min_run_interval_sec" env:"CLAWGO_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
+	AutonomyIdleThresholdSec         int                       `json:"autonomy_idle_threshold_sec" env:"CLAWGO_AUTONOMY_IDLE_THRESHOLD_SEC"`
+	AutonomyMaxRoundsWithoutUser     int                       `json:"autonomy_max_rounds_without_user" env:"CLAWGO_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
+	AutonomyMaxPendingDurationSec    int                       `json:"autonomy_max_pending_duration_sec" env:"CLAWGO_AUTONOMY_MAX_PENDING_DURATION_SEC"`
+	AutonomyMaxConsecutiveStalls     int                       `json:"autonomy_max_consecutive_stalls" env:"CLAWGO_AUTONOMY_MAX_STALLS"`
+	AutoLearnMaxRoundsWithoutUser    int                       `json:"autolearn_max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
+	RunStateTTLSeconds               int                       `json:"run_state_ttl_seconds" env:"CLAWGO_RUN_STATE_TTL_SECONDS"`
+	RunStateMax                      int                       `json:"run_state_max" env:"CLAWGO_RUN_STATE_MAX"`
+	ToolParallelSafeNames            []string                  `json:"tool_parallel_safe_names"`
+	ToolMaxParallelCalls             int                       `json:"tool_max_parallel_calls"`
+	SessionResourceSchedulingEnabled bool                      `json:"session_resource_scheduling_enabled" env:"CLAWGO_SESSION_RESOURCE_SCHEDULING_ENABLED"`
+	SessionMaxParallelRuns           int                       `json:"session_max_parallel_runs" env:"CLAWGO_SESSION_MAX_PARALLEL_RUNS"`
+	SessionAutoPlanEnabled           bool                      `json:"session_auto_plan_enabled" env:"CLAWGO_SESSION_AUTO_PLAN_ENABLED"`
+	SessionAutoPlanMaxTasks          int                       `json:"session_auto_plan_max_tasks" env:"CLAWGO_SESSION_AUTO_PLAN_MAX_TASKS"`
+	SystemSummary                    SystemSummaryPolicyConfig `json:"system_summary"`
 }
 
 type SystemSummaryPolicyConfig struct {
@@ -419,18 +423,22 @@ func DefaultConfig() *Config {
 					MaxTranscriptChars: 20000,
 				},
 				RuntimeControl: RuntimeControlConfig{
-					IntentMaxInputChars:           1200,
-					AutonomyTickIntervalSec:       20,
-					AutonomyMinRunIntervalSec:     20,
-					AutonomyIdleThresholdSec:      20,
-					AutonomyMaxRoundsWithoutUser:  120,
-					AutonomyMaxPendingDurationSec: 180,
-					AutonomyMaxConsecutiveStalls:  3,
-					AutoLearnMaxRoundsWithoutUser: 200,
-					RunStateTTLSeconds:            1800,
-					RunStateMax:                   500,
-					ToolParallelSafeNames:         []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"},
-					ToolMaxParallelCalls:          2,
+					IntentMaxInputChars:              1200,
+					AutonomyTickIntervalSec:          20,
+					AutonomyMinRunIntervalSec:        20,
+					AutonomyIdleThresholdSec:         20,
+					AutonomyMaxRoundsWithoutUser:     120,
+					AutonomyMaxPendingDurationSec:    180,
+					AutonomyMaxConsecutiveStalls:     3,
+					AutoLearnMaxRoundsWithoutUser:    200,
+					RunStateTTLSeconds:               1800,
+					RunStateMax:                      500,
+					ToolParallelSafeNames:            []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"},
+					ToolMaxParallelCalls:             2,
+					SessionResourceSchedulingEnabled: true,
+					SessionMaxParallelRuns:           4,
+					SessionAutoPlanEnabled:           true,
+					SessionAutoPlanMaxTasks:          4,
 					SystemSummary: SystemSummaryPolicyConfig{
 						Marker:          "## System Task Summary",
 						CompletedPrefix: "- Completed:",

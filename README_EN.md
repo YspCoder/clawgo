@@ -1,126 +1,90 @@
-# ClawGo
+# ClawGo 🚀
 
-A high-performance, long-running Go-native AI Agent with multi-platform builds and multi-channel messaging.
+A long-running AI Agent written in Go: lightweight, auditable, and multi-channel ready.
 
 [中文](./README.md)
 
 ---
 
-## What is ClawGo?
+## What It Does ✨
 
-**ClawGo = single-binary gateway + channel integrations + tool calling + autonomy + auditable memory.**
-
-Best for:
-- Self-hosted AI assistants
-- Continuous automation / inspections
-- Multi-channel bots (Telegram/Feishu/Discord/...)
-- Agent systems requiring control, traceability, and rollback safety
-
----
-
-## Core Capabilities
-
-- **Dual runtime modes**
-  - `clawgo agent`: local interactive mode
-  - `clawgo gateway`: service mode for long-running workloads
-
-- **Multi-channel support**
-  - Telegram / Feishu / Discord / WhatsApp / QQ / DingTalk / MaixCam
-
-- **Tools & skills**
-  - Built-in tool-calling and skill execution
-  - Task orchestration support
-
-- **Autonomy & task governance**
-  - Session-level autonomy (idle budget, pause/resume)
-  - Task Queue + Task Audit governance
-  - Resource-key locking for conflict control
-
-- **Memory & context governance**
-  - `memory_search` and layered memory
-  - Automatic context compaction
-  - Startup self-check and task continuation
-
-- **Reliability hardening**
-  - Provider fallback (errsig-aware ranking)
-  - Inbound/outbound dedupe protection
-  - Better observability (provider/model/source/channel)
+- 🤖 Local chat mode: `clawgo agent`
+- 🌐 Gateway service mode: `clawgo gateway`
+- 💬 Multi-channel support: Telegram / Feishu / Discord / WhatsApp / QQ / DingTalk / MaixCam
+- 🧰 Tool calling, skills, and sub-task collaboration
+- 🧠 Autonomous tasks (queue, audit, conflict locks)
+- 📊 WebUI for visibility (Chat / Logs / Config / Cron / Tasks / EKG)
 
 ---
 
-## EKG (Execution Knowledge Graph)
+## Concurrency Scheduling (New) ⚙️
 
-ClawGo includes a lightweight EKG (no external graph DB required):
-
-- Event log: `memory/ekg-events.jsonl`
-- Snapshot cache: `memory/ekg-snapshot.json`
-- Normalized error signatures (path/number/hex denoise)
-- Repeated-error suppression (configurable threshold)
-- Historical provider scoring (including error-signature dimension)
-- Memory linkage (`[EKG_INCIDENT]` structured notes for earlier suppression)
-- WebUI time windows: `6h / 24h / 7d`
+- 🧩 A composite message is auto-split into sub-tasks (configurable max)
+- 🔀 Within the same session: non-conflicting tasks run in parallel
+- 🔒 Within the same session: conflicting tasks run serially (to avoid collisions)
+- 🏷️ `resource_keys` are inferred automatically by default (no manual input needed)
 
 ---
 
-## Quick Start
+## 3-Minute Quick Start ⚡
 
-### One-Click Install (install.sh)
-
-- GitHub script link: <https://github.com/YspCoder/clawgo/blob/main/install.sh>
-- One-click install command:
+### 1) Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/YspCoder/clawgo/main/install.sh | bash
 ```
 
-### 1) Initialize
+### 2) Initialize
 
 ```bash
 clawgo onboard
 ```
 
-### 2) Configure upstream model/proxy
+### 3) Configure model/proxy
 
 ```bash
 clawgo login
 ```
 
-### 3) Check status
+### 4) Check status
 
 ```bash
 clawgo status
 ```
 
-### 4) Local mode
+### 5) Start using it
+
+Local mode:
 
 ```bash
 clawgo agent
 clawgo agent -m "Hello"
 ```
 
-### 5) Gateway mode
+Gateway mode:
 
 ```bash
-# register + enable systemd service
+# Register + enable systemd service
 clawgo gateway
 clawgo gateway start
 clawgo gateway status
 
-# foreground mode
+# Or run in foreground
 clawgo gateway run
 ```
 
 ---
 
-## WebUI
+## WebUI 🖥️
 
-Access:
+Open:
 
 ```text
 http://<host>:<port>/webui?token=<gateway.token>
 ```
 
 Main pages:
+
 - Dashboard
 - Chat
 - Logs
@@ -135,88 +99,7 @@ Main pages:
 
 ---
 
-## Multi-Platform Build (Make)
-
-### Build all default targets
-
-```bash
-make build-all
-```
-
-### Linux slim build (without disabling channels)
-
-```bash
-make build-linux-slim
-```
-
-Notes (Linux only):
-- Keeps all channel capabilities while enabling `purego,netgo,osusergo` with `CGO_ENABLED=0` to reduce size and dynamic library coupling.
-- Optionally combine with `COMPRESS_BINARY=1` (if `upx` is installed) for additional compression.
-
-Default matrix:
-- linux/amd64
-- linux/arm64
-- linux/riscv64
-- darwin/amd64
-- darwin/arm64
-- windows/amd64
-- windows/arm64
-
-### Custom build matrix
-
-```bash
-make build-all BUILD_TARGETS="linux/amd64 linux/arm64 darwin/arm64 windows/amd64"
-```
-
-### Ultra-slim build (target <10MB)
-
-```bash
-make build COMPRESS_BINARY=1
-```
-
-Notes:
-- Default build now uses `-trimpath -buildvcs=false -s -w` to remove path/symbol overhead.
-- With `COMPRESS_BINARY=1`, the build will try `upx --best --lzma` for further executable compression.
-- If `upx` is unavailable, build still succeeds and prints a warning.
-
-### Package + checksums
-
-```bash
-make package-all
-```
-
-Outputs:
-- `build/*.tar.gz` (Linux/macOS)
-- `build/*.zip` (Windows)
-- `build/checksums.txt`
-
----
-
-## GitHub Release Automation
-
-Built-in workflow: `.github/workflows/release.yml`
-
-Triggers:
-- tag push: `v*` (e.g. `v0.0.1`)
-- manual dispatch (workflow_dispatch)
-
-Pipeline includes:
-- Multi-platform compilation
-- Artifact packaging
-- Checksum generation
-- WebUI dist packaging
-- GitHub Releases publishing
-
-Example:
-
-```bash
-git tag v0.0.2
-git push origin v0.0.2
-```
-
----
-
-## Common Commands
+## Common Commands 📌
 
 ```text
 clawgo onboard
@@ -233,26 +116,74 @@ clawgo uninstall [--purge] [--remove-bin]
 
 ---
 
-## Config & Hot Reload
+## Build & Release 🛠️
 
-- Supports `clawgo config set/get/check/reload`
-- Strict JSON parsing (unknown fields fail fast)
-- Auto rollback on failed hot reload
-- Provider interface is now `responses` only
+Build all default targets:
 
+```bash
+make build-all
+```
+
+Linux slim build:
+
+```bash
+make build-linux-slim
+```
+
+Custom target matrix:
+
+```bash
+make build-all BUILD_TARGETS="linux/amd64 linux/arm64 darwin/arm64 windows/amd64"
+```
+
+Package + checksums:
+
+```bash
+make package-all
+```
+
+Outputs:
+
+- `build/*.tar.gz` (Linux/macOS)
+- `build/*.zip` (Windows)
+- `build/checksums.txt`
 
 ---
 
-## Stability / Operations Notes
+## GitHub Release Automation 📦
 
-Recommended for production:
-- tune channel dedupe windows
-- keep heartbeat filtered in task-audit by default
-- monitor EKG with 24h window baseline
-- review Top errsig/provider score periodically
+Built-in workflow: `.github/workflows/release.yml`
+
+Triggers:
+
+- Tag push (e.g. `v0.0.2`)
+- Manual `workflow_dispatch`
+
+Example:
+
+```bash
+git tag v0.0.2
+git push origin v0.0.2
+```
 
 ---
 
-## License
+## Config Notes ⚙️
 
-See repository License file.
+- Strict JSON validation (unknown fields fail fast)
+- Supports hot reload: `clawgo config reload`
+- Auto rollback if hot reload fails
+
+---
+
+## Production Tips ✅
+
+- Enable channel dedupe windows
+- Monitor Task Audit and EKG regularly
+- Use gateway mode for long-running workloads
+
+---
+
+## License 📄
+
+See `LICENSE` in this repository.

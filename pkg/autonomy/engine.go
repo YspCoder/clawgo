@@ -18,31 +18,32 @@ import (
 	"clawgo/pkg/bus"
 	"clawgo/pkg/ekg"
 	"clawgo/pkg/lifecycle"
+	"clawgo/pkg/scheduling"
 )
 
 type Options struct {
-	Enabled                     bool
-	TickIntervalSec             int
-	MinRunIntervalSec           int
-	MaxPendingDurationSec       int
-	MaxConsecutiveStalls        int
-	MaxDispatchPerTick          int
-	Workspace                   string
-	DefaultNotifyChannel        string
-	DefaultNotifyChatID         string
-	NotifyAllowFrom             []string
-	NotifyCooldownSec           int
-	NotifySameReasonCooldownSec int
-	QuietHours                  string
-	UserIdleResumeSec           int
-	WaitingResumeDebounceSec    int
-	IdleRoundBudgetReleaseSec int
-	MaxRoundsWithoutUser      int
-	TaskHistoryRetentionDays  int
-	AllowedTaskKeywords        []string
-	ImportantKeywords           []string
-	CompletionTemplate          string
-	BlockedTemplate             string
+	Enabled                      bool
+	TickIntervalSec              int
+	MinRunIntervalSec            int
+	MaxPendingDurationSec        int
+	MaxConsecutiveStalls         int
+	MaxDispatchPerTick           int
+	Workspace                    string
+	DefaultNotifyChannel         string
+	DefaultNotifyChatID          string
+	NotifyAllowFrom              []string
+	NotifyCooldownSec            int
+	NotifySameReasonCooldownSec  int
+	QuietHours                   string
+	UserIdleResumeSec            int
+	WaitingResumeDebounceSec     int
+	IdleRoundBudgetReleaseSec    int
+	MaxRoundsWithoutUser         int
+	TaskHistoryRetentionDays     int
+	AllowedTaskKeywords          []string
+	ImportantKeywords            []string
+	CompletionTemplate           string
+	BlockedTemplate              string
 	EKGConsecutiveErrorThreshold int
 }
 
@@ -61,8 +62,8 @@ type taskState struct {
 	DedupeHits       int
 	ResourceKeys     []string
 	WaitAttempts     int
-	LastPauseReason string
-	LastPauseAt     time.Time
+	LastPauseReason  string
+	LastPauseAt      time.Time
 }
 
 type Engine struct {
@@ -71,14 +72,14 @@ type Engine struct {
 	runner    *lifecycle.LoopRunner
 	taskStore *TaskStore
 
-	mu         sync.Mutex
-	state      map[string]*taskState
-	lastNotify map[string]time.Time
-	lockOwners map[string]string
-	roundsWithoutUser int
-	lastDailyReportDate string
+	mu                   sync.Mutex
+	state                map[string]*taskState
+	lastNotify           map[string]time.Time
+	lockOwners           map[string]string
+	roundsWithoutUser    int
+	lastDailyReportDate  string
 	lastHistoryCleanupAt time.Time
-	ekg                 *ekg.Engine
+	ekg                  *ekg.Engine
 }
 
 func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
@@ -482,86 +483,7 @@ func schedulingScore(st *taskState, now time.Time) int {
 }
 
 func deriveResourceKeys(content string) []string {
-	raw := content
-	if raw == "" {
-		return nil
-	}
-	if explicit := parseExplicitResourceKeys(raw); len(explicit) > 0 {
-		return explicit
-	}
-	content = strings.ToLower(raw)
-	keys := make([]string, 0, 8)
-	hasRepo := false
-	for _, token := range strings.Fields(content) {
-		t := strings.Trim(token, "`'\"()[]{}:;,，。！？")
-		if strings.Contains(t, "gitea.") || strings.Contains(t, "github.com") || strings.Count(t, "/") >= 1 {
-			if strings.Contains(t, "github.com/") || strings.Contains(t, "gitea.") {
-				keys = append(keys, "repo:"+t)
-				hasRepo = true
-			}
-		}
-		if strings.Contains(t, "/") || strings.HasSuffix(t, ".go") || strings.HasSuffix(t, ".md") || strings.HasSuffix(t, ".json") || strings.HasSuffix(t, ".yaml") || strings.HasSuffix(t, ".yml") {
-			keys = append(keys, "file:"+t)
-		}
-		if t == "main" || strings.HasPrefix(t, "branch:") {
-			keys = append(keys, "branch:"+strings.TrimPrefix(t, "branch:"))
-		}
-	}
-	if !hasRepo {
-		keys = append(keys, "repo:default")
-	}
-	if len(keys) == 0 {
-		keys = append(keys, "scope:general")
-	}
-	return normalizeResourceKeys(keys)
-}
-
-func parseExplicitResourceKeys(content string) []string {
-	lower := strings.ToLower(content)
-	start := strings.Index(lower, "[keys:")
-	if start < 0 {
-		return nil
-	}
-	rest := content[start+6:]
-	end := strings.Index(rest, "]")
-	if end < 0 {
-		return nil
-	}
-	body := rest[:end]
-	if body == "" {
-		return nil
-	}
-	parts := strings.Split(body, ",")
-	keys := make([]string, 0, len(parts))
-	for _, p := range parts {
-		k := strings.ToLower(strings.TrimSpace(p))
-		if k == "" {
-			continue
-		}
-		if !strings.Contains(k, ":") {
-			k = "file:" + k
-		}
-		keys = append(keys, k)
-	}
-	return normalizeResourceKeys(keys)
-}
-
-func normalizeResourceKeys(keys []string) []string {
-	if len(keys) == 0 {
-		return nil
-	}
-	sort.Strings(keys)
-	uniq := keys[:0]
-	for _, k := range keys {
-		k = strings.TrimSpace(strings.ToLower(k))
-		if k == "" {
-			continue
-		}
-		if len(uniq) == 0 || k != uniq[len(uniq)-1] {
-			uniq = append(uniq, k)
-		}
-	}
-	return append([]string(nil), uniq...)
+	return scheduling.DeriveResourceKeys(content)
 }
 
 type todoItem struct {
@@ -1110,7 +1032,11 @@ func (e *Engine) maybeWriteDailyReportLocked(now time.Time) {
 	defer f.Close()
 	counts := map[string]int{"total": 0, "success": 0, "error": 0, "suppressed": 0, "running": 0}
 	errorReasons := map[string]int{}
-	type topTask struct { TaskID string; Duration int; Status string }
+	type topTask struct {
+		TaskID   string
+		Duration int
+		Status   string
+	}
 	top := make([]topTask, 0, 32)
 	s := bufio.NewScanner(f)
 	for s.Scan() {
@@ -1148,7 +1074,9 @@ func (e *Engine) maybeWriteDailyReportLocked(now time.Time) {
 		case int:
 			dur = v
 		case string:
-			if n, err := strconv.Atoi(v); err == nil { dur = n }
+			if n, err := strconv.Atoi(v); err == nil {
+				dur = n
+			}
 		}
 		top = append(top, topTask{TaskID: fmt.Sprintf("%v", row["task_id"]), Duration: dur, Status: st})
 	}
@@ -1158,18 +1086,29 @@ func (e *Engine) maybeWriteDailyReportLocked(now time.Time) {
 	}
 	sort.Slice(top, func(i, j int) bool { return top[i].Duration > top[j].Duration })
 	maxTop := 3
-	if len(top) < maxTop { maxTop = len(top) }
+	if len(top) < maxTop {
+		maxTop = len(top)
+	}
 	topLines := make([]string, 0, maxTop)
 	for i := 0; i < maxTop; i++ {
-		if top[i].TaskID == "" { continue }
+		if top[i].TaskID == "" {
+			continue
+		}
 		topLines = append(topLines, fmt.Sprintf("- %s (%dms, %s)", top[i].TaskID, top[i].Duration, top[i].Status))
 	}
-	type kv struct { K string; V int }
+	type kv struct {
+		K string
+		V int
+	}
 	reasons := make([]kv, 0, len(errorReasons))
-	for k, v := range errorReasons { reasons = append(reasons, kv{K:k, V:v}) }
+	for k, v := range errorReasons {
+		reasons = append(reasons, kv{K: k, V: v})
+	}
 	sort.Slice(reasons, func(i, j int) bool { return reasons[i].V > reasons[j].V })
 	maxR := 3
-	if len(reasons) < maxR { maxR = len(reasons) }
+	if len(reasons) < maxR {
+		maxR = len(reasons)
+	}
 	reasonLines := make([]string, 0, maxR)
 	for i := 0; i < maxR; i++ {
 		reasonLines = append(reasonLines, fmt.Sprintf("- %s (x%d)", reasons[i].K, reasons[i].V))

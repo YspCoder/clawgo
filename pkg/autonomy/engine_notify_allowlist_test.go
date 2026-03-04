@@ -1,15 +1,18 @@
 package autonomy
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestShouldNotify_RespectsNotifyAllowFrom(t *testing.T) {
 	e := &Engine{opts: Options{
 		DefaultNotifyChannel:        "telegram",
 		DefaultNotifyChatID:         "chat-1",
-		NotifyAllowFrom:            []string{"chat-2", "chat-3"},
+		NotifyAllowFrom:             []string{"chat-2", "chat-3"},
 		NotifyCooldownSec:           1,
 		NotifySameReasonCooldownSec: 1,
-	}}
+	}, lastNotify: map[string]time.Time{}}
 	if e.shouldNotify("k1", "") {
 		t.Fatalf("expected notify to be blocked when chat not in allowlist")
 	}

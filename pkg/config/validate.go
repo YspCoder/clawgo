@@ -52,6 +52,12 @@ func Validate(cfg *Config) []error {
 	if rc.ToolMaxParallelCalls <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.tool_max_parallel_calls must be > 0"))
 	}
+	if rc.SessionMaxParallelRuns <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.session_max_parallel_runs must be > 0"))
+	}
+	if rc.SessionAutoPlanMaxTasks <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.session_auto_plan_max_tasks must be > 0"))
+	}
 	if strings.TrimSpace(rc.SystemSummary.Marker) == "" {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.marker must be non-empty"))
 	}

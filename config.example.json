@@ -69,6 +69,10 @@
         "run_state_max": 500,
         "tool_parallel_safe_names": ["read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"],
         "tool_max_parallel_calls": 2,
+        "session_resource_scheduling_enabled": true,
+        "session_max_parallel_runs": 4,
+        "session_auto_plan_enabled": true,
+        "session_auto_plan_max_tasks": 4,
         "system_summary": {
           "marker": "## System Task Summary",
           "completed_prefix": "- Completed:",

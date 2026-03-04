@@ -138,3 +138,34 @@ func summarizeUsers(msgs []providers.Message) []string {
 	}
 	return out
 }
+
+func TestResolveMessageResourceKeys_FromMetadata(t *testing.T) {
+	loop := &AgentLoop{}
+	msg := &bus.InboundMessage{
+		Content: "do task",
+		Metadata: map[string]string{
+			"resource_keys": "repo:acme/app,file:pkg/a.go",
+		},
+	}
+	keys, cleaned := loop.resolveMessageResourceKeys(msg)
+	if cleaned != "do task" {
+		t.Fatalf("unexpected cleaned content: %q", cleaned)
+	}
+	if len(keys) != 2 {
+		t.Fatalf("unexpected keys: %#v", keys)
+	}
+}
+
+func TestResolveMessageResourceKeys_FromContentDirective(t *testing.T) {
+	loop := &AgentLoop{}
+	msg := &bus.InboundMessage{
+		Content: "[resource_keys: repo:acme/app,file:pkg/a.go]\nplease fix",
+	}
+	keys, cleaned := loop.resolveMessageResourceKeys(msg)
+	if len(keys) != 2 {
+		t.Fatalf("unexpected keys: %#v", keys)
+	}
+	if cleaned != "please fix" {
+		t.Fatalf("unexpected cleaned content: %q", cleaned)
+	}
+}
