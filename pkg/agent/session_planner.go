@@ -12,8 +12,6 @@ import (
 	"clawgo/pkg/scheduling"
 )
 
-const defaultSessionAutoPlanMaxTasks = 4
-
 type plannedTask struct {
 	Index        int
 	Content      string
@@ -42,9 +40,6 @@ func (al *AgentLoop) planSessionTasks(msg bus.InboundMessage) []plannedTask {
 	if base == "" {
 		return nil
 	}
-	if !al.sessionAutoPlan {
-		return []plannedTask{{Index: 1, Content: base, ResourceKeys: scheduling.DeriveResourceKeys(base)}}
-	}
 	if msg.Channel == "system" || msg.Channel == "internal" {
 		return []plannedTask{{Index: 1, Content: base, ResourceKeys: scheduling.DeriveResourceKeys(base)}}
 	}
@@ -60,14 +55,6 @@ func (al *AgentLoop) planSessionTasks(msg bus.InboundMessage) []plannedTask {
 	segments := splitPlannedSegments(base)
 	if len(segments) <= 1 {
 		return []plannedTask{{Index: 1, Content: base, ResourceKeys: scheduling.DeriveResourceKeys(base)}}
-	}
-
-	maxTasks := al.sessionAutoPlanMax
-	if maxTasks <= 0 {
-		maxTasks = defaultSessionAutoPlanMaxTasks
-	}
-	if len(segments) > maxTasks {
-		segments = segments[:maxTasks]
 	}
 
 	out := make([]plannedTask, 0, len(segments))

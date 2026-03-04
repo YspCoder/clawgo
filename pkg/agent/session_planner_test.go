@@ -16,7 +16,7 @@ func TestSplitPlannedSegments_Bullets(t *testing.T) {
 }
 
 func TestPlanSessionTasks_Semicolon(t *testing.T) {
-	loop := &AgentLoop{sessionAutoPlan: true, sessionAutoPlanMax: 4}
+	loop := &AgentLoop{}
 	tasks := loop.planSessionTasks(bus.InboundMessage{Channel: "cli", Content: "修复 pkg/a.go；修复 pkg/b.go"})
 	if len(tasks) != 2 {
 		t.Fatalf("expected 2 tasks, got %#v", tasks)
@@ -32,8 +32,6 @@ func TestProcessPlannedMessage_AggregatesResults(t *testing.T) {
 		{Content: "done-b", FinishReason: "stop"},
 	}}
 	loop := setupLoop(t, rp)
-	loop.sessionAutoPlan = true
-	loop.sessionAutoPlanMax = 4
 
 	resp, err := loop.processPlannedMessage(context.Background(), bus.InboundMessage{
 		Channel:    "cli",

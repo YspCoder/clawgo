@@ -54,8 +54,6 @@ type AgentLoop struct {
 	runtimeCompactionNote string
 	startupCompactionNote string
 	systemRewriteTemplate string
-	sessionAutoPlan       bool
-	sessionAutoPlanMax    int
 	audit                 *triggerAudit
 	running               bool
 	intentMu              sync.RWMutex
@@ -242,25 +240,16 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		runtimeCompactionNote: cfg.Agents.Defaults.Texts.RuntimeCompactionNote,
 		startupCompactionNote: cfg.Agents.Defaults.Texts.StartupCompactionNote,
 		systemRewriteTemplate: cfg.Agents.Defaults.Texts.SystemRewriteTemplate,
-		sessionAutoPlan:       cfg.Agents.Defaults.RuntimeControl.SessionAutoPlanEnabled,
-		sessionAutoPlanMax:    cfg.Agents.Defaults.RuntimeControl.SessionAutoPlanMaxTasks,
 		audit:                 newTriggerAudit(workspace),
 		running:               false,
 		intentHints:           map[string]string{},
-		sessionScheduler:      NewSessionScheduler(cfg.Agents.Defaults.RuntimeControl.SessionMaxParallelRuns),
+		sessionScheduler:      NewSessionScheduler(0),
 		ekg:                   ekg.New(workspace),
 		sessionProvider:       map[string]string{},
 		sessionStreamed:       map[string]bool{},
 		providerResponses:     map[string]config.ProviderResponsesConfig{},
 		telegramStreaming:     cfg.Channels.Telegram.Streaming,
 	}
-	if !cfg.Agents.Defaults.RuntimeControl.SessionResourceSchedulingEnabled {
-		loop.sessionScheduler = nil
-	}
-	if loop.sessionAutoPlanMax <= 0 {
-		loop.sessionAutoPlanMax = 4
-	}
-
 	// Initialize provider fallback chain (primary + proxy_fallbacks).
 	loop.providerPool = map[string]providers.LLMProvider{}
 	loop.providerNames = []string{}
