@@ -320,6 +320,18 @@ func validateProviderConfig(path string, p ProviderConfig) []error {
 	if len(p.Models) == 0 {
 		errs = append(errs, fmt.Errorf("%s.models must contain at least one model", path))
 	}
+	if p.Responses.WebSearchContextSize != "" {
+		switch p.Responses.WebSearchContextSize {
+		case "low", "medium", "high":
+		default:
+			errs = append(errs, fmt.Errorf("%s.responses.web_search_context_size must be one of: low, medium, high", path))
+		}
+	}
+	if p.Responses.FileSearchMaxNumResults < 0 {
+		errs = append(errs, fmt.Errorf("%s.responses.file_search_max_num_results must be >= 0", path))
+	}
+	errs = append(errs, validateNonEmptyStringList(path+".responses.file_search_vector_store_ids", p.Responses.FileSearchVectorStoreIDs)...)
+	errs = append(errs, validateNonEmptyStringList(path+".responses.include", p.Responses.Include)...)
 	return errs
 }
 

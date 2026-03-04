@@ -61,6 +61,8 @@ type AgentLoop struct {
 	sessionRunLocks       map[string]*sync.Mutex
 	providerNames         []string
 	providerPool          map[string]providers.LLMProvider
+	providerResponses     map[string]config.ProviderResponsesConfig
+	telegramStreaming     bool
 	ekg                   *ekg.Engine
 	providerMu            sync.RWMutex
 	sessionProvider       map[string]string
@@ -242,6 +244,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		sessionRunLocks:       map[string]*sync.Mutex{},
 		ekg:                   ekg.New(workspace),
 		sessionProvider:       map[string]string{},
+		providerResponses:     map[string]config.ProviderResponsesConfig{},
+		telegramStreaming:     cfg.Channels.Telegram.Streaming,
 	}
 
 	// Initialize provider fallback chain (primary + proxy_fallbacks).
@@ -253,6 +257,11 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 	loop.providerPool[primaryName] = provider
 	loop.providerNames = append(loop.providerNames, primaryName)
+	if strings.TrimSpace(primaryName) == "proxy" {
+		loop.providerResponses[primaryName] = cfg.Providers.Proxy.Responses
+	} else if pc, ok := cfg.Providers.Proxies[primaryName]; ok {
+		loop.providerResponses[primaryName] = pc.Responses
+	}
 	for _, name := range cfg.Agents.Defaults.ProxyFallbacks {
 		if name == "" {
 			continue
@@ -270,6 +279,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		if p2, err := providers.CreateProviderByName(cfg, name); err == nil {
 			loop.providerPool[name] = p2
 			loop.providerNames = append(loop.providerNames, name)
+			if pc, ok := cfg.Providers.Proxies[name]; ok {
+				loop.providerResponses[name] = pc.Responses
+			}
 		}
 	}
 
@@ -800,10 +812,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			})
 
 		messages = injectResponsesMediaParts(messages, msg.Media, msg.MediaItems)
-		options := buildResponsesOptions(8192, 0.7)
+		options := al.buildResponsesOptions(msg.SessionKey, 8192, 0.7)
 		var response *providers.LLMResponse
 		var err error
-		if msg.Channel == "telegram" && strings.TrimSpace(os.Getenv("CLAWGO_TELEGRAM_STREAMING")) == "1" {
+		if msg.Channel == "telegram" && al.telegramStreaming {
 			if sp, ok := al.provider.(providers.StreamingLLMProvider); ok {
 				streamText := ""
 				lastPush := time.Now().Add(-time.Second)
@@ -1158,7 +1170,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		options := buildResponsesOptions(8192, 0.7)
+		options := al.buildResponsesOptions(sessionKey, 8192, 0.7)
 		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
 
 		if err != nil {
@@ -1292,44 +1304,57 @@ func (al *AgentLoop) buildProviderToolDefs(toolDefs []map[string]interface{}) []
 	return providerToolDefs
 }
 
-func buildResponsesOptions(maxTokens int64, temperature float64) map[string]interface{} {
+func (al *AgentLoop) buildResponsesOptions(sessionKey string, maxTokens int64, temperature float64) map[string]interface{} {
 	options := map[string]interface{}{
 		"max_tokens":  maxTokens,
 		"temperature": temperature,
 	}
+	responsesCfg := al.responsesConfigForSession(sessionKey)
 	responseTools := make([]map[string]interface{}, 0, 2)
-	if strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_WEB_SEARCH")) == "1" {
+	if responsesCfg.WebSearchEnabled {
 		webTool := map[string]interface{}{"type": "web_search"}
-		if contextSize := strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_WEB_SEARCH_CONTEXT_SIZE")); contextSize != "" {
+		if contextSize := strings.TrimSpace(responsesCfg.WebSearchContextSize); contextSize != "" {
 			webTool["search_context_size"] = contextSize
 		}
 		responseTools = append(responseTools, webTool)
 	}
-	if idsRaw := strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_FILE_SEARCH_VECTOR_STORE_IDS")); idsRaw != "" {
-		ids := splitCommaList(idsRaw)
-		if len(ids) > 0 {
-			fileSearch := map[string]interface{}{
-				"type":             "file_search",
-				"vector_store_ids": ids,
-			}
-			if maxNumRaw := strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_FILE_SEARCH_MAX_NUM_RESULTS")); maxNumRaw != "" {
-				if n, err := strconv.Atoi(maxNumRaw); err == nil && n > 0 {
-					fileSearch["max_num_results"] = n
-				}
-			}
-			responseTools = append(responseTools, fileSearch)
+	if len(responsesCfg.FileSearchVectorStoreIDs) > 0 {
+		fileSearch := map[string]interface{}{
+			"type":             "file_search",
+			"vector_store_ids": responsesCfg.FileSearchVectorStoreIDs,
 		}
+		if responsesCfg.FileSearchMaxNumResults > 0 {
+			fileSearch["max_num_results"] = responsesCfg.FileSearchMaxNumResults
+		}
+		responseTools = append(responseTools, fileSearch)
 	}
 	if len(responseTools) > 0 {
 		options["responses_tools"] = responseTools
 	}
-	if include := splitCommaList(strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_INCLUDE"))); len(include) > 0 {
-		options["responses_include"] = include
+	if len(responsesCfg.Include) > 0 {
+		options["responses_include"] = responsesCfg.Include
 	}
-	if strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_STREAM_INCLUDE_USAGE")) == "1" {
+	if responsesCfg.StreamIncludeUsage {
 		options["responses_stream_options"] = map[string]interface{}{"include_usage": true}
 	}
 	return options
+}
+
+func (al *AgentLoop) responsesConfigForSession(sessionKey string) config.ProviderResponsesConfig {
+	if al == nil {
+		return config.ProviderResponsesConfig{}
+	}
+	name := strings.TrimSpace(al.getSessionProvider(sessionKey))
+	if name == "" && len(al.providerNames) > 0 {
+		name = al.providerNames[0]
+	}
+	if name == "" {
+		return config.ProviderResponsesConfig{}
+	}
+	if cfg, ok := al.providerResponses[name]; ok {
+		return cfg
+	}
+	return config.ProviderResponsesConfig{}
 }
 
 func injectResponsesMediaParts(messages []providers.Message, media []string, mediaItems []bus.MediaItem) []providers.Message {
@@ -1349,15 +1374,28 @@ func injectResponsesMediaParts(messages []providers.Message, media []string, med
 		})
 	}
 
-	for _, ref := range media {
-		ref = strings.TrimSpace(ref)
-		if ref == "" {
-			continue
+	// Fallback-only handling for raw media refs. Prefer structured media_items when present.
+	if len(mediaItems) == 0 {
+		for _, ref := range media {
+			ref = strings.TrimSpace(ref)
+			if ref == "" {
+				continue
+			}
+			if isResponsesFileID(ref) {
+				parts = append(parts, providers.MessageContentPart{
+					Type:   "input_image",
+					FileID: ref,
+				})
+				continue
+			}
+			if !isRemoteReference(ref) {
+				continue
+			}
+			parts = append(parts, providers.MessageContentPart{
+				Type:     "input_image",
+				ImageURL: ref,
+			})
 		}
-		parts = append(parts, providers.MessageContentPart{
-			Type:     "input_image",
-			ImageURL: ref,
-		})
 	}
 
 	for _, item := range mediaItems {
@@ -1371,9 +1409,9 @@ func injectResponsesMediaParts(messages []providers.Message, media []string, med
 		switch {
 		case strings.Contains(typ, "image"):
 			part := providers.MessageContentPart{Type: "input_image"}
-			if strings.HasPrefix(src, "file_") {
+			if isResponsesFileID(src) {
 				part.FileID = src
-			} else {
+			} else if isRemoteReference(src) {
 				part.ImageURL = src
 			}
 			if part.FileID != "" || part.ImageURL != "" {
@@ -1381,9 +1419,9 @@ func injectResponsesMediaParts(messages []providers.Message, media []string, med
 			}
 		case strings.Contains(typ, "file"), strings.Contains(typ, "document"), strings.Contains(typ, "audio"), strings.Contains(typ, "video"):
 			part := providers.MessageContentPart{Type: "input_file"}
-			if strings.HasPrefix(src, "file_") {
+			if isResponsesFileID(src) {
 				part.FileID = src
-			} else {
+			} else if isRemoteReference(src) {
 				part.FileURL = src
 			}
 			if part.FileID != "" || part.FileURL != "" {
@@ -1399,18 +1437,15 @@ func injectResponsesMediaParts(messages []providers.Message, media []string, med
 	return messages
 }
 
-func splitCommaList(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if s := strings.TrimSpace(p); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
+func isResponsesFileID(ref string) bool {
+	return strings.HasPrefix(strings.TrimSpace(ref), "file_")
+}
+
+func isRemoteReference(ref string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(ref))
+	return strings.HasPrefix(trimmed, "http://") ||
+		strings.HasPrefix(trimmed, "https://") ||
+		strings.HasPrefix(trimmed, "data:")
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.

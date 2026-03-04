@@ -149,6 +149,7 @@ type WhatsAppConfig struct {
 type TelegramConfig struct {
 	Enabled                bool     `json:"enabled" env:"CLAWGO_CHANNELS_TELEGRAM_ENABLED"`
 	Token                  string   `json:"token" env:"CLAWGO_CHANNELS_TELEGRAM_TOKEN"`
+	Streaming              bool     `json:"streaming"`
 	AllowFrom              []string `json:"allow_from" env:"CLAWGO_CHANNELS_TELEGRAM_ALLOW_FROM"`
 	AllowChats             []string `json:"allow_chats" env:"CLAWGO_CHANNELS_TELEGRAM_ALLOW_CHATS"`
 	EnableGroups           bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_TELEGRAM_ENABLE_GROUPS"`
@@ -243,12 +244,22 @@ func (p *ProvidersConfig) UnmarshalJSON(data []byte) error {
 }
 
 type ProviderConfig struct {
-	APIKey                   string   `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase                  string   `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
-	Models                   []string `json:"models" env:"CLAWGO_PROVIDERS_{{.Name}}_MODELS"`
-	SupportsResponsesCompact bool     `json:"supports_responses_compact" env:"CLAWGO_PROVIDERS_{{.Name}}_SUPPORTS_RESPONSES_COMPACT"`
-	Auth                     string   `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
-	TimeoutSec               int      `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`
+	APIKey                   string                  `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
+	APIBase                  string                  `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
+	Models                   []string                `json:"models" env:"CLAWGO_PROVIDERS_{{.Name}}_MODELS"`
+	SupportsResponsesCompact bool                    `json:"supports_responses_compact" env:"CLAWGO_PROVIDERS_{{.Name}}_SUPPORTS_RESPONSES_COMPACT"`
+	Auth                     string                  `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
+	TimeoutSec               int                     `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`
+	Responses                ProviderResponsesConfig `json:"responses"`
+}
+
+type ProviderResponsesConfig struct {
+	WebSearchEnabled         bool     `json:"web_search_enabled"`
+	WebSearchContextSize     string   `json:"web_search_context_size"`
+	FileSearchVectorStoreIDs []string `json:"file_search_vector_store_ids"`
+	FileSearchMaxNumResults  int      `json:"file_search_max_num_results"`
+	Include                  []string `json:"include"`
+	StreamIncludeUsage       bool     `json:"stream_include_usage"`
 }
 
 type GatewayConfig struct {
@@ -444,6 +455,7 @@ func DefaultConfig() *Config {
 			Telegram: TelegramConfig{
 				Enabled:                false,
 				Token:                  "",
+				Streaming:              false,
 				AllowFrom:              []string{},
 				AllowChats:             []string{},
 				EnableGroups:           true,

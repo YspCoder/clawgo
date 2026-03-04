@@ -1,10 +1,10 @@
 package agent
 
 import (
-	"os"
 	"testing"
 
 	"clawgo/pkg/bus"
+	"clawgo/pkg/config"
 	"clawgo/pkg/providers"
 )
 
@@ -24,32 +24,36 @@ func TestInjectResponsesMediaParts(t *testing.T) {
 		t.Fatalf("unexpected messages length: %#v", got)
 	}
 	parts := got[1].ContentParts
-	if len(parts) != 4 {
-		t.Fatalf("expected 4 content parts, got %#v", parts)
+	if len(parts) != 3 {
+		t.Fatalf("expected 3 content parts, got %#v", parts)
 	}
 	if parts[0].Type != "input_text" || parts[0].Text != "look" {
 		t.Fatalf("expected first part to preserve input text, got %#v", parts[0])
 	}
-	if parts[1].Type != "input_image" || parts[1].ImageURL == "" {
-		t.Fatalf("expected media URL as input_image, got %#v", parts[1])
+	if parts[1].Type != "input_image" || parts[1].FileID != "file_img_1" {
+		t.Fatalf("expected image media item mapped to file_id, got %#v", parts[1])
 	}
-	if parts[2].Type != "input_image" || parts[2].FileID != "file_img_1" {
-		t.Fatalf("expected image media item mapped to file_id, got %#v", parts[2])
-	}
-	if parts[3].Type != "input_file" || parts[3].FileID != "file_doc_1" {
-		t.Fatalf("expected document media item mapped to input_file file_id, got %#v", parts[3])
+	if parts[2].Type != "input_file" || parts[2].FileID != "file_doc_1" {
+		t.Fatalf("expected document media item mapped to input_file file_id, got %#v", parts[2])
 	}
 }
 
-func TestBuildResponsesOptionsFromEnv(t *testing.T) {
-	t.Setenv("CLAWGO_RESPONSES_WEB_SEARCH", "1")
-	t.Setenv("CLAWGO_RESPONSES_WEB_SEARCH_CONTEXT_SIZE", "high")
-	t.Setenv("CLAWGO_RESPONSES_FILE_SEARCH_VECTOR_STORE_IDS", "vs_1,vs_2")
-	t.Setenv("CLAWGO_RESPONSES_FILE_SEARCH_MAX_NUM_RESULTS", "8")
-	t.Setenv("CLAWGO_RESPONSES_INCLUDE", "output_text,tool_calls")
-	t.Setenv("CLAWGO_RESPONSES_STREAM_INCLUDE_USAGE", "1")
+func TestBuildResponsesOptionsFromConfig(t *testing.T) {
+	al := &AgentLoop{
+		providerNames: []string{"proxy"},
+		providerResponses: map[string]config.ProviderResponsesConfig{
+			"proxy": {
+				WebSearchEnabled:         true,
+				WebSearchContextSize:     "high",
+				FileSearchVectorStoreIDs: []string{"vs_1", "vs_2"},
+				FileSearchMaxNumResults:  8,
+				Include:                  []string{"output_text", "tool_calls"},
+				StreamIncludeUsage:       true,
+			},
+		},
+	}
 
-	opts := buildResponsesOptions(1024, 0.2)
+	opts := al.buildResponsesOptions("session-a", 1024, 0.2)
 	if opts["max_tokens"] != int64(1024) {
 		t.Fatalf("max_tokens mismatch: %#v", opts["max_tokens"])
 	}
@@ -72,7 +76,21 @@ func TestBuildResponsesOptionsFromEnv(t *testing.T) {
 	if _, ok := opts["responses_stream_options"]; !ok {
 		t.Fatalf("expected responses_stream_options in options")
 	}
+}
 
-	// keep linter happy for unused os import when build tags differ
-	_ = os.Getenv("CLAWGO_RESPONSES_WEB_SEARCH")
+func TestInjectResponsesMediaParts_SkipsLocalPathsForResponsesContentParts(t *testing.T) {
+	msgs := []providers.Message{
+		{Role: "user", Content: "check local media"},
+	}
+	items := []bus.MediaItem{
+		{Type: "image", Path: "/tmp/a.png"},
+		{Type: "document", Path: "/tmp/a.pdf"},
+	}
+	got := injectResponsesMediaParts(msgs, nil, items)
+	if len(got[0].ContentParts) != 1 {
+		t.Fatalf("expected only input_text for local files, got %#v", got[0].ContentParts)
+	}
+	if got[0].ContentParts[0].Type != "input_text" {
+		t.Fatalf("expected input_text only, got %#v", got[0].ContentParts[0])
+	}
 }
