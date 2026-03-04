@@ -19,10 +19,25 @@ A long-running AI Agent written in Go: lightweight, auditable, and multi-channel
 
 ## Concurrency Scheduling (New) ⚙️
 
-- 🧩 A composite message is auto-split into sub-tasks (configurable max)
+- 🧩 A composite message is automatically split into sub-tasks
 - 🔀 Within the same session: non-conflicting tasks run in parallel
 - 🔒 Within the same session: conflicting tasks run serially (to avoid collisions)
 - 🏷️ `resource_keys` are inferred automatically by default (no manual input needed)
+
+---
+
+## Memory + EKG Enhancements (New) 🧠
+
+- 📚 Before each sub-task runs, related memory is fetched via `memory_search`
+- 🚨 EKG + task-audit are used to detect repeated error-signature risks
+- ⏱️ High-risk tasks include retry-backoff hints to reduce repeated failures
+
+---
+
+## Telegram Streaming Rendering (New) 💬
+
+- 🧷 Stream flushes happen at syntax-safe boundaries to reduce formatting jitter
+- ✅ A final convergence render is applied when streaming ends for stable layout
 
 ---
 
