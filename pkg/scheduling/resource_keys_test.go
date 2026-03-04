@@ -36,6 +36,38 @@ func TestDeriveResourceKeysHeuristic(t *testing.T) {
 	if !foundBranch {
 		t.Fatalf("expected branch key in %#v", keys)
 	}
+	for _, k := range keys {
+		if k == "repo:default" {
+			t.Fatalf("should not include global repo:default key in %#v", keys)
+		}
+	}
+}
+
+func TestDeriveResourceKeysNaturalLanguageTopic(t *testing.T) {
+	keys := DeriveResourceKeys("请更新webui交互并补充readme文档")
+	if len(keys) == 0 {
+		t.Fatalf("expected non-empty keys")
+	}
+	foundWebUI := false
+	foundDocs := false
+	for _, k := range keys {
+		if k == "topic:webui" {
+			foundWebUI = true
+		}
+		if k == "topic:docs" {
+			foundDocs = true
+		}
+	}
+	if !foundWebUI || !foundDocs {
+		t.Fatalf("expected topic keys in %#v", keys)
+	}
+}
+
+func TestDeriveResourceKeysNaturalLanguageFallbackGeneral(t *testing.T) {
+	keys := DeriveResourceKeys("帮我处理一下")
+	if len(keys) != 1 || keys[0] != "scope:general" {
+		t.Fatalf("expected scope:general fallback, got %#v", keys)
+	}
 }
 
 func TestParseResourceKeyListAddsFilePrefix(t *testing.T) {

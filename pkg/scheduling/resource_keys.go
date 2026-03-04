@@ -24,7 +24,6 @@ func DeriveResourceKeys(content string) []string {
 
 	lower := strings.ToLower(raw)
 	keys := make([]string, 0, 8)
-	hasRepo := false
 	for _, token := range strings.Fields(lower) {
 		t := strings.Trim(token, "`'\"()[]{}:;,，。！？")
 		if t == "" {
@@ -33,7 +32,6 @@ func DeriveResourceKeys(content string) []string {
 		if strings.Contains(t, "gitea.") || strings.Contains(t, "github.com") || strings.Count(t, "/") >= 1 {
 			if strings.Contains(t, "github.com/") || strings.Contains(t, "gitea.") {
 				keys = append(keys, "repo:"+t)
-				hasRepo = true
 			}
 		}
 		if strings.Contains(t, "/") || strings.HasSuffix(t, ".go") || strings.HasSuffix(t, ".md") || strings.HasSuffix(t, ".json") || strings.HasSuffix(t, ".yaml") || strings.HasSuffix(t, ".yml") {
@@ -43,13 +41,45 @@ func DeriveResourceKeys(content string) []string {
 			keys = append(keys, "branch:"+strings.TrimPrefix(t, "branch:"))
 		}
 	}
-	if !hasRepo {
-		keys = append(keys, "repo:default")
+	for _, topic := range deriveTopicKeys(lower) {
+		keys = append(keys, topic)
 	}
 	if len(keys) == 0 {
 		keys = append(keys, "scope:general")
 	}
 	return NormalizeResourceKeys(keys)
+}
+
+func deriveTopicKeys(lower string) []string {
+	if strings.TrimSpace(lower) == "" {
+		return nil
+	}
+	type topicRule struct {
+		name     string
+		keywords []string
+	}
+	rules := []topicRule{
+		{name: "webui", keywords: []string{"webui", "ui", "frontend", "前端", "页面", "界面"}},
+		{name: "docs", keywords: []string{"readme", "doc", "docs", "文档", "说明"}},
+		{name: "release", keywords: []string{"release", "tag", "version", "版本", "发版", "打版本"}},
+		{name: "git", keywords: []string{"git", "branch", "commit", "push", "merge", "分支", "提交", "推送"}},
+		{name: "config", keywords: []string{"config", "配置", "参数"}},
+		{name: "test", keywords: []string{"test", "tests", "testing", "测试", "回归"}},
+		{name: "task", keywords: []string{"task", "tasks", "任务", "调度", "并发"}},
+		{name: "memory", keywords: []string{"memory", "记忆"}},
+		{name: "cron", keywords: []string{"cron", "schedule", "scheduled", "定时", "定时任务"}},
+		{name: "log", keywords: []string{"log", "logs", "日志"}},
+	}
+	out := make([]string, 0, 3)
+	for _, r := range rules {
+		for _, kw := range r.keywords {
+			if strings.Contains(lower, kw) {
+				out = append(out, "topic:"+r.name)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // ParseExplicitResourceKeys parses directive-style keys from content.
