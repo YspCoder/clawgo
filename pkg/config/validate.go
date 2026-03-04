@@ -208,8 +208,8 @@ func Validate(cfg *Config) []error {
 		if active == "" {
 			active = "proxy"
 		}
-		if pc, ok := providerConfigByName(cfg, active); !ok || !pc.SupportsResponsesCompact || pc.Protocol != "responses" {
-			errs = append(errs, fmt.Errorf("context_compaction.mode=responses_compact requires active proxy %q with protocol=responses and supports_responses_compact=true", active))
+		if pc, ok := providerConfigByName(cfg, active); !ok || !pc.SupportsResponsesCompact {
+			errs = append(errs, fmt.Errorf("context_compaction.mode=responses_compact requires active proxy %q with supports_responses_compact=true", active))
 		}
 	}
 
@@ -313,16 +313,6 @@ func validateProviderConfig(path string, p ProviderConfig) []error {
 	var errs []error
 	if p.APIBase == "" {
 		errs = append(errs, fmt.Errorf("%s.api_base is required", path))
-	}
-	if p.Protocol != "" {
-		switch p.Protocol {
-		case "chat_completions", "responses":
-		default:
-			errs = append(errs, fmt.Errorf("%s.protocol must be one of: chat_completions, responses", path))
-		}
-	}
-	if p.SupportsResponsesCompact && p.Protocol != "responses" {
-		errs = append(errs, fmt.Errorf("%s.supports_responses_compact=true requires protocol=responses", path))
 	}
 	if p.TimeoutSec <= 0 {
 		errs = append(errs, fmt.Errorf("%s.timeout_sec must be > 0", path))

@@ -45,26 +45,26 @@ type AgentDefaults struct {
 }
 
 type AutonomyConfig struct {
-	Enabled                     bool   `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ENABLED"`
-	TickIntervalSec             int    `json:"tick_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TICK_INTERVAL_SEC"`
-	MinRunIntervalSec           int    `json:"min_run_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
-	MaxPendingDurationSec       int    `json:"max_pending_duration_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_PENDING_DURATION_SEC"`
-	MaxConsecutiveStalls        int    `json:"max_consecutive_stalls" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_CONSECUTIVE_STALLS"`
-	MaxDispatchPerTick          int    `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
-	NotifyCooldownSec           int    `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
-	NotifySameReasonCooldownSec int    `json:"notify_same_reason_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_SAME_REASON_COOLDOWN_SEC"`
-	QuietHours                  string `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
-	UserIdleResumeSec           int      `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
-	MaxRoundsWithoutUser       int      `json:"max_rounds_without_user" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
-	TaskHistoryRetentionDays   int      `json:"task_history_retention_days" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TASK_HISTORY_RETENTION_DAYS"`
-	WaitingResumeDebounceSec   int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
-	IdleRoundBudgetReleaseSec  int      `json:"idle_round_budget_release_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_IDLE_ROUND_BUDGET_RELEASE_SEC"`
-	AllowedTaskKeywords        []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
-	EKGConsecutiveErrorThreshold int  `json:"ekg_consecutive_error_threshold" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_EKG_CONSECUTIVE_ERROR_THRESHOLD"`
+	Enabled                      bool     `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ENABLED"`
+	TickIntervalSec              int      `json:"tick_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TICK_INTERVAL_SEC"`
+	MinRunIntervalSec            int      `json:"min_run_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
+	MaxPendingDurationSec        int      `json:"max_pending_duration_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_PENDING_DURATION_SEC"`
+	MaxConsecutiveStalls         int      `json:"max_consecutive_stalls" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_CONSECUTIVE_STALLS"`
+	MaxDispatchPerTick           int      `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
+	NotifyCooldownSec            int      `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
+	NotifySameReasonCooldownSec  int      `json:"notify_same_reason_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_SAME_REASON_COOLDOWN_SEC"`
+	QuietHours                   string   `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
+	UserIdleResumeSec            int      `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
+	MaxRoundsWithoutUser         int      `json:"max_rounds_without_user" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
+	TaskHistoryRetentionDays     int      `json:"task_history_retention_days" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TASK_HISTORY_RETENTION_DAYS"`
+	WaitingResumeDebounceSec     int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
+	IdleRoundBudgetReleaseSec    int      `json:"idle_round_budget_release_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_IDLE_ROUND_BUDGET_RELEASE_SEC"`
+	AllowedTaskKeywords          []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
+	EKGConsecutiveErrorThreshold int      `json:"ekg_consecutive_error_threshold" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_EKG_CONSECUTIVE_ERROR_THRESHOLD"`
 	// Deprecated: kept for backward compatibility with existing config files.
-	NotifyChannel              string `json:"notify_channel,omitempty"`
+	NotifyChannel string `json:"notify_channel,omitempty"`
 	// Deprecated: kept for backward compatibility with existing config files.
-	NotifyChatID               string `json:"notify_chat_id,omitempty"`
+	NotifyChatID string `json:"notify_chat_id,omitempty"`
 }
 
 type AgentTextConfig struct {
@@ -128,9 +128,9 @@ type ContextCompactionConfig struct {
 }
 
 type ChannelsConfig struct {
-	InboundMessageIDDedupeTTLSeconds int            `json:"inbound_message_id_dedupe_ttl_seconds" env:"CLAWGO_CHANNELS_INBOUND_MESSAGE_ID_DEDUPE_TTL_SECONDS"`
-	InboundContentDedupeWindowSeconds int           `json:"inbound_content_dedupe_window_seconds" env:"CLAWGO_CHANNELS_INBOUND_CONTENT_DEDUPE_WINDOW_SECONDS"`
-	OutboundDedupeWindowSeconds       int           `json:"outbound_dedupe_window_seconds" env:"CLAWGO_CHANNELS_OUTBOUND_DEDUPE_WINDOW_SECONDS"`
+	InboundMessageIDDedupeTTLSeconds  int            `json:"inbound_message_id_dedupe_ttl_seconds" env:"CLAWGO_CHANNELS_INBOUND_MESSAGE_ID_DEDUPE_TTL_SECONDS"`
+	InboundContentDedupeWindowSeconds int            `json:"inbound_content_dedupe_window_seconds" env:"CLAWGO_CHANNELS_INBOUND_CONTENT_DEDUPE_WINDOW_SECONDS"`
+	OutboundDedupeWindowSeconds       int            `json:"outbound_dedupe_window_seconds" env:"CLAWGO_CHANNELS_OUTBOUND_DEDUPE_WINDOW_SECONDS"`
 	WhatsApp                          WhatsAppConfig `json:"whatsapp"`
 	Telegram                          TelegramConfig `json:"telegram"`
 	Feishu                            FeishuConfig   `json:"feishu"`
@@ -156,15 +156,15 @@ type TelegramConfig struct {
 }
 
 type FeishuConfig struct {
-	Enabled              bool     `json:"enabled" env:"CLAWGO_CHANNELS_FEISHU_ENABLED"`
-	AppID                string   `json:"app_id" env:"CLAWGO_CHANNELS_FEISHU_APP_ID"`
-	AppSecret            string   `json:"app_secret" env:"CLAWGO_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey           string   `json:"encrypt_key" env:"CLAWGO_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken    string   `json:"verification_token" env:"CLAWGO_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom            []string `json:"allow_from" env:"CLAWGO_CHANNELS_FEISHU_ALLOW_FROM"`
-	AllowChats           []string `json:"allow_chats" env:"CLAWGO_CHANNELS_FEISHU_ALLOW_CHATS"`
-	EnableGroups         bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_FEISHU_ENABLE_GROUPS"`
-	RequireMentionInGroups bool   `json:"require_mention_in_groups" env:"CLAWGO_CHANNELS_FEISHU_REQUIRE_MENTION_IN_GROUPS"`
+	Enabled                bool     `json:"enabled" env:"CLAWGO_CHANNELS_FEISHU_ENABLED"`
+	AppID                  string   `json:"app_id" env:"CLAWGO_CHANNELS_FEISHU_APP_ID"`
+	AppSecret              string   `json:"app_secret" env:"CLAWGO_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey             string   `json:"encrypt_key" env:"CLAWGO_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken      string   `json:"verification_token" env:"CLAWGO_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	AllowFrom              []string `json:"allow_from" env:"CLAWGO_CHANNELS_FEISHU_ALLOW_FROM"`
+	AllowChats             []string `json:"allow_chats" env:"CLAWGO_CHANNELS_FEISHU_ALLOW_CHATS"`
+	EnableGroups           bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_FEISHU_ENABLE_GROUPS"`
+	RequireMentionInGroups bool     `json:"require_mention_in_groups" env:"CLAWGO_CHANNELS_FEISHU_REQUIRE_MENTION_IN_GROUPS"`
 }
 
 type DiscordConfig struct {
@@ -245,8 +245,6 @@ func (p *ProvidersConfig) UnmarshalJSON(data []byte) error {
 type ProviderConfig struct {
 	APIKey                   string   `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
 	APIBase                  string   `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
-	Protocol                 string   `json:"protocol" env:"CLAWGO_PROVIDERS_{{.Name}}_PROTOCOL"`
-	CrossSessionCallID       bool     `json:"cross_session_call_id" env:"CLAWGO_PROVIDERS_{{.Name}}_CROSS_SESSION_CALL_ID"`
 	Models                   []string `json:"models" env:"CLAWGO_PROVIDERS_{{.Name}}_MODELS"`
 	SupportsResponsesCompact bool     `json:"supports_responses_compact" env:"CLAWGO_PROVIDERS_{{.Name}}_SUPPORTS_RESPONSES_COMPACT"`
 	Auth                     string   `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
@@ -367,21 +365,21 @@ func DefaultConfig() *Config {
 					PromptTemplate: "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
 				},
 				Autonomy: AutonomyConfig{
-					Enabled:                     false,
-					TickIntervalSec:             30,
-					MinRunIntervalSec:           20,
-					MaxPendingDurationSec:       180,
-					MaxConsecutiveStalls:        3,
-					MaxDispatchPerTick:          2,
-					NotifyCooldownSec:           300,
-					NotifySameReasonCooldownSec: 900,
-					QuietHours:                  "23:00-08:00",
-					UserIdleResumeSec:           20,
-					MaxRoundsWithoutUser:        12,
-					TaskHistoryRetentionDays:    3,
-					WaitingResumeDebounceSec:    5,
-					IdleRoundBudgetReleaseSec:   1800,
-					AllowedTaskKeywords:         []string{},
+					Enabled:                      false,
+					TickIntervalSec:              30,
+					MinRunIntervalSec:            20,
+					MaxPendingDurationSec:        180,
+					MaxConsecutiveStalls:         3,
+					MaxDispatchPerTick:           2,
+					NotifyCooldownSec:            300,
+					NotifySameReasonCooldownSec:  900,
+					QuietHours:                   "23:00-08:00",
+					UserIdleResumeSec:            20,
+					MaxRoundsWithoutUser:         12,
+					TaskHistoryRetentionDays:     3,
+					WaitingResumeDebounceSec:     5,
+					IdleRoundBudgetReleaseSec:    1800,
+					AllowedTaskKeywords:          []string{},
 					EKGConsecutiveErrorThreshold: 3,
 				},
 				Texts: AgentTextConfig{
@@ -435,7 +433,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		Channels: ChannelsConfig{
-			InboundMessageIDDedupeTTLSeconds: 600,
+			InboundMessageIDDedupeTTLSeconds:  600,
 			InboundContentDedupeWindowSeconds: 12,
 			OutboundDedupeWindowSeconds:       12,
 			WhatsApp: WhatsAppConfig{
@@ -489,7 +487,6 @@ func DefaultConfig() *Config {
 		Providers: ProvidersConfig{
 			Proxy: ProviderConfig{
 				APIBase:    "http://localhost:8080/v1",
-				Protocol:   "chat_completions",
 				Models:     []string{"glm-4.7"},
 				TimeoutSec: 90,
 			},

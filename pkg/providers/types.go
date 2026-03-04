@@ -40,9 +40,12 @@ type MessageContentPart struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 	MIMEType string `json:"mime_type,omitempty"`
 	Filename string `json:"filename,omitempty"`
 	FileData string `json:"file_data,omitempty"`
+	FileID   string `json:"file_id,omitempty"`
+	FileURL  string `json:"file_url,omitempty"`
 }
 
 type LLMProvider interface {
@@ -63,12 +66,17 @@ type ResponsesCompactor interface {
 }
 
 type ToolDefinition struct {
-	Type     string                 `json:"type"`
-	Function ToolFunctionDefinition `json:"function"`
+	Type        string                 `json:"type"`
+	Name        string                 `json:"name,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Parameters  map[string]interface{} `json:"parameters,omitempty"`
+	Strict      *bool                  `json:"strict,omitempty"`
+	Function    ToolFunctionDefinition `json:"function"`
 }
 
 type ToolFunctionDefinition struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	Parameters  map[string]interface{} `json:"parameters"`
+	Strict      *bool                  `json:"strict,omitempty"`
 }

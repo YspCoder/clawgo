@@ -238,12 +238,8 @@ clawgo uninstall [--purge] [--remove-bin]
 - 支持 `clawgo config set/get/check/reload`
 - 严格 JSON 解析（未知字段会报错）
 - 配置热更新失败自动回滚备份
+- Provider 接口已统一为 `responses`
 
-Provider（`providers.proxy` / `providers.proxies.<name>`）新增开关：
-
-- `cross_session_call_id`（bool，默认 `false`）
-  - `true`：沿用 `call_id` 传 `function_call_output`
-  - `false`：不传 `call_id`，改为传递 tool 结果内容（适合跨会话/聚合路由场景）
 
 ---
 

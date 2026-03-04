@@ -117,8 +117,6 @@ const Config: React.FC = () => {
         next.providers.proxies[name] = {
           api_key: '',
           api_base: '',
-          protocol: 'responses',
-          cross_session_call_id: false,
           models: [],
           supports_responses_compact: false,
           auth: 'bearer',
@@ -216,11 +214,10 @@ const Config: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     {Object.entries(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).map(([name, p]) => (
-                      <div key={name} className="grid grid-cols-1 md:grid-cols-8 gap-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 text-xs">
+                      <div key={name} className="grid grid-cols-1 md:grid-cols-7 gap-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 text-xs">
                         <div className="md:col-span-1 font-mono text-zinc-300 flex items-center">{name}</div>
                         <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
                         <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
-                        <input value={String(p?.protocol || '')} onChange={(e)=>updateProxyField(name, 'protocol', e.target.value)} placeholder={t('configLabels.protocol')} className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
                         <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`} className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
                         <button onClick={()=>removeProxy(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
                       </div>

@@ -16,31 +16,22 @@ import (
 	"time"
 )
 
-const (
-	ProtocolChatCompletions = "chat_completions"
-	ProtocolResponses       = "responses"
-)
-
 type HTTPProvider struct {
 	apiKey                   string
 	apiBase                  string
-	protocol                 string
 	defaultModel             string
-	crossSessionCallID       bool
 	supportsResponsesCompact bool
 	authMode                 string
 	timeout                  time.Duration
 	httpClient               *http.Client
 }
 
-func NewHTTPProvider(apiKey, apiBase, protocol, defaultModel string, crossSessionCallID bool, supportsResponsesCompact bool, authMode string, timeout time.Duration) *HTTPProvider {
+func NewHTTPProvider(apiKey, apiBase, defaultModel string, supportsResponsesCompact bool, authMode string, timeout time.Duration) *HTTPProvider {
 	normalizedBase := normalizeAPIBase(apiBase)
 	return &HTTPProvider{
 		apiKey:                   apiKey,
 		apiBase:                  normalizedBase,
-		protocol:                 normalizeProtocol(protocol),
 		defaultModel:             strings.TrimSpace(defaultModel),
-		crossSessionCallID:       crossSessionCallID,
 		supportsResponsesCompact: supportsResponsesCompact,
 		authMode:                 authMode,
 		timeout:                  timeout,
@@ -55,39 +46,24 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 
 	logger.DebugCF("provider", logger.C0133, map[string]interface{}{
 		"api_base":       p.apiBase,
-		"protocol":       p.protocol,
 		"model":          model,
 		"messages_count": len(messages),
 		"tools_count":    len(tools),
 		"timeout":        p.timeout.String(),
 	})
 
-	if p.protocol == ProtocolResponses {
-		body, statusCode, contentType, err := p.callResponses(ctx, messages, tools, model, options)
-		if err != nil {
-			return nil, err
-		}
-		if statusCode != http.StatusOK {
-			preview := previewResponseBody(body)
-			return nil, fmt.Errorf("API error (status %d, content-type %q): %s", statusCode, contentType, preview)
-		}
-		if !json.Valid(body) {
-			return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", statusCode, contentType, previewResponseBody(body))
-		}
-		return parseResponsesAPIResponse(body)
-	}
-
-	body, statusCode, contentType, err := p.callChatCompletions(ctx, messages, tools, model, options)
+	body, statusCode, contentType, err := p.callResponses(ctx, messages, tools, model, options)
 	if err != nil {
 		return nil, err
 	}
 	if statusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error (status %d, content-type %q): %s", statusCode, contentType, previewResponseBody(body))
+		preview := previewResponseBody(body)
+		return nil, fmt.Errorf("API error (status %d, content-type %q): %s", statusCode, contentType, preview)
 	}
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", statusCode, contentType, previewResponseBody(body))
 	}
-	return parseChatCompletionsResponse(body)
+	return parseResponsesAPIResponse(body)
 }
 
 func (p *HTTPProvider) ChatStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}, onDelta func(string)) (*LLMResponse, error) {
@@ -97,20 +73,7 @@ func (p *HTTPProvider) ChatStream(ctx context.Context, messages []Message, tools
 	if p.apiBase == "" {
 		return nil, fmt.Errorf("API base not configured")
 	}
-	if p.protocol == ProtocolResponses {
-		body, status, ctype, err := p.callResponsesStream(ctx, messages, tools, model, options, onDelta)
-		if err != nil {
-			return nil, err
-		}
-		if status != http.StatusOK {
-			return nil, fmt.Errorf("API error (status %d, content-type %q): %s", status, ctype, previewResponseBody(body))
-		}
-		if !json.Valid(body) {
-			return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", status, ctype, previewResponseBody(body))
-		}
-		return parseResponsesAPIResponse(body)
-	}
-	body, status, ctype, err := p.callChatCompletionsStream(ctx, messages, tools, model, options, onDelta)
+	body, status, ctype, err := p.callResponsesStream(ctx, messages, tools, model, options, onDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -120,52 +83,29 @@ func (p *HTTPProvider) ChatStream(ctx context.Context, messages []Message, tools
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", status, ctype, previewResponseBody(body))
 	}
-	return parseChatCompletionsResponse(body)
-}
-
-func (p *HTTPProvider) callChatCompletions(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) ([]byte, int, string, error) {
-	requestBody := map[string]interface{}{
-		"model":    model,
-		"messages": toChatCompletionsMessages(messages),
-	}
-	if len(tools) > 0 {
-		requestBody["tools"] = tools
-		requestBody["tool_choice"] = "auto"
-	}
-	if maxTokens, ok := int64FromOption(options, "max_tokens"); ok {
-		requestBody["max_tokens"] = maxTokens
-	}
-	if temperature, ok := float64FromOption(options, "temperature"); ok {
-		requestBody["temperature"] = temperature
-	}
-	return p.postJSON(ctx, endpointFor(p.apiBase, "/chat/completions"), requestBody)
+	return parseResponsesAPIResponse(body)
 }
 
 func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) ([]byte, int, string, error) {
 	input := make([]map[string]interface{}, 0, len(messages))
 	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls, p.crossSessionCallID)...)
+		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls)...)
 	}
 	requestBody := map[string]interface{}{
 		"model": model,
 		"input": input,
 	}
-	if len(tools) > 0 {
-		responseTools := make([]map[string]interface{}, 0, len(tools))
-		for _, t := range tools {
-			entry := map[string]interface{}{
-				"type":       "function",
-				"name":       t.Function.Name,
-				"parameters": t.Function.Parameters,
-			}
-			if strings.TrimSpace(t.Function.Description) != "" {
-				entry["description"] = t.Function.Description
-			}
-			responseTools = append(responseTools, entry)
-		}
+	responseTools := buildResponsesTools(tools, options)
+	if len(responseTools) > 0 {
 		requestBody["tools"] = responseTools
 		requestBody["tool_choice"] = "auto"
+		if tc, ok := rawOption(options, "tool_choice"); ok {
+			requestBody["tool_choice"] = tc
+		}
+		if tc, ok := rawOption(options, "responses_tool_choice"); ok {
+			requestBody["tool_choice"] = tc
+		}
 	}
 	if maxTokens, ok := int64FromOption(options, "max_tokens"); ok {
 		requestBody["max_output_tokens"] = maxTokens
@@ -173,82 +113,23 @@ func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, to
 	if temperature, ok := float64FromOption(options, "temperature"); ok {
 		requestBody["temperature"] = temperature
 	}
+	if include, ok := stringSliceOption(options, "responses_include"); ok && len(include) > 0 {
+		requestBody["include"] = include
+	}
+	if metadata, ok := mapOption(options, "responses_metadata"); ok && len(metadata) > 0 {
+		requestBody["metadata"] = metadata
+	}
+	if prevID, ok := stringOption(options, "responses_previous_response_id"); ok && prevID != "" {
+		requestBody["previous_response_id"] = prevID
+	}
 	return p.postJSON(ctx, endpointFor(p.apiBase, "/responses"), requestBody)
 }
 
-func toChatCompletionsMessages(messages []Message) []map[string]interface{} {
-	out := make([]map[string]interface{}, 0, len(messages))
-	for _, msg := range messages {
-		entry := map[string]interface{}{
-			"role": msg.Role,
-		}
-		content := toChatCompletionsContent(msg)
-		if len(content) > 0 {
-			entry["content"] = content
-		} else {
-			entry["content"] = msg.Content
-		}
-
-		if len(msg.ToolCalls) > 0 {
-			entry["tool_calls"] = msg.ToolCalls
-		}
-		if strings.TrimSpace(msg.ToolCallID) != "" {
-			entry["tool_call_id"] = msg.ToolCallID
-		}
-
-		out = append(out, entry)
-	}
-	return out
-}
-
-func toChatCompletionsContent(msg Message) []map[string]interface{} {
-	if len(msg.ContentParts) == 0 {
-		return nil
-	}
-	content := make([]map[string]interface{}, 0, len(msg.ContentParts))
-	for _, part := range msg.ContentParts {
-		switch strings.ToLower(strings.TrimSpace(part.Type)) {
-		case "input_text":
-			if part.Text == "" {
-				continue
-			}
-			content = append(content, map[string]interface{}{
-				"type": "text",
-				"text": part.Text,
-			})
-		case "input_image":
-			if part.ImageURL == "" {
-				continue
-			}
-			content = append(content, map[string]interface{}{
-				"type": "image_url",
-				"image_url": map[string]interface{}{
-					"url": part.ImageURL,
-				},
-			})
-		case "input_file":
-			fileLabel := part.Filename
-			if fileLabel == "" {
-				fileLabel = "attached file"
-			}
-			mimeType := part.MIMEType
-			if mimeType == "" {
-				mimeType = "application/octet-stream"
-			}
-			content = append(content, map[string]interface{}{
-				"type": "text",
-				"text": fmt.Sprintf("[file attachment: %s, mime=%s]", fileLabel, mimeType),
-			})
-		}
-	}
-	return content
-}
-
 func toResponsesInputItems(msg Message) []map[string]interface{} {
-	return toResponsesInputItemsWithState(msg, nil, true)
+	return toResponsesInputItemsWithState(msg, nil)
 }
 
-func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{}, crossSessionCallID bool) []map[string]interface{} {
+func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{}) []map[string]interface{} {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
 	case "system", "developer", "user":
@@ -304,12 +185,6 @@ func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{
 		}
 		return items
 	case "tool":
-		if !crossSessionCallID {
-			if strings.TrimSpace(msg.Content) == "" {
-				return nil
-			}
-			return []map[string]interface{}{responsesMessageItem("user", msg.Content, "input_text")}
-		}
 		callID := msg.ToolCallID
 		if callID == "" {
 			return nil
@@ -335,7 +210,7 @@ func responsesMessageContent(msg Message) []map[string]interface{} {
 	content := make([]map[string]interface{}, 0, len(msg.ContentParts))
 	for _, part := range msg.ContentParts {
 		switch strings.ToLower(strings.TrimSpace(part.Type)) {
-		case "input_text":
+		case "input_text", "text":
 			if part.Text == "" {
 				continue
 			}
@@ -343,29 +218,198 @@ func responsesMessageContent(msg Message) []map[string]interface{} {
 				"type": "input_text",
 				"text": part.Text,
 			})
-		case "input_image":
-			if part.ImageURL == "" {
-				continue
-			}
-			content = append(content, map[string]interface{}{
-				"type":      "input_image",
-				"image_url": part.ImageURL,
-			})
-		case "input_file":
-			if part.FileData == "" {
-				continue
-			}
+		case "input_image", "image":
 			entry := map[string]interface{}{
-				"type":      "input_file",
-				"file_data": part.FileData,
+				"type": "input_image",
+			}
+			if part.ImageURL != "" {
+				entry["image_url"] = part.ImageURL
+			}
+			if part.FileID != "" {
+				entry["file_id"] = part.FileID
+			}
+			if detail := strings.TrimSpace(part.Detail); detail != "" {
+				entry["detail"] = detail
+			}
+			if _, ok := entry["image_url"]; !ok {
+				if _, ok := entry["file_id"]; !ok {
+					continue
+				}
+			}
+			content = append(content, entry)
+		case "input_file", "file":
+			entry := map[string]interface{}{
+				"type": "input_file",
+			}
+			if part.FileData != "" {
+				entry["file_data"] = part.FileData
+			}
+			if part.FileID != "" {
+				entry["file_id"] = part.FileID
+			}
+			if part.FileURL != "" {
+				entry["file_url"] = part.FileURL
 			}
 			if part.Filename != "" {
 				entry["filename"] = part.Filename
+			}
+			if _, ok := entry["file_data"]; !ok {
+				if _, ok := entry["file_id"]; !ok {
+					if _, ok := entry["file_url"]; !ok {
+						continue
+					}
+				}
 			}
 			content = append(content, entry)
 		}
 	}
 	return content
+}
+
+func buildResponsesTools(tools []ToolDefinition, options map[string]interface{}) []map[string]interface{} {
+	responseTools := make([]map[string]interface{}, 0, len(tools)+2)
+	for _, t := range tools {
+		typ := strings.ToLower(strings.TrimSpace(t.Type))
+		if typ == "" {
+			typ = "function"
+		}
+		if typ == "function" {
+			name := strings.TrimSpace(t.Function.Name)
+			if name == "" {
+				name = strings.TrimSpace(t.Name)
+			}
+			if name == "" {
+				continue
+			}
+			entry := map[string]interface{}{
+				"type":       "function",
+				"name":       name,
+				"parameters": map[string]interface{}{},
+			}
+			if t.Function.Parameters != nil {
+				entry["parameters"] = t.Function.Parameters
+			} else if t.Parameters != nil {
+				entry["parameters"] = t.Parameters
+			}
+			desc := strings.TrimSpace(t.Function.Description)
+			if desc == "" {
+				desc = strings.TrimSpace(t.Description)
+			}
+			if desc != "" {
+				entry["description"] = desc
+			}
+			if t.Function.Strict != nil {
+				entry["strict"] = *t.Function.Strict
+			} else if t.Strict != nil {
+				entry["strict"] = *t.Strict
+			}
+			responseTools = append(responseTools, entry)
+			continue
+		}
+
+		// Built-in tool types (web_search, file_search, code_interpreter, etc.).
+		entry := map[string]interface{}{
+			"type": typ,
+		}
+		if name := strings.TrimSpace(t.Name); name != "" {
+			entry["name"] = name
+		}
+		if desc := strings.TrimSpace(t.Description); desc != "" {
+			entry["description"] = desc
+		}
+		if t.Strict != nil {
+			entry["strict"] = *t.Strict
+		}
+		for k, v := range t.Parameters {
+			entry[k] = v
+		}
+		responseTools = append(responseTools, entry)
+	}
+
+	if extraTools, ok := mapSliceOption(options, "responses_tools"); ok {
+		responseTools = append(responseTools, extraTools...)
+	}
+	return responseTools
+}
+
+func rawOption(options map[string]interface{}, key string) (interface{}, bool) {
+	if options == nil {
+		return nil, false
+	}
+	v, ok := options[key]
+	if !ok || v == nil {
+		return nil, false
+	}
+	return v, true
+}
+
+func stringOption(options map[string]interface{}, key string) (string, bool) {
+	v, ok := rawOption(options, key)
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSpace(s), true
+}
+
+func mapOption(options map[string]interface{}, key string) (map[string]interface{}, bool) {
+	v, ok := rawOption(options, key)
+	if !ok {
+		return nil, false
+	}
+	m, ok := v.(map[string]interface{})
+	return m, ok
+}
+
+func stringSliceOption(options map[string]interface{}, key string) ([]string, bool) {
+	v, ok := rawOption(options, key)
+	if !ok {
+		return nil, false
+	}
+	switch t := v.(type) {
+	case []string:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			if s := strings.TrimSpace(item); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out, true
+	case []interface{}:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			s := strings.TrimSpace(fmt.Sprintf("%v", item))
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+func mapSliceOption(options map[string]interface{}, key string) ([]map[string]interface{}, bool) {
+	v, ok := rawOption(options, key)
+	if !ok {
+		return nil, false
+	}
+	switch t := v.(type) {
+	case []map[string]interface{}:
+		return t, true
+	case []interface{}:
+		out := make([]map[string]interface{}, 0, len(t))
+		for _, item := range t {
+			m, ok := item.(map[string]interface{})
+			if ok {
+				out = append(out, m)
+			}
+		}
+		return out, true
+	}
+	return nil, false
 }
 
 func responsesMessageItem(role, text, contentType string) map[string]interface{} {
@@ -385,85 +429,39 @@ func responsesMessageItem(role, text, contentType string) map[string]interface{}
 	}
 }
 
-func (p *HTTPProvider) callChatCompletionsStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}, onDelta func(string)) ([]byte, int, string, error) {
-	requestBody := map[string]interface{}{
-		"model":    model,
-		"messages": toChatCompletionsMessages(messages),
-		"stream":   true,
-	}
-	if len(tools) > 0 {
-		requestBody["tools"] = tools
-		requestBody["tool_choice"] = "auto"
-	}
-	if maxTokens, ok := int64FromOption(options, "max_tokens"); ok {
-		requestBody["max_tokens"] = maxTokens
-	}
-	if temperature, ok := float64FromOption(options, "temperature"); ok {
-		requestBody["temperature"] = temperature
-	}
-	var fullText strings.Builder
-	rawBody, status, ctype, err := p.postJSONStream(ctx, endpointFor(p.apiBase, "/chat/completions"), requestBody, func(event string) {
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content string `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(event), &chunk); err != nil {
-			return
-		}
-		if len(chunk.Choices) > 0 {
-			d := chunk.Choices[0].Delta.Content
-			if d != "" {
-				fullText.WriteString(d)
-				onDelta(d)
-			}
-		}
-	})
-	if err != nil {
-		return nil, status, ctype, err
-	}
-	if status != http.StatusOK || !strings.Contains(strings.ToLower(ctype), "text/event-stream") {
-		return rawBody, status, ctype, nil
-	}
-	body, _ := json.Marshal(map[string]interface{}{
-		"choices": []map[string]interface{}{{
-			"message":       map[string]interface{}{"content": fullText.String()},
-			"finish_reason": "stop",
-		}},
-	})
-	return body, status, "application/json", nil
-}
-
 func (p *HTTPProvider) callResponsesStream(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}, onDelta func(string)) ([]byte, int, string, error) {
 	input := make([]map[string]interface{}, 0, len(messages))
 	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls, p.crossSessionCallID)...)
+		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls)...)
 	}
 	requestBody := map[string]interface{}{
 		"model":  model,
 		"input":  input,
 		"stream": true,
 	}
-	if len(tools) > 0 {
-		responseTools := make([]map[string]interface{}, 0, len(tools))
-		for _, t := range tools {
-			entry := map[string]interface{}{"type": "function", "name": t.Function.Name, "parameters": t.Function.Parameters}
-			if strings.TrimSpace(t.Function.Description) != "" {
-				entry["description"] = t.Function.Description
-			}
-			responseTools = append(responseTools, entry)
-		}
+	responseTools := buildResponsesTools(tools, options)
+	if len(responseTools) > 0 {
 		requestBody["tools"] = responseTools
 		requestBody["tool_choice"] = "auto"
+		if tc, ok := rawOption(options, "tool_choice"); ok {
+			requestBody["tool_choice"] = tc
+		}
+		if tc, ok := rawOption(options, "responses_tool_choice"); ok {
+			requestBody["tool_choice"] = tc
+		}
 	}
 	if maxTokens, ok := int64FromOption(options, "max_tokens"); ok {
 		requestBody["max_output_tokens"] = maxTokens
 	}
 	if temperature, ok := float64FromOption(options, "temperature"); ok {
 		requestBody["temperature"] = temperature
+	}
+	if include, ok := stringSliceOption(options, "responses_include"); ok && len(include) > 0 {
+		requestBody["include"] = include
+	}
+	if streamOpts, ok := mapOption(options, "responses_stream_options"); ok && len(streamOpts) > 0 {
+		requestBody["stream_options"] = streamOpts
 	}
 	return p.postJSONStream(ctx, endpointFor(p.apiBase, "/responses"), requestBody, func(event string) {
 		var obj map[string]interface{}
@@ -598,71 +596,6 @@ func (p *HTTPProvider) postJSON(ctx context.Context, endpoint string, payload in
 		return nil, resp.StatusCode, strings.TrimSpace(resp.Header.Get("Content-Type")), fmt.Errorf("failed to read response: %w", readErr)
 	}
 	return body, resp.StatusCode, strings.TrimSpace(resp.Header.Get("Content-Type")), nil
-}
-
-func parseChatCompletionsResponse(body []byte) (*LLMResponse, error) {
-	var apiResponse struct {
-		Choices []struct {
-			Message struct {
-				Content   *string `json:"content"`
-				ToolCalls []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
-					Function *struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					} `json:"function"`
-				} `json:"tool_calls"`
-			} `json:"message"`
-			FinishReason string `json:"finish_reason"`
-		} `json:"choices"`
-		Usage *UsageInfo `json:"usage"`
-	}
-
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-	if len(apiResponse.Choices) == 0 {
-		return &LLMResponse{Content: "", FinishReason: "stop"}, nil
-	}
-	choice := apiResponse.Choices[0]
-	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
-	for i, tc := range choice.Message.ToolCalls {
-		if tc.Type != "" && tc.Type != "function" {
-			continue
-		}
-		if tc.Function == nil || strings.TrimSpace(tc.Function.Name) == "" {
-			continue
-		}
-		args := map[string]interface{}{}
-		if strings.TrimSpace(tc.Function.Arguments) != "" {
-			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-				args["raw"] = tc.Function.Arguments
-			}
-		}
-		id := strings.TrimSpace(tc.ID)
-		if id == "" {
-			id = fmt.Sprintf("call_%d", i+1)
-		}
-		toolCalls = append(toolCalls, ToolCall{ID: id, Name: tc.Function.Name, Arguments: args})
-	}
-
-	content := ""
-	if choice.Message.Content != nil {
-		content = *choice.Message.Content
-	}
-	if len(toolCalls) == 0 {
-		compatCalls, cleanedContent := parseCompatFunctionCalls(content)
-		if len(compatCalls) > 0 {
-			toolCalls = compatCalls
-			content = cleanedContent
-		}
-	}
-	finishReason := strings.TrimSpace(choice.FinishReason)
-	if finishReason == "" {
-		finishReason = "stop"
-	}
-	return &LLMResponse{Content: content, ToolCalls: toolCalls, FinishReason: finishReason, Usage: apiResponse.Usage}, nil
 }
 
 func parseResponsesAPIResponse(body []byte) (*LLMResponse, error) {
@@ -833,17 +766,6 @@ func endpointFor(base, relative string) string {
 	return b + relative
 }
 
-func normalizeProtocol(raw string) string {
-	switch strings.TrimSpace(raw) {
-	case "", ProtocolChatCompletions:
-		return ProtocolChatCompletions
-	case ProtocolResponses:
-		return ProtocolResponses
-	default:
-		return ProtocolChatCompletions
-	}
-}
-
 func parseCompatFunctionCalls(content string) ([]ToolCall, string) {
 	if strings.TrimSpace(content) == "" || !strings.Contains(content, "<function_call>") {
 		return nil, content
@@ -910,7 +832,7 @@ func (p *HTTPProvider) GetDefaultModel() string {
 }
 
 func (p *HTTPProvider) SupportsResponsesCompact() bool {
-	return p != nil && p.supportsResponsesCompact && p.protocol == ProtocolResponses
+	return p != nil && p.supportsResponsesCompact
 }
 
 func (p *HTTPProvider) BuildSummaryViaResponsesCompact(ctx context.Context, model string, existingSummary string, messages []Message, maxSummaryChars int) (string, error) {
@@ -923,7 +845,7 @@ func (p *HTTPProvider) BuildSummaryViaResponsesCompact(ctx context.Context, mode
 	}
 	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
-		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls, p.crossSessionCallID)...)
+		input = append(input, toResponsesInputItemsWithState(msg, pendingCalls)...)
 	}
 	if len(input) == 0 {
 		return strings.TrimSpace(existingSummary), nil
@@ -1030,7 +952,7 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 	if len(pc.Models) > 0 {
 		defaultModel = pc.Models[0]
 	}
-	return NewHTTPProvider(pc.APIKey, pc.APIBase, pc.Protocol, defaultModel, pc.CrossSessionCallID, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second), nil
+	return NewHTTPProvider(pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second), nil
 }
 
 func CreateProviders(cfg *config.Config) (map[string]LLMProvider, error) {
@@ -1072,7 +994,7 @@ func ProviderSupportsResponsesCompact(cfg *config.Config, name string) bool {
 	if err != nil {
 		return false
 	}
-	return pc.SupportsResponsesCompact && normalizeProtocol(pc.Protocol) == ProtocolResponses
+	return pc.SupportsResponsesCompact
 }
 
 func ListProviderNames(cfg *config.Config) []string {

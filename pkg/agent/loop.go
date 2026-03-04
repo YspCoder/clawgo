@@ -777,17 +777,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			})
 
 		toolDefs := al.tools.GetDefinitions()
-		providerToolDefs := make([]providers.ToolDefinition, 0, len(toolDefs))
-		for _, td := range toolDefs {
-			providerToolDefs = append(providerToolDefs, providers.ToolDefinition{
-				Type: td["type"].(string),
-				Function: providers.ToolFunctionDefinition{
-					Name:        td["function"].(map[string]interface{})["name"].(string),
-					Description: td["function"].(map[string]interface{})["description"].(string),
-					Parameters:  td["function"].(map[string]interface{})["parameters"].(map[string]interface{}),
-				},
-			})
-		}
+		providerToolDefs := al.buildProviderToolDefs(toolDefs)
 
 		// Log LLM request details
 		logger.DebugCF("agent", logger.C0152,
@@ -809,7 +799,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		options := map[string]interface{}{"max_tokens": 8192, "temperature": 0.7}
+		messages = injectResponsesMediaParts(messages, msg.Media, msg.MediaItems)
+		options := buildResponsesOptions(8192, 0.7)
 		var response *providers.LLMResponse
 		var err error
 		if msg.Channel == "telegram" && strings.TrimSpace(os.Getenv("CLAWGO_TELEGRAM_STREAMING")) == "1" {
@@ -850,11 +841,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			}
 		}
 		if err != nil {
-			errText := strings.ToLower(err.Error())
-			if strings.Contains(errText, "no tool call found for function call output") {
-				removed := al.sessions.PurgeOrphanToolOutputs(msg.SessionKey)
-				logger.WarnCF("agent", logger.C0154, map[string]interface{}{"session_key": msg.SessionKey, "removed": removed})
-			}
 			logger.ErrorCF("agent", logger.C0155,
 				map[string]interface{}{
 					"iteration": iteration,
@@ -1150,17 +1136,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		iteration++
 
 		toolDefs := al.tools.GetDefinitions()
-		providerToolDefs := make([]providers.ToolDefinition, 0, len(toolDefs))
-		for _, td := range toolDefs {
-			providerToolDefs = append(providerToolDefs, providers.ToolDefinition{
-				Type: td["type"].(string),
-				Function: providers.ToolFunctionDefinition{
-					Name:        td["function"].(map[string]interface{})["name"].(string),
-					Description: td["function"].(map[string]interface{})["description"].(string),
-					Parameters:  td["function"].(map[string]interface{})["parameters"].(map[string]interface{}),
-				},
-			})
-		}
+		providerToolDefs := al.buildProviderToolDefs(toolDefs)
 
 		// Log LLM request details
 		logger.DebugCF("agent", logger.C0152,
@@ -1182,10 +1158,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
-		options := map[string]interface{}{
-			"max_tokens":  8192,
-			"temperature": 0.7,
-		}
+		options := buildResponsesOptions(8192, 0.7)
 		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
 
 		if err != nil {
@@ -1200,40 +1173,6 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			}
 		}
 		if err != nil {
-			errText := strings.ToLower(err.Error())
-			if strings.Contains(errText, "no tool call found for function call output") {
-				removed := al.sessions.PurgeOrphanToolOutputs(sessionKey)
-				logger.WarnCF("agent", logger.C0160, map[string]interface{}{"session_key": sessionKey, "removed": removed})
-				if removed > 0 {
-					// Rebuild context from cleaned history and retry current iteration.
-					history = al.sessions.GetHistory(sessionKey)
-					summary = al.sessions.GetSummary(sessionKey)
-					messages = al.contextBuilder.BuildMessages(
-						history,
-						summary,
-						msg.Content,
-						nil,
-						originChannel,
-						originChatID,
-						responseLang,
-					)
-					continue
-				}
-				if strings.ToLower(strings.TrimSpace(msg.Metadata["trigger"])) == "heartbeat" {
-					al.sessions.ResetSession(sessionKey)
-					messages = al.contextBuilder.BuildMessages(
-						[]providers.Message{},
-						"",
-						msg.Content,
-						nil,
-						originChannel,
-						originChatID,
-						responseLang,
-					)
-					logger.WarnCF("agent", logger.C0161, map[string]interface{}{"session_key": sessionKey})
-					continue
-				}
-			}
 			logger.ErrorCF("agent", logger.C0162,
 				map[string]interface{}{
 					"iteration": iteration,
@@ -1323,6 +1262,155 @@ func truncate(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func (al *AgentLoop) buildProviderToolDefs(toolDefs []map[string]interface{}) []providers.ToolDefinition {
+	providerToolDefs := make([]providers.ToolDefinition, 0, len(toolDefs))
+	for _, td := range toolDefs {
+		fnRaw, ok := td["function"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := fnRaw["name"].(string)
+		description, _ := fnRaw["description"].(string)
+		params, _ := fnRaw["parameters"].(map[string]interface{})
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		if params == nil {
+			params = map[string]interface{}{}
+		}
+		providerToolDefs = append(providerToolDefs, providers.ToolDefinition{
+			Type: "function",
+			Function: providers.ToolFunctionDefinition{
+				Name:        name,
+				Description: description,
+				Parameters:  params,
+			},
+		})
+	}
+	return providerToolDefs
+}
+
+func buildResponsesOptions(maxTokens int64, temperature float64) map[string]interface{} {
+	options := map[string]interface{}{
+		"max_tokens":  maxTokens,
+		"temperature": temperature,
+	}
+	responseTools := make([]map[string]interface{}, 0, 2)
+	if strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_WEB_SEARCH")) == "1" {
+		webTool := map[string]interface{}{"type": "web_search"}
+		if contextSize := strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_WEB_SEARCH_CONTEXT_SIZE")); contextSize != "" {
+			webTool["search_context_size"] = contextSize
+		}
+		responseTools = append(responseTools, webTool)
+	}
+	if idsRaw := strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_FILE_SEARCH_VECTOR_STORE_IDS")); idsRaw != "" {
+		ids := splitCommaList(idsRaw)
+		if len(ids) > 0 {
+			fileSearch := map[string]interface{}{
+				"type":             "file_search",
+				"vector_store_ids": ids,
+			}
+			if maxNumRaw := strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_FILE_SEARCH_MAX_NUM_RESULTS")); maxNumRaw != "" {
+				if n, err := strconv.Atoi(maxNumRaw); err == nil && n > 0 {
+					fileSearch["max_num_results"] = n
+				}
+			}
+			responseTools = append(responseTools, fileSearch)
+		}
+	}
+	if len(responseTools) > 0 {
+		options["responses_tools"] = responseTools
+	}
+	if include := splitCommaList(strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_INCLUDE"))); len(include) > 0 {
+		options["responses_include"] = include
+	}
+	if strings.TrimSpace(os.Getenv("CLAWGO_RESPONSES_STREAM_INCLUDE_USAGE")) == "1" {
+		options["responses_stream_options"] = map[string]interface{}{"include_usage": true}
+	}
+	return options
+}
+
+func injectResponsesMediaParts(messages []providers.Message, media []string, mediaItems []bus.MediaItem) []providers.Message {
+	if len(messages) == 0 || (len(media) == 0 && len(mediaItems) == 0) {
+		return messages
+	}
+	last := len(messages) - 1
+	if strings.ToLower(strings.TrimSpace(messages[last].Role)) != "user" {
+		return messages
+	}
+
+	parts := make([]providers.MessageContentPart, 0, 1+len(media)+len(mediaItems))
+	if strings.TrimSpace(messages[last].Content) != "" {
+		parts = append(parts, providers.MessageContentPart{
+			Type: "input_text",
+			Text: messages[last].Content,
+		})
+	}
+
+	for _, ref := range media {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		parts = append(parts, providers.MessageContentPart{
+			Type:     "input_image",
+			ImageURL: ref,
+		})
+	}
+
+	for _, item := range mediaItems {
+		typ := strings.ToLower(strings.TrimSpace(item.Type))
+		ref := strings.TrimSpace(item.Ref)
+		path := strings.TrimSpace(item.Path)
+		src := ref
+		if src == "" {
+			src = path
+		}
+		switch {
+		case strings.Contains(typ, "image"):
+			part := providers.MessageContentPart{Type: "input_image"}
+			if strings.HasPrefix(src, "file_") {
+				part.FileID = src
+			} else {
+				part.ImageURL = src
+			}
+			if part.FileID != "" || part.ImageURL != "" {
+				parts = append(parts, part)
+			}
+		case strings.Contains(typ, "file"), strings.Contains(typ, "document"), strings.Contains(typ, "audio"), strings.Contains(typ, "video"):
+			part := providers.MessageContentPart{Type: "input_file"}
+			if strings.HasPrefix(src, "file_") {
+				part.FileID = src
+			} else {
+				part.FileURL = src
+			}
+			if part.FileID != "" || part.FileURL != "" {
+				parts = append(parts, part)
+			}
+		}
+	}
+
+	if len(parts) == 0 {
+		return messages
+	}
+	messages[last].ContentParts = parts
+	return messages
+}
+
+func splitCommaList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
