@@ -1760,7 +1760,8 @@ func rewriteSystemMessageContent(content, template string) string {
 func alSessionListForTool(sm *session.SessionManager, limit int) []tools.SessionInfo {
 	items := sm.List(limit)
 	out := make([]tools.SessionInfo, 0, len(items))
-	for _, s := range items {
+	for i := range items {
+		s := &items[i]
 		out = append(out, tools.SessionInfo{
 			Key:             s.Key,
 			Kind:            s.Kind,

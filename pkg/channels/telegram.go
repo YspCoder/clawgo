@@ -1068,7 +1068,7 @@ func (c *TelegramChannel) deleteTelegramMessageWithRetry(ctx context.Context, ch
 
 func (c *TelegramChannel) handleAction(ctx context.Context, chatID int64, action string, msg bus.OutboundMessage) error {
 	messageID, ok := parseTelegramMessageID(msg.MessageID)
-	if !ok && action != "send" && action != "stream" {
+	if !ok && action != "send" && action != "stream" && action != "finalize" {
 		return fmt.Errorf("message_id required for action=%s", action)
 	}
 	switch action {
