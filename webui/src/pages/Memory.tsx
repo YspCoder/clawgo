@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { useUI } from '../context/UIContext';
 
 const Memory: React.FC = () => {
   const { t } = useTranslation();
+  const ui = useUI();
   const { q } = useAppContext();
   const [files, setFiles] = useState<string[]>([]);
   const [active, setActive] = useState('');
@@ -35,6 +37,13 @@ const Memory: React.FC = () => {
   }
 
   async function removeFile(path: string) {
+    const ok = await ui.confirmDialog({
+      title: t('memoryDeleteConfirmTitle'),
+      message: t('memoryDeleteConfirmMessage', { path }),
+      danger: true,
+      confirmText: t('delete'),
+    });
+    if (!ok) return;
     await fetch(`/webui/api/memory${qp('path', path)}`, { method: 'DELETE' });
     if (active === path) {
       setActive('');

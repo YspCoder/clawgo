@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { useUI } from '../context/UIContext';
 
 type TaskItem = {
   id?: string;
@@ -14,6 +15,7 @@ type TaskItem = {
 
 const Tasks: React.FC = () => {
   const { t } = useTranslation();
+  const ui = useUI();
   const { q } = useAppContext();
   const [items, setItems] = useState<TaskItem[]>([]);
   const [selected, setSelected] = useState<TaskItem | null>(null);
@@ -34,6 +36,17 @@ const Tasks: React.FC = () => {
   useEffect(() => { load(); }, [q]);
 
   const save = async (action: 'create' | 'update' | 'delete') => {
+    if (action === 'delete') {
+      const targetId = String(draft.id || '').trim();
+      if (!targetId) return;
+      const ok = await ui.confirmDialog({
+        title: t('taskDeleteConfirmTitle'),
+        message: t('taskDeleteConfirmMessage', { id: targetId }),
+        danger: true,
+        confirmText: t('delete'),
+      });
+      if (!ok) return;
+    }
     const payload: any = { action };
     if (action === 'create') payload.item = draft;
     if (action === 'update') { payload.id = draft.id; payload.item = { id: draft.id, content: draft.content }; }

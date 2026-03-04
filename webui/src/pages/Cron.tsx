@@ -3,7 +3,9 @@ import { Plus, RefreshCw, CheckCircle2, Pause, Edit2, Trash2, X, Play, Clock } f
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { useUI } from '../context/UIContext';
 import { CronJob } from '../types';
+import { formatLocalDateTime } from '../utils/time';
 
 const initialCronForm = {
   name: '',
@@ -37,7 +39,7 @@ const formatSchedule = (job: CronJob, t: (key: string) => string) => {
   if (kind === 'at' && job.schedule?.atMs) {
     return {
       label: t('runAt'),
-      value: new Date(job.schedule.atMs).toLocaleString(),
+      value: formatLocalDateTime(job.schedule.atMs),
     };
   }
   return {
@@ -48,6 +50,7 @@ const formatSchedule = (job: CronJob, t: (key: string) => string) => {
 
 const Cron: React.FC = () => {
   const { t } = useTranslation();
+  const ui = useUI();
   const { cron, refreshCron, q, cfg } = useAppContext();
   const [isCronModalOpen, setIsCronModalOpen] = useState(false);
   const [editingCron, setEditingCron] = useState<CronJob | null>(null);
@@ -72,6 +75,23 @@ const Cron: React.FC = () => {
   }, [cfg, enabledChannels]);
 
   async function cronAction(action: 'delete' | 'enable' | 'disable', id: string) {
+    if (action === 'delete') {
+      const ok = await ui.confirmDialog({
+        title: t('cronDeleteConfirmTitle'),
+        message: t('cronDeleteConfirmMessage'),
+        danger: true,
+        confirmText: t('delete'),
+      });
+      if (!ok) return;
+    }
+    if (action === 'disable') {
+      const ok = await ui.confirmDialog({
+        title: t('cronDisableConfirmTitle'),
+        message: t('cronDisableConfirmMessage'),
+        confirmText: t('pause'),
+      });
+      if (!ok) return;
+    }
     try {
       await fetch(`/webui/api/cron${q}`, {
         method: 'POST',

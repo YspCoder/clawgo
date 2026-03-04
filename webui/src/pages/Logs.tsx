@@ -2,10 +2,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Terminal, Trash2, Play, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { useUI } from '../context/UIContext';
 import { LogEntry } from '../types';
+import { formatLocalTime } from '../utils/time';
 
 const Logs: React.FC = () => {
   const { t } = useTranslation();
+  const ui = useUI();
   const { q } = useAppContext();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [codeMap, setCodeMap] = useState<Record<number, string>>({});
@@ -109,7 +112,16 @@ const Logs: React.FC = () => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  const clearLogs = () => setLogs([]);
+  const clearLogs = async () => {
+    const ok = await ui.confirmDialog({
+      title: t('logsClearConfirmTitle'),
+      message: t('logsClearConfirmMessage'),
+      danger: true,
+      confirmText: t('clear'),
+    });
+    if (!ok) return;
+    setLogs([]);
+  };
 
   const normalizeLog = (v: any): LogEntry => ({
     time: typeof v?.time === 'string' && v.time ? v.time : (typeof v?.timestamp === 'string' && v.timestamp ? v.timestamp : new Date().toISOString()),
@@ -133,19 +145,6 @@ const Logs: React.FC = () => {
     const c = toCode(v);
     if (!c) return v;
     return codeMap[c] || v;
-  };
-
-  const formatTime = (raw: string) => {
-    try {
-      if (!raw) return '--:--:--';
-      if (raw.includes('T')) {
-        const right = raw.split('T')[1] || '';
-        return (right.split('.')[0] || right).trim() || '--:--:--';
-      }
-      return raw;
-    } catch {
-      return '--:--:--';
-    }
   };
 
   const renderReadable = (log: LogEntry) => {
@@ -241,7 +240,7 @@ const Logs: React.FC = () => {
                   const code = toCode(rawCode);
                   return (
                     <tr key={i} className="border-b border-zinc-900 hover:bg-zinc-900/40 align-top">
-                      <td className="p-2 text-zinc-500 whitespace-nowrap">{formatTime(log.time)}</td>
+                      <td className="p-2 text-zinc-500 whitespace-nowrap">{formatLocalTime(log.time)}</td>
                       <td className={`p-2 font-semibold whitespace-nowrap ${getLevelColor(lvl)}`}>{lvl}</td>
                       <td className="p-2 text-zinc-200 break-all">{message}</td>
                       <td className="p-2 text-red-300 break-all">{errText}</td>

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { useUI } from '../context/UIContext';
 import RecursiveConfig from '../components/RecursiveConfig';
 
 function setPath(obj: any, path: string, value: any) {
@@ -19,6 +20,7 @@ function setPath(obj: any, path: string, value: any) {
 
 const Config: React.FC = () => {
   const { t } = useTranslation();
+  const ui = useUI();
   const { cfg, setCfg, cfgRaw, setCfgRaw, loadConfig, hotReloadFieldDetails, q } = useAppContext();
   const [showRaw, setShowRaw] = useState(false);
   const [basicMode, setBasicMode] = useState(true);
@@ -94,7 +96,14 @@ const Config: React.FC = () => {
     setCfg((v) => setPath(v, `providers.proxies.${name}.${field}`, value));
   }
 
-  function removeProxy(name: string) {
+  async function removeProxy(name: string) {
+    const ok = await ui.confirmDialog({
+      title: t('configDeleteProviderConfirmTitle'),
+      message: t('configDeleteProviderConfirmMessage', { name }),
+      danger: true,
+      confirmText: t('delete'),
+    });
+    if (!ok) return;
     setCfg((v) => {
       const next = JSON.parse(JSON.stringify(v || {}));
       if (next?.providers?.proxies && typeof next.providers.proxies === 'object') {

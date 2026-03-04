@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { useUI } from '../context/UIContext';
+import { formatLocalDateTime, localDateInputValue } from '../utils/time';
 
 type TaskAuditItem = {
   task_id?: string;
@@ -29,6 +31,7 @@ type TaskAuditItem = {
 
 const TaskAudit: React.FC = () => {
   const { t } = useTranslation();
+  const ui = useUI();
   const { q } = useAppContext();
   const [items, setItems] = useState<TaskAuditItem[]>([]);
   const [selected, setSelected] = useState<TaskAuditItem | null>(null);
@@ -36,7 +39,7 @@ const TaskAudit: React.FC = () => {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dailyReport, setDailyReport] = useState<string>('');
-  const [reportDate, setReportDate] = useState<string>(new Date().toISOString().slice(0,10));
+  const [reportDate, setReportDate] = useState<string>(localDateInputValue());
   const [showDailyReport, setShowDailyReport] = useState(false);
 
   const fetchData = async () => {
@@ -90,6 +93,31 @@ const TaskAudit: React.FC = () => {
 
   const taskAction = async (action: 'pause'|'retry'|'complete'|'ignore') => {
     if (!selected?.task_id) return;
+    if (action === 'pause') {
+      const ok = await ui.confirmDialog({
+        title: t('taskPauseConfirmTitle'),
+        message: t('taskPauseConfirmMessage', { id: selected.task_id }),
+        confirmText: t('pauseTask'),
+      });
+      if (!ok) return;
+    }
+    if (action === 'complete') {
+      const ok = await ui.confirmDialog({
+        title: t('taskCompleteConfirmTitle'),
+        message: t('taskCompleteConfirmMessage', { id: selected.task_id }),
+        confirmText: t('completeTask'),
+      });
+      if (!ok) return;
+    }
+    if (action === 'ignore') {
+      const ok = await ui.confirmDialog({
+        title: t('taskIgnoreConfirmTitle'),
+        message: t('taskIgnoreConfirmMessage', { id: selected.task_id }),
+        danger: true,
+        confirmText: t('ignoreTask'),
+      });
+      if (!ok) return;
+    }
     try {
       const url = `/webui/api/task_queue${q}`;
       const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, task_id: selected.task_id }) });
@@ -157,7 +185,7 @@ const TaskAudit: React.FC = () => {
                 >
                   <div className="text-sm font-medium text-zinc-100 truncate">{it.task_id || `task-${idx + 1}`}</div>
                   <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · attempts:{it.attempts || 1} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'} · {it.provider || '-'} / {it.model || '-'}</div>
-                  <div className="text-[11px] text-zinc-500 truncate">{it.time}</div>
+                  <div className="text-[11px] text-zinc-500 truncate">{formatLocalDateTime(it.time)}</div>
                 </button>
               );
             })}
@@ -188,7 +216,7 @@ const TaskAudit: React.FC = () => {
                   <div><div className="text-zinc-500 text-xs">{t('session')}</div><div className="font-mono break-all">{selected.session}</div></div>
                   <div><div className="text-zinc-500 text-xs">{t('provider')}</div><div>{selected.provider || '-'}</div></div>
                   <div><div className="text-zinc-500 text-xs">{t('model')}</div><div>{selected.model || '-'}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('time')}</div><div>{selected.time}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('time')}</div><div>{formatLocalDateTime(selected.time)}</div></div>
                 </div>
 
                 <div>
@@ -213,7 +241,7 @@ const TaskAudit: React.FC = () => {
                   </div>
                   <div>
                     <div className="text-zinc-500 text-xs mb-1">{t('lastPauseAt')}</div>
-                    <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{selected.last_pause_at || '-'}</div>
+                    <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{formatLocalDateTime(selected.last_pause_at)}</div>
                   </div>
                 </div>
 

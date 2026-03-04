@@ -9,6 +9,35 @@ REPO="clawgo"
 BIN="clawgo"
 INSTALL_DIR="/usr/local/bin"
 WEBUI_DIR="$HOME/.clawgo/workspace/webui"
+UI_ONLY=0
+
+usage() {
+  cat <<EOF
+Usage: $0 [-ui]
+
+Options:
+  -ui      Update WebUI only. Skip binary download/install and migration prompt.
+  -h       Show this help message.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -ui)
+      UI_ONLY=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
 
 # ====================
 # Detect OS/ARCH
@@ -30,9 +59,13 @@ echo "Detected OS=$OS ARCH=$ARCH"
 # ====================
 # Check if already installed
 # ====================
-if command -v "$BIN" &> /dev/null; then
-  echo "$BIN is already installed. Removing existing version..."
-  sudo rm -f "$INSTALL_DIR/$BIN"
+if [[ "$UI_ONLY" -eq 0 ]]; then
+  if command -v "$BIN" &> /dev/null; then
+    echo "$BIN is already installed. Removing existing version..."
+    sudo rm -f "$INSTALL_DIR/$BIN"
+  fi
+else
+  echo "UI-only mode enabled: skip binary uninstall/install."
 fi
 
 # ====================
@@ -57,36 +90,36 @@ WEBUI_FILE="webui.tar.gz"
 URL="https://github.com/$OWNER/$REPO/releases/download/$TAG/$FILE"
 WEBUI_URL="https://github.com/$OWNER/$REPO/releases/download/$TAG/$WEBUI_FILE"
 
-echo "Trying to download: $URL"
-
-# Try to download binary release
 TMPDIR="$(mktemp -d)"
-OUT="$TMPDIR/$FILE"
+if [[ "$UI_ONLY" -eq 0 ]]; then
+  echo "Trying to download: $URL"
+  OUT="$TMPDIR/$FILE"
 
-# Now try downloading the file
-if curl -fSL "$URL" -o "$OUT"; then
-  echo "Downloaded $FILE"
-  tar -xzf "$OUT" -C "$TMPDIR"
+  # Now try downloading the file
+  if curl -fSL "$URL" -o "$OUT"; then
+    echo "Downloaded $FILE"
+    tar -xzf "$OUT" -C "$TMPDIR"
 
-  EXTRACTED_BIN=""
-  if [[ -f "$TMPDIR/$BIN" ]]; then
-    EXTRACTED_BIN="$TMPDIR/$BIN"
+    EXTRACTED_BIN=""
+    if [[ -f "$TMPDIR/$BIN" ]]; then
+      EXTRACTED_BIN="$TMPDIR/$BIN"
+    else
+      EXTRACTED_BIN="$(find "$TMPDIR" -maxdepth 2 -type f -name "${BIN}*" ! -name "*.tar.gz" ! -name "*.zip" | head -n1)"
+    fi
+
+    if [[ -z "$EXTRACTED_BIN" || ! -f "$EXTRACTED_BIN" ]]; then
+      echo "Failed to locate extracted binary from $FILE"
+      exit 1
+    fi
+
+    chmod +x "$EXTRACTED_BIN"
+    echo "Installing $BIN to $INSTALL_DIR (may require sudo)..."
+    sudo mv "$EXTRACTED_BIN" "$INSTALL_DIR/$BIN"
+    echo "Installed $BIN to $INSTALL_DIR/clawgo"
   else
-    EXTRACTED_BIN="$(find "$TMPDIR" -maxdepth 2 -type f -name "${BIN}*" ! -name "*.tar.gz" ! -name "*.zip" | head -n1)"
-  fi
-
-  if [[ -z "$EXTRACTED_BIN" || ! -f "$EXTRACTED_BIN" ]]; then
-    echo "Failed to locate extracted binary from $FILE"
+    echo "No prebuilt binary found, exiting..."
     exit 1
   fi
-
-  chmod +x "$EXTRACTED_BIN"
-  echo "Installing $BIN to $INSTALL_DIR (may require sudo)..."
-  sudo mv "$EXTRACTED_BIN" "$INSTALL_DIR/$BIN"
-  echo "Installed $BIN to $INSTALL_DIR/clawgo"
-else
-  echo "No prebuilt binary found, exiting..."
-  exit 1
 fi
 
 # ====================
@@ -123,6 +156,7 @@ fi
 # ====================
 # Migrate (Embedded openclaw2clawgo Script)
 # ====================
+if [[ "$UI_ONLY" -eq 0 ]]; then
 read -p "Do you want to migrate your OpenClaw workspace to ClawGo? (y/n): " MIGRATE
 if [[ "$MIGRATE" == "y" || "$MIGRATE" == "Y" ]]; then
   echo "Choose migration type: "
@@ -239,6 +273,7 @@ done
 if [[ -d "$DST/memory" ]]; then
   cp -a "$DST/memory" "$BACKUP_DIR/memory" || true
 fi
+fi
 
 # Migrate core persona/context files
 for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
@@ -268,9 +303,14 @@ EOF
       ;;
   esac
 fi
+fi
 
 echo "Cleaning up..."
 rm -rf "$TMPDIR"
 
 echo "Done 🎉"
-echo "Run 'clawgo --help' to verify"
+if [[ "$UI_ONLY" -eq 0 ]]; then
+  echo "Run 'clawgo --help' to verify"
+else
+  echo "WebUI update finished."
+fi
