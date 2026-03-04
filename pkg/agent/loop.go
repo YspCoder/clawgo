@@ -66,6 +66,8 @@ type AgentLoop struct {
 	ekg                   *ekg.Engine
 	providerMu            sync.RWMutex
 	sessionProvider       map[string]string
+	streamMu              sync.Mutex
+	sessionStreamed       map[string]bool
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -244,6 +246,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		sessionRunLocks:       map[string]*sync.Mutex{},
 		ekg:                   ekg.New(workspace),
 		sessionProvider:       map[string]string{},
+		sessionStreamed:       map[string]bool{},
 		providerResponses:     map[string]config.ProviderResponsesConfig{},
 		telegramStreaming:     cfg.Channels.Telegram.Streaming,
 	}
@@ -422,6 +425,28 @@ func (al *AgentLoop) getSessionProvider(sessionKey string) string {
 	return v
 }
 
+func (al *AgentLoop) markSessionStreamed(sessionKey string) {
+	key := strings.TrimSpace(sessionKey)
+	if key == "" {
+		return
+	}
+	al.streamMu.Lock()
+	al.sessionStreamed[key] = true
+	al.streamMu.Unlock()
+}
+
+func (al *AgentLoop) consumeSessionStreamed(sessionKey string) bool {
+	key := strings.TrimSpace(sessionKey)
+	if key == "" {
+		return false
+	}
+	al.streamMu.Lock()
+	defer al.streamMu.Unlock()
+	v := al.sessionStreamed[key]
+	delete(al.sessionStreamed, key)
+	return v
+}
+
 func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage) {
 	taskID := buildAuditTaskID(msg)
 	started := time.Now()
@@ -435,7 +460,9 @@ func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage)
 	trigger := al.getTrigger(msg)
 	suppressed := false
 	if response != "" {
-		if outbound, ok := al.prepareOutbound(msg, response); ok {
+		if msg.Channel == "telegram" && al.telegramStreaming && al.consumeSessionStreamed(msg.SessionKey) {
+			suppressed = true
+		} else if outbound, ok := al.prepareOutbound(msg, response); ok {
 			al.bus.PublishOutbound(outbound)
 		} else {
 			suppressed = true
@@ -833,6 +860,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 						replyID = msg.Metadata["message_id"]
 					}
 					al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Content: streamText, Action: "stream", ReplyToID: replyID})
+					al.markSessionStreamed(msg.SessionKey)
 				})
 			} else {
 				response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
