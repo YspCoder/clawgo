@@ -65,7 +65,7 @@ type telegramRenderedChunk struct {
 
 func (c *TelegramChannel) SupportsAction(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "", "send", "edit", "delete", "react", "stream":
+	case "", "send", "edit", "delete", "react", "stream", "finalize":
 		return true
 	default:
 		return false
@@ -866,6 +866,8 @@ func renderTelegramStreamChunks(content string) []telegramRenderedChunk {
 		parts = splitTelegramMarkdown(body, telegramStreamSplitMaxRunes)
 	case telego.ModeHTML:
 		parts = splitTelegramText(body, telegramSafeHTMLMaxRunes)
+	case "text":
+		parts = splitTelegramText(body, telegramStreamSplitMaxRunes)
 	default:
 		parts = splitTelegramMarkdown(body, telegramStreamSplitMaxRunes)
 		mode = "auto_markdown"
@@ -894,6 +896,14 @@ func renderTelegramStreamChunks(content string) []telegramRenderedChunk {
 			if strings.TrimSpace(payload) != "" {
 				out = append(out, telegramRenderedChunk{payload: payload, parseMode: telego.ModeMarkdownV2})
 			}
+		case "text":
+			payload := trimmed
+			if len([]rune(payload)) > telegramStreamSplitMaxRunes {
+				payload = splitTelegramText(payload, telegramStreamSplitMaxRunes)[0]
+			}
+			if strings.TrimSpace(payload) != "" {
+				out = append(out, telegramRenderedChunk{payload: payload, parseMode: ""})
+			}
 		default:
 			payload := sanitizeTelegramHTML(markdownToTelegramHTML(trimmed))
 			if len([]rune(payload)) > telegramSafeHTMLMaxRunes {
@@ -914,6 +924,8 @@ func detectTelegramStreamMode(content string) (mode string, body string) {
 		return telego.ModeHTML, strings.TrimSpace(trimmed[len("[mode:html]"):])
 	case strings.HasPrefix(strings.ToLower(trimmed), "[mode:markdownv2]"):
 		return telego.ModeMarkdownV2, strings.TrimSpace(trimmed[len("[mode:markdownv2]"):])
+	case strings.HasPrefix(strings.ToLower(trimmed), "[mode:text]"):
+		return "text", strings.TrimSpace(trimmed[len("[mode:text]"):])
 	default:
 		return "auto_markdown", content
 	}
@@ -1068,6 +1080,23 @@ func (c *TelegramChannel) handleAction(ctx context.Context, chatID int64, action
 		return err
 	case "stream":
 		return c.handleStreamAction(ctx, chatID, msg)
+	case "finalize":
+		if strings.TrimSpace(msg.Content) != "" {
+			// Final pass in auto-markdown mode to recover rich formatting after plain streaming.
+			if err := c.handleStreamAction(ctx, chatID, bus.OutboundMessage{
+				ChatID:    msg.ChatID,
+				ReplyToID: msg.ReplyToID,
+				Content:   msg.Content,
+				Action:    "stream",
+			}); err != nil {
+				return err
+			}
+		}
+		streamKey := telegramStreamKey(chatID, msg.ReplyToID)
+		c.streamMu.Lock()
+		delete(c.streamState, streamKey)
+		c.streamMu.Unlock()
+		return nil
 	case "delete":
 		delCtx, cancel := withTelegramAPITimeout(ctx)
 		defer cancel()

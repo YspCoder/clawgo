@@ -1,14 +1,19 @@
 package agent
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 
 	"clawgo/pkg/bus"
+	"clawgo/pkg/ekg"
 	"clawgo/pkg/scheduling"
 )
 
@@ -121,7 +126,7 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 		go func(index int, t plannedTask) {
 			defer wg.Done()
 			subMsg := msg
-			subMsg.Content = t.Content
+			subMsg.Content = al.enrichTaskContentWithMemoryAndEKG(ctx, t)
 			subMsg.Metadata = cloneMetadata(msg.Metadata)
 			if subMsg.Metadata == nil {
 				subMsg.Metadata = map[string]string{}
@@ -155,6 +160,165 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 		b.WriteString(r.Output + "\n\n")
 	}
 	return strings.TrimSpace(b.String()), nil
+}
+
+func (al *AgentLoop) enrichTaskContentWithMemoryAndEKG(ctx context.Context, task plannedTask) string {
+	base := strings.TrimSpace(task.Content)
+	if base == "" {
+		return base
+	}
+	hints := make([]string, 0, 2)
+	if mem := al.memoryHintForTask(ctx, task); mem != "" {
+		hints = append(hints, "Memory:\n"+mem)
+	}
+	if risk := al.ekgHintForTask(task); risk != "" {
+		hints = append(hints, "EKG:\n"+risk)
+	}
+	if len(hints) == 0 {
+		return base
+	}
+	return strings.TrimSpace(
+		"Task Context (use it as constraints, avoid repeating known failures):\n" +
+			strings.Join(hints, "\n\n") +
+			"\n\nTask:\n" + base,
+	)
+}
+
+func (al *AgentLoop) memoryHintForTask(ctx context.Context, task plannedTask) string {
+	if al == nil || al.tools == nil {
+		return ""
+	}
+	res, err := al.tools.Execute(ctx, "memory_search", map[string]interface{}{
+		"query":      task.Content,
+		"maxResults": 2,
+	})
+	if err != nil {
+		return ""
+	}
+	txt := strings.TrimSpace(res)
+	if txt == "" || strings.HasPrefix(strings.ToLower(txt), "no memory found") {
+		return ""
+	}
+	return truncate(txt, 1200)
+}
+
+func (al *AgentLoop) ekgHintForTask(task plannedTask) string {
+	if al == nil || al.ekg == nil || strings.TrimSpace(al.workspace) == "" {
+		return ""
+	}
+	evt, ok := al.findRecentRelatedErrorEvent(task.Content)
+	if !ok {
+		return ""
+	}
+	errSig := ekg.NormalizeErrorSignature(evt.Log)
+	if errSig == "" {
+		return ""
+	}
+	advice := al.ekg.GetAdvice(ekg.SignalContext{
+		TaskID:  evt.TaskID,
+		ErrSig:  errSig,
+		Source:  evt.Source,
+		Channel: evt.Channel,
+	})
+	if !advice.ShouldEscalate {
+		return ""
+	}
+	reasons := strings.Join(advice.Reason, ", ")
+	if strings.TrimSpace(reasons) == "" {
+		reasons = "repeated error signature"
+	}
+	return fmt.Sprintf("Related repeated error signature detected (%s). Suggested retry backoff: %ds. Last error: %s",
+		errSig, advice.RetryBackoffSec, truncate(strings.TrimSpace(evt.Log), 240))
+}
+
+type taskAuditErrorEvent struct {
+	TaskID  string
+	Source  string
+	Channel string
+	Log     string
+	Preview string
+}
+
+func (al *AgentLoop) findRecentRelatedErrorEvent(taskContent string) (taskAuditErrorEvent, bool) {
+	path := filepath.Join(strings.TrimSpace(al.workspace), "memory", "task-audit.jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return taskAuditErrorEvent{}, false
+	}
+	defer f.Close()
+
+	kw := tokenizeTaskText(taskContent)
+	if len(kw) == 0 {
+		return taskAuditErrorEvent{}, false
+	}
+	var best taskAuditErrorEvent
+	bestScore := 0
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if line == "" {
+			continue
+		}
+		var row map[string]interface{}
+		if json.Unmarshal([]byte(line), &row) != nil {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"]))) != "error" {
+			continue
+		}
+		logText := strings.TrimSpace(fmt.Sprintf("%v", row["log"]))
+		if logText == "" {
+			continue
+		}
+		preview := strings.TrimSpace(fmt.Sprintf("%v", row["input_preview"]))
+		score := overlapScore(kw, tokenizeTaskText(preview))
+		if score < 1 || score < bestScore {
+			continue
+		}
+		bestScore = score
+		best = taskAuditErrorEvent{
+			TaskID:  strings.TrimSpace(fmt.Sprintf("%v", row["task_id"])),
+			Source:  strings.TrimSpace(fmt.Sprintf("%v", row["source"])),
+			Channel: strings.TrimSpace(fmt.Sprintf("%v", row["channel"])),
+			Log:     logText,
+			Preview: preview,
+		}
+	}
+	if bestScore == 0 || strings.TrimSpace(best.TaskID) == "" {
+		return taskAuditErrorEvent{}, false
+	}
+	return best, true
+}
+
+func tokenizeTaskText(s string) []string {
+	normalized := strings.NewReplacer("\n", " ", "\t", " ", ",", " ", "，", " ", ".", " ", "。", " ", ":", " ", "：", " ", ";", " ", "；", " ").Replace(strings.ToLower(strings.TrimSpace(s)))
+	parts := strings.Fields(normalized)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if len(p) < 3 {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func overlapScore(a, b []string) int {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	set := make(map[string]struct{}, len(a))
+	for _, k := range a {
+		set[k] = struct{}{}
+	}
+	score := 0
+	for _, k := range b {
+		if _, ok := set[k]; ok {
+			score++
+		}
+	}
+	return score
 }
 
 func cloneMetadata(m map[string]string) map[string]string {

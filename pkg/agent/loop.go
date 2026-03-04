@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
@@ -452,7 +453,12 @@ func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 	if msg.Channel == "telegram" && suppressed {
-		al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Action: "finalize"})
+		replyID := ""
+		if msg.Metadata != nil {
+			replyID = msg.Metadata["message_id"]
+		}
+		// Final pass uses full formatted content to stabilize rendering after plain streaming.
+		al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Action: "finalize", Content: response, ReplyToID: replyID})
 	}
 	al.audit.Record(trigger, msg.Channel, msg.SessionKey, suppressed, err)
 	al.appendTaskAudit(taskID, msg, started, err, suppressed)
@@ -840,11 +846,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 					if time.Since(lastPush) < 450*time.Millisecond {
 						return
 					}
+					if !shouldFlushTelegramStreamSnapshot(streamText) {
+						return
+					}
 					lastPush = time.Now()
 					replyID := ""
 					if msg.Metadata != nil {
 						replyID = msg.Metadata["message_id"]
 					}
+					// Stream with formatted rendering once snapshot is syntactically safe.
 					al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Content: streamText, Action: "stream", ReplyToID: replyID})
 					al.markSessionStreamed(msg.SessionKey)
 				})
@@ -1677,6 +1687,32 @@ func extractFirstSourceLine(text string) string {
 func shouldDropNoReply(text string) bool {
 	t := strings.TrimSpace(text)
 	return strings.EqualFold(t, "NO_REPLY")
+}
+
+func shouldFlushTelegramStreamSnapshot(s string) bool {
+	s = strings.TrimRight(s, " \t")
+	if s == "" {
+		return false
+	}
+	last, _ := utf8.DecodeLastRuneInString(s)
+	switch last {
+	case '\n', '。', '！', '？', '.', '!', '?', ';', '；', ':', '：':
+	default:
+		return false
+	}
+	// Avoid flushing while code fences are still unbalanced.
+	if strings.Count(s, "```")%2 == 1 {
+		return false
+	}
+	// Avoid flushing while common inline markdown markers are unbalanced.
+	if strings.Count(s, "**")%2 == 1 || strings.Count(s, "__")%2 == 1 || strings.Count(s, "~~")%2 == 1 {
+		return false
+	}
+	// Rough guard for links/images: require bracket balance before flushing.
+	if strings.Count(s, "[") != strings.Count(s, "]") || strings.Count(s, "(") != strings.Count(s, ")") {
+		return false
+	}
+	return true
 }
 
 func parseReplyTag(text string, currentMessageID string) (content string, replyToID string) {

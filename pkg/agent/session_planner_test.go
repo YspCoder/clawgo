@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"clawgo/pkg/bus"
+	"clawgo/pkg/ekg"
 	"clawgo/pkg/providers"
 )
 
@@ -48,5 +51,29 @@ func TestProcessPlannedMessage_AggregatesResults(t *testing.T) {
 	}
 	if resp == "" {
 		t.Fatalf("expected aggregate response")
+	}
+}
+
+func TestFindRecentRelatedErrorEvent(t *testing.T) {
+	ws := filepath.Join(t.TempDir(), "workspace")
+	_ = os.MkdirAll(filepath.Join(ws, "memory"), 0o755)
+	line := `{"task_id":"t1","status":"error","log":"open /tmp/a.go failed","input_preview":"修复 pkg/a.go 的读取错误","source":"direct","channel":"cli"}`
+	if err := os.WriteFile(filepath.Join(ws, "memory", "task-audit.jsonl"), []byte(line+"\n"), 0o644); err != nil {
+		t.Fatalf("write audit: %v", err)
+	}
+	loop := &AgentLoop{workspace: ws, ekg: ekg.New(ws)}
+	loop.ekg.Record(ekg.Event{TaskID: "t1", Status: "error", Log: "open /tmp/a.go failed"})
+	loop.ekg.Record(ekg.Event{TaskID: "t1", Status: "error", Log: "open /tmp/a.go failed"})
+	loop.ekg.Record(ekg.Event{TaskID: "t1", Status: "error", Log: "open /tmp/a.go failed"})
+
+	ev, ok := loop.findRecentRelatedErrorEvent("请修复 pkg/a.go 的读取问题")
+	if !ok {
+		t.Fatalf("expected matched recent error event")
+	}
+	if ev.TaskID != "t1" {
+		t.Fatalf("unexpected task id: %s", ev.TaskID)
+	}
+	if hint := loop.ekgHintForTask(plannedTask{Content: "修复 pkg/a.go"}); hint == "" {
+		t.Fatalf("expected non-empty ekg hint")
 	}
 }
