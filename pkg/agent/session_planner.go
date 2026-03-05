@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 
@@ -140,11 +139,10 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 				res.ErrText = err.Error()
 			}
 			results[index] = res
+			al.publishPlannedTaskProgress(msg, len(tasks), res)
 		}(i, task)
 	}
 	wg.Wait()
-
-	sort.SliceStable(results, func(i, j int) bool { return results[i].Task.Index < results[j].Task.Index })
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("已自动拆解为 %d 个任务并执行：\n\n", len(results)))
 	for _, r := range results {
@@ -160,6 +158,35 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 		b.WriteString(r.Output + "\n\n")
 	}
 	return strings.TrimSpace(b.String()), nil
+}
+
+func (al *AgentLoop) publishPlannedTaskProgress(msg bus.InboundMessage, total int, res plannedTaskResult) {
+	if al == nil || al.bus == nil || total <= 1 {
+		return
+	}
+	if msg.Channel == "system" || msg.Channel == "internal" {
+		return
+	}
+	idx := res.Task.Index
+	if idx <= 0 {
+		idx = res.Index + 1
+	}
+	status := "完成"
+	body := strings.TrimSpace(res.Output)
+	if res.ErrText != "" {
+		status = "失败"
+		body = strings.TrimSpace(res.ErrText)
+	}
+	if body == "" {
+		body = "(无输出)"
+	}
+	body = truncate(strings.ReplaceAll(body, "\n", " "), 280)
+	content := fmt.Sprintf("进度 %d/%d：任务%d已%s\n%s", idx, total, idx, status, body)
+	al.bus.PublishOutbound(bus.OutboundMessage{
+		Channel: msg.Channel,
+		ChatID:  msg.ChatID,
+		Content: content,
+	})
 }
 
 func (al *AgentLoop) enrichTaskContentWithMemoryAndEKG(ctx context.Context, task plannedTask) string {

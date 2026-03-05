@@ -30,8 +30,8 @@ func Validate(cfg *Config) []error {
 	if rc.AutonomyIdleThresholdSec < 5 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_idle_threshold_sec must be >= 5"))
 	}
-	if rc.AutonomyMaxRoundsWithoutUser <= 0 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_rounds_without_user must be > 0"))
+	if rc.AutonomyMaxRoundsWithoutUser < 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_rounds_without_user must be >= 0"))
 	}
 	if rc.AutonomyMaxPendingDurationSec < 10 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_pending_duration_sec must be >= 10"))
@@ -96,8 +96,8 @@ func Validate(cfg *Config) []error {
 		if aut.MaxConsecutiveStalls <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_consecutive_stalls must be > 0 when enabled=true"))
 		}
-		if aut.MaxDispatchPerTick <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_dispatch_per_tick must be > 0 when enabled=true"))
+		if aut.MaxDispatchPerTick < 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_dispatch_per_tick must be >= 0 when enabled=true"))
 		}
 		if aut.NotifyCooldownSec <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.notify_cooldown_sec must be > 0 when enabled=true"))

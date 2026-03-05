@@ -948,26 +948,26 @@ func extractFeishuMessageContent(message *larkim.EventMessage) (string, []string
 	}
 
 	switch msgType {
-	case string(larkim.MsgTypeText):
+	case larkim.MsgTypeText:
 		var textPayload struct {
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal([]byte(raw), &textPayload); err == nil {
 			return textPayload.Text, nil
 		}
-	case string(larkim.MsgTypePost):
+	case larkim.MsgTypePost:
 		md, media := parseFeishuPostToMarkdown(raw)
 		if md != "" || len(media) > 0 {
 			return md, media
 		}
-	case string(larkim.MsgTypeImage):
+	case larkim.MsgTypeImage:
 		var img struct {
 			ImageKey string `json:"image_key"`
 		}
 		if err := json.Unmarshal([]byte(raw), &img); err == nil && img.ImageKey != "" {
 			return "[image]", []string{"feishu:image:" + img.ImageKey}
 		}
-	case string(larkim.MsgTypeFile):
+	case larkim.MsgTypeFile:
 		var f struct {
 			FileKey  string `json:"file_key"`
 			FileName string `json:"file_name"`

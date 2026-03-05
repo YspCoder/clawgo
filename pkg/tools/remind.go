@@ -3,12 +3,14 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"clawgo/pkg/cron"
 )
 
 type RemindTool struct {
+	mu             sync.RWMutex
 	cs             *cron.CronService
 	defaultChannel string
 	defaultChatID  string
@@ -19,6 +21,8 @@ func NewRemindTool(cs *cron.CronService) *RemindTool {
 }
 
 func (t *RemindTool) SetContext(channel, chatID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.defaultChannel = channel
 	t.defaultChatID = chatID
 }
@@ -43,6 +47,14 @@ func (t *RemindTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "When to remind (e.g., '10m', '1h', '2026-02-12 10:00')",
 			},
+			"channel": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional destination channel override",
+			},
+			"chat_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional destination chat ID override",
+			},
 		},
 		"required": []string{"message", "time_expr"},
 	}
@@ -63,6 +75,21 @@ func (t *RemindTool) Execute(ctx context.Context, args map[string]interface{}) (
 		return "", fmt.Errorf("time_expr is required")
 	}
 
+	channel, _ := args["channel"].(string)
+	chatID, _ := args["chat_id"].(string)
+	if channel == "" || chatID == "" {
+		t.mu.RLock()
+		defaultChannel := t.defaultChannel
+		defaultChatID := t.defaultChatID
+		t.mu.RUnlock()
+		if channel == "" {
+			channel = defaultChannel
+		}
+		if chatID == "" {
+			chatID = defaultChatID
+		}
+	}
+
 	// Try duration first (e.g., "10m", "1h30m")
 	if d, err := time.ParseDuration(timeExpr); err == nil {
 		at := time.Now().Add(d).UnixMilli()
@@ -70,7 +97,7 @@ func (t *RemindTool) Execute(ctx context.Context, args map[string]interface{}) (
 			Kind: "at",
 			AtMS: &at,
 		}
-		job, err := t.cs.AddJob("Reminder", schedule, message, true, t.defaultChannel, t.defaultChatID)
+		job, err := t.cs.AddJob("Reminder", schedule, message, true, channel, chatID)
 		if err != nil {
 			return "", fmt.Errorf("failed to schedule reminder: %w", err)
 		}
@@ -120,7 +147,7 @@ func (t *RemindTool) Execute(ctx context.Context, args map[string]interface{}) (
 		AtMS: &at,
 	}
 
-	job, err := t.cs.AddJob("Reminder", schedule, message, true, t.defaultChannel, t.defaultChatID)
+	job, err := t.cs.AddJob("Reminder", schedule, message, true, channel, chatID)
 	if err != nil {
 		return "", fmt.Errorf("failed to schedule reminder: %w", err)
 	}

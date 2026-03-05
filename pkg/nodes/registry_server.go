@@ -1929,7 +1929,7 @@ func (s *RegistryServer) handleWebUITaskAudit(w http.ResponseWriter, r *http.Req
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -2052,11 +2052,10 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
 	includeHeartbeat := r.URL.Query().Get("include_heartbeat") == "1"
 	b, err := os.ReadFile(path)
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": []map[string]interface{}{}, "items": []map[string]interface{}{}})
-		return
+	lines := []string{}
+	if err == nil {
+		lines = strings.Split(string(b), "\n")
 	}
-	lines := strings.Split(string(b), "\n")
 	type agg struct {
 		Last     map[string]interface{}
 		Logs     []string
@@ -2140,6 +2139,104 @@ func (s *RegistryServer) handleWebUITaskQueue(w http.ResponseWriter, r *http.Req
 				if fmt.Sprintf("%v", row["status"]) == "running" {
 					running = append(running, row)
 				}
+			}
+		}
+	}
+
+	// Merge command watchdog queue from memory/task_queue.json for visibility.
+	queuePath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task_queue.json")
+	if qb, qErr := os.ReadFile(queuePath); qErr == nil {
+		var q map[string]interface{}
+		if json.Unmarshal(qb, &q) == nil {
+			if arr, ok := q["running"].([]interface{}); ok {
+				for _, item := range arr {
+					row, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					id := fmt.Sprintf("%v", row["id"])
+					if strings.TrimSpace(id) == "" {
+						continue
+					}
+					label := fmt.Sprintf("%v", row["label"])
+					source := strings.TrimSpace(fmt.Sprintf("%v", row["source"]))
+					if source == "" {
+						source = "command_watchdog"
+					}
+					rec := map[string]interface{}{
+						"task_id":       "cmd:" + id,
+						"time":          fmt.Sprintf("%v", row["started_at"]),
+						"status":        "running",
+						"source":        "command_watchdog",
+						"channel":       source,
+						"session":       "watchdog:" + id,
+						"input_preview": label,
+						"duration_ms":   0,
+						"attempts":      1,
+						"retry_count":   0,
+						"logs": []string{
+							fmt.Sprintf("watchdog source=%s heavy=%v", source, row["heavy"]),
+							fmt.Sprintf("next_check_at=%v stalled_rounds=%v/%v", row["next_check_at"], row["stalled_rounds"], row["stall_round_limit"]),
+						},
+						"idle_run": true,
+					}
+					items = append(items, rec)
+					running = append(running, rec)
+				}
+			}
+			if arr, ok := q["waiting"].([]interface{}); ok {
+				for _, item := range arr {
+					row, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					id := fmt.Sprintf("%v", row["id"])
+					if strings.TrimSpace(id) == "" {
+						continue
+					}
+					label := fmt.Sprintf("%v", row["label"])
+					source := strings.TrimSpace(fmt.Sprintf("%v", row["source"]))
+					if source == "" {
+						source = "command_watchdog"
+					}
+					rec := map[string]interface{}{
+						"task_id":       "cmd:" + id,
+						"time":          fmt.Sprintf("%v", row["enqueued_at"]),
+						"status":        "waiting",
+						"source":        "command_watchdog",
+						"channel":       source,
+						"session":       "watchdog:" + id,
+						"input_preview": label,
+						"duration_ms":   0,
+						"attempts":      1,
+						"retry_count":   0,
+						"logs": []string{
+							fmt.Sprintf("watchdog source=%s heavy=%v", source, row["heavy"]),
+							fmt.Sprintf("enqueued_at=%v", row["enqueued_at"]),
+						},
+						"idle_run": true,
+					}
+					items = append(items, rec)
+				}
+			}
+			if wd, ok := q["watchdog"].(map[string]interface{}); ok {
+				items = append(items, map[string]interface{}{
+					"task_id":       "cmd:watchdog",
+					"time":          fmt.Sprintf("%v", q["time"]),
+					"status":        "running",
+					"source":        "command_watchdog",
+					"channel":       "watchdog",
+					"session":       "watchdog:stats",
+					"input_preview": "command watchdog capacity snapshot",
+					"duration_ms":   0,
+					"attempts":      1,
+					"retry_count":   0,
+					"logs": []string{
+						fmt.Sprintf("cpu_total=%v usage_ratio=%v reserve_pct=%v", wd["cpu_total"], wd["usage_ratio"], wd["reserve_pct"]),
+						fmt.Sprintf("active=%v/%v heavy=%v/%v waiting=%v running=%v", wd["active"], wd["max_active"], wd["active_heavy"], wd["max_heavy"], wd["waiting"], wd["running"]),
+					},
+					"idle_run": true,
+				})
 			}
 		}
 	}

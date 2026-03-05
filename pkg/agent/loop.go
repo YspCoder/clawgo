@@ -734,23 +734,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return fmt.Sprintf(tpl, lang), nil
 	}
 
-	// Update tool contexts
-	if tool, ok := al.tools.Get("message"); ok {
-		if mt, ok := tool.(*tools.MessageTool); ok {
-			mt.SetContext(msg.Channel, msg.ChatID)
-		}
-	}
-	if tool, ok := al.tools.Get("spawn"); ok {
-		if st, ok := tool.(*tools.SpawnTool); ok {
-			st.SetContext(msg.Channel, msg.ChatID)
-		}
-	}
-	if tool, ok := al.tools.Get("remind"); ok {
-		if rt, ok := tool.(*tools.RemindTool); ok {
-			rt.SetContext(msg.Channel, msg.ChatID)
-		}
-	}
-
 	history := al.sessions.GetHistory(msg.SessionKey)
 	summary := al.sessions.GetSummary(msg.SessionKey)
 	memoryRecallUsed := false
@@ -948,7 +931,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 					"iteration": iteration,
 				})
 
-			result, err := al.tools.Execute(ctx, tc.Name, tc.Arguments)
+			execArgs := withToolContextArgs(tc.Name, tc.Arguments, msg.Channel, msg.ChatID)
+			result, err := al.tools.Execute(ctx, tc.Name, execArgs)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
 			}
@@ -1168,18 +1152,6 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	// Use the origin session for context
 	sessionKey := fmt.Sprintf("%s:%s", originChannel, originChatID)
 
-	// Update tool contexts to original channel/chatID
-	if tool, ok := al.tools.Get("message"); ok {
-		if mt, ok := tool.(*tools.MessageTool); ok {
-			mt.SetContext(originChannel, originChatID)
-		}
-	}
-	if tool, ok := al.tools.Get("spawn"); ok {
-		if st, ok := tool.(*tools.SpawnTool); ok {
-			st.SetContext(originChannel, originChatID)
-		}
-	}
-
 	// Build messages with the announce content
 	history := al.sessions.GetHistory(sessionKey)
 	summary := al.sessions.GetSummary(sessionKey)
@@ -1273,7 +1245,8 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		al.sessions.AddMessageFull(sessionKey, assistantMsg)
 
 		for _, tc := range response.ToolCalls {
-			result, err := al.tools.Execute(ctx, tc.Name, tc.Arguments)
+			execArgs := withToolContextArgs(tc.Name, tc.Arguments, originChannel, originChatID)
+			result, err := al.tools.Execute(ctx, tc.Name, execArgs)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
 			}
@@ -1655,6 +1628,42 @@ func truncateString(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-3] + "..."
+}
+
+func withToolContextArgs(toolName string, args map[string]interface{}, channel, chatID string) map[string]interface{} {
+	if channel == "" || chatID == "" {
+		return args
+	}
+	switch toolName {
+	case "message", "spawn", "remind":
+	default:
+		return args
+	}
+
+	next := make(map[string]interface{}, len(args)+2)
+	for k, v := range args {
+		next[k] = v
+	}
+
+	if toolName == "message" {
+		if _, ok := next["channel"]; !ok {
+			next["channel"] = channel
+		}
+		if _, hasChat := next["chat_id"]; !hasChat {
+			if _, hasTo := next["to"]; !hasTo {
+				next["chat_id"] = chatID
+			}
+		}
+		return next
+	}
+
+	if _, ok := next["channel"]; !ok {
+		next["channel"] = channel
+	}
+	if _, ok := next["chat_id"]; !ok {
+		next["chat_id"] = chatID
+	}
+	return next
 }
 
 func shouldRecallMemory(text string, keywords []string) bool {

@@ -95,7 +95,8 @@ func NewEngine(opts Options, msgBus *bus.MessageBus) *Engine {
 	if opts.MaxConsecutiveStalls <= 0 {
 		opts.MaxConsecutiveStalls = 3
 	}
-	if opts.MaxDispatchPerTick <= 0 {
+	// max_dispatch_per_tick <= 0 means "unlimited dispatch per tick".
+	if opts.MaxDispatchPerTick < 0 {
 		opts.MaxDispatchPerTick = 2
 	}
 	if opts.NotifyCooldownSec <= 0 {
@@ -296,7 +297,7 @@ func (e *Engine) tick() {
 
 	dispatched := 0
 	for _, st := range ordered {
-		if dispatched >= e.opts.MaxDispatchPerTick {
+		if e.opts.MaxDispatchPerTick > 0 && dispatched >= e.opts.MaxDispatchPerTick {
 			break
 		}
 		if st.Status == "completed" {
@@ -601,9 +602,6 @@ func (e *Engine) dispatchTask(st *taskState) {
 func (e *Engine) sendCompletionNotification(st *taskState) {
 	e.writeReflectLog("complete", st, "task marked completed")
 	e.writeTriggerAudit("complete", st, "")
-	if !e.isHighValueCompletion(st) {
-		return
-	}
 	if !e.shouldNotify("done:"+st.ID, "") {
 		return
 	}

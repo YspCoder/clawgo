@@ -955,10 +955,6 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 
 func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
 	a := cfg.Agents.Defaults.Autonomy
-	maxRoundsWithoutUser := a.MaxRoundsWithoutUser
-	if maxRoundsWithoutUser == 0 && cfg.Agents.Defaults.RuntimeControl.AutonomyMaxRoundsWithoutUser > 0 {
-		maxRoundsWithoutUser = cfg.Agents.Defaults.RuntimeControl.AutonomyMaxRoundsWithoutUser
-	}
 	idleRoundBudgetReleaseSec := a.IdleRoundBudgetReleaseSec
 	if idleRoundBudgetReleaseSec == 0 {
 		idleRoundBudgetReleaseSec = 1800
@@ -990,7 +986,7 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		NotifySameReasonCooldownSec:  a.NotifySameReasonCooldownSec,
 		QuietHours:                   a.QuietHours,
 		UserIdleResumeSec:            a.UserIdleResumeSec,
-		MaxRoundsWithoutUser:         maxRoundsWithoutUser,
+		MaxRoundsWithoutUser:         a.MaxRoundsWithoutUser,
 		TaskHistoryRetentionDays:     a.TaskHistoryRetentionDays,
 		WaitingResumeDebounceSec:     a.WaitingResumeDebounceSec,
 		IdleRoundBudgetReleaseSec:    idleRoundBudgetReleaseSec,

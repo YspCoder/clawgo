@@ -12,6 +12,7 @@ import (
 type SendCallback func(channel, chatID, action, content, media, messageID, emoji string, buttons [][]bus.Button) error
 
 type MessageTool struct {
+	mu             sync.RWMutex
 	sendCallback   SendCallback
 	defaultChannel string
 	defaultChatID  string
@@ -104,11 +105,15 @@ func (t *MessageTool) Parameters() map[string]interface{} {
 }
 
 func (t *MessageTool) SetContext(channel, chatID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.defaultChannel = channel
 	t.defaultChatID = chatID
 }
 
 func (t *MessageTool) SetSendCallback(callback SendCallback) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.sendCallback = callback
 }
 
@@ -168,18 +173,24 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 		chatID = to
 	}
 
+	t.mu.RLock()
+	defaultChannel := t.defaultChannel
+	defaultChatID := t.defaultChatID
+	sendCallback := t.sendCallback
+	t.mu.RUnlock()
+
 	if channel == "" {
-		channel = t.defaultChannel
+		channel = defaultChannel
 	}
 	if chatID == "" {
-		chatID = t.defaultChatID
+		chatID = defaultChatID
 	}
 
 	if channel == "" || chatID == "" {
 		return "Error: No target channel/chat specified", nil
 	}
 
-	if t.sendCallback == nil {
+	if sendCallback == nil {
 		return "Error: Message sending not configured", nil
 	}
 
@@ -207,7 +218,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 		}
 	}
 
-	if err := t.sendCallback(channel, chatID, action, content, media, messageID, emoji, buttons); err != nil {
+	if err := sendCallback(channel, chatID, action, content, media, messageID, emoji, buttons); err != nil {
 		return fmt.Sprintf("Error sending message: %v", err), nil
 	}
 

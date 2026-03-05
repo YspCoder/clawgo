@@ -3,9 +3,11 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 type SpawnTool struct {
+	mu            sync.RWMutex
 	manager       *SubagentManager
 	originChannel string
 	originChatID  string
@@ -51,12 +53,22 @@ func (t *SpawnTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional task ID under the pipeline",
 			},
+			"channel": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional origin channel override",
+			},
+			"chat_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional origin chat ID override",
+			},
 		},
 		"required": []string{"task"},
 	}
 }
 
 func (t *SpawnTool) SetContext(channel, chatID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.originChannel = channel
 	t.originChatID = chatID
 }
@@ -79,7 +91,22 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		return "Error: Subagent manager not configured", nil
 	}
 
-	result, err := t.manager.Spawn(ctx, task, label, t.originChannel, t.originChatID, pipelineID, taskID)
+	originChannel, _ := args["channel"].(string)
+	originChatID, _ := args["chat_id"].(string)
+	if originChannel == "" || originChatID == "" {
+		t.mu.RLock()
+		defaultChannel := t.originChannel
+		defaultChatID := t.originChatID
+		t.mu.RUnlock()
+		if originChannel == "" {
+			originChannel = defaultChannel
+		}
+		if originChatID == "" {
+			originChatID = defaultChatID
+		}
+	}
+
+	result, err := t.manager.Spawn(ctx, task, label, originChannel, originChatID, pipelineID, taskID)
 	if err != nil {
 		return "", fmt.Errorf("failed to spawn subagent: %w", err)
 	}
