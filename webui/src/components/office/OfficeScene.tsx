@@ -35,6 +35,13 @@ type SpriteSpec = {
   scale: number;
 };
 
+type ImageSpec = {
+  src: string;
+  width: number;
+  height: number;
+  scale: number;
+};
+
 const TICK_FPS = 12;
 
 const MAIN_SPRITES: Record<'idle' | 'working' | 'syncing' | 'error', SpriteSpec> = {
@@ -91,6 +98,96 @@ const NODE_SPRITES: SpriteSpec[] = Array.from({ length: 6 }, (_, i) => ({
   scale: 1.55,
 }));
 
+const DECOR_SPRITES = {
+  plants: {
+    src: '/webui/office/plants-spritesheet.webp',
+    frameW: 160,
+    frameH: 160,
+    cols: 4,
+    start: 0,
+    end: 15,
+    fps: 0,
+    scale: 1,
+  } as SpriteSpec,
+  posters: {
+    src: '/webui/office/posters-spritesheet.webp',
+    frameW: 160,
+    frameH: 160,
+    cols: 4,
+    start: 0,
+    end: 31,
+    fps: 0,
+    scale: 1,
+  } as SpriteSpec,
+  flowers: {
+    src: '/webui/office/flowers-bloom-v2.webp',
+    frameW: 128,
+    frameH: 128,
+    cols: 4,
+    start: 0,
+    end: 15,
+    fps: 0,
+    scale: 0.8,
+  } as SpriteSpec,
+  cats: {
+    src: '/webui/office/cats-spritesheet.webp',
+    frameW: 160,
+    frameH: 160,
+    cols: 4,
+    start: 0,
+    end: 15,
+    fps: 0,
+    scale: 1,
+  } as SpriteSpec,
+  coffeeMachine: {
+    src: '/webui/office/coffee-machine-v3-grid.webp',
+    frameW: 230,
+    frameH: 230,
+    cols: 12,
+    start: 0,
+    end: 94,
+    fps: 10,
+    scale: 1,
+  } as SpriteSpec,
+  serverroom: {
+    src: '/webui/office/serverroom-spritesheet.webp',
+    frameW: 180,
+    frameH: 251,
+    cols: 40,
+    start: 0,
+    end: 38,
+    fps: 6,
+    scale: 1,
+  } as SpriteSpec,
+};
+
+const DECOR_IMAGES = {
+  sofaIdle: {
+    src: '/webui/office/sofa-idle-v3.png',
+    width: 212,
+    height: 143,
+    scale: 1,
+  } as ImageSpec,
+  sofaShadow: {
+    src: '/webui/office/sofa-shadow-v1.png',
+    width: 233,
+    height: 81,
+    scale: 1,
+  } as ImageSpec,
+  desk: {
+    src: '/webui/office/desk-v3.webp',
+    width: 304,
+    height: 264,
+    scale: 1,
+  } as ImageSpec,
+  coffeeShadow: {
+    src: '/webui/office/coffee-machine-shadow-v1.png',
+    width: 245,
+    height: 111,
+    scale: 1,
+  } as ImageSpec,
+};
+
 function normalizeZone(z: string | undefined): OfficeZone {
   const v = (z || '').trim().toLowerCase();
   if (v === 'work' || v === 'server' || v === 'bug' || v === 'breakroom') return v;
@@ -120,6 +217,19 @@ function frameAtTick(spec: SpriteSpec, tick: number, seed = 0): number {
   return spec.start + (frame % frameCount);
 }
 
+function frameFromSeed(spec: SpriteSpec, seedText: string): number {
+  const frameCount = Math.max(1, spec.end - spec.start + 1);
+  return spec.start + (textHash(seedText) % frameCount);
+}
+
+function posStyle(x: number, y: number, zIndex: number): React.CSSProperties {
+  return {
+    left: `${(x / OFFICE_CANVAS.width) * 100}%`,
+    top: `${(y / OFFICE_CANVAS.height) * 100}%`,
+    zIndex,
+  };
+}
+
 type SpriteProps = {
   spec: SpriteSpec;
   frame: number;
@@ -145,6 +255,48 @@ const SpriteSheet: React.FC<SpriteProps> = ({ spec, frame, className }) => {
     />
   );
 };
+
+type PlacedSpriteProps = {
+  spec: SpriteSpec;
+  frame: number;
+  x: number;
+  y: number;
+  zIndex: number;
+  title?: string;
+};
+
+const PlacedSprite: React.FC<PlacedSpriteProps> = ({ spec, frame, x, y, zIndex, title }) => (
+  <div className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={posStyle(x, y, zIndex)} title={title || ''}>
+    <div className="relative">
+      <SpriteSheet spec={spec} frame={frame} className="absolute left-1/2 top-1/2" />
+    </div>
+  </div>
+);
+
+type PlacedImageProps = {
+  spec: ImageSpec;
+  x: number;
+  y: number;
+  zIndex: number;
+  title?: string;
+};
+
+const PlacedImage: React.FC<PlacedImageProps> = ({ spec, x, y, zIndex, title }) => (
+  <div className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={posStyle(x, y, zIndex)} title={title || ''}>
+    <img
+      src={spec.src}
+      alt=""
+      className="absolute left-1/2 top-1/2"
+      style={{
+        width: spec.width,
+        height: spec.height,
+        imageRendering: 'pixelated',
+        transform: `translate(-50%, -50%) scale(${spec.scale})`,
+        transformOrigin: 'center center',
+      }}
+    />
+  </div>
+);
 
 const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
   const [tick, setTick] = useState(0);
@@ -175,17 +327,45 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
   const mainPoint = OFFICE_ZONE_POINT[mainZone];
   const mainSprite = MAIN_SPRITES[normalizeMainSpriteState(main.state)];
   const mainFrame = frameAtTick(mainSprite, tick);
+  const mainSpriteState = normalizeMainSpriteState(main.state);
+
+  const decorSeedBase = `${main.id || 'main'}|${main.name || ''}`;
+  const plantFrameA = frameFromSeed(DECOR_SPRITES.plants, `${decorSeedBase}|plantA`);
+  const plantFrameB = frameFromSeed(DECOR_SPRITES.plants, `${decorSeedBase}|plantB`);
+  const plantFrameC = frameFromSeed(DECOR_SPRITES.plants, `${decorSeedBase}|plantC`);
+  const posterFrame = frameFromSeed(DECOR_SPRITES.posters, `${decorSeedBase}|poster`);
+  const flowerFrame = frameFromSeed(DECOR_SPRITES.flowers, `${decorSeedBase}|flower`);
+  const catFrame = frameFromSeed(DECOR_SPRITES.cats, `${decorSeedBase}|cat`);
+  const coffeeFrame = frameAtTick(DECOR_SPRITES.coffeeMachine, tick, 300);
+  const serverFrame = mainSpriteState === 'idle' ? 0 : frameAtTick(DECOR_SPRITES.serverroom, tick, 700);
 
   return (
     <div className="relative w-full overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/60">
       <div className="relative aspect-[16/9]">
         <img src={bgSrc} alt="office" className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0">
+          <PlacedSprite spec={DECOR_SPRITES.serverroom} frame={serverFrame} x={1021} y={142} zIndex={10} title="serverroom" />
+
+          <PlacedSprite spec={DECOR_SPRITES.posters} frame={posterFrame} x={252} y={66} zIndex={20} title="poster" />
+          <PlacedSprite spec={DECOR_SPRITES.plants} frame={plantFrameA} x={565} y={178} zIndex={21} title="plant" />
+          <PlacedSprite spec={DECOR_SPRITES.plants} frame={plantFrameB} x={230} y={185} zIndex={21} title="plant" />
+          <PlacedSprite spec={DECOR_SPRITES.plants} frame={plantFrameC} x={977} y={496} zIndex={21} title="plant" />
+
+          <PlacedImage spec={DECOR_IMAGES.sofaShadow} x={1070} y={610} zIndex={25} title="sofa-shadow" />
+          <PlacedImage spec={DECOR_IMAGES.sofaIdle} x={1070} y={610} zIndex={26} title="sofa" />
+
+          <PlacedImage spec={DECOR_IMAGES.coffeeShadow} x={659} y={397} zIndex={30} title="coffee-shadow" />
+          <PlacedSprite spec={DECOR_SPRITES.coffeeMachine} frame={coffeeFrame} x={659} y={397} zIndex={31} title="coffee-machine" />
+
+          <PlacedImage spec={DECOR_IMAGES.desk} x={218} y={417} zIndex={35} title="desk" />
+          <PlacedSprite spec={DECOR_SPRITES.flowers} frame={flowerFrame} x={310} y={390} zIndex={36} title="flower" />
+
           <div
             className="absolute -translate-x-1/2 -translate-y-1/2"
             style={{
               left: `${(mainPoint.x / OFFICE_CANVAS.width) * 100}%`,
               top: `${(mainPoint.y / OFFICE_CANVAS.height) * 100}%`,
+              zIndex: 50,
             }}
             title={`${main.state || 'idle'} ${main.detail || ''}`.trim()}
           >
@@ -204,6 +384,7 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
               style={{
                 left: `${(n.point.x / OFFICE_CANVAS.width) * 100}%`,
                 top: `${(n.point.y / OFFICE_CANVAS.height) * 100}%`,
+                zIndex: 51,
               }}
               title={`${n.name || n.id || 'node'} · ${n.state || 'idle'}${n.detail ? ` · ${n.detail}` : ''}`}
             >
@@ -216,6 +397,8 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
               </div>
             </div>
           ))}
+
+          <PlacedSprite spec={DECOR_SPRITES.cats} frame={catFrame} x={94} y={557} zIndex={80} title="cat" />
         </div>
       </div>
     </div>

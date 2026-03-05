@@ -6,7 +6,7 @@ export const OFFICE_CANVAS = {
 };
 
 export const OFFICE_ZONE_POINT: Record<OfficeZone, { x: number; y: number }> = {
-  breakroom: { x: 760, y: 325 },
+  breakroom: { x: 1070, y: 610 },
   work: { x: 300, y: 365 },
   server: { x: 1010, y: 235 },
   bug: { x: 1125, y: 245 },
@@ -14,12 +14,12 @@ export const OFFICE_ZONE_POINT: Record<OfficeZone, { x: number; y: number }> = {
 
 export const OFFICE_ZONE_SLOTS: Record<OfficeZone, Array<{ x: number; y: number }>> = {
   breakroom: [
-    { x: 700, y: 360 },
-    { x: 760, y: 355 },
-    { x: 820, y: 350 },
-    { x: 730, y: 420 },
-    { x: 790, y: 420 },
-    { x: 850, y: 410 },
+    { x: 1020, y: 620 },
+    { x: 1090, y: 620 },
+    { x: 1150, y: 620 },
+    { x: 1040, y: 670 },
+    { x: 1110, y: 670 },
+    { x: 1180, y: 670 },
   ],
   work: [
     { x: 240, y: 350 },
