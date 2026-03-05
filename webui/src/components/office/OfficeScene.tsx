@@ -192,7 +192,7 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
             <div className="relative">
               <SpriteSheet spec={mainSprite} frame={mainFrame} className="absolute left-1/2 top-1/2" />
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 translate-y-[62px] rounded bg-black/75 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-zinc-100">
-                clawgo
+                {main.name || main.id || 'main'}
               </div>
             </div>
           </div>

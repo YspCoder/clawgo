@@ -2613,15 +2613,18 @@ func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.R
 	mainState := "idle"
 	mainZone := "breakroom"
 	switch {
-	case stats["error"] > 0 || stats["blocked"] > 0:
-		mainState = "error"
-		mainZone = "bug"
 	case stats["running"] > 0:
 		mainState = "executing"
 		mainZone = "work"
+	case stats["error"] > 0 || stats["blocked"] > 0:
+		mainState = "error"
+		mainZone = "bug"
 	case stats["suppressed"] > 0:
 		mainState = "syncing"
 		mainZone = "server"
+	case stats["waiting"] > 0:
+		mainState = "idle"
+		mainZone = "breakroom"
 	case stats["success"] > 0:
 		mainState = "writing"
 		mainZone = "work"
@@ -2632,9 +2635,24 @@ func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.R
 
 	mainTaskID := ""
 	mainDetail := "No active task"
+	isMainStatus := func(st string) bool {
+		st = strings.ToLower(strings.TrimSpace(st))
+		switch mainState {
+		case "executing":
+			return st == "running"
+		case "error":
+			return st == "error" || st == "blocked"
+		case "syncing":
+			return st == "suppressed"
+		case "writing":
+			return st == "success"
+		default:
+			return st == "waiting" || st == "idle"
+		}
+	}
 	for _, row := range items {
 		st := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
-		if st == "running" || st == "error" || st == "blocked" || st == "waiting" {
+		if isMainStatus(st) {
 			mainTaskID = strings.TrimSpace(fmt.Sprintf("%v", row["task_id"]))
 			mainDetail = strings.TrimSpace(fmt.Sprintf("%v", row["input_preview"]))
 			if mainDetail == "" {
