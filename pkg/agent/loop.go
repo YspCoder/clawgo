@@ -1560,7 +1560,7 @@ func withToolContextArgs(toolName string, args map[string]interface{}, channel, 
 		return args
 	}
 	switch toolName {
-	case "message", "spawn", "remind":
+	case "message", "spawn", "remind", "pipeline_create", "pipeline_dispatch":
 	default:
 		return args
 	}
