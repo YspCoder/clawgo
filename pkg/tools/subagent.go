@@ -275,8 +275,15 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 	// 2. Result broadcast (keep existing behavior)
 	if sm.bus != nil {
 		prefix := "Task completed"
+		if runErr != nil {
+			prefix = "Task failed"
+		}
 		if task.Label != "" {
-			prefix = fmt.Sprintf("Task '%s' completed", task.Label)
+			if runErr != nil {
+				prefix = fmt.Sprintf("Task '%s' failed", task.Label)
+			} else {
+				prefix = fmt.Sprintf("Task '%s' completed", task.Label)
+			}
 		}
 		announceContent := fmt.Sprintf("%s.\n\nResult:\n%s", prefix, task.Result)
 		if task.PipelineID != "" && task.PipelineTask != "" {
@@ -299,6 +306,7 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 				"timeout_sec":   fmt.Sprintf("%d", task.TimeoutSec),
 				"pipeline_id":   task.PipelineID,
 				"pipeline_task": task.PipelineTask,
+				"status":        task.Status,
 			},
 		})
 	}

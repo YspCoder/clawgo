@@ -3,8 +3,11 @@ package tools
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+
+	"clawgo/pkg/bus"
 )
 
 func TestSubagentSpawnEnforcesTaskQuota(t *testing.T) {
@@ -102,6 +105,45 @@ func TestSubagentRunWithTimeoutFails(t *testing.T) {
 	}
 	if task.RetryCount != 0 {
 		t.Fatalf("expected retry_count=0, got %d", task.RetryCount)
+	}
+}
+
+func TestSubagentBroadcastIncludesFailureStatus(t *testing.T) {
+	workspace := t.TempDir()
+	msgBus := bus.NewMessageBus()
+	defer msgBus.Close()
+
+	manager := NewSubagentManager(nil, workspace, msgBus, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		return "", errors.New("boom")
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "failing task",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+
+	task := waitSubagentDone(t, manager, 4*time.Second)
+	if task.Status != "failed" {
+		t.Fatalf("expected failed task, got %s", task.Status)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	msg, ok := msgBus.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatalf("expected subagent completion message")
+	}
+	if got := strings.TrimSpace(msg.Metadata["status"]); got != "failed" {
+		t.Fatalf("expected metadata status=failed, got %q", got)
+	}
+	if !strings.Contains(strings.ToLower(msg.Content), "failed") {
+		t.Fatalf("expected failure wording in content, got %q", msg.Content)
 	}
 }
 

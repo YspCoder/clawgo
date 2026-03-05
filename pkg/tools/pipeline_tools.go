@@ -53,6 +53,14 @@ func (t *PipelineCreateTool) Parameters() map[string]interface{} {
 					"required": []string{"id", "goal"},
 				},
 			},
+			"channel": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional origin channel for completion notifications (auto-injected in normal chat flow)",
+			},
+			"chat_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional origin chat ID for completion notifications (auto-injected in normal chat flow)",
+			},
 		},
 		"required": []string{"objective", "tasks"},
 	}
@@ -97,7 +105,8 @@ func (t *PipelineCreateTool) Execute(_ context.Context, args map[string]interfac
 		})
 	}
 
-	p, err := t.orc.CreatePipeline(label, objective, "tool", "tool", specs)
+	originChannel, originChatID := resolvePipelineOrigin(args, "tool", "tool")
+	p, err := t.orc.CreatePipeline(label, objective, originChannel, originChatID, specs)
 	if err != nil {
 		return "", err
 	}
@@ -227,6 +236,14 @@ func (t *PipelineDispatchTool) Parameters() map[string]interface{} {
 				"description": "Maximum number of tasks to dispatch in this call (default 3)",
 				"default":     3,
 			},
+			"channel": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional origin channel override for spawned subagents",
+			},
+			"chat_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional origin chat ID override for spawned subagents",
+			},
 		},
 		"required": []string{"pipeline_id"},
 	}
@@ -246,6 +263,21 @@ func (t *PipelineDispatchTool) Execute(ctx context.Context, args map[string]inte
 	maxDispatch := 3
 	if raw, ok := args["max_dispatch"].(float64); ok && raw > 0 {
 		maxDispatch = int(raw)
+	}
+	originChannel, originChatID := resolvePipelineOrigin(args, "", "")
+	if p, ok := t.orc.GetPipeline(pipelineID); ok && p != nil {
+		if strings.TrimSpace(originChannel) == "" {
+			originChannel = strings.TrimSpace(p.OriginChannel)
+		}
+		if strings.TrimSpace(originChatID) == "" {
+			originChatID = strings.TrimSpace(p.OriginChatID)
+		}
+	}
+	if strings.TrimSpace(originChannel) == "" {
+		originChannel = "tool"
+	}
+	if strings.TrimSpace(originChatID) == "" {
+		originChatID = "tool"
 	}
 
 	ready, err := t.orc.ReadyTasks(pipelineID)
@@ -289,8 +321,8 @@ func (t *PipelineDispatchTool) Execute(ctx context.Context, args map[string]inte
 			Label:         label,
 			Role:          task.Role,
 			AgentID:       agentID,
-			OriginChannel: "tool",
-			OriginChatID:  "tool",
+			OriginChannel: originChannel,
+			OriginChatID:  originChatID,
 			PipelineID:    pipelineID,
 			PipelineTask:  task.ID,
 		}); err != nil {
@@ -305,4 +337,18 @@ func (t *PipelineDispatchTool) Execute(ctx context.Context, args map[string]inte
 		return "No tasks dispatched.", nil
 	}
 	return fmt.Sprintf("Pipeline %s dispatch result:\n%s", pipelineID, strings.Join(lines, "\n")), nil
+}
+
+func resolvePipelineOrigin(args map[string]interface{}, defaultChannel, defaultChatID string) (string, string) {
+	originChannel, _ := args["channel"].(string)
+	originChatID, _ := args["chat_id"].(string)
+	originChannel = strings.TrimSpace(originChannel)
+	originChatID = strings.TrimSpace(originChatID)
+	if originChannel == "" {
+		originChannel = strings.TrimSpace(defaultChannel)
+	}
+	if originChatID == "" {
+		originChatID = strings.TrimSpace(defaultChatID)
+	}
+	return originChannel, originChatID
 }

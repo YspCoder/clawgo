@@ -668,7 +668,11 @@ func loadHeartbeatAckToken(workspace string) string {
 
 func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (bus.OutboundMessage, bool) {
 	if shouldDropNoReply(response) {
-		return bus.OutboundMessage{}, false
+		if fallback, ok := fallbackSubagentNotification(msg); ok {
+			response = fallback
+		} else {
+			return bus.OutboundMessage{}, false
+		}
 	}
 	currentMsgID := ""
 	if msg.Metadata != nil {
@@ -677,19 +681,18 @@ func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (b
 	clean, replyToID := parseReplyTag(response, currentMsgID)
 	clean = strings.TrimSpace(clean)
 	if clean == "" {
-		return bus.OutboundMessage{}, false
+		if fallback, ok := fallbackSubagentNotification(msg); ok {
+			clean = fallback
+		} else {
+			return bus.OutboundMessage{}, false
+		}
 	}
 	if al.shouldSuppressOutbound(msg, clean) {
 		return bus.OutboundMessage{}, false
 	}
 	outbound := bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Content: clean, ReplyToID: strings.TrimSpace(replyToID)}
 	if msg.Channel == "system" {
-		if originChannel, originChatID, ok := strings.Cut(msg.ChatID, ":"); ok && strings.TrimSpace(originChannel) != "" {
-			outbound.Channel = originChannel
-			outbound.ChatID = originChatID
-		} else {
-			outbound.Channel = "cli"
-		}
+		outbound.Channel, outbound.ChatID = resolveSystemOrigin(msg.ChatID)
 	}
 	return outbound, true
 }
@@ -1075,16 +1078,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			"chat_id":   msg.ChatID,
 		})
 
-	// Parse origin from chat_id (format: "channel:chat_id")
-	var originChannel, originChatID string
-	if idx := strings.Index(msg.ChatID, ":"); idx > 0 {
-		originChannel = msg.ChatID[:idx]
-		originChatID = msg.ChatID[idx+1:]
-	} else {
-		// Fallback
-		originChannel = "cli"
-		originChatID = msg.ChatID
-	}
+	originChannel, originChatID := resolveSystemOrigin(msg.ChatID)
 
 	// Use the origin session for context
 	sessionKey := fmt.Sprintf("%s:%s", originChannel, originChatID)
@@ -1815,6 +1809,54 @@ func extractFirstSourceLine(text string) string {
 func shouldDropNoReply(text string) bool {
 	t := strings.TrimSpace(text)
 	return strings.EqualFold(t, "NO_REPLY")
+}
+
+func resolveSystemOrigin(chatID string) (string, string) {
+	raw := strings.TrimSpace(chatID)
+	if raw == "" {
+		return "cli", "direct"
+	}
+	originChannel, originChatID, ok := strings.Cut(raw, ":")
+	if !ok {
+		return "cli", raw
+	}
+	originChannel = strings.TrimSpace(originChannel)
+	originChatID = strings.TrimSpace(originChatID)
+	switch {
+	case originChannel == "" && originChatID == "":
+		return "cli", "direct"
+	case originChannel == "":
+		return "cli", originChatID
+	case originChatID == "":
+		return originChannel, "direct"
+	default:
+		return originChannel, originChatID
+	}
+}
+
+func isSubagentSystemMessage(msg bus.InboundMessage) bool {
+	if msg.Channel != "system" {
+		return false
+	}
+	if msg.Metadata != nil && strings.EqualFold(strings.TrimSpace(msg.Metadata["trigger"]), "subagent") {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(msg.SenderID)), "subagent:")
+}
+
+func fallbackSubagentNotification(msg bus.InboundMessage) (string, bool) {
+	if !isSubagentSystemMessage(msg) {
+		return "", false
+	}
+	content := strings.TrimSpace(msg.Content)
+	if content == "" {
+		id := strings.TrimSpace(strings.TrimPrefix(msg.SenderID, "subagent:"))
+		if id == "" {
+			id = "unknown"
+		}
+		content = fmt.Sprintf("Subagent %s completed.", id)
+	}
+	return content, true
 }
 
 func shouldFlushTelegramStreamSnapshot(s string) bool {
