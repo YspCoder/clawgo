@@ -76,7 +76,7 @@ func (e *Engine) Record(ev Event) {
 	ev.Status = strings.TrimSpace(strings.ToLower(ev.Status))
 	ev.Provider = strings.TrimSpace(ev.Provider)
 	ev.Model = strings.TrimSpace(ev.Model)
-	if ev.ErrSig == "" && ev.Log != "" {
+	if ev.Status == "error" && ev.ErrSig == "" && ev.Log != "" {
 		ev.ErrSig = NormalizeErrorSignature(ev.Log)
 	}
 	if ev.ErrSig != "" {

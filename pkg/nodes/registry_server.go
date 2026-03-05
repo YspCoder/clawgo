@@ -2412,7 +2412,7 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 				}
 			}
 		}
-		if errSig != "" {
+		if errSig != "" && status == "error" {
 			errSigCount[errSig]++
 			if isHeartbeat {
 				errSigHeartbeat[errSig]++
