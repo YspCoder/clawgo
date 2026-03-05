@@ -251,12 +251,21 @@
 - 安全治理：
   - `tool_allowlist` 已在执行期强制拦截
   - `parallel` 工具的内部子调用也会被白名单校验
+  - `tool_allowlist` 已支持分组策略（`group:<name>` / `@<name>` / 组名直写）
   - disabled profile 会阻止 `spawn`
+- 稳定性治理：
+  - 子 Agent 已支持 profile 级重试/退避/超时/配额控制（`max_retries` / `retry_backoff_ms` / `timeout_sec` / `max_task_chars` / `max_result_chars`）
+  - 子任务元数据与 system 回填中包含重试/超时信息，便于审计追踪
+- WebUI 可视化：
+  - 已提供 subagent profile 管理页
+  - 已提供 subagent runtime 列表/详情/控制页（spawn/kill/resume/steer）
+  - 已提供 pipeline 列表/详情/dispatch/创建入口
 
 ### 13.2 待继续增强
 
-- `tool_allowlist` 目前为精确匹配（支持 `*`/`all`），尚未支持分组策略（如“只读文件工具组”）。
-- WebUI 尚未提供 profile 的图形化管理入口。
+- （当前版本）无阻塞项；可继续按需增强：
+  - allowlist 分组支持自定义组配置（当前为内置组）。
+  - pipeline / subagent 运行态持久化与历史回放（当前为进程内实时视图）。
 
 ---
 

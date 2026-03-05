@@ -14,25 +14,31 @@ import (
 )
 
 type SubagentTask struct {
-	ID            string
-	Task          string
-	Label         string
-	Role          string
-	AgentID       string
-	SessionKey    string
-	MemoryNS      string
-	SystemPrompt  string
-	ToolAllowlist []string
-	PipelineID    string
-	PipelineTask  string
-	SharedState   map[string]interface{}
-	OriginChannel string
-	OriginChatID  string
-	Status        string
-	Result        string
-	Steering      []string
-	Created       int64
-	Updated       int64
+	ID             string                 `json:"id"`
+	Task           string                 `json:"task"`
+	Label          string                 `json:"label"`
+	Role           string                 `json:"role"`
+	AgentID        string                 `json:"agent_id"`
+	SessionKey     string                 `json:"session_key"`
+	MemoryNS       string                 `json:"memory_ns"`
+	SystemPrompt   string                 `json:"system_prompt,omitempty"`
+	ToolAllowlist  []string               `json:"tool_allowlist,omitempty"`
+	MaxRetries     int                    `json:"max_retries,omitempty"`
+	RetryBackoff   int                    `json:"retry_backoff,omitempty"`
+	TimeoutSec     int                    `json:"timeout_sec,omitempty"`
+	MaxTaskChars   int                    `json:"max_task_chars,omitempty"`
+	MaxResultChars int                    `json:"max_result_chars,omitempty"`
+	RetryCount     int                    `json:"retry_count,omitempty"`
+	PipelineID     string                 `json:"pipeline_id,omitempty"`
+	PipelineTask   string                 `json:"pipeline_task,omitempty"`
+	SharedState    map[string]interface{} `json:"shared_state,omitempty"`
+	OriginChannel  string                 `json:"origin_channel,omitempty"`
+	OriginChatID   string                 `json:"origin_chat_id,omitempty"`
+	Status         string                 `json:"status"`
+	Result         string                 `json:"result,omitempty"`
+	Steering       []string               `json:"steering,omitempty"`
+	Created        int64                  `json:"created"`
+	Updated        int64                  `json:"updated"`
 }
 
 type SubagentManager struct {
@@ -50,14 +56,19 @@ type SubagentManager struct {
 }
 
 type SubagentSpawnOptions struct {
-	Task          string
-	Label         string
-	Role          string
-	AgentID       string
-	OriginChannel string
-	OriginChatID  string
-	PipelineID    string
-	PipelineTask  string
+	Task           string
+	Label          string
+	Role           string
+	AgentID        string
+	MaxRetries     int
+	RetryBackoff   int
+	TimeoutSec     int
+	MaxTaskChars   int
+	MaxResultChars int
+	OriginChannel  string
+	OriginChatID   string
+	PipelineID     string
+	PipelineTask   string
 }
 
 func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *bus.MessageBus, orc *Orchestrator) *SubagentManager {
@@ -110,6 +121,11 @@ func (sm *SubagentManager) Spawn(ctx context.Context, opts SubagentSpawnOptions)
 	memoryNS := agentID
 	systemPrompt := ""
 	toolAllowlist := []string(nil)
+	maxRetries := 0
+	retryBackoff := 1000
+	timeoutSec := 0
+	maxTaskChars := 0
+	maxResultChars := 0
 	if profile == nil && sm.profileStore != nil {
 		if p, ok, err := sm.profileStore.Get(agentID); err != nil {
 			return "", err
@@ -132,7 +148,35 @@ func (sm *SubagentManager) Spawn(ctx context.Context, opts SubagentSpawnOptions)
 		}
 		systemPrompt = strings.TrimSpace(profile.SystemPrompt)
 		toolAllowlist = append([]string(nil), profile.ToolAllowlist...)
+		maxRetries = profile.MaxRetries
+		retryBackoff = profile.RetryBackoff
+		timeoutSec = profile.TimeoutSec
+		maxTaskChars = profile.MaxTaskChars
+		maxResultChars = profile.MaxResultChars
 	}
+	if opts.MaxRetries > 0 {
+		maxRetries = opts.MaxRetries
+	}
+	if opts.RetryBackoff > 0 {
+		retryBackoff = opts.RetryBackoff
+	}
+	if opts.TimeoutSec > 0 {
+		timeoutSec = opts.TimeoutSec
+	}
+	if opts.MaxTaskChars > 0 {
+		maxTaskChars = opts.MaxTaskChars
+	}
+	if opts.MaxResultChars > 0 {
+		maxResultChars = opts.MaxResultChars
+	}
+	if maxTaskChars > 0 && len(task) > maxTaskChars {
+		return "", fmt.Errorf("task exceeds max_task_chars quota (%d > %d)", len(task), maxTaskChars)
+	}
+	maxRetries = normalizePositiveBound(maxRetries, 0, 8)
+	retryBackoff = normalizePositiveBound(retryBackoff, 500, 120000)
+	timeoutSec = normalizePositiveBound(timeoutSec, 0, 3600)
+	maxTaskChars = normalizePositiveBound(maxTaskChars, 0, 400000)
+	maxResultChars = normalizePositiveBound(maxResultChars, 0, 400000)
 	if role == "" {
 		role = originalRole
 	}
@@ -150,22 +194,28 @@ func (sm *SubagentManager) Spawn(ctx context.Context, opts SubagentSpawnOptions)
 
 	now := time.Now().UnixMilli()
 	subagentTask := &SubagentTask{
-		ID:            taskID,
-		Task:          task,
-		Label:         label,
-		Role:          role,
-		AgentID:       agentID,
-		SessionKey:    sessionKey,
-		MemoryNS:      memoryNS,
-		SystemPrompt:  systemPrompt,
-		ToolAllowlist: toolAllowlist,
-		PipelineID:    pipelineID,
-		PipelineTask:  pipelineTask,
-		OriginChannel: originChannel,
-		OriginChatID:  originChatID,
-		Status:        "running",
-		Created:       now,
-		Updated:       now,
+		ID:             taskID,
+		Task:           task,
+		Label:          label,
+		Role:           role,
+		AgentID:        agentID,
+		SessionKey:     sessionKey,
+		MemoryNS:       memoryNS,
+		SystemPrompt:   systemPrompt,
+		ToolAllowlist:  toolAllowlist,
+		MaxRetries:     maxRetries,
+		RetryBackoff:   retryBackoff,
+		TimeoutSec:     timeoutSec,
+		MaxTaskChars:   maxTaskChars,
+		MaxResultChars: maxResultChars,
+		RetryCount:     0,
+		PipelineID:     pipelineID,
+		PipelineTask:   pipelineTask,
+		OriginChannel:  originChannel,
+		OriginChatID:   originChatID,
+		Status:         "running",
+		Created:        now,
+		Updated:        now,
 	}
 	taskCtx, cancel := context.WithCancel(ctx)
 	sm.tasks[taskID] = subagentTask
@@ -202,90 +252,25 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 	if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
 		_ = sm.orc.MarkTaskRunning(task.PipelineID, task.PipelineTask)
 	}
-
-	// 1. Independent agent logic: supports recursive tool calling.
-	// This lightweight approach reuses AgentLoop logic for full subagent capability.
-	// subagent.go cannot depend on agent package inversely, so use function injection.
-
-	// Fall back to one-shot chat when RunFunc is not injected.
-	if sm.runFunc != nil {
-		result, err := sm.runFunc(ctx, task)
-		sm.mu.Lock()
-		if err != nil {
-			task.Status = "failed"
-			task.Result = fmt.Sprintf("Error: %v", err)
-			task.Updated = time.Now().UnixMilli()
-			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
-				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, err)
-			}
-		} else {
-			task.Status = "completed"
-			task.Result = result
-			task.Updated = time.Now().UnixMilli()
-			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
-				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, nil)
-			}
+	result, runErr := sm.runWithRetry(ctx, task)
+	sm.mu.Lock()
+	if runErr != nil {
+		task.Status = "failed"
+		task.Result = fmt.Sprintf("Error: %v", runErr)
+		task.Result = applySubagentResultQuota(task.Result, task.MaxResultChars)
+		task.Updated = time.Now().UnixMilli()
+		if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
+			_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, runErr)
 		}
-		sm.mu.Unlock()
 	} else {
-		// Original one-shot logic
-		if sm.provider == nil {
-			sm.mu.Lock()
-			task.Status = "failed"
-			task.Result = "Error: no llm provider configured for subagent execution"
-			task.Updated = time.Now().UnixMilli()
-			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
-				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, fmt.Errorf("no llm provider configured for subagent execution"))
-			}
-			sm.mu.Unlock()
-			return
+		task.Status = "completed"
+		task.Result = applySubagentResultQuota(result, task.MaxResultChars)
+		task.Updated = time.Now().UnixMilli()
+		if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
+			_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, nil)
 		}
-		systemPrompt := "You are a subagent. Follow workspace AGENTS.md and complete the task independently."
-		rolePrompt := strings.TrimSpace(task.SystemPrompt)
-		if ws := strings.TrimSpace(sm.workspace); ws != "" {
-			if data, err := os.ReadFile(filepath.Join(ws, "AGENTS.md")); err == nil {
-				txt := strings.TrimSpace(string(data))
-				if txt != "" {
-					systemPrompt = "Workspace policy (AGENTS.md):\n" + txt + "\n\nComplete the given task independently and report the result."
-				}
-			}
-		}
-		if rolePrompt != "" {
-			systemPrompt += "\n\nRole-specific profile prompt:\n" + rolePrompt
-		}
-		messages := []providers.Message{
-			{
-				Role:    "system",
-				Content: systemPrompt,
-			},
-			{
-				Role:    "user",
-				Content: task.Task,
-			},
-		}
-
-		response, err := sm.provider.Chat(ctx, messages, nil, sm.provider.GetDefaultModel(), map[string]interface{}{
-			"max_tokens": 4096,
-		})
-
-		sm.mu.Lock()
-		if err != nil {
-			task.Status = "failed"
-			task.Result = fmt.Sprintf("Error: %v", err)
-			task.Updated = time.Now().UnixMilli()
-			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
-				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, err)
-			}
-		} else {
-			task.Status = "completed"
-			task.Result = response.Content
-			task.Updated = time.Now().UnixMilli()
-			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
-				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, nil)
-			}
-		}
-		sm.mu.Unlock()
 	}
+	sm.mu.Unlock()
 
 	// 2. Result broadcast (keep existing behavior)
 	if sm.bus != nil {
@@ -310,11 +295,99 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 				"role":          task.Role,
 				"session_key":   task.SessionKey,
 				"memory_ns":     task.MemoryNS,
+				"retry_count":   fmt.Sprintf("%d", task.RetryCount),
+				"timeout_sec":   fmt.Sprintf("%d", task.TimeoutSec),
 				"pipeline_id":   task.PipelineID,
 				"pipeline_task": task.PipelineTask,
 			},
 		})
 	}
+}
+
+func (sm *SubagentManager) runWithRetry(ctx context.Context, task *SubagentTask) (string, error) {
+	maxRetries := normalizePositiveBound(task.MaxRetries, 0, 8)
+	backoffMs := normalizePositiveBound(task.RetryBackoff, 500, 120000)
+	timeoutSec := normalizePositiveBound(task.TimeoutSec, 0, 3600)
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		result, err := runStringTaskWithCommandTickTimeout(
+			ctx,
+			timeoutSec,
+			2*time.Second,
+			func(runCtx context.Context) (string, error) {
+				return sm.executeTaskOnce(runCtx, task)
+			},
+		)
+		if err == nil {
+			sm.mu.Lock()
+			task.RetryCount = attempt
+			task.Updated = time.Now().UnixMilli()
+			sm.mu.Unlock()
+			return result, nil
+		}
+		lastErr = err
+		sm.mu.Lock()
+		task.RetryCount = attempt
+		task.Updated = time.Now().UnixMilli()
+		sm.mu.Unlock()
+		if attempt >= maxRetries {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(time.Duration(backoffMs) * time.Millisecond):
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("subagent task failed with unknown error")
+	}
+	return "", lastErr
+}
+
+func (sm *SubagentManager) executeTaskOnce(ctx context.Context, task *SubagentTask) (string, error) {
+	if task == nil {
+		return "", fmt.Errorf("subagent task is nil")
+	}
+	if sm.runFunc != nil {
+		return sm.runFunc(ctx, task)
+	}
+	if sm.provider == nil {
+		return "", fmt.Errorf("no llm provider configured for subagent execution")
+	}
+
+	systemPrompt := "You are a subagent. Follow workspace AGENTS.md and complete the task independently."
+	rolePrompt := strings.TrimSpace(task.SystemPrompt)
+	if ws := strings.TrimSpace(sm.workspace); ws != "" {
+		if data, err := os.ReadFile(filepath.Join(ws, "AGENTS.md")); err == nil {
+			txt := strings.TrimSpace(string(data))
+			if txt != "" {
+				systemPrompt = "Workspace policy (AGENTS.md):\n" + txt + "\n\nComplete the given task independently and report the result."
+			}
+		}
+	}
+	if rolePrompt != "" {
+		systemPrompt += "\n\nRole-specific profile prompt:\n" + rolePrompt
+	}
+	messages := []providers.Message{
+		{
+			Role:    "system",
+			Content: systemPrompt,
+		},
+		{
+			Role:    "user",
+			Content: task.Task,
+		},
+	}
+
+	response, err := sm.provider.Chat(ctx, messages, nil, sm.provider.GetDefaultModel(), map[string]interface{}{
+		"max_tokens": 4096,
+	})
+	if err != nil {
+		return "", err
+	}
+	return response.Content, nil
 }
 
 type SubagentRunFunc func(ctx context.Context, task *SubagentTask) (string, error)
@@ -402,14 +475,19 @@ func (sm *SubagentManager) ResumeTask(ctx context.Context, taskID string) (strin
 		label = label + "-resumed"
 	}
 	_, err := sm.Spawn(ctx, SubagentSpawnOptions{
-		Task:          t.Task,
-		Label:         label,
-		Role:          t.Role,
-		AgentID:       t.AgentID,
-		OriginChannel: t.OriginChannel,
-		OriginChatID:  t.OriginChatID,
-		PipelineID:    t.PipelineID,
-		PipelineTask:  t.PipelineTask,
+		Task:           t.Task,
+		Label:          label,
+		Role:           t.Role,
+		AgentID:        t.AgentID,
+		MaxRetries:     t.MaxRetries,
+		RetryBackoff:   t.RetryBackoff,
+		TimeoutSec:     t.TimeoutSec,
+		MaxTaskChars:   t.MaxTaskChars,
+		MaxResultChars: t.MaxResultChars,
+		OriginChannel:  t.OriginChannel,
+		OriginChatID:   t.OriginChatID,
+		PipelineID:     t.PipelineID,
+		PipelineTask:   t.PipelineTask,
 	})
 	if err != nil {
 		return "", false
@@ -431,6 +509,31 @@ func (sm *SubagentManager) pruneArchivedLocked() {
 			delete(sm.cancelFuncs, id)
 		}
 	}
+}
+
+func normalizePositiveBound(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if max > 0 && v > max {
+		return max
+	}
+	return v
+}
+
+func applySubagentResultQuota(result string, maxChars int) string {
+	if maxChars <= 0 {
+		return result
+	}
+	if len(result) <= maxChars {
+		return result
+	}
+	suffix := "\n\n[TRUNCATED: result exceeds max_result_chars quota]"
+	trimmed := result[:maxChars]
+	if len(trimmed)+len(suffix) > maxChars && maxChars > len(suffix) {
+		trimmed = trimmed[:maxChars-len(suffix)]
+	}
+	return strings.TrimSpace(trimmed) + suffix
 }
 
 func normalizeSubagentIdentifier(in string) string {

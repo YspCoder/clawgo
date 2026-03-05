@@ -49,6 +49,26 @@ func (t *SpawnTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional logical agent ID. If omitted, role will be used as fallback.",
 			},
+			"max_retries": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional retry limit for this task.",
+			},
+			"retry_backoff_ms": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional retry backoff in milliseconds.",
+			},
+			"timeout_sec": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional per-attempt timeout in seconds.",
+			},
+			"max_task_chars": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional task size quota in characters.",
+			},
+			"max_result_chars": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional result size quota in characters.",
+			},
 			"pipeline_id": map[string]interface{}{
 				"type":        "string",
 				"description": "Optional pipeline ID for orchestrated multi-agent workflow",
@@ -86,6 +106,11 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 	label, _ := args["label"].(string)
 	role, _ := args["role"].(string)
 	agentID, _ := args["agent_id"].(string)
+	maxRetries := intArg(args, "max_retries")
+	retryBackoff := intArg(args, "retry_backoff_ms")
+	timeoutSec := intArg(args, "timeout_sec")
+	maxTaskChars := intArg(args, "max_task_chars")
+	maxResultChars := intArg(args, "max_result_chars")
 	pipelineID, _ := args["pipeline_id"].(string)
 	taskID, _ := args["task_id"].(string)
 	if label == "" && role != "" {
@@ -114,18 +139,39 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 	}
 
 	result, err := t.manager.Spawn(ctx, SubagentSpawnOptions{
-		Task:          task,
-		Label:         label,
-		Role:          role,
-		AgentID:       agentID,
-		OriginChannel: originChannel,
-		OriginChatID:  originChatID,
-		PipelineID:    pipelineID,
-		PipelineTask:  taskID,
+		Task:           task,
+		Label:          label,
+		Role:           role,
+		AgentID:        agentID,
+		MaxRetries:     maxRetries,
+		RetryBackoff:   retryBackoff,
+		TimeoutSec:     timeoutSec,
+		MaxTaskChars:   maxTaskChars,
+		MaxResultChars: maxResultChars,
+		OriginChannel:  originChannel,
+		OriginChatID:   originChatID,
+		PipelineID:     pipelineID,
+		PipelineTask:   taskID,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to spawn subagent: %w", err)
 	}
 
 	return result, nil
+}
+
+func intArg(args map[string]interface{}, key string) int {
+	if args == nil {
+		return 0
+	}
+	if v, ok := args[key].(float64); ok {
+		return int(v)
+	}
+	if v, ok := args[key].(int); ok {
+		return v
+	}
+	if v, ok := args[key].(int64); ok {
+		return int(v)
+	}
+	return 0
 }

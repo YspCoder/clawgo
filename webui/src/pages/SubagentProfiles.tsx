@@ -10,9 +10,21 @@ type SubagentProfile = {
   system_prompt?: string;
   tool_allowlist?: string[];
   memory_namespace?: string;
+  max_retries?: number;
+  retry_backoff_ms?: number;
+  timeout_sec?: number;
+  max_task_chars?: number;
+  max_result_chars?: number;
   status?: 'active' | 'disabled' | string;
   created_at?: number;
   updated_at?: number;
+};
+
+type ToolAllowlistGroup = {
+  name: string;
+  description?: string;
+  aliases?: string[];
+  tools?: string[];
 };
 
 const emptyDraft: SubagentProfile = {
@@ -23,6 +35,11 @@ const emptyDraft: SubagentProfile = {
   memory_namespace: '',
   status: 'active',
   tool_allowlist: [],
+  max_retries: 0,
+  retry_backoff_ms: 1000,
+  timeout_sec: 0,
+  max_task_chars: 0,
+  max_result_chars: 0,
 };
 
 const SubagentProfiles: React.FC = () => {
@@ -34,6 +51,7 @@ const SubagentProfiles: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string>('');
   const [draft, setDraft] = useState<SubagentProfile>(emptyDraft);
   const [saving, setSaving] = useState(false);
+  const [groups, setGroups] = useState<ToolAllowlistGroup[]>([]);
 
   const selected = useMemo(
     () => items.find((p) => p.agent_id === selectedId) || null,
@@ -62,11 +80,27 @@ const SubagentProfiles: React.FC = () => {
       memory_namespace: next.memory_namespace || '',
       status: (next.status as string) || 'active',
       tool_allowlist: Array.isArray(next.tool_allowlist) ? next.tool_allowlist : [],
+      max_retries: Number(next.max_retries || 0),
+      retry_backoff_ms: Number(next.retry_backoff_ms || 1000),
+      timeout_sec: Number(next.timeout_sec || 0),
+      max_task_chars: Number(next.max_task_chars || 0),
+      max_result_chars: Number(next.max_result_chars || 0),
     });
   };
 
   useEffect(() => {
     load().catch(() => {});
+  }, [q]);
+
+  useEffect(() => {
+    const loadGroups = async () => {
+      const r = await fetch(`/webui/api/tool_allowlist_groups${q}`);
+      if (!r.ok) return;
+      const j = await r.json();
+      const arr = Array.isArray(j.groups) ? j.groups : [];
+      setGroups(arr);
+    };
+    loadGroups().catch(() => {});
   }, [q]);
 
   const onSelect = (p: SubagentProfile) => {
@@ -79,6 +113,11 @@ const SubagentProfiles: React.FC = () => {
       memory_namespace: p.memory_namespace || '',
       status: (p.status as string) || 'active',
       tool_allowlist: Array.isArray(p.tool_allowlist) ? p.tool_allowlist : [],
+      max_retries: Number(p.max_retries || 0),
+      retry_backoff_ms: Number(p.retry_backoff_ms || 1000),
+      timeout_sec: Number(p.timeout_sec || 0),
+      max_task_chars: Number(p.max_task_chars || 0),
+      max_result_chars: Number(p.max_result_chars || 0),
     });
   };
 
@@ -95,6 +134,14 @@ const SubagentProfiles: React.FC = () => {
   };
 
   const allowlistText = (draft.tool_allowlist || []).join(', ');
+
+  const addAllowlistToken = (token: string) => {
+    const list = Array.isArray(draft.tool_allowlist) ? [...draft.tool_allowlist] : [];
+    if (!list.includes(token)) {
+      list.push(token);
+      setDraft({ ...draft, tool_allowlist: list });
+    }
+  };
 
   const save = async () => {
     const agentId = String(draft.agent_id || '').trim();
@@ -118,6 +165,11 @@ const SubagentProfiles: React.FC = () => {
           memory_namespace: draft.memory_namespace || '',
           status: draft.status || 'active',
           tool_allowlist: draft.tool_allowlist || [],
+          max_retries: Number(draft.max_retries || 0),
+          retry_backoff_ms: Number(draft.retry_backoff_ms || 0),
+          timeout_sec: Number(draft.timeout_sec || 0),
+          max_task_chars: Number(draft.max_task_chars || 0),
+          max_result_chars: Number(draft.max_result_chars || 0),
         }),
       });
       if (!r.ok) {
@@ -262,6 +314,21 @@ const SubagentProfiles: React.FC = () => {
                 className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
                 placeholder="read_file, list_files, memory_search"
               />
+              {groups.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {groups.map((g) => (
+                    <button
+                      key={g.name}
+                      type="button"
+                      onClick={() => addAllowlistToken(`group:${g.name}`)}
+                      className="px-2 py-1 text-[11px] rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                      title={g.description || g.name}
+                    >
+                      {`group:${g.name}`}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="md:col-span-2">
               <div className="text-xs text-zinc-400 mb-1">System Prompt</div>
@@ -270,6 +337,56 @@ const SubagentProfiles: React.FC = () => {
                 onChange={(e) => setDraft({ ...draft, system_prompt: e.target.value })}
                 className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[140px]"
                 placeholder="You are a coding specialist..."
+              />
+            </div>
+            <div>
+              <div className="text-xs text-zinc-400 mb-1">Max Retries</div>
+              <input
+                type="number"
+                min={0}
+                value={Number(draft.max_retries || 0)}
+                onChange={(e) => setDraft({ ...draft, max_retries: Number(e.target.value) || 0 })}
+                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-zinc-400 mb-1">Retry Backoff (ms)</div>
+              <input
+                type="number"
+                min={0}
+                value={Number(draft.retry_backoff_ms || 0)}
+                onChange={(e) => setDraft({ ...draft, retry_backoff_ms: Number(e.target.value) || 0 })}
+                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-zinc-400 mb-1">Timeout (sec)</div>
+              <input
+                type="number"
+                min={0}
+                value={Number(draft.timeout_sec || 0)}
+                onChange={(e) => setDraft({ ...draft, timeout_sec: Number(e.target.value) || 0 })}
+                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-zinc-400 mb-1">Max Task Chars</div>
+              <input
+                type="number"
+                min={0}
+                value={Number(draft.max_task_chars || 0)}
+                onChange={(e) => setDraft({ ...draft, max_task_chars: Number(e.target.value) || 0 })}
+                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <div className="text-xs text-zinc-400 mb-1">Max Result Chars</div>
+              <input
+                type="number"
+                min={0}
+                value={Number(draft.max_result_chars || 0)}
+                onChange={(e) => setDraft({ ...draft, max_result_chars: Number(e.target.value) || 0 })}
+                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
               />
             </div>
           </div>
@@ -311,4 +428,3 @@ const SubagentProfiles: React.FC = () => {
 };
 
 export default SubagentProfiles;
-

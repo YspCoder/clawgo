@@ -19,6 +19,11 @@ type SubagentProfile struct {
 	SystemPrompt    string   `json:"system_prompt,omitempty"`
 	ToolAllowlist   []string `json:"tool_allowlist,omitempty"`
 	MemoryNamespace string   `json:"memory_namespace,omitempty"`
+	MaxRetries      int      `json:"max_retries,omitempty"`
+	RetryBackoff    int      `json:"retry_backoff_ms,omitempty"`
+	TimeoutSec      int      `json:"timeout_sec,omitempty"`
+	MaxTaskChars    int      `json:"max_task_chars,omitempty"`
+	MaxResultChars  int      `json:"max_result_chars,omitempty"`
 	Status          string   `json:"status"`
 	CreatedAt       int64    `json:"created_at"`
 	UpdatedAt       int64    `json:"updated_at"`
@@ -188,6 +193,11 @@ func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
 	}
 	p.Status = normalizeProfileStatus(p.Status)
 	p.ToolAllowlist = normalizeToolAllowlist(p.ToolAllowlist)
+	p.MaxRetries = clampInt(p.MaxRetries, 0, 8)
+	p.RetryBackoff = clampInt(p.RetryBackoff, 500, 120000)
+	p.TimeoutSec = clampInt(p.TimeoutSec, 0, 3600)
+	p.MaxTaskChars = clampInt(p.MaxTaskChars, 0, 400000)
+	p.MaxResultChars = clampInt(p.MaxResultChars, 0, 400000)
 	return p
 }
 
@@ -223,16 +233,23 @@ func normalizeStringList(in []string) []string {
 }
 
 func normalizeToolAllowlist(in []string) []string {
-	items := normalizeStringList(in)
+	items := ExpandToolAllowlistEntries(normalizeStringList(in))
 	if len(items) == 0 {
 		return nil
-	}
-	for i := range items {
-		items[i] = strings.ToLower(strings.TrimSpace(items[i]))
 	}
 	items = normalizeStringList(items)
 	sort.Strings(items)
 	return items
+}
+
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if max > 0 && v > max {
+		return max
+	}
+	return v
 }
 
 func parseStringList(raw interface{}) []string {
@@ -281,9 +298,15 @@ func (t *SubagentProfileTool) Parameters() map[string]interface{} {
 			"memory_namespace": map[string]interface{}{"type": "string"},
 			"status":           map[string]interface{}{"type": "string", "description": "active|disabled"},
 			"tool_allowlist": map[string]interface{}{
-				"type":  "array",
-				"items": map[string]interface{}{"type": "string"},
+				"type":        "array",
+				"description": "Tool allowlist entries. Supports tool names, '*'/'all', and grouped tokens like 'group:files_read' or '@pipeline'.",
+				"items":       map[string]interface{}{"type": "string"},
 			},
+			"max_retries":      map[string]interface{}{"type": "integer", "description": "Retry limit for subagent task execution."},
+			"retry_backoff_ms": map[string]interface{}{"type": "integer", "description": "Backoff between retries in milliseconds."},
+			"timeout_sec":      map[string]interface{}{"type": "integer", "description": "Per-attempt timeout in seconds."},
+			"max_task_chars":   map[string]interface{}{"type": "integer", "description": "Task input size quota (characters)."},
+			"max_result_chars": map[string]interface{}{"type": "integer", "description": "Result output size quota (characters)."},
 		},
 		"required": []string{"action"},
 	}
@@ -344,6 +367,11 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 			MemoryNamespace: stringArg(args, "memory_namespace"),
 			Status:          stringArg(args, "status"),
 			ToolAllowlist:   parseStringList(args["tool_allowlist"]),
+			MaxRetries:      profileIntArg(args, "max_retries"),
+			RetryBackoff:    profileIntArg(args, "retry_backoff_ms"),
+			TimeoutSec:      profileIntArg(args, "timeout_sec"),
+			MaxTaskChars:    profileIntArg(args, "max_task_chars"),
+			MaxResultChars:  profileIntArg(args, "max_result_chars"),
 		}
 		saved, err := t.store.Upsert(p)
 		if err != nil {
@@ -379,6 +407,21 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 		}
 		if _, ok := args["tool_allowlist"]; ok {
 			next.ToolAllowlist = parseStringList(args["tool_allowlist"])
+		}
+		if _, ok := args["max_retries"]; ok {
+			next.MaxRetries = profileIntArg(args, "max_retries")
+		}
+		if _, ok := args["retry_backoff_ms"]; ok {
+			next.RetryBackoff = profileIntArg(args, "retry_backoff_ms")
+		}
+		if _, ok := args["timeout_sec"]; ok {
+			next.TimeoutSec = profileIntArg(args, "timeout_sec")
+		}
+		if _, ok := args["max_task_chars"]; ok {
+			next.MaxTaskChars = profileIntArg(args, "max_task_chars")
+		}
+		if _, ok := args["max_result_chars"]; ok {
+			next.MaxResultChars = profileIntArg(args, "max_result_chars")
 		}
 		saved, err := t.store.Upsert(next)
 		if err != nil {
@@ -422,4 +465,20 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 func stringArg(args map[string]interface{}, key string) string {
 	v, _ := args[key].(string)
 	return strings.TrimSpace(v)
+}
+
+func profileIntArg(args map[string]interface{}, key string) int {
+	if args == nil {
+		return 0
+	}
+	switch v := args[key].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	default:
+		return 0
+	}
 }

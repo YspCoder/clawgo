@@ -94,9 +94,6 @@ func statusCmd() {
 		triggerStats := filepath.Join(workspace, "memory", "trigger-stats.json")
 		if data, err := os.ReadFile(triggerStats); err == nil {
 			fmt.Printf("Trigger Stats: %s\n", strings.TrimSpace(string(data)))
-			if summary := summarizeAutonomyActions(data); summary != "" {
-				fmt.Printf("Autonomy Action Stats: %s\n", summary)
-			}
 		}
 		auditPath := filepath.Join(workspace, "memory", "trigger-audit.jsonl")
 		if errs, err := collectRecentTriggerErrors(auditPath, 5); err == nil && len(errs) > 0 {
@@ -138,26 +135,6 @@ func statusCmd() {
 				fmt.Printf("  - %s\n", key)
 			}
 		}
-		fmt.Printf("Autonomy Config: idle_resume=%ds waiting_debounce=%ds notify_cooldown=%ds same_reason_cooldown=%ds\n",
-			cfg.Agents.Defaults.Autonomy.UserIdleResumeSec,
-			cfg.Agents.Defaults.Autonomy.WaitingResumeDebounceSec,
-			cfg.Agents.Defaults.Autonomy.NotifyCooldownSec,
-			cfg.Agents.Defaults.Autonomy.NotifySameReasonCooldownSec,
-		)
-		if summary, prio, reasons, nextRetry, dedupeHits, waitingLocks, lockKeys, err := collectAutonomyTaskSummary(filepath.Join(workspace, "memory", "tasks.json")); err == nil {
-			fmt.Printf("Autonomy Tasks: todo=%d doing=%d waiting=%d blocked=%d done=%d dedupe_hits=%d\n", summary["todo"], summary["doing"], summary["waiting"], summary["blocked"], summary["done"], dedupeHits)
-			fmt.Printf("Autonomy Priority: high=%d normal=%d low=%d\n", prio["high"], prio["normal"], prio["low"])
-			if reasons["active_user"] > 0 || reasons["manual_pause"] > 0 || reasons["max_consecutive_stalls"] > 0 || reasons["resource_lock"] > 0 {
-				fmt.Printf("Autonomy Block Reasons: active_user=%d manual_pause=%d max_stalls=%d resource_lock=%d\n", reasons["active_user"], reasons["manual_pause"], reasons["max_consecutive_stalls"], reasons["resource_lock"])
-			}
-			if waitingLocks > 0 || lockKeys > 0 {
-				fmt.Printf("Autonomy Locks: waiting=%d unique_keys=%d\n", waitingLocks, lockKeys)
-			}
-			if nextRetry != "" {
-				fmt.Printf("Autonomy Next Retry: %s\n", nextRetry)
-			}
-			fmt.Printf("Autonomy Control: %s\n", autonomyControlState(workspace))
-		}
 		ns := nodes.DefaultManager().List()
 		if len(ns) > 0 {
 			online := 0
@@ -195,81 +172,6 @@ func statusCmd() {
 			}
 		}
 	}
-}
-
-func summarizeAutonomyActions(statsJSON []byte) string {
-	var payload struct {
-		Counts map[string]int `json:"counts"`
-	}
-	if err := json.Unmarshal(statsJSON, &payload); err != nil || payload.Counts == nil {
-		return ""
-	}
-	keys := []string{"autonomy:dispatch", "autonomy:waiting", "autonomy:resume", "autonomy:blocked", "autonomy:complete"}
-	parts := make([]string, 0, len(keys)+1)
-	total := 0
-	for _, k := range keys {
-		if v, ok := payload.Counts[k]; ok {
-			parts = append(parts, fmt.Sprintf("%s=%d", strings.TrimPrefix(k, "autonomy:"), v))
-			total += v
-		}
-	}
-	if total > 0 {
-		d := payload.Counts["autonomy:dispatch"]
-		w := payload.Counts["autonomy:waiting"]
-		b := payload.Counts["autonomy:blocked"]
-		parts = append(parts, fmt.Sprintf("ratios(dispatch/waiting/blocked)=%.2f/%.2f/%.2f", float64(d)/float64(total), float64(w)/float64(total), float64(b)/float64(total)))
-	}
-	wa := payload.Counts["autonomy:waiting:active_user"]
-	wm := payload.Counts["autonomy:waiting:manual_pause"]
-	ra := payload.Counts["autonomy:resume:active_user"]
-	rm := payload.Counts["autonomy:resume:manual_pause"]
-	if wa+wm+ra+rm > 0 {
-		parts = append(parts, fmt.Sprintf("wait_resume(active_user=%d/%d manual_pause=%d/%d)", wa, ra, wm, rm))
-		waitTotal := wa + wm
-		resumeTotal := ra + rm
-		if waitTotal >= 8 {
-			parts = append(parts, fmt.Sprintf("flap_risk=%s", flapRisk(waitTotal, resumeTotal)))
-		}
-	}
-	return strings.Join(parts, " ")
-}
-
-func flapRisk(waitTotal, resumeTotal int) string {
-	if waitTotal <= 0 {
-		return "low"
-	}
-	if resumeTotal == 0 {
-		return "high(no_resume)"
-	}
-	ratio := float64(waitTotal) / float64(resumeTotal)
-	if ratio >= 2.0 || ratio <= 0.5 {
-		return "high"
-	}
-	if ratio >= 1.5 || ratio <= 0.67 {
-		return "medium"
-	}
-	return "low"
-}
-
-func autonomyControlState(workspace string) string {
-	memDir := filepath.Join(workspace, "memory")
-	pausePath := filepath.Join(memDir, "autonomy.pause")
-	if _, err := os.Stat(pausePath); err == nil {
-		return "paused (autonomy.pause)"
-	}
-	ctrlPath := filepath.Join(memDir, "autonomy.control.json")
-	if data, err := os.ReadFile(ctrlPath); err == nil {
-		var c struct {
-			Enabled bool `json:"enabled"`
-		}
-		if json.Unmarshal(data, &c) == nil {
-			if c.Enabled {
-				return "enabled"
-			}
-			return "disabled (control file)"
-		}
-	}
-	return "default"
 }
 
 func collectSessionKindCounts(sessionsDir string) (map[string]int, error) {
@@ -358,70 +260,6 @@ func collectTriggerErrorCounts(path string) (map[string]int, error) {
 		counts[trigger]++
 	}
 	return counts, nil
-}
-
-func collectAutonomyTaskSummary(path string) (map[string]int, map[string]int, map[string]int, string, int, int, int, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}, map[string]int{"high": 0, "normal": 0, "low": 0}, map[string]int{"active_user": 0, "manual_pause": 0, "max_consecutive_stalls": 0, "resource_lock": 0}, "", 0, 0, 0, nil
-		}
-		return nil, nil, nil, "", 0, 0, 0, err
-	}
-	var items []struct {
-		Status       string   `json:"status"`
-		Priority     string   `json:"priority"`
-		BlockReason  string   `json:"block_reason"`
-		RetryAfter   string   `json:"retry_after"`
-		DedupeHits   int      `json:"dedupe_hits"`
-		ResourceKeys []string `json:"resource_keys"`
-	}
-	if err := json.Unmarshal(data, &items); err != nil {
-		return nil, nil, nil, "", 0, 0, 0, err
-	}
-	summary := map[string]int{"todo": 0, "doing": 0, "waiting": 0, "blocked": 0, "done": 0}
-	priorities := map[string]int{"high": 0, "normal": 0, "low": 0}
-	reasons := map[string]int{"active_user": 0, "manual_pause": 0, "max_consecutive_stalls": 0, "resource_lock": 0}
-	nextRetry := ""
-	nextRetryAt := time.Time{}
-	totalDedupe := 0
-	waitingLocks := 0
-	lockKeySet := map[string]struct{}{}
-	for _, it := range items {
-		s := strings.ToLower(strings.TrimSpace(it.Status))
-		if _, ok := summary[s]; ok {
-			summary[s]++
-		}
-		totalDedupe += it.DedupeHits
-		r := strings.ToLower(strings.TrimSpace(it.BlockReason))
-		if _, ok := reasons[r]; ok {
-			reasons[r]++
-		}
-		if s == "waiting" && r == "resource_lock" {
-			waitingLocks++
-			for _, k := range it.ResourceKeys {
-				kk := strings.TrimSpace(strings.ToLower(k))
-				if kk != "" {
-					lockKeySet[kk] = struct{}{}
-				}
-			}
-		}
-		p := strings.ToLower(strings.TrimSpace(it.Priority))
-		if _, ok := priorities[p]; ok {
-			priorities[p]++
-		} else {
-			priorities["normal"]++
-		}
-		if strings.TrimSpace(it.RetryAfter) != "" {
-			if t, err := time.Parse(time.RFC3339, it.RetryAfter); err == nil {
-				if nextRetryAt.IsZero() || t.Before(nextRetryAt) {
-					nextRetryAt = t
-					nextRetry = t.Format(time.RFC3339)
-				}
-			}
-		}
-	}
-	return summary, priorities, reasons, nextRetry, totalDedupe, waitingLocks, len(lockKeySet), nil
 }
 
 func collectNodeDispatchStats(path string) (int, int, int, string, error) {

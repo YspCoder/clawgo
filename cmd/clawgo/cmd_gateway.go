@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,7 +14,6 @@ import (
 
 	"clawgo/pkg/agent"
 	"clawgo/pkg/api"
-	"clawgo/pkg/autonomy"
 	"clawgo/pkg/bus"
 	"clawgo/pkg/channels"
 	"clawgo/pkg/config"
@@ -46,15 +44,9 @@ func gatewayCmd() {
 			os.Exit(1)
 		}
 		return
-	case "autonomy":
-		if err := gatewayAutonomyControlCmd(args[1:]); err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
-		}
-		return
 	default:
 		fmt.Printf("Unknown gateway command: %s\n", args[0])
-		fmt.Println("Usage: clawgo gateway [run|start|stop|restart|status|autonomy on|off|status]")
+		fmt.Println("Usage: clawgo gateway [run|start|stop|restart|status]")
 		return
 	}
 
@@ -75,7 +67,6 @@ func gatewayCmd() {
 	})
 	configureCronServiceRuntime(cronService, cfg)
 	heartbeatService := buildHeartbeatService(cfg, msgBus)
-	autonomyEngine := buildAutonomyEngine(cfg, msgBus)
 	sentinelService := sentinel.NewService(
 		getConfigPath(),
 		cfg.WorkspacePath(),
@@ -128,10 +119,6 @@ func gatewayCmd() {
 		fmt.Printf("Error starting heartbeat service: %v\n", err)
 	}
 	fmt.Println("✓ Heartbeat service started")
-	autonomyEngine.Start()
-	if cfg.Agents.Defaults.Autonomy.Enabled {
-		fmt.Println("✓ Autonomy engine started")
-	}
 	if cfg.Sentinel.Enabled {
 		sentinelService.Start()
 		fmt.Println("✓ Sentinel service started")
@@ -169,6 +156,12 @@ func gatewayCmd() {
 	})
 	registryServer.SetConfigAfterHook(func() {
 		_ = requestGatewayReloadSignal()
+	})
+	registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
+		return agentLoop.HandleSubagentRuntime(cctx, action, args)
+	})
+	registryServer.SetPipelineHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
+		return agentLoop.HandlePipelineRuntime(cctx, action, args)
 	})
 	registryServer.SetCronHandler(func(action string, args map[string]interface{}) (interface{}, error) {
 		getStr := func(k string) string {
@@ -334,13 +327,10 @@ func gatewayCmd() {
 			}
 			configureCronServiceRuntime(cronService, newCfg)
 			heartbeatService.Stop()
-			autonomyEngine.Stop()
 			heartbeatService = buildHeartbeatService(newCfg, msgBus)
-			autonomyEngine = buildAutonomyEngine(newCfg, msgBus)
 			if err := heartbeatService.Start(); err != nil {
 				fmt.Printf("Error starting heartbeat service: %v\n", err)
 			}
-			autonomyEngine.Start()
 
 			if reflect.DeepEqual(cfg, newCfg) {
 				fmt.Println("✓ Config unchanged, skip reload")
@@ -351,8 +341,6 @@ func gatewayCmd() {
 				reflect.DeepEqual(cfg.Providers, newCfg.Providers) &&
 				reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
 				reflect.DeepEqual(cfg.Channels, newCfg.Channels)
-
-			autonomyChanges := summarizeAutonomyChanges(cfg, newCfg)
 
 			if runtimeSame {
 				configureLogging(newCfg)
@@ -378,9 +366,6 @@ func gatewayCmd() {
 				}
 				cfg = newCfg
 				runtimecfg.Set(cfg)
-				if len(autonomyChanges) > 0 {
-					fmt.Printf("↻ Autonomy changes: %s\n", strings.Join(autonomyChanges, ", "))
-				}
 				fmt.Println("✓ Config hot-reload applied (logging/metadata only)")
 				continue
 			}
@@ -424,15 +409,11 @@ func gatewayCmd() {
 				continue
 			}
 			go agentLoop.Run(ctx)
-			if len(autonomyChanges) > 0 {
-				fmt.Printf("↻ Autonomy changes: %s\n", strings.Join(autonomyChanges, ", "))
-			}
 			fmt.Println("✓ Config hot-reload applied")
 		default:
 			fmt.Println("\nShutting down...")
 			cancel()
 			heartbeatService.Stop()
-			autonomyEngine.Stop()
 			sentinelService.Stop()
 			cronService.Stop()
 			agentLoop.Stop()
@@ -441,126 +422,6 @@ func gatewayCmd() {
 			return
 		}
 	}
-}
-
-func gatewayAutonomyControlCmd(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: clawgo gateway autonomy [on|off|status]")
-	}
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-	memDir := filepath.Join(cfg.WorkspacePath(), "memory")
-	if err := os.MkdirAll(memDir, 0755); err != nil {
-		return err
-	}
-	pausePath := filepath.Join(memDir, "autonomy.pause")
-	ctrlPath := filepath.Join(memDir, "autonomy.control.json")
-
-	type autonomyControl struct {
-		Enabled   bool   `json:"enabled"`
-		UpdatedAt string `json:"updated_at"`
-		Source    string `json:"source"`
-	}
-
-	writeControl := func(enabled bool) error {
-		c := autonomyControl{Enabled: enabled, UpdatedAt: time.Now().UTC().Format(time.RFC3339), Source: "manual_cli"}
-		data, err := json.MarshalIndent(c, "", "  ")
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(ctrlPath, append(data, '\n'), 0644)
-	}
-
-	switch strings.ToLower(strings.TrimSpace(args[0])) {
-	case "on":
-		_ = os.Remove(pausePath)
-		if err := writeControl(true); err != nil {
-			return err
-		}
-		fmt.Println("✓ Autonomy enabled")
-		return nil
-	case "off":
-		if err := writeControl(false); err != nil {
-			return err
-		}
-		if err := os.WriteFile(pausePath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0644); err != nil {
-			return err
-		}
-		fmt.Println("✓ Autonomy disabled (paused)")
-		return nil
-	case "status":
-		enabled := true
-		reason := "default"
-		updatedAt := ""
-		source := ""
-		if data, err := os.ReadFile(ctrlPath); err == nil {
-			var c autonomyControl
-			if json.Unmarshal(data, &c) == nil {
-				enabled = c.Enabled
-				updatedAt = c.UpdatedAt
-				source = c.Source
-				if !c.Enabled {
-					reason = "control_file"
-				}
-			}
-		}
-		if _, err := os.Stat(pausePath); err == nil {
-			enabled = false
-			reason = "pause_file"
-		}
-		fmt.Printf("Autonomy status: %v (%s)\n", enabled, reason)
-		if strings.TrimSpace(updatedAt) != "" {
-			fmt.Printf("Last switch: %s", updatedAt)
-			if strings.TrimSpace(source) != "" {
-				fmt.Printf(" via %s", source)
-			}
-			fmt.Println()
-		}
-		fmt.Printf("Control file: %s\n", ctrlPath)
-		fmt.Printf("Pause file: %s\n", pausePath)
-		return nil
-	default:
-		return fmt.Errorf("usage: clawgo gateway autonomy [on|off|status]")
-	}
-}
-
-func summarizeAutonomyChanges(oldCfg, newCfg *config.Config) []string {
-	if oldCfg == nil || newCfg == nil {
-		return nil
-	}
-	o := oldCfg.Agents.Defaults.Autonomy
-	n := newCfg.Agents.Defaults.Autonomy
-	changes := make([]string, 0)
-	if o.Enabled != n.Enabled {
-		changes = append(changes, "enabled")
-	}
-	if o.TickIntervalSec != n.TickIntervalSec {
-		changes = append(changes, "tick_interval_sec")
-	}
-	if o.MinRunIntervalSec != n.MinRunIntervalSec {
-		changes = append(changes, "min_run_interval_sec")
-	}
-	if o.UserIdleResumeSec != n.UserIdleResumeSec {
-		changes = append(changes, "user_idle_resume_sec")
-	}
-	if o.WaitingResumeDebounceSec != n.WaitingResumeDebounceSec {
-		changes = append(changes, "waiting_resume_debounce_sec")
-	}
-	if o.IdleRoundBudgetReleaseSec != n.IdleRoundBudgetReleaseSec {
-		changes = append(changes, "idle_round_budget_release_sec")
-	}
-	if strings.TrimSpace(o.QuietHours) != strings.TrimSpace(n.QuietHours) {
-		changes = append(changes, "quiet_hours")
-	}
-	if o.NotifyCooldownSec != n.NotifyCooldownSec {
-		changes = append(changes, "notify_cooldown_sec")
-	}
-	if o.NotifySameReasonCooldownSec != n.NotifySameReasonCooldownSec {
-		changes = append(changes, "notify_same_reason_cooldown_sec")
-	}
-	return changes
 }
 
 func runGatewayStartupCompactionCheck(parent context.Context, agentLoop *agent.AgentLoop) {
@@ -909,75 +770,4 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 		})
 		return "queued", nil
 	}, hbInterval, cfg.Agents.Defaults.Heartbeat.Enabled, cfg.Agents.Defaults.Heartbeat.PromptTemplate)
-}
-
-func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.Engine {
-	a := cfg.Agents.Defaults.Autonomy
-	idleRoundBudgetReleaseSec := a.IdleRoundBudgetReleaseSec
-	if idleRoundBudgetReleaseSec == 0 {
-		idleRoundBudgetReleaseSec = 1800
-	}
-	notifyChannel, notifyChatID := inferAutonomyNotifyTarget(cfg)
-	notifyAllowFrom := []string{}
-	switch notifyChannel {
-	case "telegram":
-		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.Telegram.AllowFrom...)
-	case "feishu":
-		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.Feishu.AllowFrom...)
-	case "whatsapp":
-		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.WhatsApp.AllowFrom...)
-	case "discord":
-		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.Discord.AllowFrom...)
-	case "qq":
-		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.QQ.AllowFrom...)
-	case "dingtalk":
-		notifyAllowFrom = append(notifyAllowFrom, cfg.Channels.DingTalk.AllowFrom...)
-	}
-	return autonomy.NewEngine(autonomy.Options{
-		Enabled:                      a.Enabled,
-		TickIntervalSec:              a.TickIntervalSec,
-		MinRunIntervalSec:            a.MinRunIntervalSec,
-		MaxPendingDurationSec:        a.MaxPendingDurationSec,
-		MaxConsecutiveStalls:         a.MaxConsecutiveStalls,
-		MaxDispatchPerTick:           a.MaxDispatchPerTick,
-		NotifyCooldownSec:            a.NotifyCooldownSec,
-		NotifySameReasonCooldownSec:  a.NotifySameReasonCooldownSec,
-		QuietHours:                   a.QuietHours,
-		UserIdleResumeSec:            a.UserIdleResumeSec,
-		MaxRoundsWithoutUser:         a.MaxRoundsWithoutUser,
-		TaskHistoryRetentionDays:     a.TaskHistoryRetentionDays,
-		WaitingResumeDebounceSec:     a.WaitingResumeDebounceSec,
-		IdleRoundBudgetReleaseSec:    idleRoundBudgetReleaseSec,
-		AllowedTaskKeywords:          a.AllowedTaskKeywords,
-		EKGConsecutiveErrorThreshold: a.EKGConsecutiveErrorThreshold,
-		Workspace:                    cfg.WorkspacePath(),
-		DefaultNotifyChannel:         notifyChannel,
-		DefaultNotifyChatID:          notifyChatID,
-		NotifyAllowFrom:              notifyAllowFrom,
-	}, msgBus)
-}
-
-func inferAutonomyNotifyTarget(cfg *config.Config) (string, string) {
-	if cfg == nil {
-		return "", ""
-	}
-	if cfg.Channels.Telegram.Enabled && len(cfg.Channels.Telegram.AllowFrom) > 0 {
-		return "telegram", strings.TrimSpace(cfg.Channels.Telegram.AllowFrom[0])
-	}
-	if cfg.Channels.Feishu.Enabled && len(cfg.Channels.Feishu.AllowFrom) > 0 {
-		return "feishu", strings.TrimSpace(cfg.Channels.Feishu.AllowFrom[0])
-	}
-	if cfg.Channels.WhatsApp.Enabled && len(cfg.Channels.WhatsApp.AllowFrom) > 0 {
-		return "whatsapp", strings.TrimSpace(cfg.Channels.WhatsApp.AllowFrom[0])
-	}
-	if cfg.Channels.Discord.Enabled && len(cfg.Channels.Discord.AllowFrom) > 0 {
-		return "discord", strings.TrimSpace(cfg.Channels.Discord.AllowFrom[0])
-	}
-	if cfg.Channels.QQ.Enabled && len(cfg.Channels.QQ.AllowFrom) > 0 {
-		return "qq", strings.TrimSpace(cfg.Channels.QQ.AllowFrom[0])
-	}
-	if cfg.Channels.DingTalk.Enabled && len(cfg.Channels.DingTalk.AllowFrom) > 0 {
-		return "dingtalk", strings.TrimSpace(cfg.Channels.DingTalk.AllowFrom[0])
-	}
-	return "", ""
 }

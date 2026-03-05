@@ -26,6 +26,7 @@ const (
 )
 
 var ErrCommandNoProgress = errors.New("command no progress across tick rounds")
+var ErrCommandTickTimeout = errors.New("command tick timeout exceeded")
 
 type commandRuntimePolicy struct {
 	BaseTick        time.Duration
@@ -590,6 +591,75 @@ func runCommandWithDynamicTick(ctx context.Context, cmd *exec.Cmd, source, label
 			case <-time.After(2 * time.Second):
 			}
 			return ctx.Err()
+		}
+	}
+}
+
+type stringTaskResult struct {
+	output string
+	err    error
+}
+
+// runStringTaskWithCommandTickTimeout executes a string-returning task with a
+// command-tick-based timeout loop so timeout behavior stays consistent with the
+// command watchdog pacing policy.
+func runStringTaskWithCommandTickTimeout(
+	ctx context.Context,
+	timeoutSec int,
+	baseTick time.Duration,
+	run func(context.Context) (string, error),
+) (string, error) {
+	if run == nil {
+		return "", fmt.Errorf("run function is nil")
+	}
+	if timeoutSec <= 0 {
+		return run(ctx)
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	timeout := time.Duration(timeoutSec) * time.Second
+	started := time.Now()
+	tick := normalizeCommandTick(baseTick)
+	if tick <= 0 {
+		tick = 2 * time.Second
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	done := make(chan stringTaskResult, 1)
+	go func() {
+		out, err := run(runCtx)
+		done <- stringTaskResult{output: out, err: err}
+	}()
+
+	timer := time.NewTimer(tick)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			cancel()
+			return "", ctx.Err()
+		case res := <-done:
+			return res.output, res.err
+		case <-timer.C:
+			elapsed := time.Since(started)
+			if elapsed >= timeout {
+				cancel()
+				select {
+				case res := <-done:
+					if res.err != nil {
+						return "", fmt.Errorf("%w: %v", ErrCommandTickTimeout, res.err)
+					}
+				case <-time.After(2 * time.Second):
+				}
+				return "", fmt.Errorf("%w: %ds", ErrCommandTickTimeout, timeoutSec)
+			}
+			next := nextCommandTick(tick, elapsed)
+			timer.Reset(next)
 		}
 	}
 }

@@ -43,6 +43,8 @@ type Server struct {
 	onChatHistory func(sessionKey string) []map[string]interface{}
 	onConfigAfter func()
 	onCron        func(action string, args map[string]interface{}) (interface{}, error)
+	onSubagents   func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
+	onPipelines   func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
 	webUIDir      string
 	ekgCacheMu    sync.Mutex
 	ekgCachePath  string
@@ -75,6 +77,12 @@ func (s *Server) SetConfigAfterHook(fn func()) { s.onConfigAfter = fn }
 func (s *Server) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
 }
+func (s *Server) SetSubagentHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
+	s.onSubagents = fn
+}
+func (s *Server) SetPipelineHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
+	s.onPipelines = fn
+}
 func (s *Server) SetWebUIDir(dir string) { s.webUIDir = strings.TrimSpace(dir) }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -102,10 +110,11 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/sessions", s.handleWebUISessions)
 	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/webui/api/subagent_profiles", s.handleWebUISubagentProfiles)
+	mux.HandleFunc("/webui/api/subagents_runtime", s.handleWebUISubagentsRuntime)
+	mux.HandleFunc("/webui/api/pipelines", s.handleWebUIPipelines)
+	mux.HandleFunc("/webui/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
 	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
 	mux.HandleFunc("/webui/api/task_queue", s.handleWebUITaskQueue)
-	mux.HandleFunc("/webui/api/tasks", s.handleWebUITasks)
-	mux.HandleFunc("/webui/api/task_daily_summary", s.handleWebUITaskDailySummary)
 	mux.HandleFunc("/webui/api/ekg_stats", s.handleWebUIEKGStats)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
@@ -1804,6 +1813,13 @@ func anyToString(v interface{}) string {
 	}
 }
 
+func derefInt(v *int) int {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
 func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -1903,6 +1919,11 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 			MemoryNamespace string   `json:"memory_namespace"`
 			Status          string   `json:"status"`
 			ToolAllowlist   []string `json:"tool_allowlist"`
+			MaxRetries      *int     `json:"max_retries"`
+			RetryBackoffMS  *int     `json:"retry_backoff_ms"`
+			TimeoutSec      *int     `json:"timeout_sec"`
+			MaxTaskChars    *int     `json:"max_task_chars"`
+			MaxResultChars  *int     `json:"max_result_chars"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -1935,6 +1956,11 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 				MemoryNamespace: body.MemoryNamespace,
 				Status:          body.Status,
 				ToolAllowlist:   body.ToolAllowlist,
+				MaxRetries:      derefInt(body.MaxRetries),
+				RetryBackoff:    derefInt(body.RetryBackoffMS),
+				TimeoutSec:      derefInt(body.TimeoutSec),
+				MaxTaskChars:    derefInt(body.MaxTaskChars),
+				MaxResultChars:  derefInt(body.MaxResultChars),
 			})
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1961,6 +1987,21 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 			}
 			if body.ToolAllowlist != nil {
 				next.ToolAllowlist = body.ToolAllowlist
+			}
+			if body.MaxRetries != nil {
+				next.MaxRetries = *body.MaxRetries
+			}
+			if body.RetryBackoffMS != nil {
+				next.RetryBackoff = *body.RetryBackoffMS
+			}
+			if body.TimeoutSec != nil {
+				next.TimeoutSec = *body.TimeoutSec
+			}
+			if body.MaxTaskChars != nil {
+				next.MaxTaskChars = *body.MaxTaskChars
+			}
+			if body.MaxResultChars != nil {
+				next.MaxResultChars = *body.MaxResultChars
 			}
 			profile, err := store.Upsert(next)
 			if err != nil {
@@ -2004,6 +2045,11 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 				MemoryNamespace: body.MemoryNamespace,
 				Status:          body.Status,
 				ToolAllowlist:   body.ToolAllowlist,
+				MaxRetries:      derefInt(body.MaxRetries),
+				RetryBackoff:    derefInt(body.RetryBackoffMS),
+				TimeoutSec:      derefInt(body.TimeoutSec),
+				MaxTaskChars:    derefInt(body.MaxTaskChars),
+				MaxResultChars:  derefInt(body.MaxResultChars),
 			})
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2016,6 +2062,125 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleWebUIToolAllowlistGroups(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":     true,
+		"groups": tools.ToolAllowlistGroups(),
+	})
+}
+
+func (s *Server) handleWebUISubagentsRuntime(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.onSubagents == nil {
+		http.Error(w, "subagent runtime handler not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	action := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("action")))
+	args := map[string]interface{}{}
+	switch r.Method {
+	case http.MethodGet:
+		if action == "" {
+			action = "list"
+		}
+		for key, values := range r.URL.Query() {
+			if key == "action" || key == "token" || len(values) == 0 {
+				continue
+			}
+			args[key] = strings.TrimSpace(values[0])
+		}
+	case http.MethodPost:
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if body == nil {
+			body = map[string]interface{}{}
+		}
+		if action == "" {
+			if raw, _ := body["action"].(string); raw != "" {
+				action = strings.ToLower(strings.TrimSpace(raw))
+			}
+		}
+		delete(body, "action")
+		args = body
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	result, err := s.onSubagents(r.Context(), action, args)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "result": result})
+}
+
+func (s *Server) handleWebUIPipelines(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.onPipelines == nil {
+		http.Error(w, "pipeline runtime handler not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	action := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("action")))
+	args := map[string]interface{}{}
+	switch r.Method {
+	case http.MethodGet:
+		if action == "" {
+			action = "list"
+		}
+		for key, values := range r.URL.Query() {
+			if key == "action" || key == "token" || len(values) == 0 {
+				continue
+			}
+			args[key] = strings.TrimSpace(values[0])
+		}
+	case http.MethodPost:
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if body == nil {
+			body = map[string]interface{}{}
+		}
+		if action == "" {
+			if raw, _ := body["action"].(string); raw != "" {
+				action = strings.ToLower(strings.TrimSpace(raw))
+			}
+		}
+		delete(body, "action")
+		args = body
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	result, err := s.onPipelines(r.Context(), action, args)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "result": result})
 }
 
 func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
@@ -2098,77 +2263,10 @@ func (s *Server) handleWebUITaskAudit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Method == http.MethodPost {
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		action := fmt.Sprintf("%v", body["action"])
-		taskID := fmt.Sprintf("%v", body["task_id"])
-		if taskID == "" {
-			http.Error(w, "task_id required", http.StatusBadRequest)
-			return
-		}
-		tasksPath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "tasks.json")
-		tb, err := os.ReadFile(tasksPath)
-		if err != nil {
-			http.Error(w, "tasks not found", http.StatusNotFound)
-			return
-		}
-		var tasks []map[string]interface{}
-		if err := json.Unmarshal(tb, &tasks); err != nil {
-			http.Error(w, "invalid tasks file", http.StatusInternalServerError)
-			return
-		}
-		now := time.Now().UTC().Format(time.RFC3339)
-		updated := false
-		for _, t := range tasks {
-			if fmt.Sprintf("%v", t["id"]) != taskID {
-				continue
-			}
-			switch action {
-			case "pause":
-				t["status"] = "waiting"
-				t["block_reason"] = "manual_pause"
-				t["last_pause_reason"] = "manual_pause"
-				t["last_pause_at"] = now
-			case "retry":
-				t["status"] = "todo"
-				t["block_reason"] = ""
-				t["retry_after"] = ""
-			case "complete":
-				t["status"] = "done"
-				t["block_reason"] = "manual_complete"
-			case "ignore":
-				t["status"] = "blocked"
-				t["block_reason"] = "manual_ignore"
-				t["retry_after"] = "2099-01-01T00:00:00Z"
-			default:
-				http.Error(w, "unsupported action", http.StatusBadRequest)
-				return
-			}
-			t["updated_at"] = now
-			updated = true
-			break
-		}
-		if !updated {
-			http.Error(w, "task not found", http.StatusNotFound)
-			return
-		}
-		out, _ := json.MarshalIndent(tasks, "", "  ")
-		if err := os.WriteFile(tasksPath, out, 0644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
-		return
-	}
-
 	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
 	includeHeartbeat := r.URL.Query().Get("include_heartbeat") == "1"
 	limit := 100
@@ -2274,44 +2372,6 @@ func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Merge autonomy queue states (including waiting/blocked-by-user) for full audit visibility.
-	tasksPath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "tasks.json")
-	if tb, err := os.ReadFile(tasksPath); err == nil {
-		var tasks []map[string]interface{}
-		if json.Unmarshal(tb, &tasks) == nil {
-			seen := map[string]struct{}{}
-			for _, it := range items {
-				seen[fmt.Sprintf("%v", it["task_id"])] = struct{}{}
-			}
-			for _, t := range tasks {
-				id := fmt.Sprintf("%v", t["id"])
-				if id == "" {
-					continue
-				}
-				if _, ok := seen[id]; ok {
-					continue
-				}
-				row := map[string]interface{}{
-					"task_id":           id,
-					"time":              t["updated_at"],
-					"status":            t["status"],
-					"source":            t["source"],
-					"idle_run":          true,
-					"input_preview":     t["content"],
-					"block_reason":      t["block_reason"],
-					"last_pause_reason": t["last_pause_reason"],
-					"last_pause_at":     t["last_pause_at"],
-					"logs":              []string{fmt.Sprintf("autonomy state: %v", t["status"])},
-					"retry_count":       0,
-				}
-				items = append(items, row)
-				if fmt.Sprintf("%v", row["status"]) == "running" {
-					running = append(running, row)
-				}
-			}
-		}
-	}
-
 	// Merge command watchdog queue from memory/task_queue.json for visibility.
 	queuePath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task_queue.json")
 	if qb, qErr := os.ReadFile(queuePath); qErr == nil {
@@ -2411,51 +2471,8 @@ func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sort.Slice(items, func(i, j int) bool { return fmt.Sprintf("%v", items[i]["time"]) > fmt.Sprintf("%v", items[j]["time"]) })
-	stats := map[string]int{"total": len(items), "running": len(running), "idle_round_budget": 0, "active_user": 0, "manual_pause": 0}
-	for _, it := range items {
-		reason := fmt.Sprintf("%v", it["block_reason"])
-		switch reason {
-		case "idle_round_budget":
-			stats["idle_round_budget"]++
-		case "active_user":
-			stats["active_user"]++
-		case "manual_pause":
-			stats["manual_pause"]++
-		}
-	}
+	stats := map[string]int{"total": len(items), "running": len(running)}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": running, "items": items, "stats": stats})
-}
-
-func (s *Server) handleWebUITaskDailySummary(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	date := r.URL.Query().Get("date")
-	if date == "" {
-		date = time.Now().UTC().Format("2006-01-02")
-	}
-	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", date+".md")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "date": date, "report": ""})
-		return
-	}
-	text := string(b)
-	marker := "## Autonomy Daily Report (" + date + ")"
-	idx := strings.Index(text, marker)
-	report := ""
-	if idx >= 0 {
-		report = text[idx:]
-		if n := strings.Index(report[len(marker):], "\n## "); n > 0 {
-			report = report[:len(marker)+n]
-		}
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "date": date, "report": report})
 }
 
 func (s *Server) loadEKGRowsCached(path string, maxLines int) []map[string]interface{} {
@@ -2612,18 +2629,6 @@ func (s *Server) handleWebUIEKGStats(w http.ResponseWriter, r *http.Request) {
 		}
 		return out
 	}
-	escalations := 0
-	tasksPath := filepath.Join(workspace, "memory", "tasks.json")
-	if tb, err := os.ReadFile(tasksPath); err == nil {
-		var tasks []map[string]interface{}
-		if json.Unmarshal(tb, &tasks) == nil {
-			for _, t := range tasks {
-				if strings.TrimSpace(fmt.Sprintf("%v", t["block_reason"])) == "repeated_error_signature" {
-					escalations++
-				}
-			}
-		}
-	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":                    true,
 		"window":                selectedWindow,
@@ -2634,115 +2639,8 @@ func (s *Server) handleWebUIEKGStats(w http.ResponseWriter, r *http.Request) {
 		"errsig_top_workload":   toTopCount(errSigWorkload, 5),
 		"source_stats":          sourceStats,
 		"channel_stats":         channelStats,
-		"escalation_count":      escalations,
+		"escalation_count":      0,
 	})
-}
-
-func (s *Server) handleWebUITasks(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	tasksPath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "tasks.json")
-	if r.Method == http.MethodGet {
-		b, err := os.ReadFile(tasksPath)
-		if err != nil {
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": []map[string]interface{}{}})
-			return
-		}
-		var items []map[string]interface{}
-		if err := json.Unmarshal(b, &items); err != nil {
-			http.Error(w, "invalid tasks file", http.StatusInternalServerError)
-			return
-		}
-		sort.Slice(items, func(i, j int) bool {
-			return fmt.Sprintf("%v", items[i]["updated_at"]) > fmt.Sprintf("%v", items[j]["updated_at"])
-		})
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": items})
-		return
-	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var body map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-	action := fmt.Sprintf("%v", body["action"])
-	now := time.Now().UTC().Format(time.RFC3339)
-	items := []map[string]interface{}{}
-	if b, err := os.ReadFile(tasksPath); err == nil {
-		_ = json.Unmarshal(b, &items)
-	}
-	switch action {
-	case "create":
-		it, _ := body["item"].(map[string]interface{})
-		if it == nil {
-			http.Error(w, "item required", http.StatusBadRequest)
-			return
-		}
-		id := fmt.Sprintf("%v", it["id"])
-		if id == "" {
-			id = fmt.Sprintf("task_%d", time.Now().UnixNano())
-		}
-		it["id"] = id
-		if fmt.Sprintf("%v", it["status"]) == "" {
-			it["status"] = "todo"
-		}
-		if fmt.Sprintf("%v", it["source"]) == "" {
-			it["source"] = "manual"
-		}
-		it["updated_at"] = now
-		items = append(items, it)
-	case "update":
-		id := fmt.Sprintf("%v", body["id"])
-		it, _ := body["item"].(map[string]interface{})
-		if id == "" || it == nil {
-			http.Error(w, "id and item required", http.StatusBadRequest)
-			return
-		}
-		updated := false
-		for _, row := range items {
-			if fmt.Sprintf("%v", row["id"]) == id {
-				for k, v := range it {
-					row[k] = v
-				}
-				row["id"] = id
-				row["updated_at"] = now
-				updated = true
-				break
-			}
-		}
-		if !updated {
-			http.Error(w, "task not found", http.StatusNotFound)
-			return
-		}
-	case "delete":
-		id := fmt.Sprintf("%v", body["id"])
-		if id == "" {
-			http.Error(w, "id required", http.StatusBadRequest)
-			return
-		}
-		filtered := make([]map[string]interface{}, 0, len(items))
-		for _, row := range items {
-			if fmt.Sprintf("%v", row["id"]) != id {
-				filtered = append(filtered, row)
-			}
-		}
-		items = filtered
-	default:
-		http.Error(w, "unsupported action", http.StatusBadRequest)
-		return
-	}
-	_ = os.MkdirAll(filepath.Dir(tasksPath), 0755)
-	out, _ := json.MarshalIndent(items, "", "  ")
-	if err := os.WriteFile(tasksPath, out, 0644); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
 }
 
 func (s *Server) handleWebUIExecApprovals(w http.ResponseWriter, r *http.Request) {
@@ -2953,7 +2851,6 @@ func hotReloadFieldInfo() []map[string]interface{} {
 		{"path": "channels.*", "name": "Channels", "description": "Telegram and other channel settings"},
 		{"path": "cron.*", "name": "Cron", "description": "Global cron runtime settings"},
 		{"path": "agents.defaults.heartbeat.*", "name": "Heartbeat", "description": "Heartbeat interval and prompt template"},
-		{"path": "agents.defaults.autonomy.*", "name": "Autonomy", "description": "Autonomy toggles and throttling"},
 		{"path": "gateway.*", "name": "Gateway", "description": "Mostly hot-reloadable; host/port may require restart"},
 	}
 }

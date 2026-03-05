@@ -108,7 +108,6 @@ func printHelp() {
 	fmt.Println("  clawgo gateway                  # register service")
 	fmt.Println("  clawgo gateway start|stop|restart|status")
 	fmt.Println("  clawgo gateway run              # run foreground")
-	fmt.Println("  clawgo gateway autonomy on|off|status")
 	fmt.Println()
 	fmt.Println("Uninstall:")
 	fmt.Println("  clawgo uninstall                # remove gateway service")

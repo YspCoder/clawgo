@@ -13,9 +13,10 @@ import Skills from './pages/Skills';
 import Memory from './pages/Memory';
 import TaskAudit from './pages/TaskAudit';
 import EKG from './pages/EKG';
-import Tasks from './pages/Tasks';
 import LogCodes from './pages/LogCodes';
 import SubagentProfiles from './pages/SubagentProfiles';
+import Subagents from './pages/Subagents';
+import Pipelines from './pages/Pipelines';
 
 export default function App() {
   return (
@@ -35,8 +36,9 @@ export default function App() {
               <Route path="memory" element={<Memory />} />
               <Route path="task-audit" element={<TaskAudit />} />
               <Route path="ekg" element={<EKG />} />
-              <Route path="tasks" element={<Tasks />} />
               <Route path="subagent-profiles" element={<SubagentProfiles />} />
+              <Route path="subagents" element={<Subagents />} />
+              <Route path="pipelines" element={<Pipelines />} />
             </Route>
           </Routes>
         </BrowserRouter>

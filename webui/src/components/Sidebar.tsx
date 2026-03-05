@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, Settings, Clock, Server, Terminal, Zap, FolderOpen, ClipboardList, ListTodo, BrainCircuit, Hash, Bot } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Settings, Clock, Server, Terminal, Zap, FolderOpen, ClipboardList, BrainCircuit, Hash, Bot, Workflow, Boxes } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import NavItem from './NavItem';
@@ -27,13 +27,14 @@ const Sidebar: React.FC = () => {
         { icon: <Server className="w-5 h-5" />, label: t('nodes'), to: '/nodes' },
         { icon: <FolderOpen className="w-5 h-5" />, label: t('memory'), to: '/memory' },
         { icon: <Bot className="w-5 h-5" />, label: t('subagentProfiles'), to: '/subagent-profiles' },
+        { icon: <Boxes className="w-5 h-5" />, label: t('subagentsRuntime'), to: '/subagents' },
+        { icon: <Workflow className="w-5 h-5" />, label: t('pipelines'), to: '/pipelines' },
       ],
     },
     {
       title: t('sidebarOps'),
       items: [
         { icon: <ClipboardList className="w-5 h-5" />, label: t('taskAudit'), to: '/task-audit' },
-        { icon: <ListTodo className="w-5 h-5" />, label: t('tasks'), to: '/tasks' },
       ],
     },
     {

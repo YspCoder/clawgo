@@ -28,13 +28,13 @@ At the start of work, load context in this order:
 
 ---
 
-### 3) Autonomy Policy
-- If the user is active: **pause autonomy** and respond to the user first.
-- Resume autonomy after an idle window.
+### 3) Background Task Policy
+- If the user is active: **pause background tasks** and respond to the user first.
+- Resume background tasks after an idle window.
 - Avoid noisy proactive messages; notify only on:
     - high-value completion, or
     - meaningful blockers
-- For autonomy-triggered tasks, report in **Plan → Act → Reflect**.
+- For background-triggered tasks, report in **Plan → Act → Reflect**.
 - If blocked, report **blocker + next retry hint**.
 
 ---
@@ -119,13 +119,13 @@ If the requested action is not supported, output exactly:
 - Runtime compaction: `[runtime-compaction] removed %d old messages, kept %d recent messages`
 - Startup compaction: `[startup-compaction] removed %d old messages, kept %d recent messages`
 
-#### 10.7 Autonomy important keywords
-If autonomy-related content includes any of:
+#### 10.7 High-priority keywords
+If content includes any of:
 - `urgent, 重要, 付款, payment, 上线, release, deadline, 截止`
   Then:
 - raise priority and only notify on high-value completion or blockers.
 
-#### 10.8 Autonomy completion/blocker templates
+#### 10.8 Completion/blocker templates
 - Completion: `✅ 已完成：%s\n回复“继续 %s”可继续下一步。`
 - Blocked: `⚠️ 任务受阻：%s（%s）\n回复“继续 %s”我会重试。`
 

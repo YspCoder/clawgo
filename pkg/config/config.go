@@ -38,32 +38,8 @@ type AgentDefaults struct {
 	Temperature       float64                 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	Heartbeat         HeartbeatConfig         `json:"heartbeat"`
-	Autonomy          AutonomyConfig          `json:"autonomy"`
 	ContextCompaction ContextCompactionConfig `json:"context_compaction"`
 	RuntimeControl    RuntimeControlConfig    `json:"runtime_control"`
-}
-
-type AutonomyConfig struct {
-	Enabled                      bool     `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ENABLED"`
-	TickIntervalSec              int      `json:"tick_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TICK_INTERVAL_SEC"`
-	MinRunIntervalSec            int      `json:"min_run_interval_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
-	MaxPendingDurationSec        int      `json:"max_pending_duration_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_PENDING_DURATION_SEC"`
-	MaxConsecutiveStalls         int      `json:"max_consecutive_stalls" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_CONSECUTIVE_STALLS"`
-	MaxDispatchPerTick           int      `json:"max_dispatch_per_tick" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_DISPATCH_PER_TICK"`
-	NotifyCooldownSec            int      `json:"notify_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_COOLDOWN_SEC"`
-	NotifySameReasonCooldownSec  int      `json:"notify_same_reason_cooldown_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_NOTIFY_SAME_REASON_COOLDOWN_SEC"`
-	QuietHours                   string   `json:"quiet_hours" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_QUIET_HOURS"`
-	UserIdleResumeSec            int      `json:"user_idle_resume_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_USER_IDLE_RESUME_SEC"`
-	MaxRoundsWithoutUser         int      `json:"max_rounds_without_user" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
-	TaskHistoryRetentionDays     int      `json:"task_history_retention_days" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_TASK_HISTORY_RETENTION_DAYS"`
-	WaitingResumeDebounceSec     int      `json:"waiting_resume_debounce_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_WAITING_RESUME_DEBOUNCE_SEC"`
-	IdleRoundBudgetReleaseSec    int      `json:"idle_round_budget_release_sec" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_IDLE_ROUND_BUDGET_RELEASE_SEC"`
-	AllowedTaskKeywords          []string `json:"allowed_task_keywords" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_ALLOWED_TASK_KEYWORDS"`
-	EKGConsecutiveErrorThreshold int      `json:"ekg_consecutive_error_threshold" env:"CLAWGO_AGENTS_DEFAULTS_AUTONOMY_EKG_CONSECUTIVE_ERROR_THRESHOLD"`
-	// Deprecated: kept for backward compatibility with existing config files.
-	NotifyChannel string `json:"notify_channel,omitempty"`
-	// Deprecated: kept for backward compatibility with existing config files.
-	NotifyChatID string `json:"notify_chat_id,omitempty"`
 }
 
 type HeartbeatConfig struct {
@@ -75,12 +51,6 @@ type HeartbeatConfig struct {
 
 type RuntimeControlConfig struct {
 	IntentMaxInputChars           int                       `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
-	AutonomyTickIntervalSec       int                       `json:"autonomy_tick_interval_sec" env:"CLAWGO_AUTONOMY_TICK_INTERVAL_SEC"`
-	AutonomyMinRunIntervalSec     int                       `json:"autonomy_min_run_interval_sec" env:"CLAWGO_AUTONOMY_MIN_RUN_INTERVAL_SEC"`
-	AutonomyIdleThresholdSec      int                       `json:"autonomy_idle_threshold_sec" env:"CLAWGO_AUTONOMY_IDLE_THRESHOLD_SEC"`
-	AutonomyMaxRoundsWithoutUser  int                       `json:"autonomy_max_rounds_without_user" env:"CLAWGO_AUTONOMY_MAX_ROUNDS_WITHOUT_USER"`
-	AutonomyMaxPendingDurationSec int                       `json:"autonomy_max_pending_duration_sec" env:"CLAWGO_AUTONOMY_MAX_PENDING_DURATION_SEC"`
-	AutonomyMaxConsecutiveStalls  int                       `json:"autonomy_max_consecutive_stalls" env:"CLAWGO_AUTONOMY_MAX_STALLS"`
 	AutoLearnMaxRoundsWithoutUser int                       `json:"autolearn_max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
 	RunStateTTLSeconds            int                       `json:"run_state_ttl_seconds" env:"CLAWGO_RUN_STATE_TTL_SECONDS"`
 	RunStateMax                   int                       `json:"run_state_max" env:"CLAWGO_RUN_STATE_MAX"`
@@ -356,24 +326,6 @@ func DefaultConfig() *Config {
 					AckMaxChars:    64,
 					PromptTemplate: "",
 				},
-				Autonomy: AutonomyConfig{
-					Enabled:                      false,
-					TickIntervalSec:              30,
-					MinRunIntervalSec:            20,
-					MaxPendingDurationSec:        180,
-					MaxConsecutiveStalls:         3,
-					MaxDispatchPerTick:           2,
-					NotifyCooldownSec:            300,
-					NotifySameReasonCooldownSec:  900,
-					QuietHours:                   "23:00-08:00",
-					UserIdleResumeSec:            20,
-					MaxRoundsWithoutUser:         12,
-					TaskHistoryRetentionDays:     3,
-					WaitingResumeDebounceSec:     5,
-					IdleRoundBudgetReleaseSec:    1800,
-					AllowedTaskKeywords:          []string{},
-					EKGConsecutiveErrorThreshold: 3,
-				},
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,
 					Mode:               "summary",
@@ -384,12 +336,6 @@ func DefaultConfig() *Config {
 				},
 				RuntimeControl: RuntimeControlConfig{
 					IntentMaxInputChars:           1200,
-					AutonomyTickIntervalSec:       20,
-					AutonomyMinRunIntervalSec:     20,
-					AutonomyIdleThresholdSec:      20,
-					AutonomyMaxRoundsWithoutUser:  120,
-					AutonomyMaxPendingDurationSec: 180,
-					AutonomyMaxConsecutiveStalls:  3,
 					AutoLearnMaxRoundsWithoutUser: 200,
 					RunStateTTLSeconds:            1800,
 					RunStateMax:                   500,

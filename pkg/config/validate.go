@@ -21,24 +21,6 @@ func Validate(cfg *Config) []error {
 	if rc.IntentMaxInputChars < 200 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_max_input_chars must be >= 200"))
 	}
-	if rc.AutonomyTickIntervalSec < 5 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_tick_interval_sec must be >= 5"))
-	}
-	if rc.AutonomyMinRunIntervalSec < 5 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_min_run_interval_sec must be >= 5"))
-	}
-	if rc.AutonomyIdleThresholdSec < 5 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_idle_threshold_sec must be >= 5"))
-	}
-	if rc.AutonomyMaxRoundsWithoutUser < 0 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_rounds_without_user must be >= 0"))
-	}
-	if rc.AutonomyMaxPendingDurationSec < 10 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_pending_duration_sec must be >= 10"))
-	}
-	if rc.AutonomyMaxConsecutiveStalls <= 0 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autonomy_max_consecutive_stalls must be > 0"))
-	}
 	if rc.AutoLearnMaxRoundsWithoutUser <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autolearn_max_rounds_without_user must be > 0"))
 	}
@@ -80,51 +62,6 @@ func Validate(cfg *Config) []error {
 		}
 		if hb.AckMaxChars <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.heartbeat.ack_max_chars must be > 0 when enabled=true"))
-		}
-	}
-	aut := cfg.Agents.Defaults.Autonomy
-	if aut.Enabled {
-		if aut.TickIntervalSec <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.tick_interval_sec must be > 0 when enabled=true"))
-		}
-		if aut.MinRunIntervalSec <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.min_run_interval_sec must be > 0 when enabled=true"))
-		}
-		if aut.MaxPendingDurationSec <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_pending_duration_sec must be > 0 when enabled=true"))
-		}
-		if aut.MaxConsecutiveStalls <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_consecutive_stalls must be > 0 when enabled=true"))
-		}
-		if aut.MaxDispatchPerTick < 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.max_dispatch_per_tick must be >= 0 when enabled=true"))
-		}
-		if aut.NotifyCooldownSec <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.notify_cooldown_sec must be > 0 when enabled=true"))
-		}
-		if aut.NotifySameReasonCooldownSec <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.notify_same_reason_cooldown_sec must be > 0 when enabled=true"))
-		}
-		if qh := strings.TrimSpace(aut.QuietHours); qh != "" {
-			parts := strings.Split(qh, "-")
-			if len(parts) != 2 {
-				errs = append(errs, fmt.Errorf("agents.defaults.autonomy.quiet_hours must be HH:MM-HH:MM"))
-			}
-		}
-		if aut.UserIdleResumeSec <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.user_idle_resume_sec must be > 0 when enabled=true"))
-		}
-		if aut.WaitingResumeDebounceSec <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.waiting_resume_debounce_sec must be > 0 when enabled=true"))
-		}
-		if aut.IdleRoundBudgetReleaseSec < 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.idle_round_budget_release_sec must be >= 0 when enabled=true"))
-		}
-		if aut.TaskHistoryRetentionDays <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.task_history_retention_days must be > 0 when enabled=true"))
-		}
-		if aut.EKGConsecutiveErrorThreshold <= 0 {
-			errs = append(errs, fmt.Errorf("agents.defaults.autonomy.ekg_consecutive_error_threshold must be > 0 when enabled=true"))
 		}
 	}
 	if cfg.Agents.Defaults.ContextCompaction.Enabled {

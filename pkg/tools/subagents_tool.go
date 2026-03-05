@@ -62,8 +62,8 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		sb.WriteString("Subagents:\n")
 		sort.Slice(tasks, func(i, j int) bool { return tasks[i].Created > tasks[j].Created })
 		for i, task := range tasks {
-			sb.WriteString(fmt.Sprintf("- #%d %s [%s] label=%s agent=%s role=%s session=%s allowlist=%d\n",
-				i+1, task.ID, task.Status, task.Label, task.AgentID, task.Role, task.SessionKey, len(task.ToolAllowlist)))
+			sb.WriteString(fmt.Sprintf("- #%d %s [%s] label=%s agent=%s role=%s session=%s allowlist=%d retry=%d timeout=%ds\n",
+				i+1, task.ID, task.Status, task.Label, task.AgentID, task.Role, task.SessionKey, len(task.ToolAllowlist), task.MaxRetries, task.TimeoutSec))
 		}
 		return strings.TrimSpace(sb.String()), nil
 	case "info":
@@ -76,8 +76,8 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 			var sb strings.Builder
 			sb.WriteString("Subagents Summary:\n")
 			for i, task := range tasks {
-				sb.WriteString(fmt.Sprintf("- #%d %s [%s] label=%s agent=%s role=%s steering=%d allowlist=%d\n",
-					i+1, task.ID, task.Status, task.Label, task.AgentID, task.Role, len(task.Steering), len(task.ToolAllowlist)))
+				sb.WriteString(fmt.Sprintf("- #%d %s [%s] label=%s agent=%s role=%s steering=%d allowlist=%d retry=%d timeout=%ds\n",
+					i+1, task.ID, task.Status, task.Label, task.AgentID, task.Role, len(task.Steering), len(task.ToolAllowlist), task.MaxRetries, task.TimeoutSec))
 			}
 			return strings.TrimSpace(sb.String()), nil
 		}
@@ -89,9 +89,10 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		if !ok {
 			return "subagent not found", nil
 		}
-		return fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nAgent ID: %s\nRole: %s\nSession Key: %s\nMemory Namespace: %s\nTool Allowlist: %v\nCreated: %d\nUpdated: %d\nSteering Count: %d\nTask: %s\nResult:\n%s",
+		return fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nAgent ID: %s\nRole: %s\nSession Key: %s\nMemory Namespace: %s\nTool Allowlist: %v\nMax Retries: %d\nRetry Count: %d\nRetry Backoff(ms): %d\nTimeout(s): %d\nMax Task Chars: %d\nMax Result Chars: %d\nCreated: %d\nUpdated: %d\nSteering Count: %d\nTask: %s\nResult:\n%s",
 			task.ID, task.Status, task.Label, task.AgentID, task.Role, task.SessionKey, task.MemoryNS,
-			task.ToolAllowlist, task.Created, task.Updated, len(task.Steering), task.Task, task.Result), nil
+			task.ToolAllowlist, task.MaxRetries, task.RetryCount, task.RetryBackoff, task.TimeoutSec, task.MaxTaskChars, task.MaxResultChars,
+			task.Created, task.Updated, len(task.Steering), task.Task, task.Result), nil
 	case "kill":
 		if strings.EqualFold(strings.TrimSpace(id), "all") {
 			tasks := t.filterRecent(t.manager.ListTasks(), recentMinutes)
@@ -138,7 +139,8 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("Subagent %s Log\n", task.ID))
 		sb.WriteString(fmt.Sprintf("Status: %s\n", task.Status))
-		sb.WriteString(fmt.Sprintf("Agent ID: %s\nRole: %s\nSession Key: %s\nTool Allowlist: %v\n", task.AgentID, task.Role, task.SessionKey, task.ToolAllowlist))
+		sb.WriteString(fmt.Sprintf("Agent ID: %s\nRole: %s\nSession Key: %s\nTool Allowlist: %v\nMax Retries: %d\nRetry Count: %d\nRetry Backoff(ms): %d\nTimeout(s): %d\n",
+			task.AgentID, task.Role, task.SessionKey, task.ToolAllowlist, task.MaxRetries, task.RetryCount, task.RetryBackoff, task.TimeoutSec))
 		if len(task.Steering) > 0 {
 			sb.WriteString("Steering Messages:\n")
 			for _, m := range task.Steering {

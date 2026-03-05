@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
-import { useUI } from '../context/UIContext';
-import { formatLocalDateTime, localDateInputValue } from '../utils/time';
+import { formatLocalDateTime } from '../utils/time';
 
 type TaskAuditItem = {
   task_id?: string;
@@ -31,16 +30,12 @@ type TaskAuditItem = {
 
 const TaskAudit: React.FC = () => {
   const { t } = useTranslation();
-  const ui = useUI();
   const { q } = useAppContext();
   const [items, setItems] = useState<TaskAuditItem[]>([]);
   const [selected, setSelected] = useState<TaskAuditItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dailyReport, setDailyReport] = useState<string>('');
-  const [reportDate, setReportDate] = useState<string>(localDateInputValue());
-  const [showDailyReport, setShowDailyReport] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -53,14 +48,6 @@ const TaskAudit: React.FC = () => {
       const sorted = arr.sort((a: any, b: any) => String(b.time || '').localeCompare(String(a.time || '')));
       setItems(sorted);
       if (sorted.length > 0) setSelected(sorted[0]);
-      const rq = q ? `${q}&date=${encodeURIComponent(reportDate)}` : `?date=${encodeURIComponent(reportDate)}`;
-      const dr = await fetch(`/webui/api/task_daily_summary${rq}`);
-      if (dr.ok) {
-        const dj = await dr.json();
-        setDailyReport(String(dj.report || ''));
-      } else {
-        setDailyReport('');
-      }
     } catch (e) {
       console.error(e);
       setItems([]);
@@ -70,66 +57,14 @@ const TaskAudit: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchData(); }, [q, reportDate]);
-
-
-
-
-  const exportDailyReport = () => {
-    const content = dailyReport || '';
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `autonomy-daily-${reportDate}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  useEffect(() => { fetchData(); }, [q]);
   const filteredItems = useMemo(() => items.filter((it) => {
     if (sourceFilter !== 'all' && String(it.source || '-') !== sourceFilter) return false;
     if (statusFilter !== 'all' && String(it.status || '-') !== statusFilter) return false;
     return true;
   }), [items, sourceFilter, statusFilter]);
 
-  const taskAction = async (action: 'pause'|'retry'|'complete'|'ignore') => {
-    if (!selected?.task_id) return;
-    if (action === 'pause') {
-      const ok = await ui.confirmDialog({
-        title: t('taskPauseConfirmTitle'),
-        message: t('taskPauseConfirmMessage', { id: selected.task_id }),
-        confirmText: t('pauseTask'),
-      });
-      if (!ok) return;
-    }
-    if (action === 'complete') {
-      const ok = await ui.confirmDialog({
-        title: t('taskCompleteConfirmTitle'),
-        message: t('taskCompleteConfirmMessage', { id: selected.task_id }),
-        confirmText: t('completeTask'),
-      });
-      if (!ok) return;
-    }
-    if (action === 'ignore') {
-      const ok = await ui.confirmDialog({
-        title: t('taskIgnoreConfirmTitle'),
-        message: t('taskIgnoreConfirmMessage', { id: selected.task_id }),
-        danger: true,
-        confirmText: t('ignoreTask'),
-      });
-      if (!ok) return;
-    }
-    try {
-      const url = `/webui/api/task_audit${q}`;
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, task_id: selected.task_id }) });
-      if (!r.ok) throw new Error(await r.text());
-      await fetchData();
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   const selectedPretty = useMemo(() => selected ? JSON.stringify(selected, null, 2) : '', [selected]);
-  const selectedReadonly = selected?.source === 'command_watchdog';
 
   return (
     <div className="h-full p-4 md:p-6 flex flex-col gap-4">
@@ -138,7 +73,6 @@ const TaskAudit: React.FC = () => {
         <div className="flex items-center gap-2">
           <select value={sourceFilter} onChange={(e)=>setSourceFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
             <option value="all">{t('allSources')}</option>
-            <option value="autonomy">{t('sourceAutonomy')}</option>
             <option value="direct">{t('sourceDirect')}</option>
             <option value="memory_todo">{t('sourceMemoryTodo')}</option>
             <option value="command_watchdog">command_watchdog</option>
@@ -155,20 +89,6 @@ const TaskAudit: React.FC = () => {
           </select>
           <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
         </div>
-      </div>
-
-      <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-3 text-sm">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('dailySummary')}</div>
-          <div className="flex items-center gap-2">
-            <input type="date" value={reportDate} onChange={(e)=>setReportDate(e.target.value)} className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs" />
-            <button onClick={() => setShowDailyReport(v => !v)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-xs">{showDailyReport ? t('hide') : t('show')}</button>
-            <button onClick={exportDailyReport} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-xs">{t('export')}</button>
-          </div>
-        </div>
-        {showDailyReport && (
-          <div className="mt-2 max-h-56 overflow-y-auto whitespace-pre-wrap text-zinc-200 border border-zinc-800 rounded-lg bg-zinc-950/30 p-2">{dailyReport || t('noDailySummary')}</div>
-        )}
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
@@ -197,18 +117,7 @@ const TaskAudit: React.FC = () => {
         <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('taskDetail')}</div>
           <div className="p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
-            {selected && !selectedReadonly && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={()=>taskAction('pause')} className="px-2 py-1 text-xs rounded bg-amber-700/70 hover:bg-amber-600">{t('pauseTask')}</button>
-                <button onClick={()=>taskAction('retry')} className="px-2 py-1 text-xs rounded bg-indigo-700/70 hover:bg-indigo-600">{t('retryTask')}</button>
-                <button onClick={()=>taskAction('complete')} className="px-2 py-1 text-xs rounded bg-emerald-700/70 hover:bg-emerald-600">{t('completeTask')}</button>
-                <button onClick={()=>taskAction('ignore')} className="px-2 py-1 text-xs rounded bg-zinc-700 hover:bg-zinc-600">{t('ignoreTask')}</button>
-              </div>
-            )}
-            {selectedReadonly && (
-              <div className="text-xs text-zinc-400">{t('source')}: command_watchdog（readonly）</div>
-            )}
-                        {!selected ? (
+            {!selected ? (
               <div className="text-zinc-500">{t('selectTask')}</div>
             ) : (
               <>

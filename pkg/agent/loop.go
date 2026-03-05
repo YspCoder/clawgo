@@ -59,6 +59,8 @@ type AgentLoop struct {
 	sessionProvider      map[string]string
 	streamMu             sync.Mutex
 	sessionStreamed      map[string]bool
+	subagentManager      *tools.SubagentManager
+	orchestrator         *tools.Orchestrator
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -236,6 +238,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		sessionStreamed:      map[string]bool{},
 		providerResponses:    map[string]config.ProviderResponsesConfig{},
 		telegramStreaming:    cfg.Channels.Telegram.Streaming,
+		subagentManager:      subagentManager,
+		orchestrator:         orchestrator,
 	}
 	// Initialize provider fallback chain (primary + proxy_fallbacks).
 	loop.providerPool = map[string]providers.LLMProvider{}
@@ -479,14 +483,6 @@ func buildAuditTaskID(msg bus.InboundMessage) string {
 			sessionPart = "default"
 		}
 		return "heartbeat:" + sessionPart
-	case "autonomy":
-		norm := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(msg.Content, "\n", " ")))
-		if len(norm) > 180 {
-			norm = norm[:180]
-		}
-		h := fnv.New32a()
-		_, _ = h.Write([]byte(msg.SessionKey + "|" + norm))
-		return fmt.Sprintf("autonomy:%08x", h.Sum32())
 	default:
 		return fmt.Sprintf("%s-%d", sessionPart, time.Now().Unix()%100000)
 	}
@@ -524,7 +520,7 @@ func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage,
 		"sender_id":     msg.SenderID,
 		"status":        status,
 		"source":        source,
-		"idle_run":      source == "autonomy",
+		"idle_run":      false,
 		"duration_ms":   durationMs,
 		"suppressed":    suppressed,
 		"retry_count":   0,
@@ -1719,11 +1715,12 @@ func validateParallelAllowlistArgs(allow map[string]struct{}, args map[string]in
 }
 
 func normalizeToolAllowlist(in []string) map[string]struct{} {
-	if len(in) == 0 {
+	expanded := tools.ExpandToolAllowlistEntries(in)
+	if len(expanded) == 0 {
 		return nil
 	}
-	out := make(map[string]struct{}, len(in))
-	for _, item := range in {
+	out := make(map[string]struct{}, len(expanded))
+	for _, item := range expanded {
 		name := strings.ToLower(strings.TrimSpace(item))
 		if name == "" {
 			continue

@@ -1,8 +1,8 @@
 # HEARTBEAT.md
 
 ## Required checks
-- Review `memory/tasks.json` and pending TODOs.
-- If user was active recently, pause autonomy work.
+- Review pending TODOs and recent task audit records.
+- If user was active recently, pause background maintenance work.
 
 ## Output rule
 - If nothing important changed: reply `HEARTBEAT_OK`.
