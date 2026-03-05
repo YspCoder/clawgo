@@ -11,11 +11,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,41 +34,31 @@ import (
 )
 
 type AgentLoop struct {
-	bus                   *bus.MessageBus
-	provider              providers.LLMProvider
-	workspace             string
-	model                 string
-	maxIterations         int
-	sessions              *session.SessionManager
-	contextBuilder        *ContextBuilder
-	tools                 *tools.ToolRegistry
-	compactionEnabled     bool
-	compactionTrigger     int
-	compactionKeepRecent  int
-	heartbeatAckMaxChars  int
-	memoryRecallKeywords  []string
-	noResponseFallback    string
-	thinkOnlyFallback     string
-	langUsage             string
-	langInvalid           string
-	langUpdatedTemplate   string
-	runtimeCompactionNote string
-	startupCompactionNote string
-	systemRewriteTemplate string
-	audit                 *triggerAudit
-	running               bool
-	intentMu              sync.RWMutex
-	intentHints           map[string]string
-	sessionScheduler      *SessionScheduler
-	providerNames         []string
-	providerPool          map[string]providers.LLMProvider
-	providerResponses     map[string]config.ProviderResponsesConfig
-	telegramStreaming     bool
-	ekg                   *ekg.Engine
-	providerMu            sync.RWMutex
-	sessionProvider       map[string]string
-	streamMu              sync.Mutex
-	sessionStreamed       map[string]bool
+	bus                  *bus.MessageBus
+	provider             providers.LLMProvider
+	workspace            string
+	model                string
+	maxIterations        int
+	sessions             *session.SessionManager
+	contextBuilder       *ContextBuilder
+	tools                *tools.ToolRegistry
+	compactionEnabled    bool
+	compactionTrigger    int
+	compactionKeepRecent int
+	heartbeatAckMaxChars int
+	heartbeatAckToken    string
+	audit                *triggerAudit
+	running              bool
+	sessionScheduler     *SessionScheduler
+	providerNames        []string
+	providerPool         map[string]providers.LLMProvider
+	providerResponses    map[string]config.ProviderResponsesConfig
+	telegramStreaming    bool
+	ekg                  *ekg.Engine
+	providerMu           sync.RWMutex
+	sessionProvider      map[string]string
+	streamMu             sync.Mutex
+	sessionStreamed      map[string]bool
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -181,7 +171,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus, orchestrator)
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
-	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager, cfg.Agents.Defaults.Texts.SubagentsNone, cfg.Agents.Defaults.Texts.UnsupportedAction))
+	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager))
 	toolsRegistry.Register(tools.NewSessionsTool(
 		func(limit int) []tools.SessionInfo {
 			sessions := alSessionListForTool(sessionsManager, limit)
@@ -194,8 +184,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 			}
 			return h
 		},
-		cfg.Agents.Defaults.Texts.SessionsNone,
-		cfg.Agents.Defaults.Texts.UnsupportedAction,
 	))
 
 	// Register edit file tool
@@ -220,36 +208,27 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewSystemInfoTool())
 
 	loop := &AgentLoop{
-		bus:                   msgBus,
-		provider:              provider,
-		workspace:             workspace,
-		model:                 provider.GetDefaultModel(),
-		maxIterations:         cfg.Agents.Defaults.MaxToolIterations,
-		sessions:              sessionsManager,
-		contextBuilder:        NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
-		tools:                 toolsRegistry,
-		compactionEnabled:     cfg.Agents.Defaults.ContextCompaction.Enabled,
-		compactionTrigger:     cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
-		compactionKeepRecent:  cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
-		heartbeatAckMaxChars:  cfg.Agents.Defaults.Heartbeat.AckMaxChars,
-		memoryRecallKeywords:  cfg.Agents.Defaults.Texts.MemoryRecallKeywords,
-		noResponseFallback:    cfg.Agents.Defaults.Texts.NoResponseFallback,
-		thinkOnlyFallback:     cfg.Agents.Defaults.Texts.ThinkOnlyFallback,
-		langUsage:             cfg.Agents.Defaults.Texts.LangUsage,
-		langInvalid:           cfg.Agents.Defaults.Texts.LangInvalid,
-		langUpdatedTemplate:   cfg.Agents.Defaults.Texts.LangUpdatedTemplate,
-		runtimeCompactionNote: cfg.Agents.Defaults.Texts.RuntimeCompactionNote,
-		startupCompactionNote: cfg.Agents.Defaults.Texts.StartupCompactionNote,
-		systemRewriteTemplate: cfg.Agents.Defaults.Texts.SystemRewriteTemplate,
-		audit:                 newTriggerAudit(workspace),
-		running:               false,
-		intentHints:           map[string]string{},
-		sessionScheduler:      NewSessionScheduler(0),
-		ekg:                   ekg.New(workspace),
-		sessionProvider:       map[string]string{},
-		sessionStreamed:       map[string]bool{},
-		providerResponses:     map[string]config.ProviderResponsesConfig{},
-		telegramStreaming:     cfg.Channels.Telegram.Streaming,
+		bus:                  msgBus,
+		provider:             provider,
+		workspace:            workspace,
+		model:                provider.GetDefaultModel(),
+		maxIterations:        cfg.Agents.Defaults.MaxToolIterations,
+		sessions:             sessionsManager,
+		contextBuilder:       NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
+		tools:                toolsRegistry,
+		compactionEnabled:    cfg.Agents.Defaults.ContextCompaction.Enabled,
+		compactionTrigger:    cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
+		compactionKeepRecent: cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
+		heartbeatAckMaxChars: cfg.Agents.Defaults.Heartbeat.AckMaxChars,
+		heartbeatAckToken:    loadHeartbeatAckToken(workspace),
+		audit:                newTriggerAudit(workspace),
+		running:              false,
+		sessionScheduler:     NewSessionScheduler(0),
+		ekg:                  ekg.New(workspace),
+		sessionProvider:      map[string]string{},
+		sessionStreamed:      map[string]bool{},
+		providerResponses:    map[string]config.ProviderResponsesConfig{},
+		telegramStreaming:    cfg.Channels.Telegram.Streaming,
 	}
 	// Initialize provider fallback chain (primary + proxy_fallbacks).
 	loop.providerPool = map[string]providers.LLMProvider{}
@@ -560,22 +539,27 @@ func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage,
 }
 
 func sessionShardCount() int {
-	if v := strings.TrimSpace(os.Getenv("CLAWGO_SESSION_SHARDS")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			if n > 64 {
-				return 64
-			}
-			return n
-		}
+	// Keep ~20% CPU headroom for system/background work, then use a
+	// sub-linear curve to avoid oversharding on high-core machines.
+	n := runtime.GOMAXPROCS(0)
+	if n <= 0 {
+		n = runtime.NumCPU()
 	}
-	n := runtime.NumCPU()
-	if n < 2 {
-		n = 2
+	if n <= 0 {
+		return 2
 	}
-	if n > 16 {
-		n = 16
+	budget := int(math.Floor(float64(n) * 0.8))
+	if budget < 1 {
+		budget = 1
 	}
-	return n
+	shards := int(math.Round(math.Sqrt(float64(budget)) * 2.2))
+	if shards < 2 {
+		shards = 2
+	}
+	if shards > 12 {
+		shards = 12
+	}
+	return shards
 }
 
 func sessionShardIndex(sessionKey string, shardCount int) int {
@@ -617,7 +601,11 @@ func (al *AgentLoop) shouldSuppressOutbound(msg bus.InboundMessage, response str
 	}
 
 	r := strings.TrimSpace(response)
-	if !strings.HasPrefix(r, "HEARTBEAT_OK") {
+	ackToken := strings.TrimSpace(al.heartbeatAckToken)
+	if ackToken == "" {
+		return false
+	}
+	if !strings.HasPrefix(r, ackToken) {
 		return false
 	}
 
@@ -626,6 +614,43 @@ func (al *AgentLoop) shouldSuppressOutbound(msg bus.InboundMessage, response str
 		maxChars = 64
 	}
 	return len(r) <= maxChars
+}
+
+func loadHeartbeatAckToken(workspace string) string {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return ""
+	}
+	parse := func(text string) string {
+		for _, line := range strings.Split(text, "\n") {
+			t := strings.TrimSpace(line)
+			if t == "" {
+				continue
+			}
+			raw := strings.TrimLeft(t, "-*# ")
+			lower := strings.ToLower(raw)
+			if !strings.HasPrefix(lower, "heartbeat_ack_token:") {
+				continue
+			}
+			v := strings.TrimSpace(raw[len("heartbeat_ack_token:"):])
+			v = strings.Trim(v, "`\"' ")
+			if v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	if b, err := os.ReadFile(filepath.Join(workspace, "AGENTS.md")); err == nil {
+		if token := parse(string(b)); token != "" {
+			return token
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(workspace, "HEARTBEAT.md")); err == nil {
+		if token := parse(string(b)); token != "" {
+			return token
+		}
+	}
+	return ""
 }
 
 func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (bus.OutboundMessage, bool) {
@@ -700,64 +725,18 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
-	// Explicit language command: /lang <code>
-	if strings.HasPrefix(msg.Content, "/lang") {
-		parts := strings.Fields(msg.Content)
-		if len(parts) < 2 {
-			preferred, last := al.sessions.GetLanguagePreferences(msg.SessionKey)
-			if preferred == "" {
-				preferred = "(auto)"
-			}
-			if last == "" {
-				last = "(none)"
-			}
-			usage := strings.TrimSpace(al.langUsage)
-			if usage == "" {
-				usage = "Usage: /lang <code>"
-			}
-			return fmt.Sprintf("%s\nCurrent preferred: %s\nLast detected: %s", usage, preferred, last), nil
-		}
-		lang := normalizeLang(parts[1])
-		if lang == "" {
-			invalid := strings.TrimSpace(al.langInvalid)
-			if invalid == "" {
-				invalid = "Invalid language code."
-			}
-			return invalid, nil
-		}
-		al.sessions.SetPreferredLanguage(msg.SessionKey, lang)
-		al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey))
-		tpl := strings.TrimSpace(al.langUpdatedTemplate)
-		if tpl == "" {
-			tpl = "Language preference updated to %s"
-		}
-		return fmt.Sprintf(tpl, lang), nil
-	}
-
 	history := al.sessions.GetHistory(msg.SessionKey)
 	summary := al.sessions.GetSummary(msg.SessionKey)
-	memoryRecallUsed := false
-	memoryRecallText := ""
-	if shouldRecallMemory(msg.Content, al.memoryRecallKeywords) {
-		if recall, err := al.tools.Execute(ctx, "memory_search", map[string]interface{}{"query": msg.Content, "maxResults": 3}); err == nil && strings.TrimSpace(recall) != "" {
-			memoryRecallUsed = true
-			memoryRecallText = strings.TrimSpace(recall)
-			summary = strings.TrimSpace(summary + "\n\n[Memory Recall]\n" + memoryRecallText)
-		}
-	}
 	if explicitPref := ExtractLanguagePreference(msg.Content); explicitPref != "" {
 		al.sessions.SetPreferredLanguage(msg.SessionKey, explicitPref)
 	}
 	preferredLang, lastLang := al.sessions.GetLanguagePreferences(msg.SessionKey)
 	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
 
-	al.updateIntentHint(msg.SessionKey, msg.Content)
-	effectiveUserContent := al.applyIntentHint(msg.SessionKey, msg.Content)
-
 	messages := al.contextBuilder.BuildMessages(
 		history,
 		summary,
-		effectiveUserContent,
+		msg.Content,
 		nil,
 		msg.Channel,
 		msg.ChatID,
@@ -771,15 +750,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	maxAllowed := al.maxIterations
 	if maxAllowed < 1 {
 		maxAllowed = 1
-	}
-	// CLAWGO_MAX_TOOL_ITERATIONS:
-	//   0 or unset => no fixed cap, keep extending while tool chain progresses
-	//   >0         => explicit ceiling
-	hardCap := 0
-	if v := os.Getenv("CLAWGO_MAX_TOOL_ITERATIONS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			hardCap = n
-		}
 	}
 	for iteration < maxAllowed {
 		iteration++
@@ -910,15 +880,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
 
 		hasToolActivity = true
-		if hardCap > 0 {
-			if maxAllowed < hardCap {
-				maxAllowed = hardCap
-			}
-		} else {
-			// No fixed cap: extend rolling window as long as tools keep chaining.
-			if maxAllowed < iteration+al.maxIterations {
-				maxAllowed = iteration + al.maxIterations
-			}
+		// Extend rolling window as long as tools keep chaining.
+		if maxAllowed < iteration+al.maxIterations {
+			maxAllowed = iteration + al.maxIterations
 		}
 		for _, tc := range response.ToolCalls {
 			// Log tool call with arguments preview
@@ -932,7 +896,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				})
 
 			execArgs := withToolContextArgs(tc.Name, tc.Arguments, msg.Channel, msg.ChatID)
-			result, err := al.tools.Execute(ctx, tc.Name, execArgs)
+			result, err := al.executeToolCall(ctx, tc.Name, execArgs, msg.Channel, msg.ChatID)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
 			}
@@ -956,17 +920,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			finalContent = forced.Content
 		}
 	}
-	if finalContent == "" {
-		if hasToolActivity && len(lastToolOutputs) > 0 {
-			finalContent = "我已执行完成，关键信息如下：\n- " + strings.Join(lastToolOutputs, "\n- ")
-		} else {
-			fallback := strings.TrimSpace(al.noResponseFallback)
-			if fallback == "" {
-				fallback = "在的，我刚刚这条回复丢了。请再说一次，我马上处理。"
-			}
-			finalContent = fallback
-		}
-	}
 
 	// Filter out <think>...</think> content from user-facing response
 	// Keep full content in debug logs if needed, but remove from final output
@@ -977,19 +930,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		// For now, let's assume thoughts are auxiliary and empty response is okay if tools did work.
 		// If no tools ran and only thoughts, user might be confused.
 		if iteration == 1 {
-			fallback := strings.TrimSpace(al.thinkOnlyFallback)
-			if fallback == "" {
-				fallback = "Thinking process completed."
-			}
-			userContent = fallback
+			userContent = "Thinking process completed."
 		}
 	}
 
-	if memoryRecallUsed && !strings.Contains(strings.ToLower(userContent), "source:") {
-		if src := extractFirstSourceLine(memoryRecallText); src != "" {
-			userContent = strings.TrimSpace(userContent + "\n\n" + src)
-		}
-	}
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
 
 	// Persist full assistant response (including reasoning/tool flow outcomes when present).
@@ -1075,55 +1019,6 @@ func (al *AgentLoop) appendDailySummaryLog(msg bus.InboundMessage, response stri
 	}
 }
 
-func (al *AgentLoop) updateIntentHint(sessionKey, content string) {
-	content = strings.TrimSpace(content)
-	if sessionKey == "" || content == "" {
-		return
-	}
-	lower := strings.ToLower(content)
-
-	// Cron natural-language intent: avoid searching project files for user timer ops.
-	if strings.Contains(lower, "cron") || strings.Contains(lower, "schedule") || strings.Contains(lower, "timer") || strings.Contains(lower, "reminder") {
-		hint := "Prioritize the cron tool for timer operations: list=action=list; delete=action=delete(id); enable/disable=action=enable/disable. Do not switch to grepping project files for cron text."
-		al.intentMu.Lock()
-		al.intentHints[sessionKey] = hint + " User details=" + content
-		al.intentMu.Unlock()
-		return
-	}
-
-	if !strings.Contains(lower, "commit") && !strings.Contains(lower, "push") {
-		if strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") {
-			al.intentMu.Lock()
-			if prev := strings.TrimSpace(al.intentHints[sessionKey]); prev != "" {
-				al.intentHints[sessionKey] = prev + " | " + content
-			}
-			al.intentMu.Unlock()
-		}
-		return
-	}
-	hint := "Execute as one transaction: complete commit+push in one pass with branch/scope confirmation."
-	if strings.Contains(lower, "all branches") {
-		hint += " Scope=all branches."
-	}
-	al.intentMu.Lock()
-	al.intentHints[sessionKey] = hint + " User details=" + content
-	al.intentMu.Unlock()
-}
-
-func (al *AgentLoop) applyIntentHint(sessionKey, content string) string {
-	al.intentMu.RLock()
-	hint := strings.TrimSpace(al.intentHints[sessionKey])
-	al.intentMu.RUnlock()
-	if hint == "" {
-		return content
-	}
-	lower := strings.ToLower(strings.TrimSpace(content))
-	if strings.Contains(lower, "commit") || strings.Contains(lower, "push") || strings.HasPrefix(content, "1.") || strings.HasPrefix(content, "2.") || strings.Contains(lower, "cron") || strings.Contains(lower, "schedule") || strings.Contains(lower, "timer") || strings.Contains(lower, "reminder") {
-		return "[Intent Slot]\n" + hint + "\n\n[User Message]\n" + content
-	}
-	return content
-}
-
 func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
 	// Verify this is a system message
 	if msg.Channel != "system" {
@@ -1135,8 +1030,6 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			"sender_id": msg.SenderID,
 			"chat_id":   msg.ChatID,
 		})
-
-	msg.Content = rewriteSystemMessageContent(msg.Content, al.systemRewriteTemplate)
 
 	// Parse origin from chat_id (format: "channel:chat_id")
 	var originChannel, originChatID string
@@ -1246,7 +1139,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 
 		for _, tc := range response.ToolCalls {
 			execArgs := withToolContextArgs(tc.Name, tc.Arguments, originChannel, originChatID)
-			result, err := al.tools.Execute(ctx, tc.Name, execArgs)
+			result, err := al.executeToolCall(ctx, tc.Name, execArgs, originChannel, originChatID)
 			if err != nil {
 				result = fmt.Sprintf("Error: %v", err)
 			}
@@ -1496,13 +1389,10 @@ func (al *AgentLoop) compactSessionIfNeeded(sessionKey string) {
 		return
 	}
 	removed := len(h) - keepRecent
-	tpl := strings.TrimSpace(al.runtimeCompactionNote)
-	if tpl == "" {
-		tpl = "[runtime-compaction] removed %d old messages, kept %d recent messages"
-	}
+	tpl := "[runtime-compaction] removed %d old messages, kept %d recent messages"
 	note := fmt.Sprintf(tpl, removed, keepRecent)
 	if al.sessions.CompactSession(sessionKey, keepRecent, note) {
-		al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+		_ = al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
 	}
 }
 
@@ -1538,10 +1428,7 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) Startup
 		}
 
 		removed := len(history) - keepRecent
-		tpl := strings.TrimSpace(al.startupCompactionNote)
-		if tpl == "" {
-			tpl = "[startup-compaction] removed %d old messages, kept %d recent messages"
-		}
+		tpl := "[startup-compaction] removed %d old messages, kept %d recent messages"
 		note := fmt.Sprintf(tpl, removed, keepRecent)
 		if al.sessions.CompactSession(key, keepRecent, note) {
 			al.sessions.Save(al.sessions.GetOrCreate(key))
@@ -1556,10 +1443,10 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	info := make(map[string]interface{})
 
 	// Tools info
-	tools := al.tools.List()
+	_tools := al.tools.List()
 	info["tools"] = map[string]interface{}{
-		"count": len(tools),
-		"names": tools,
+		"count": len(_tools),
+		"names": _tools,
 	}
 
 	// Skills info
@@ -1666,21 +1553,46 @@ func withToolContextArgs(toolName string, args map[string]interface{}, channel, 
 	return next
 }
 
-func shouldRecallMemory(text string, keywords []string) bool {
-	s := strings.ToLower(strings.TrimSpace(text))
-	if s == "" {
+func (al *AgentLoop) executeToolCall(ctx context.Context, toolName string, args map[string]interface{}, currentChannel, currentChatID string) (string, error) {
+	if shouldSuppressSelfMessageSend(toolName, args, currentChannel, currentChatID) {
+		return "Suppressed message tool self-send in current chat; assistant will reply via normal outbound.", nil
+	}
+	return al.tools.Execute(ctx, toolName, args)
+}
+
+func shouldSuppressSelfMessageSend(toolName string, args map[string]interface{}, currentChannel, currentChatID string) bool {
+	if strings.TrimSpace(toolName) != "message" {
 		return false
 	}
-	if len(keywords) == 0 {
-		keywords = []string{"remember", "preference", "todo", "decision", "date", "when did", "what did we"}
+	action, _ := args["action"].(string)
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action == "" {
+		action = "send"
 	}
-	for _, k := range keywords {
-		kk := strings.ToLower(strings.TrimSpace(k))
-		if kk != "" && strings.Contains(s, kk) {
-			return true
-		}
+	if action != "send" {
+		return false
 	}
-	return false
+
+	targetChannel, targetChat := resolveMessageToolTarget(args, currentChannel, currentChatID)
+	return targetChannel == strings.TrimSpace(currentChannel) && targetChat == strings.TrimSpace(currentChatID)
+}
+
+func resolveMessageToolTarget(args map[string]interface{}, fallbackChannel, fallbackChatID string) (string, string) {
+	channel, _ := args["channel"].(string)
+	channel = strings.TrimSpace(channel)
+	if channel == "" {
+		channel = strings.TrimSpace(fallbackChannel)
+	}
+
+	chatID, _ := args["chat_id"].(string)
+	if to, _ := args["to"].(string); strings.TrimSpace(to) != "" {
+		chatID = to
+	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		chatID = strings.TrimSpace(fallbackChatID)
+	}
+	return channel, chatID
 }
 
 func extractFirstSourceLine(text string) string {
@@ -1745,25 +1657,6 @@ func parseReplyTag(text string, currentMessageID string) (content string, replyT
 		return content, replyToID
 	}
 	return text, ""
-}
-
-func rewriteSystemMessageContent(content, template string) string {
-	c := strings.TrimSpace(content)
-	if !strings.HasPrefix(c, "[System Message]") {
-		return content
-	}
-	body := strings.TrimSpace(strings.TrimPrefix(c, "[System Message]"))
-	if body == "" {
-		return "Please summarize the system event in concise user-facing language."
-	}
-	tpl := strings.TrimSpace(template)
-	if tpl == "" {
-		tpl = "Rewrite the following internal system update in concise user-facing language:\n\n%s"
-	}
-	if strings.Contains(tpl, "%s") {
-		return fmt.Sprintf(tpl, body)
-	}
-	return tpl + "\n\n" + body
 }
 
 func alSessionListForTool(sm *session.SessionManager, limit int) []tools.SessionInfo {

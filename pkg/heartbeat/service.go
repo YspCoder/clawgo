@@ -77,6 +77,7 @@ func (hs *HeartbeatService) checkHeartbeat() {
 
 func (hs *HeartbeatService) buildPrompt() string {
 	notesFile := filepath.Join(hs.workspace, "HEARTBEAT.md")
+	agentsFile := filepath.Join(hs.workspace, "AGENTS.md")
 
 	var notes string
 	if data, err := os.ReadFile(notesFile); err == nil {
@@ -85,16 +86,48 @@ func (hs *HeartbeatService) buildPrompt() string {
 			notes = candidate
 		}
 	}
+	agents := ""
+	if data, err := os.ReadFile(agentsFile); err == nil {
+		agents = strings.TrimSpace(string(data))
+	}
+	ackToken := heartbeatAckTokenFromText(agents)
+	if ackToken == "" {
+		ackToken = heartbeatAckTokenFromText(notes)
+	}
 
 	now := time.Now().Format("2006-01-02 15:04")
 
 	tpl := hs.promptTemplate
 	if strings.TrimSpace(tpl) == "" {
-		tpl = "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK."
+		if strings.TrimSpace(ackToken) != "" {
+			tpl = fmt.Sprintf("Follow workspace policy in AGENTS.md first, then HEARTBEAT.md. If no action is needed, return %s.", ackToken)
+		} else {
+			tpl = "Follow workspace policy in AGENTS.md first, then HEARTBEAT.md."
+		}
 	}
-	prompt := fmt.Sprintf("%s\n\nCurrent time: %s\n\n%s\n", tpl, now, notes)
+	prompt := fmt.Sprintf("%s\n\nCurrent time: %s\n\n## AGENTS.md\n%s\n\n## HEARTBEAT.md\n%s\n", tpl, now, agents, notes)
 
 	return prompt
+}
+
+func heartbeatAckTokenFromText(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		raw := strings.TrimLeft(t, "-*# ")
+		lower := strings.ToLower(raw)
+		if !strings.HasPrefix(lower, "heartbeat_ack_token:") {
+			continue
+		}
+		v := strings.TrimSpace(raw[len("heartbeat_ack_token:"):])
+		v = strings.Trim(v, "`\"' ")
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (hs *HeartbeatService) log(message string) {

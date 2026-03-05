@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/config"
 	"clawgo/pkg/nodes"
 	"clawgo/pkg/providers"
 )
+
 func statusCmd() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -75,7 +75,6 @@ func statusCmd() {
 			cfg.Agents.Defaults.Heartbeat.EverySec,
 			cfg.Agents.Defaults.Heartbeat.AckMaxChars,
 		)
-		printTemplateStatus(cfg)
 		fmt.Printf("Cron Runtime: workers=%d sleep=%d-%ds\n",
 			cfg.Cron.MaxWorkers,
 			cfg.Cron.MinSleepSec,
@@ -167,12 +166,24 @@ func statusCmd() {
 				if n.Online {
 					online++
 				}
-				if n.Capabilities.Run { caps["run"]++ }
-				if n.Capabilities.Model { caps["model"]++ }
-				if n.Capabilities.Camera { caps["camera"]++ }
-				if n.Capabilities.Screen { caps["screen"]++ }
-				if n.Capabilities.Location { caps["location"]++ }
-				if n.Capabilities.Canvas { caps["canvas"]++ }
+				if n.Capabilities.Run {
+					caps["run"]++
+				}
+				if n.Capabilities.Model {
+					caps["model"]++
+				}
+				if n.Capabilities.Camera {
+					caps["camera"]++
+				}
+				if n.Capabilities.Screen {
+					caps["screen"]++
+				}
+				if n.Capabilities.Location {
+					caps["location"]++
+				}
+				if n.Capabilities.Canvas {
+					caps["canvas"]++
+				}
 			}
 			fmt.Printf("Nodes: total=%d online=%d\n", len(ns), online)
 			fmt.Printf("Nodes Capabilities: run=%d model=%d camera=%d screen=%d location=%d canvas=%d\n", caps["run"], caps["model"], caps["camera"], caps["screen"], caps["location"], caps["canvas"])
@@ -184,30 +195,6 @@ func statusCmd() {
 			}
 		}
 	}
-}
-
-func printTemplateStatus(cfg *config.Config) {
-	if cfg == nil {
-		return
-	}
-	defaults := config.DefaultConfig().Agents.Defaults.Texts
-	cur := cfg.Agents.Defaults.Texts
-	fmt.Println("Dialog Templates:")
-	printTemplateField("system_rewrite_template", cur.SystemRewriteTemplate, defaults.SystemRewriteTemplate)
-	printTemplateField("lang_usage", cur.LangUsage, defaults.LangUsage)
-	printTemplateField("lang_invalid", cur.LangInvalid, defaults.LangInvalid)
-	printTemplateField("runtime_compaction_note", cur.RuntimeCompactionNote, defaults.RuntimeCompactionNote)
-	printTemplateField("startup_compaction_note", cur.StartupCompactionNote, defaults.StartupCompactionNote)
-	printTemplateField("autonomy_completion_template", cur.AutonomyCompletionTemplate, defaults.AutonomyCompletionTemplate)
-	printTemplateField("autonomy_blocked_template", cur.AutonomyBlockedTemplate, defaults.AutonomyBlockedTemplate)
-}
-
-func printTemplateField(name, current, def string) {
-	state := "custom"
-	if strings.TrimSpace(current) == strings.TrimSpace(def) {
-		state = "default"
-	}
-	fmt.Printf("  %s: %s\n", name, state)
 }
 
 func summarizeAutonomyActions(statsJSON []byte) string {
@@ -272,7 +259,9 @@ func autonomyControlState(workspace string) string {
 	}
 	ctrlPath := filepath.Join(memDir, "autonomy.control.json")
 	if data, err := os.ReadFile(ctrlPath); err == nil {
-		var c struct{ Enabled bool `json:"enabled"` }
+		var c struct {
+			Enabled bool `json:"enabled"`
+		}
 		if json.Unmarshal(data, &c) == nil {
 			if c.Enabled {
 				return "enabled"

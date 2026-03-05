@@ -573,32 +573,7 @@ func summarizeDialogTemplateChanges(oldCfg, newCfg *config.Config) []string {
 	if oldCfg == nil || newCfg == nil {
 		return nil
 	}
-	type pair struct {
-		name string
-		a    string
-		b    string
-	}
-	oldT := oldCfg.Agents.Defaults.Texts
-	newT := newCfg.Agents.Defaults.Texts
-	checks := []pair{
-		{name: "system_rewrite_template", a: oldT.SystemRewriteTemplate, b: newT.SystemRewriteTemplate},
-		{name: "lang_usage", a: oldT.LangUsage, b: newT.LangUsage},
-		{name: "lang_invalid", a: oldT.LangInvalid, b: newT.LangInvalid},
-		{name: "lang_updated_template", a: oldT.LangUpdatedTemplate, b: newT.LangUpdatedTemplate},
-		{name: "runtime_compaction_note", a: oldT.RuntimeCompactionNote, b: newT.RuntimeCompactionNote},
-		{name: "startup_compaction_note", a: oldT.StartupCompactionNote, b: newT.StartupCompactionNote},
-		{name: "autonomy_completion_template", a: oldT.AutonomyCompletionTemplate, b: newT.AutonomyCompletionTemplate},
-		{name: "autonomy_blocked_template", a: oldT.AutonomyBlockedTemplate, b: newT.AutonomyBlockedTemplate},
-	}
 	out := make([]string, 0)
-	for _, c := range checks {
-		if strings.TrimSpace(c.a) != strings.TrimSpace(c.b) {
-			out = append(out, c.name)
-		}
-	}
-	if strings.Join(oldT.AutonomyImportantKeywords, "|") != strings.Join(newT.AutonomyImportantKeywords, "|") {
-		out = append(out, "autonomy_important_keywords")
-	}
 	if oldCfg.Agents.Defaults.Heartbeat.PromptTemplate != newCfg.Agents.Defaults.Heartbeat.PromptTemplate {
 		out = append(out, "heartbeat.prompt_template")
 	}
@@ -991,9 +966,6 @@ func buildAutonomyEngine(cfg *config.Config, msgBus *bus.MessageBus) *autonomy.E
 		WaitingResumeDebounceSec:     a.WaitingResumeDebounceSec,
 		IdleRoundBudgetReleaseSec:    idleRoundBudgetReleaseSec,
 		AllowedTaskKeywords:          a.AllowedTaskKeywords,
-		ImportantKeywords:            cfg.Agents.Defaults.Texts.AutonomyImportantKeywords,
-		CompletionTemplate:           cfg.Agents.Defaults.Texts.AutonomyCompletionTemplate,
-		BlockedTemplate:              cfg.Agents.Defaults.Texts.AutonomyBlockedTemplate,
 		EKGConsecutiveErrorThreshold: a.EKGConsecutiveErrorThreshold,
 		Workspace:                    cfg.WorkspacePath(),
 		DefaultNotifyChannel:         notifyChannel,

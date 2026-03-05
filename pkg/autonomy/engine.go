@@ -41,9 +41,6 @@ type Options struct {
 	MaxRoundsWithoutUser         int
 	TaskHistoryRetentionDays     int
 	AllowedTaskKeywords          []string
-	ImportantKeywords            []string
-	CompletionTemplate           string
-	BlockedTemplate              string
 	EKGConsecutiveErrorThreshold int
 }
 
@@ -584,7 +581,7 @@ func (e *Engine) scanTodos() []todoItem {
 }
 
 func (e *Engine) dispatchTask(st *taskState) {
-	content := fmt.Sprintf("Autonomy task (Plan -> Act -> Reflect):\n- Goal: %s\n- Requirements: concise progress update\n- If blocked, explain blocker and next retry hint", st.Content)
+	content := fmt.Sprintf("Autonomy task:\n%s", st.Content)
 	e.bus.PublishInbound(bus.InboundMessage{
 		Channel:    "system",
 		SenderID:   "autonomy",
@@ -605,10 +602,7 @@ func (e *Engine) sendCompletionNotification(st *taskState) {
 	if !e.shouldNotify("done:"+st.ID, "") {
 		return
 	}
-	tpl := strings.TrimSpace(e.opts.CompletionTemplate)
-	if tpl == "" {
-		tpl = "✅ Completed: %s\nNext step: reply \"continue %s\" if you want me to proceed."
-	}
+	tpl := "✅ Completed: %s\nNext step: reply \"continue %s\" if you want me to proceed."
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
 		ChatID:  e.opts.DefaultNotifyChatID,
@@ -791,10 +785,7 @@ func (e *Engine) sendFailureNotification(st *taskState, reason string) {
 	if !e.shouldNotify("blocked:"+st.ID, reason) {
 		return
 	}
-	tpl := strings.TrimSpace(e.opts.BlockedTemplate)
-	if tpl == "" {
-		tpl = "⚠️ Task blocked: %s\nReason: %s\nSuggestion: reply \"continue %s\" and I will retry from current state."
-	}
+	tpl := "⚠️ Task blocked: %s\nReason: %s\nSuggestion: reply \"continue %s\" and I will retry from current state."
 	e.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: e.opts.DefaultNotifyChannel,
 		ChatID:  e.opts.DefaultNotifyChatID,
@@ -1479,39 +1470,15 @@ func blockedRetryBackoff(stalls int, minRunIntervalSec int) time.Duration {
 		stalls = 1
 	}
 	base := time.Duration(minRunIntervalSec) * time.Second
-	factor := 1 << min(stalls, 5)
+	factor := 1 << _min(stalls, 5)
 	return time.Duration(factor) * base
 }
 
-func min(a, b int) int {
+func _min(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
-}
-
-func (e *Engine) isHighValueCompletion(st *taskState) bool {
-	if st == nil {
-		return false
-	}
-	if priorityWeight(st.Priority) >= 3 {
-		return true
-	}
-	if strings.TrimSpace(st.DueAt) != "" {
-		return true
-	}
-	s := strings.ToLower(st.Content)
-	keywords := e.opts.ImportantKeywords
-	if len(keywords) == 0 {
-		keywords = []string{"urgent", "payment", "release", "deadline", "p0", "asap"}
-	}
-	for _, k := range keywords {
-		kk := strings.ToLower(strings.TrimSpace(k))
-		if kk != "" && strings.Contains(s, kk) {
-			return true
-		}
-	}
-	return false
 }
 
 func shortTask(s string) string {

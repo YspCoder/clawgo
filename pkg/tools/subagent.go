@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -133,10 +135,19 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 		sm.mu.Unlock()
 	} else {
 		// Original one-shot logic
+		systemPrompt := "You are a subagent. Follow workspace AGENTS.md and complete the task independently."
+		if ws := strings.TrimSpace(sm.workspace); ws != "" {
+			if data, err := os.ReadFile(filepath.Join(ws, "AGENTS.md")); err == nil {
+				txt := strings.TrimSpace(string(data))
+				if txt != "" {
+					systemPrompt = "Workspace policy (AGENTS.md):\n" + txt + "\n\nComplete the given task independently and report the result."
+				}
+			}
+		}
 		messages := []providers.Message{
 			{
 				Role:    "system",
-				Content: "You are a subagent. Complete the given task independently and report the result.",
+				Content: systemPrompt,
 			},
 			{
 				Role:    "user",
@@ -184,7 +195,7 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			SessionKey: fmt.Sprintf("subagent:%s", task.ID),
 			Content:    announceContent,
 			Metadata: map[string]string{
-				"trigger":    "subagent",
+				"trigger":     "subagent",
 				"subagent_id": task.ID,
 			},
 		})

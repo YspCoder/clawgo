@@ -67,11 +67,8 @@ Your workspace is at: %s
 - Daily Notes: %s/memory/YYYY-MM-DD.md
 - Skills: %s/skills/{skill-name}/SKILL.md
 
-%s
-
-Always be helpful, accurate, and concise. When using tools, explain what you're doing.
-When remembering something long-term, write to %s/MEMORY.md and use daily notes at %s/memory/YYYY-MM-DD.md for short-term logs.`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath, workspacePath)
+%s`,
+		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -107,20 +104,10 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 		parts = append(parts, bootstrapContent)
 	}
 
-	// Skills - OpenClaw-aligned selection protocol + available skill catalog
+	// Skills catalog (selection behavior is defined in workspace AGENTS.md/SOUL.md).
 	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
 	if skillsSummary != "" {
-		parts = append(parts, fmt.Sprintf(`# Skills (mandatory protocol)
-
-Before replying: scan <skill><description> entries in <skills>.
-- If exactly one skill clearly applies: read its SKILL.md (via read tool) and follow it.
-- If multiple could apply: choose the most specific one, then read/follow it.
-- If none clearly apply: do not read any SKILL.md.
-Constraints:
-- Never read more than one skill up front.
-- If SKILL.md references relative paths, resolve against the skill directory.
-
-%s`, skillsSummary))
+		parts = append(parts, fmt.Sprintf("## Skills Catalog\n\n%s", skillsSummary))
 	}
 
 	// Memory context
@@ -128,11 +115,6 @@ Constraints:
 	if memoryContext != "" {
 		parts = append(parts, memoryContext)
 	}
-
-	parts = append(parts, `# Execution & Reply Policy
-- Default behavior: execute first, then report.
-- Avoid empty/meta fallback replies.
-- For commit/push intents, treat as one transaction and return commit hash + push result.`)
 
 	// Join with "---" separator
 	return strings.Join(parts, "\n\n---\n\n")

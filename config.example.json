@@ -11,7 +11,7 @@
         "enabled": true,
         "every_sec": 1800,
         "ack_max_chars": 64,
-        "prompt_template": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK."
+        "prompt_template": ""
       },
       "autonomy": {
         "enabled": false,
@@ -30,23 +30,6 @@
         "idle_round_budget_release_sec": 1800,
         "allowed_task_keywords": [],
         "ekg_consecutive_error_threshold": 3
-      },
-      "texts": {
-        "no_response_fallback": "I've completed processing but have no response to give.",
-        "think_only_fallback": "Thinking process completed.",
-        "memory_recall_keywords": ["remember", "记得", "上次", "之前", "偏好", "preference", "todo", "待办", "决定", "decision"],
-        "lang_usage": "Usage: /lang <code>",
-        "lang_invalid": "Invalid language code.",
-        "lang_updated_template": "Language preference updated to %s",
-        "subagents_none": "No subagents.",
-        "sessions_none": "No sessions.",
-        "unsupported_action": "unsupported action",
-        "system_rewrite_template": "Rewrite the following internal system update in concise user-facing language:\n\n%s",
-        "runtime_compaction_note": "[runtime-compaction] removed %d old messages, kept %d recent messages",
-        "startup_compaction_note": "[startup-compaction] removed %d old messages, kept %d recent messages",
-        "autonomy_important_keywords": ["urgent", "重要", "付款", "payment", "上线", "release", "deadline", "截止"],
-        "autonomy_completion_template": "✅ 已完成：%s\n回复“继续 %s”可继续下一步。",
-        "autonomy_blocked_template": "⚠️ 任务受阻：%s（%s）\n回复“继续 %s”我会重试。"
       },
       "context_compaction": {
         "enabled": true,

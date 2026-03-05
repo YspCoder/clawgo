@@ -39,7 +39,6 @@ type AgentDefaults struct {
 	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	Heartbeat         HeartbeatConfig         `json:"heartbeat"`
 	Autonomy          AutonomyConfig          `json:"autonomy"`
-	Texts             AgentTextConfig         `json:"texts"`
 	ContextCompaction ContextCompactionConfig `json:"context_compaction"`
 	RuntimeControl    RuntimeControlConfig    `json:"runtime_control"`
 }
@@ -65,24 +64,6 @@ type AutonomyConfig struct {
 	NotifyChannel string `json:"notify_channel,omitempty"`
 	// Deprecated: kept for backward compatibility with existing config files.
 	NotifyChatID string `json:"notify_chat_id,omitempty"`
-}
-
-type AgentTextConfig struct {
-	NoResponseFallback         string   `json:"no_response_fallback"`
-	ThinkOnlyFallback          string   `json:"think_only_fallback"`
-	MemoryRecallKeywords       []string `json:"memory_recall_keywords"`
-	LangUsage                  string   `json:"lang_usage"`
-	LangInvalid                string   `json:"lang_invalid"`
-	LangUpdatedTemplate        string   `json:"lang_updated_template"`
-	SubagentsNone              string   `json:"subagents_none"`
-	SessionsNone               string   `json:"sessions_none"`
-	UnsupportedAction          string   `json:"unsupported_action"`
-	SystemRewriteTemplate      string   `json:"system_rewrite_template"`
-	RuntimeCompactionNote      string   `json:"runtime_compaction_note"`
-	StartupCompactionNote      string   `json:"startup_compaction_note"`
-	AutonomyImportantKeywords  []string `json:"autonomy_important_keywords"`
-	AutonomyCompletionTemplate string   `json:"autonomy_completion_template"`
-	AutonomyBlockedTemplate    string   `json:"autonomy_blocked_template"`
 }
 
 type HeartbeatConfig struct {
@@ -373,7 +354,7 @@ func DefaultConfig() *Config {
 					Enabled:        true,
 					EverySec:       30 * 60,
 					AckMaxChars:    64,
-					PromptTemplate: "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+					PromptTemplate: "",
 				},
 				Autonomy: AutonomyConfig{
 					Enabled:                      false,
@@ -392,23 +373,6 @@ func DefaultConfig() *Config {
 					IdleRoundBudgetReleaseSec:    1800,
 					AllowedTaskKeywords:          []string{},
 					EKGConsecutiveErrorThreshold: 3,
-				},
-				Texts: AgentTextConfig{
-					NoResponseFallback:         "I've completed processing but have no response to give.",
-					ThinkOnlyFallback:          "Thinking process completed.",
-					MemoryRecallKeywords:       []string{"remember", "previous", "preference", "todo", "decision", "date", "when did", "what did we"},
-					LangUsage:                  "Usage: /lang <code>",
-					LangInvalid:                "Invalid language code.",
-					LangUpdatedTemplate:        "Language preference updated to %s",
-					SubagentsNone:              "No subagents.",
-					SessionsNone:               "No sessions.",
-					UnsupportedAction:          "unsupported action",
-					SystemRewriteTemplate:      "Rewrite the following internal system update in concise user-facing language:\n\n%s",
-					RuntimeCompactionNote:      "[runtime-compaction] removed %d old messages, kept %d recent messages",
-					StartupCompactionNote:      "[startup-compaction] removed %d old messages, kept %d recent messages",
-					AutonomyImportantKeywords:  []string{"urgent", "payment", "release", "deadline", "p0", "asap"},
-					AutonomyCompletionTemplate: "✅ Completed: %s\nReply \"continue %s\" to proceed to the next step.",
-					AutonomyBlockedTemplate:    "⚠️ Task blocked: %s (%s)\nReply \"continue %s\" and I will retry.",
 				},
 				ContextCompaction: ContextCompactionConfig{
 					Enabled:            true,

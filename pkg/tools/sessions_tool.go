@@ -19,14 +19,12 @@ type SessionInfo struct {
 }
 
 type SessionsTool struct {
-	listFn            func(limit int) []SessionInfo
-	historyFn         func(key string, limit int) []providers.Message
-	noSessionsText    string
-	unsupportedAction string
+	listFn    func(limit int) []SessionInfo
+	historyFn func(key string, limit int) []providers.Message
 }
 
-func NewSessionsTool(listFn func(limit int) []SessionInfo, historyFn func(key string, limit int) []providers.Message, noSessionsText, unsupportedAction string) *SessionsTool {
-	return &SessionsTool{listFn: listFn, historyFn: historyFn, noSessionsText: noSessionsText, unsupportedAction: unsupportedAction}
+func NewSessionsTool(listFn func(limit int) []SessionInfo, historyFn func(key string, limit int) []providers.Message) *SessionsTool {
+	return &SessionsTool{listFn: listFn, historyFn: historyFn}
 }
 
 func (t *SessionsTool) Name() string { return "sessions" }
@@ -113,7 +111,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		}
 		items := t.listFn(limit * 3)
 		if len(items) == 0 {
-			return firstNonEmpty(t.noSessionsText, "No sessions."), nil
+			return "No sessions.", nil
 		}
 		if len(kindFilter) > 0 {
 			filtered := make([]SessionInfo, 0, len(items))
@@ -284,13 +282,6 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		}
 		return sb.String(), nil
 	default:
-		return firstNonEmpty(t.unsupportedAction, "unsupported action"), nil
+		return "unsupported action", nil
 	}
-}
-
-func firstNonEmpty(v, fallback string) string {
-	if v != "" {
-		return v
-	}
-	return fallback
 }
