@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, Settings, Clock, Server, Terminal, Zap, FolderOpen, ClipboardList, ListTodo, BrainCircuit, Hash } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Settings, Clock, Server, Terminal, Zap, FolderOpen, ClipboardList, ListTodo, BrainCircuit, Hash, Map } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import NavItem from './NavItem';
@@ -38,6 +38,7 @@ const Sidebar: React.FC = () => {
     {
       title: t('sidebarInsights'),
       items: [
+        { icon: <Map className="w-5 h-5" />, label: t('office'), to: '/office' },
         { icon: <BrainCircuit className="w-5 h-5" />, label: t('ekg'), to: '/ekg' },
       ],
     },

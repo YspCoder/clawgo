@@ -104,6 +104,7 @@ func (s *RegistryServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/tasks", s.handleWebUITasks)
 	mux.HandleFunc("/webui/api/task_daily_summary", s.handleWebUITaskDailySummary)
 	mux.HandleFunc("/webui/api/ekg_stats", s.handleWebUIEKGStats)
+	mux.HandleFunc("/webui/api/office_state", s.handleWebUIOfficeState)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
@@ -2466,6 +2467,349 @@ func (s *RegistryServer) handleWebUIEKGStats(w http.ResponseWriter, r *http.Requ
 		"source_stats":          sourceStats,
 		"channel_stats":         channelStats,
 		"escalation_count":      escalations,
+	})
+}
+
+func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	workspace := strings.TrimSpace(s.workspacePath)
+	auditPath := filepath.Join(workspace, "memory", "task-audit.jsonl")
+	tasksPath := filepath.Join(workspace, "memory", "tasks.json")
+	ekgPath := filepath.Join(workspace, "memory", "ekg-events.jsonl")
+	now := time.Now().UTC()
+
+	parseTime := func(raw string) time.Time {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return time.Time{}
+		}
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			return t
+		}
+		return time.Time{}
+	}
+	latestByTask := map[string]map[string]interface{}{}
+	latestTimeByTask := map[string]time.Time{}
+
+	if b, err := os.ReadFile(auditPath); err == nil {
+		lines := strings.Split(string(b), "\n")
+		for _, ln := range lines {
+			if strings.TrimSpace(ln) == "" {
+				continue
+			}
+			var row map[string]interface{}
+			if json.Unmarshal([]byte(ln), &row) != nil {
+				continue
+			}
+			source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
+			if source == "heartbeat" {
+				continue
+			}
+			taskID := strings.TrimSpace(fmt.Sprintf("%v", row["task_id"]))
+			if taskID == "" {
+				continue
+			}
+			t := parseTime(fmt.Sprintf("%v", row["time"]))
+			prev, ok := latestTimeByTask[taskID]
+			if ok && !t.IsZero() && t.Before(prev) {
+				continue
+			}
+			latestByTask[taskID] = row
+			if !t.IsZero() {
+				latestTimeByTask[taskID] = t
+			}
+		}
+	}
+
+	if b, err := os.ReadFile(tasksPath); err == nil {
+		var tasks []map[string]interface{}
+		if json.Unmarshal(b, &tasks) == nil {
+			for _, t := range tasks {
+				id := strings.TrimSpace(fmt.Sprintf("%v", t["id"]))
+				if id == "" {
+					continue
+				}
+				row := map[string]interface{}{
+					"task_id":       id,
+					"time":          fmt.Sprintf("%v", t["updated_at"]),
+					"status":        fmt.Sprintf("%v", t["status"]),
+					"source":        fmt.Sprintf("%v", t["source"]),
+					"input_preview": fmt.Sprintf("%v", t["content"]),
+					"log":           fmt.Sprintf("%v", t["block_reason"]),
+				}
+				tm := parseTime(fmt.Sprintf("%v", row["time"]))
+				prev, ok := latestTimeByTask[id]
+				if !ok || prev.IsZero() || (!tm.IsZero() && tm.After(prev)) {
+					latestByTask[id] = row
+					if !tm.IsZero() {
+						latestTimeByTask[id] = tm
+					}
+				}
+			}
+		}
+	}
+
+	items := make([]map[string]interface{}, 0, len(latestByTask))
+	for _, row := range latestByTask {
+		items = append(items, row)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		ti := parseTime(fmt.Sprintf("%v", items[i]["time"]))
+		tj := parseTime(fmt.Sprintf("%v", items[j]["time"]))
+		if ti.IsZero() && tj.IsZero() {
+			return fmt.Sprintf("%v", items[i]["task_id"]) > fmt.Sprintf("%v", items[j]["task_id"])
+		}
+		if ti.IsZero() {
+			return false
+		}
+		if tj.IsZero() {
+			return true
+		}
+		return ti.After(tj)
+	})
+
+	stats := map[string]int{
+		"running":    0,
+		"waiting":    0,
+		"blocked":    0,
+		"error":      0,
+		"success":    0,
+		"suppressed": 0,
+	}
+	for _, row := range items {
+		st := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
+		if _, ok := stats[st]; ok {
+			stats[st]++
+		}
+	}
+
+	mainState := "idle"
+	mainZone := "breakroom"
+	switch {
+	case stats["error"] > 0 || stats["blocked"] > 0:
+		mainState = "error"
+		mainZone = "bug"
+	case stats["running"] > 0:
+		mainState = "executing"
+		mainZone = "work"
+	case stats["suppressed"] > 0:
+		mainState = "syncing"
+		mainZone = "server"
+	case stats["success"] > 0:
+		mainState = "writing"
+		mainZone = "work"
+	default:
+		mainState = "idle"
+		mainZone = "breakroom"
+	}
+
+	mainTaskID := ""
+	mainDetail := "No active task"
+	for _, row := range items {
+		st := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
+		if st == "running" || st == "error" || st == "blocked" || st == "waiting" {
+			mainTaskID = strings.TrimSpace(fmt.Sprintf("%v", row["task_id"]))
+			mainDetail = strings.TrimSpace(fmt.Sprintf("%v", row["input_preview"]))
+			if mainDetail == "" {
+				mainDetail = strings.TrimSpace(fmt.Sprintf("%v", row["log"]))
+			}
+			if mainDetail == "" {
+				mainDetail = "Task " + mainTaskID
+			}
+			break
+		}
+	}
+	if mainTaskID == "" && len(items) > 0 {
+		mainTaskID = strings.TrimSpace(fmt.Sprintf("%v", items[0]["task_id"]))
+		mainDetail = strings.TrimSpace(fmt.Sprintf("%v", items[0]["input_preview"]))
+		if mainDetail == "" {
+			mainDetail = strings.TrimSpace(fmt.Sprintf("%v", items[0]["log"]))
+		}
+		if mainDetail == "" {
+			mainDetail = "Task " + mainTaskID
+		}
+	}
+
+	nodeState := func(n NodeInfo) string {
+		if !n.Online {
+			return "offline"
+		}
+		// A node that is still online but hasn't heartbeat recently is treated as syncing.
+		if !n.LastSeenAt.IsZero() && now.Sub(n.LastSeenAt) > 20*time.Second {
+			return "syncing"
+		}
+		return "online"
+	}
+	nodeZone := func(n NodeInfo) string {
+		if !n.Online {
+			return "bug"
+		}
+		if n.Capabilities.Model || n.Capabilities.Run {
+			return "work"
+		}
+		if n.Capabilities.Invoke || n.Capabilities.Camera || n.Capabilities.Screen || n.Capabilities.Canvas || n.Capabilities.Location {
+			return "server"
+		}
+		return "breakroom"
+	}
+	nodeDetail := func(n NodeInfo) string {
+		parts := make([]string, 0, 4)
+		if ep := strings.TrimSpace(n.Endpoint); ep != "" {
+			parts = append(parts, ep)
+		}
+		switch {
+		case strings.TrimSpace(n.OS) != "" && strings.TrimSpace(n.Arch) != "":
+			parts = append(parts, fmt.Sprintf("%s/%s", strings.TrimSpace(n.OS), strings.TrimSpace(n.Arch)))
+		case strings.TrimSpace(n.OS) != "":
+			parts = append(parts, strings.TrimSpace(n.OS))
+		case strings.TrimSpace(n.Arch) != "":
+			parts = append(parts, strings.TrimSpace(n.Arch))
+		}
+		if m := len(n.Models); m > 0 {
+			parts = append(parts, fmt.Sprintf("models:%d", m))
+		}
+		if !n.LastSeenAt.IsZero() {
+			parts = append(parts, "seen:"+n.LastSeenAt.UTC().Format(time.RFC3339))
+		}
+		if len(parts) == 0 {
+			return "node " + strings.TrimSpace(n.ID)
+		}
+		return strings.Join(parts, " · ")
+	}
+
+	allNodes := []NodeInfo{}
+	if s.mgr != nil {
+		allNodes = s.mgr.List()
+	}
+	host, _ := os.Hostname()
+	localNode := NodeInfo{ID: "local", Name: "local", Endpoint: "gateway", Version: gatewayBuildVersion(), LastSeenAt: now, Online: true}
+	if strings.TrimSpace(host) != "" {
+		localNode.Name = strings.TrimSpace(host)
+	}
+	if ip := detectLocalIP(); ip != "" {
+		localNode.Endpoint = ip
+	}
+	hostLower := strings.ToLower(strings.TrimSpace(host))
+	mainNode := localNode
+	otherNodes := make([]NodeInfo, 0, len(allNodes))
+	for _, n := range allNodes {
+		idLower := strings.ToLower(strings.TrimSpace(n.ID))
+		nameLower := strings.ToLower(strings.TrimSpace(n.Name))
+		isLocal := idLower == "local" || nameLower == "local" || (hostLower != "" && nameLower == hostLower)
+		if isLocal {
+			if strings.TrimSpace(n.Name) != "" {
+				mainNode.Name = strings.TrimSpace(n.Name)
+			}
+			if strings.TrimSpace(localNode.Name) != "" {
+				mainNode.Name = strings.TrimSpace(localNode.Name)
+			}
+			if strings.TrimSpace(n.Endpoint) != "" {
+				mainNode.Endpoint = strings.TrimSpace(n.Endpoint)
+			}
+			if strings.TrimSpace(localNode.Endpoint) != "" {
+				mainNode.Endpoint = strings.TrimSpace(localNode.Endpoint)
+			}
+			if strings.TrimSpace(n.OS) != "" {
+				mainNode.OS = strings.TrimSpace(n.OS)
+			}
+			if strings.TrimSpace(n.Arch) != "" {
+				mainNode.Arch = strings.TrimSpace(n.Arch)
+			}
+			if len(n.Models) > 0 {
+				mainNode.Models = append([]string(nil), n.Models...)
+			}
+			mainNode.Online = true
+			mainNode.LastSeenAt = now
+			mainNode.Version = localNode.Version
+			continue
+		}
+		otherNodes = append(otherNodes, n)
+	}
+
+	onlineNodes := 1 // main(local) is always considered online.
+	nodesPayload := make([]map[string]interface{}, 0, 24)
+	for _, n := range otherNodes {
+		if n.Online {
+			onlineNodes++
+		}
+		id := strings.TrimSpace(n.ID)
+		if id == "" {
+			continue
+		}
+		name := strings.TrimSpace(n.Name)
+		if name == "" {
+			name = id
+		}
+		updatedAt := ""
+		if !n.LastSeenAt.IsZero() {
+			updatedAt = n.LastSeenAt.UTC().Format(time.RFC3339)
+		}
+		nodesPayload = append(nodesPayload, map[string]interface{}{
+			"id":         id,
+			"name":       name,
+			"state":      nodeState(n),
+			"zone":       nodeZone(n),
+			"detail":     nodeDetail(n),
+			"updated_at": updatedAt,
+		})
+		if len(nodesPayload) >= 24 {
+			break
+		}
+	}
+
+	mainDetailOut := mainDetail
+	if nodeInfo := nodeDetail(mainNode); strings.TrimSpace(nodeInfo) != "" {
+		if strings.TrimSpace(mainDetailOut) == "" || strings.EqualFold(strings.TrimSpace(mainDetailOut), "No active task") {
+			mainDetailOut = nodeInfo
+		} else {
+			mainDetailOut = mainDetailOut + " · " + nodeInfo
+		}
+	}
+
+	ekgErr5m := 0
+	cutoff := now.Add(-5 * time.Minute)
+	for _, row := range s.loadEKGRowsCached(ekgPath, 2000) {
+		status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
+		if status != "error" {
+			continue
+		}
+		ts := parseTime(fmt.Sprintf("%v", row["time"]))
+		if !ts.IsZero() && ts.Before(cutoff) {
+			continue
+		}
+		ekgErr5m++
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":   true,
+		"time": now.Format(time.RFC3339),
+		"main": map[string]interface{}{
+			"id":      mainNode.ID,
+			"name":    mainNode.Name,
+			"state":   mainState,
+			"detail":  mainDetailOut,
+			"zone":    mainZone,
+			"task_id": mainTaskID,
+		},
+		"nodes": nodesPayload,
+		"stats": map[string]interface{}{
+			"running":      stats["running"],
+			"waiting":      stats["waiting"],
+			"blocked":      stats["blocked"],
+			"error":        stats["error"],
+			"success":      stats["success"],
+			"suppressed":   stats["suppressed"],
+			"online_nodes": onlineNodes,
+			"ekg_error_5m": ekgErr5m,
+		},
 	})
 }
 
