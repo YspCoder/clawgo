@@ -28,6 +28,7 @@ import (
 
 	cfgpkg "clawgo/pkg/config"
 	"clawgo/pkg/nodes"
+	"clawgo/pkg/tools"
 )
 
 type Server struct {
@@ -100,6 +101,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/skills", s.handleWebUISkills)
 	mux.HandleFunc("/webui/api/sessions", s.handleWebUISessions)
 	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
+	mux.HandleFunc("/webui/api/subagent_profiles", s.handleWebUISubagentProfiles)
 	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
 	mux.HandleFunc("/webui/api/task_queue", s.handleWebUITaskQueue)
 	mux.HandleFunc("/webui/api/tasks", s.handleWebUITasks)
@@ -1848,6 +1850,172 @@ func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 		out = append(out, item{Key: "main", Channel: "main"})
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": out})
+}
+
+func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	workspace := strings.TrimSpace(s.workspacePath)
+	if workspace == "" {
+		http.Error(w, "workspace path not set", http.StatusInternalServerError)
+		return
+	}
+	store := tools.NewSubagentProfileStore(workspace)
+
+	switch r.Method {
+	case http.MethodGet:
+		agentID := strings.TrimSpace(r.URL.Query().Get("agent_id"))
+		if agentID != "" {
+			profile, ok, err := store.Get(agentID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "found": ok, "profile": profile})
+			return
+		}
+		profiles, err := store.List()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profiles": profiles})
+	case http.MethodDelete:
+		agentID := strings.TrimSpace(r.URL.Query().Get("agent_id"))
+		if agentID == "" {
+			http.Error(w, "agent_id required", http.StatusBadRequest)
+			return
+		}
+		if err := store.Delete(agentID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true, "agent_id": agentID})
+	case http.MethodPost:
+		var body struct {
+			Action          string   `json:"action"`
+			AgentID         string   `json:"agent_id"`
+			Name            string   `json:"name"`
+			Role            string   `json:"role"`
+			SystemPrompt    string   `json:"system_prompt"`
+			MemoryNamespace string   `json:"memory_namespace"`
+			Status          string   `json:"status"`
+			ToolAllowlist   []string `json:"tool_allowlist"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		action := strings.ToLower(strings.TrimSpace(body.Action))
+		if action == "" {
+			action = "upsert"
+		}
+		agentID := strings.TrimSpace(body.AgentID)
+		if agentID == "" {
+			http.Error(w, "agent_id required", http.StatusBadRequest)
+			return
+		}
+
+		switch action {
+		case "create":
+			if _, ok, err := store.Get(agentID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			} else if ok {
+				http.Error(w, "subagent profile already exists", http.StatusConflict)
+				return
+			}
+			profile, err := store.Upsert(tools.SubagentProfile{
+				AgentID:         agentID,
+				Name:            body.Name,
+				Role:            body.Role,
+				SystemPrompt:    body.SystemPrompt,
+				MemoryNamespace: body.MemoryNamespace,
+				Status:          body.Status,
+				ToolAllowlist:   body.ToolAllowlist,
+			})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profile": profile})
+		case "update":
+			existing, ok, err := store.Get(agentID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !ok || existing == nil {
+				http.Error(w, "subagent profile not found", http.StatusNotFound)
+				return
+			}
+			next := *existing
+			next.Name = body.Name
+			next.Role = body.Role
+			next.SystemPrompt = body.SystemPrompt
+			next.MemoryNamespace = body.MemoryNamespace
+			if body.Status != "" {
+				next.Status = body.Status
+			}
+			if body.ToolAllowlist != nil {
+				next.ToolAllowlist = body.ToolAllowlist
+			}
+			profile, err := store.Upsert(next)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profile": profile})
+		case "enable", "disable":
+			existing, ok, err := store.Get(agentID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !ok || existing == nil {
+				http.Error(w, "subagent profile not found", http.StatusNotFound)
+				return
+			}
+			if action == "enable" {
+				existing.Status = "active"
+			} else {
+				existing.Status = "disabled"
+			}
+			profile, err := store.Upsert(*existing)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profile": profile})
+		case "delete":
+			if err := store.Delete(agentID); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true, "agent_id": agentID})
+		case "upsert":
+			profile, err := store.Upsert(tools.SubagentProfile{
+				AgentID:         agentID,
+				Name:            body.Name,
+				Role:            body.Role,
+				SystemPrompt:    body.SystemPrompt,
+				MemoryNamespace: body.MemoryNamespace,
+				Status:          body.Status,
+				ToolAllowlist:   body.ToolAllowlist,
+			})
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profile": profile})
+		default:
+			http.Error(w, "unsupported action", http.StatusBadRequest)
+		}
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {

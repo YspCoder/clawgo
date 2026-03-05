@@ -215,10 +215,14 @@ func (al *AgentLoop) memoryHintForTask(ctx context.Context, task plannedTask) st
 	if al == nil || al.tools == nil {
 		return ""
 	}
-	res, err := al.tools.Execute(ctx, "memory_search", map[string]interface{}{
+	args := map[string]interface{}{
 		"query":      task.Content,
 		"maxResults": 2,
-	})
+	}
+	if ns := memoryNamespaceFromContext(ctx); ns != "main" {
+		args["namespace"] = ns
+	}
+	res, err := al.tools.Execute(ctx, "memory_search", args)
 	if err != nil {
 		return ""
 	}

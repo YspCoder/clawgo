@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -18,17 +19,28 @@ import (
 // - Daily notes: memory/YYYY-MM-DD.md
 // It also supports legacy locations for backward compatibility.
 type MemoryStore struct {
-	workspace       string
-	memoryDir       string
-	memoryFile      string
+	workspace        string
+	namespace        string
+	memoryDir        string
+	memoryFile       string
 	legacyMemoryFile string
 }
 
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
 // It ensures the memory directory exists.
 func NewMemoryStore(workspace string) *MemoryStore {
-	memoryDir := filepath.Join(workspace, "memory")
-	memoryFile := filepath.Join(workspace, "MEMORY.md")
+	return NewMemoryStoreWithNamespace(workspace, "main")
+}
+
+func NewMemoryStoreWithNamespace(workspace, namespace string) *MemoryStore {
+	ns := normalizeMemoryNamespace(namespace)
+	baseDir := workspace
+	if ns != "main" {
+		baseDir = filepath.Join(workspace, "agents", ns)
+	}
+
+	memoryDir := filepath.Join(baseDir, "memory")
+	memoryFile := filepath.Join(baseDir, "MEMORY.md")
 	legacyMemoryFile := filepath.Join(memoryDir, "MEMORY.md")
 
 	// Ensure memory directory exists
@@ -36,6 +48,7 @@ func NewMemoryStore(workspace string) *MemoryStore {
 
 	return &MemoryStore{
 		workspace:        workspace,
+		namespace:        ns,
 		memoryDir:        memoryDir,
 		memoryFile:       memoryFile,
 		legacyMemoryFile: legacyMemoryFile,
@@ -168,4 +181,29 @@ func (ms *MemoryStore) GetMemoryContext() string {
 		result += part
 	}
 	return fmt.Sprintf("# Memory\n\n%s", result)
+}
+
+func normalizeMemoryNamespace(namespace string) string {
+	namespace = strings.TrimSpace(strings.ToLower(namespace))
+	if namespace == "" || namespace == "main" {
+		return "main"
+	}
+	var sb strings.Builder
+	for _, r := range namespace {
+		switch {
+		case r >= 'a' && r <= 'z':
+			sb.WriteRune(r)
+		case r >= '0' && r <= '9':
+			sb.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			sb.WriteRune(r)
+		case r == ' ':
+			sb.WriteRune('-')
+		}
+	}
+	out := strings.Trim(sb.String(), "-_.")
+	if out == "" {
+		return "main"
+	}
+	return out
 }

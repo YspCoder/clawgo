@@ -33,6 +33,11 @@ func (t *MemoryGetTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Relative path to MEMORY.md or memory/*.md",
 			},
+			"namespace": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional memory namespace. Use main for workspace memory, or subagent id for isolated memory.",
+				"default":     "main",
+			},
 			"from": map[string]interface{}{
 				"type":        "integer",
 				"description": "Start line (1-indexed)",
@@ -54,6 +59,10 @@ func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}
 	if rawPath == "" {
 		return "", fmt.Errorf("path is required")
 	}
+	if filepath.IsAbs(rawPath) {
+		return "", fmt.Errorf("absolute path is not allowed")
+	}
+	namespace := parseMemoryNamespaceArg(args)
 
 	from := 1
 	if v, ok := args["from"].(float64); ok && int(v) > 0 {
@@ -67,8 +76,9 @@ func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}
 		lines = 500
 	}
 
-	fullPath := filepath.Clean(filepath.Join(t.workspace, rawPath))
-	if !t.isAllowedMemoryPath(fullPath) {
+	baseDir := memoryNamespaceBaseDir(t.workspace, namespace)
+	fullPath := filepath.Clean(filepath.Join(baseDir, rawPath))
+	if !t.isAllowedMemoryPath(fullPath, namespace) {
 		return "", fmt.Errorf("path not allowed: %s", rawPath)
 	}
 
@@ -101,17 +111,21 @@ func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}
 		return fmt.Sprintf("No content in range for %s (from=%d, lines=%d)", rawPath, from, lines), nil
 	}
 
-	rel, _ := filepath.Rel(t.workspace, fullPath)
+	rel, err := filepath.Rel(t.workspace, fullPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		rel = fullPath
+	}
 	return fmt.Sprintf("Source: %s#L%d-L%d\n%s", rel, from, end, content), nil
 }
 
-func (t *MemoryGetTool) isAllowedMemoryPath(fullPath string) bool {
-	workspaceMemory := filepath.Join(t.workspace, "MEMORY.md")
+func (t *MemoryGetTool) isAllowedMemoryPath(fullPath, namespace string) bool {
+	baseDir := memoryNamespaceBaseDir(t.workspace, namespace)
+	workspaceMemory := filepath.Join(baseDir, "MEMORY.md")
 	if fullPath == workspaceMemory {
 		return true
 	}
 
-	memoryDir := filepath.Join(t.workspace, "memory")
+	memoryDir := filepath.Join(baseDir, "memory")
 	rel, err := filepath.Rel(memoryDir, fullPath)
 	if err != nil {
 		return false

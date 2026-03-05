@@ -18,6 +18,11 @@ type SubagentTask struct {
 	Task          string
 	Label         string
 	Role          string
+	AgentID       string
+	SessionKey    string
+	MemoryNS      string
+	SystemPrompt  string
+	ToolAllowlist []string
 	PipelineID    string
 	PipelineTask  string
 	SharedState   map[string]interface{}
@@ -41,9 +46,22 @@ type SubagentManager struct {
 	workspace          string
 	nextID             int
 	runFunc            SubagentRunFunc
+	profileStore       *SubagentProfileStore
+}
+
+type SubagentSpawnOptions struct {
+	Task          string
+	Label         string
+	Role          string
+	AgentID       string
+	OriginChannel string
+	OriginChatID  string
+	PipelineID    string
+	PipelineTask  string
 }
 
 func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *bus.MessageBus, orc *Orchestrator) *SubagentManager {
+	store := NewSubagentProfileStore(workspace)
 	return &SubagentManager{
 		tasks:              make(map[string]*SubagentTask),
 		cancelFuncs:        make(map[string]context.CancelFunc),
@@ -53,21 +71,94 @@ func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *b
 		orc:                orc,
 		workspace:          workspace,
 		nextID:             1,
+		profileStore:       store,
 	}
 }
 
-func (sm *SubagentManager) Spawn(ctx context.Context, task, label, originChannel, originChatID, pipelineID, pipelineTask string) (string, error) {
+func (sm *SubagentManager) Spawn(ctx context.Context, opts SubagentSpawnOptions) (string, error) {
+	task := strings.TrimSpace(opts.Task)
+	if task == "" {
+		return "", fmt.Errorf("task is required")
+	}
+	label := strings.TrimSpace(opts.Label)
+	role := strings.TrimSpace(opts.Role)
+	agentID := normalizeSubagentIdentifier(opts.AgentID)
+	originalRole := role
+	var profile *SubagentProfile
+	if sm.profileStore != nil {
+		if agentID != "" {
+			if p, ok, err := sm.profileStore.Get(agentID); err != nil {
+				return "", err
+			} else if ok {
+				profile = p
+			}
+		} else if role != "" {
+			if p, ok, err := sm.profileStore.FindByRole(role); err != nil {
+				return "", err
+			} else if ok {
+				profile = p
+				agentID = normalizeSubagentIdentifier(p.AgentID)
+			}
+		}
+	}
+	if agentID == "" {
+		agentID = normalizeSubagentIdentifier(role)
+	}
+	if agentID == "" {
+		agentID = "default"
+	}
+	memoryNS := agentID
+	systemPrompt := ""
+	toolAllowlist := []string(nil)
+	if profile == nil && sm.profileStore != nil {
+		if p, ok, err := sm.profileStore.Get(agentID); err != nil {
+			return "", err
+		} else if ok {
+			profile = p
+		}
+	}
+	if profile != nil {
+		if strings.EqualFold(strings.TrimSpace(profile.Status), "disabled") {
+			return "", fmt.Errorf("subagent profile '%s' is disabled", profile.AgentID)
+		}
+		if label == "" {
+			label = strings.TrimSpace(profile.Name)
+		}
+		if role == "" {
+			role = strings.TrimSpace(profile.Role)
+		}
+		if ns := normalizeSubagentIdentifier(profile.MemoryNamespace); ns != "" {
+			memoryNS = ns
+		}
+		systemPrompt = strings.TrimSpace(profile.SystemPrompt)
+		toolAllowlist = append([]string(nil), profile.ToolAllowlist...)
+	}
+	if role == "" {
+		role = originalRole
+	}
+	originChannel := strings.TrimSpace(opts.OriginChannel)
+	originChatID := strings.TrimSpace(opts.OriginChatID)
+	pipelineID := strings.TrimSpace(opts.PipelineID)
+	pipelineTask := strings.TrimSpace(opts.PipelineTask)
+
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	taskID := fmt.Sprintf("subagent-%d", sm.nextID)
 	sm.nextID++
+	sessionKey := buildSubagentSessionKey(agentID, taskID)
 
 	now := time.Now().UnixMilli()
 	subagentTask := &SubagentTask{
 		ID:            taskID,
 		Task:          task,
 		Label:         label,
+		Role:          role,
+		AgentID:       agentID,
+		SessionKey:    sessionKey,
+		MemoryNS:      memoryNS,
+		SystemPrompt:  systemPrompt,
+		ToolAllowlist: toolAllowlist,
 		PipelineID:    pipelineID,
 		PipelineTask:  pipelineTask,
 		OriginChannel: originChannel,
@@ -82,9 +173,12 @@ func (sm *SubagentManager) Spawn(ctx context.Context, task, label, originChannel
 
 	go sm.runTask(taskCtx, subagentTask)
 
-	desc := fmt.Sprintf("Spawned subagent for task: %s", task)
+	desc := fmt.Sprintf("Spawned subagent for task: %s (agent=%s)", task, agentID)
 	if label != "" {
-		desc = fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task)
+		desc = fmt.Sprintf("Spawned subagent '%s' for task: %s (agent=%s)", label, task, agentID)
+	}
+	if role != "" {
+		desc += fmt.Sprintf(" role=%s", role)
 	}
 	if pipelineID != "" && pipelineTask != "" {
 		desc += fmt.Sprintf(" (pipeline=%s task=%s)", pipelineID, pipelineTask)
@@ -115,7 +209,7 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 
 	// Fall back to one-shot chat when RunFunc is not injected.
 	if sm.runFunc != nil {
-		result, err := sm.runFunc(ctx, task.Task, task.OriginChannel, task.OriginChatID)
+		result, err := sm.runFunc(ctx, task)
 		sm.mu.Lock()
 		if err != nil {
 			task.Status = "failed"
@@ -135,7 +229,19 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 		sm.mu.Unlock()
 	} else {
 		// Original one-shot logic
+		if sm.provider == nil {
+			sm.mu.Lock()
+			task.Status = "failed"
+			task.Result = "Error: no llm provider configured for subagent execution"
+			task.Updated = time.Now().UnixMilli()
+			if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
+				_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, fmt.Errorf("no llm provider configured for subagent execution"))
+			}
+			sm.mu.Unlock()
+			return
+		}
 		systemPrompt := "You are a subagent. Follow workspace AGENTS.md and complete the task independently."
+		rolePrompt := strings.TrimSpace(task.SystemPrompt)
 		if ws := strings.TrimSpace(sm.workspace); ws != "" {
 			if data, err := os.ReadFile(filepath.Join(ws, "AGENTS.md")); err == nil {
 				txt := strings.TrimSpace(string(data))
@@ -143,6 +249,9 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 					systemPrompt = "Workspace policy (AGENTS.md):\n" + txt + "\n\nComplete the given task independently and report the result."
 				}
 			}
+		}
+		if rolePrompt != "" {
+			systemPrompt += "\n\nRole-specific profile prompt:\n" + rolePrompt
 		}
 		messages := []providers.Message{
 			{
@@ -192,22 +301,34 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			Channel:    "system",
 			SenderID:   fmt.Sprintf("subagent:%s", task.ID),
 			ChatID:     fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			SessionKey: fmt.Sprintf("subagent:%s", task.ID),
+			SessionKey: task.SessionKey,
 			Content:    announceContent,
 			Metadata: map[string]string{
-				"trigger":     "subagent",
-				"subagent_id": task.ID,
+				"trigger":       "subagent",
+				"subagent_id":   task.ID,
+				"agent_id":      task.AgentID,
+				"role":          task.Role,
+				"session_key":   task.SessionKey,
+				"memory_ns":     task.MemoryNS,
+				"pipeline_id":   task.PipelineID,
+				"pipeline_task": task.PipelineTask,
 			},
 		})
 	}
 }
 
-type SubagentRunFunc func(ctx context.Context, task, channel, chatID string) (string, error)
+type SubagentRunFunc func(ctx context.Context, task *SubagentTask) (string, error)
 
 func (sm *SubagentManager) SetRunFunc(f SubagentRunFunc) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.runFunc = f
+}
+
+func (sm *SubagentManager) ProfileStore() *SubagentProfileStore {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.profileStore
 }
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
@@ -280,7 +401,16 @@ func (sm *SubagentManager) ResumeTask(ctx context.Context, taskID string) (strin
 	} else {
 		label = label + "-resumed"
 	}
-	_, err := sm.Spawn(ctx, t.Task, label, t.OriginChannel, t.OriginChatID, t.PipelineID, t.PipelineTask)
+	_, err := sm.Spawn(ctx, SubagentSpawnOptions{
+		Task:          t.Task,
+		Label:         label,
+		Role:          t.Role,
+		AgentID:       t.AgentID,
+		OriginChannel: t.OriginChannel,
+		OriginChatID:  t.OriginChatID,
+		PipelineID:    t.PipelineID,
+		PipelineTask:  t.PipelineTask,
+	})
 	if err != nil {
 		return "", false
 	}
@@ -301,4 +431,41 @@ func (sm *SubagentManager) pruneArchivedLocked() {
 			delete(sm.cancelFuncs, id)
 		}
 	}
+}
+
+func normalizeSubagentIdentifier(in string) string {
+	in = strings.TrimSpace(strings.ToLower(in))
+	if in == "" {
+		return ""
+	}
+	var sb strings.Builder
+	for _, r := range in {
+		switch {
+		case r >= 'a' && r <= 'z':
+			sb.WriteRune(r)
+		case r >= '0' && r <= '9':
+			sb.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			sb.WriteRune(r)
+		case r == ' ':
+			sb.WriteRune('-')
+		}
+	}
+	out := strings.Trim(sb.String(), "-_.")
+	if out == "" {
+		return ""
+	}
+	return out
+}
+
+func buildSubagentSessionKey(agentID, taskID string) string {
+	a := normalizeSubagentIdentifier(agentID)
+	if a == "" {
+		a = "default"
+	}
+	t := normalizeSubagentIdentifier(taskID)
+	if t == "" {
+		t = "task"
+	}
+	return fmt.Sprintf("subagent:%s:%s", a, t)
 }

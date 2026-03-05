@@ -280,7 +280,20 @@ func (t *PipelineDispatchTool) Execute(ctx context.Context, args map[string]inte
 		if task.Role != "" {
 			label = fmt.Sprintf("%s:%s", task.Role, task.ID)
 		}
-		if _, err := t.spawn.Spawn(ctx, payload, label, "tool", "tool", pipelineID, task.ID); err != nil {
+		agentID := strings.TrimSpace(task.Role)
+		if agentID == "" {
+			agentID = strings.TrimSpace(task.ID)
+		}
+		if _, err := t.spawn.Spawn(ctx, SubagentSpawnOptions{
+			Task:          payload,
+			Label:         label,
+			Role:          task.Role,
+			AgentID:       agentID,
+			OriginChannel: "tool",
+			OriginChatID:  "tool",
+			PipelineID:    pipelineID,
+			PipelineTask:  task.ID,
+		}); err != nil {
 			lines = append(lines, fmt.Sprintf("- %s failed: %v", task.ID, err))
 			continue
 		}

@@ -1,0 +1,425 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+type SubagentProfile struct {
+	AgentID         string   `json:"agent_id"`
+	Name            string   `json:"name"`
+	Role            string   `json:"role,omitempty"`
+	SystemPrompt    string   `json:"system_prompt,omitempty"`
+	ToolAllowlist   []string `json:"tool_allowlist,omitempty"`
+	MemoryNamespace string   `json:"memory_namespace,omitempty"`
+	Status          string   `json:"status"`
+	CreatedAt       int64    `json:"created_at"`
+	UpdatedAt       int64    `json:"updated_at"`
+}
+
+type SubagentProfileStore struct {
+	workspace string
+	mu        sync.RWMutex
+}
+
+func NewSubagentProfileStore(workspace string) *SubagentProfileStore {
+	return &SubagentProfileStore{workspace: strings.TrimSpace(workspace)}
+}
+
+func (s *SubagentProfileStore) profilesDir() string {
+	return filepath.Join(s.workspace, "agents", "profiles")
+}
+
+func (s *SubagentProfileStore) profilePath(agentID string) string {
+	id := normalizeSubagentIdentifier(agentID)
+	return filepath.Join(s.profilesDir(), id+".json")
+}
+
+func (s *SubagentProfileStore) List() ([]SubagentProfile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	dir := s.profilesDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []SubagentProfile{}, nil
+		}
+		return nil, err
+	}
+
+	out := make([]SubagentProfile, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var p SubagentProfile
+		if err := json.Unmarshal(b, &p); err != nil {
+			continue
+		}
+		out = append(out, normalizeSubagentProfile(p))
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].UpdatedAt != out[j].UpdatedAt {
+			return out[i].UpdatedAt > out[j].UpdatedAt
+		}
+		return out[i].AgentID < out[j].AgentID
+	})
+	return out, nil
+}
+
+func (s *SubagentProfileStore) Get(agentID string) (*SubagentProfile, bool, error) {
+	id := normalizeSubagentIdentifier(agentID)
+	if id == "" {
+		return nil, false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	b, err := os.ReadFile(s.profilePath(id))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	var p SubagentProfile
+	if err := json.Unmarshal(b, &p); err != nil {
+		return nil, false, err
+	}
+	norm := normalizeSubagentProfile(p)
+	return &norm, true, nil
+}
+
+func (s *SubagentProfileStore) FindByRole(role string) (*SubagentProfile, bool, error) {
+	target := strings.ToLower(strings.TrimSpace(role))
+	if target == "" {
+		return nil, false, nil
+	}
+	items, err := s.List()
+	if err != nil {
+		return nil, false, err
+	}
+	for _, p := range items {
+		if strings.ToLower(strings.TrimSpace(p.Role)) == target {
+			cp := p
+			return &cp, true, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func (s *SubagentProfileStore) Upsert(profile SubagentProfile) (*SubagentProfile, error) {
+	p := normalizeSubagentProfile(profile)
+	if p.AgentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UnixMilli()
+	path := s.profilePath(p.AgentID)
+	existing := SubagentProfile{}
+	if b, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(b, &existing)
+	}
+	existing = normalizeSubagentProfile(existing)
+	if existing.CreatedAt > 0 {
+		p.CreatedAt = existing.CreatedAt
+	} else if p.CreatedAt <= 0 {
+		p.CreatedAt = now
+	}
+	p.UpdatedAt = now
+
+	if err := os.MkdirAll(s.profilesDir(), 0755); err != nil {
+		return nil, err
+	}
+	b, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, b, 0644); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (s *SubagentProfileStore) Delete(agentID string) error {
+	id := normalizeSubagentIdentifier(agentID)
+	if id == "" {
+		return fmt.Errorf("agent_id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	err := os.Remove(s.profilePath(id))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
+	p := in
+	p.AgentID = normalizeSubagentIdentifier(p.AgentID)
+	p.Name = strings.TrimSpace(p.Name)
+	if p.Name == "" {
+		p.Name = p.AgentID
+	}
+	p.Role = strings.TrimSpace(p.Role)
+	p.SystemPrompt = strings.TrimSpace(p.SystemPrompt)
+	p.MemoryNamespace = normalizeSubagentIdentifier(p.MemoryNamespace)
+	if p.MemoryNamespace == "" {
+		p.MemoryNamespace = p.AgentID
+	}
+	p.Status = normalizeProfileStatus(p.Status)
+	p.ToolAllowlist = normalizeToolAllowlist(p.ToolAllowlist)
+	return p
+}
+
+func normalizeProfileStatus(s string) string {
+	v := strings.ToLower(strings.TrimSpace(s))
+	switch v {
+	case "active", "disabled":
+		return v
+	default:
+		return "active"
+	}
+}
+
+func normalizeStringList(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, item := range in {
+		v := strings.TrimSpace(item)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func normalizeToolAllowlist(in []string) []string {
+	items := normalizeStringList(in)
+	if len(items) == 0 {
+		return nil
+	}
+	for i := range items {
+		items[i] = strings.ToLower(strings.TrimSpace(items[i]))
+	}
+	items = normalizeStringList(items)
+	sort.Strings(items)
+	return items
+}
+
+func parseStringList(raw interface{}) []string {
+	items, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		s, _ := item.(string)
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		out = append(out, s)
+	}
+	return normalizeStringList(out)
+}
+
+type SubagentProfileTool struct {
+	store *SubagentProfileStore
+}
+
+func NewSubagentProfileTool(store *SubagentProfileStore) *SubagentProfileTool {
+	return &SubagentProfileTool{store: store}
+}
+
+func (t *SubagentProfileTool) Name() string { return "subagent_profile" }
+
+func (t *SubagentProfileTool) Description() string {
+	return "Manage subagent profiles: create/list/get/update/enable/disable/delete."
+}
+
+func (t *SubagentProfileTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"action": map[string]interface{}{"type": "string", "description": "create|list|get|update|enable|disable|delete"},
+			"agent_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Unique subagent id, e.g. coder/writer/tester",
+			},
+			"name":             map[string]interface{}{"type": "string"},
+			"role":             map[string]interface{}{"type": "string"},
+			"system_prompt":    map[string]interface{}{"type": "string"},
+			"memory_namespace": map[string]interface{}{"type": "string"},
+			"status":           map[string]interface{}{"type": "string", "description": "active|disabled"},
+			"tool_allowlist": map[string]interface{}{
+				"type":  "array",
+				"items": map[string]interface{}{"type": "string"},
+			},
+		},
+		"required": []string{"action"},
+	}
+}
+
+func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	_ = ctx
+	if t.store == nil {
+		return "subagent profile store not available", nil
+	}
+	action, _ := args["action"].(string)
+	action = strings.ToLower(strings.TrimSpace(action))
+	agentID, _ := args["agent_id"].(string)
+	agentID = normalizeSubagentIdentifier(agentID)
+
+	switch action {
+	case "list":
+		items, err := t.store.List()
+		if err != nil {
+			return "", err
+		}
+		if len(items) == 0 {
+			return "No subagent profiles.", nil
+		}
+		var sb strings.Builder
+		sb.WriteString("Subagent Profiles:\n")
+		for i, p := range items {
+			sb.WriteString(fmt.Sprintf("- #%d %s [%s] role=%s memory_ns=%s\n", i+1, p.AgentID, p.Status, p.Role, p.MemoryNamespace))
+		}
+		return strings.TrimSpace(sb.String()), nil
+	case "get":
+		if agentID == "" {
+			return "agent_id is required", nil
+		}
+		p, ok, err := t.store.Get(agentID)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "subagent profile not found", nil
+		}
+		b, _ := json.MarshalIndent(p, "", "  ")
+		return string(b), nil
+	case "create":
+		if agentID == "" {
+			return "agent_id is required", nil
+		}
+		if _, ok, err := t.store.Get(agentID); err != nil {
+			return "", err
+		} else if ok {
+			return "subagent profile already exists", nil
+		}
+		p := SubagentProfile{
+			AgentID:         agentID,
+			Name:            stringArg(args, "name"),
+			Role:            stringArg(args, "role"),
+			SystemPrompt:    stringArg(args, "system_prompt"),
+			MemoryNamespace: stringArg(args, "memory_namespace"),
+			Status:          stringArg(args, "status"),
+			ToolAllowlist:   parseStringList(args["tool_allowlist"]),
+		}
+		saved, err := t.store.Upsert(p)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Created subagent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
+	case "update":
+		if agentID == "" {
+			return "agent_id is required", nil
+		}
+		existing, ok, err := t.store.Get(agentID)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "subagent profile not found", nil
+		}
+		next := *existing
+		if _, ok := args["name"]; ok {
+			next.Name = stringArg(args, "name")
+		}
+		if _, ok := args["role"]; ok {
+			next.Role = stringArg(args, "role")
+		}
+		if _, ok := args["system_prompt"]; ok {
+			next.SystemPrompt = stringArg(args, "system_prompt")
+		}
+		if _, ok := args["memory_namespace"]; ok {
+			next.MemoryNamespace = stringArg(args, "memory_namespace")
+		}
+		if _, ok := args["status"]; ok {
+			next.Status = stringArg(args, "status")
+		}
+		if _, ok := args["tool_allowlist"]; ok {
+			next.ToolAllowlist = parseStringList(args["tool_allowlist"])
+		}
+		saved, err := t.store.Upsert(next)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Updated subagent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
+	case "enable", "disable":
+		if agentID == "" {
+			return "agent_id is required", nil
+		}
+		existing, ok, err := t.store.Get(agentID)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "subagent profile not found", nil
+		}
+		if action == "enable" {
+			existing.Status = "active"
+		} else {
+			existing.Status = "disabled"
+		}
+		saved, err := t.store.Upsert(*existing)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Subagent profile %s set to %s", saved.AgentID, saved.Status), nil
+	case "delete":
+		if agentID == "" {
+			return "agent_id is required", nil
+		}
+		if err := t.store.Delete(agentID); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Deleted subagent profile: %s", agentID), nil
+	default:
+		return "unsupported action", nil
+	}
+}
+
+func stringArg(args map[string]interface{}, key string) string {
+	v, _ := args[key].(string)
+	return strings.TrimSpace(v)
+}

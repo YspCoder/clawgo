@@ -172,6 +172,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
 	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager))
+	if store := subagentManager.ProfileStore(); store != nil {
+		toolsRegistry.Register(tools.NewSubagentProfileTool(store))
+	}
+	toolsRegistry.Register(tools.NewPipelineCreateTool(orchestrator))
+	toolsRegistry.Register(tools.NewPipelineStatusTool(orchestrator))
+	toolsRegistry.Register(tools.NewPipelineStateSetTool(orchestrator))
+	toolsRegistry.Register(tools.NewPipelineDispatchTool(orchestrator, subagentManager))
 	toolsRegistry.Register(tools.NewSessionsTool(
 		func(limit int) []tools.SessionInfo {
 			sessions := alSessionListForTool(sessionsManager, limit)
@@ -268,9 +275,19 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 
 	// Inject recursive run logic so subagents can use full tool-calling flows.
-	subagentManager.SetRunFunc(func(ctx context.Context, task, channel, chatID string) (string, error) {
-		sessionKey := fmt.Sprintf("subagent:%d", os.Getpid()) // Use PID/randomized key to reduce session key collisions.
-		return loop.ProcessDirect(ctx, task, sessionKey)
+	subagentManager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
+		if task == nil {
+			return "", fmt.Errorf("subagent task is nil")
+		}
+		sessionKey := strings.TrimSpace(task.SessionKey)
+		if sessionKey == "" {
+			sessionKey = fmt.Sprintf("subagent:%s", strings.TrimSpace(task.ID))
+		}
+		taskInput := task.Task
+		if p := strings.TrimSpace(task.SystemPrompt); p != "" {
+			taskInput = fmt.Sprintf("Role Profile Prompt:\n%s\n\nTask:\n%s", p, task.Task)
+		}
+		return loop.ProcessDirectWithOptions(ctx, taskInput, sessionKey, task.OriginChannel, task.OriginChatID, task.MemoryNS, task.ToolAllowlist)
 	})
 
 	return loop
@@ -682,12 +699,40 @@ func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (b
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
+	return al.ProcessDirectWithOptions(ctx, content, sessionKey, "cli", "direct", "main", nil)
+}
+
+func (al *AgentLoop) ProcessDirectWithOptions(ctx context.Context, content, sessionKey, channel, chatID, memoryNamespace string, toolAllowlist []string) (string, error) {
+	channel = strings.TrimSpace(channel)
+	if channel == "" {
+		channel = "cli"
+	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		chatID = "direct"
+	}
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		sessionKey = "main"
+	}
+	ns := normalizeMemoryNamespace(memoryNamespace)
+	var metadata map[string]string
+	if ns != "main" {
+		metadata = map[string]string{
+			"memory_namespace": ns,
+			"memory_ns":        ns,
+		}
+	}
+	ctx = withMemoryNamespaceContext(ctx, ns)
+	ctx = withToolAllowlistContext(ctx, toolAllowlist)
+
 	msg := bus.InboundMessage{
-		Channel:    "cli",
+		Channel:    channel,
 		SenderID:   "user",
-		ChatID:     "direct",
+		ChatID:     chatID,
 		Content:    content,
 		SessionKey: sessionKey,
+		Metadata:   metadata,
 	}
 
 	return al.processPlannedMessage(ctx, msg)
@@ -701,6 +746,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if msg.SessionKey == "" {
 		msg.SessionKey = "main"
 	}
+	memoryNamespace := resolveInboundMemoryNamespace(msg)
+	ctx = withMemoryNamespaceContext(ctx, memoryNamespace)
 	release, err := al.acquireSessionResources(ctx, &msg)
 	if err != nil {
 		return "", err
@@ -733,7 +780,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	preferredLang, lastLang := al.sessions.GetLanguagePreferences(msg.SessionKey)
 	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
 
-	messages := al.contextBuilder.BuildMessages(
+	messages := al.contextBuilder.BuildMessagesWithMemoryNamespace(
 		history,
 		summary,
 		msg.Content,
@@ -741,6 +788,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		msg.Channel,
 		msg.ChatID,
 		responseLang,
+		memoryNamespace,
 	)
 
 	iteration := 0
@@ -1554,10 +1602,172 @@ func withToolContextArgs(toolName string, args map[string]interface{}, channel, 
 }
 
 func (al *AgentLoop) executeToolCall(ctx context.Context, toolName string, args map[string]interface{}, currentChannel, currentChatID string) (string, error) {
+	if err := ensureToolAllowedByContext(ctx, toolName, args); err != nil {
+		return "", err
+	}
+	args = withToolMemoryNamespaceArgs(toolName, args, memoryNamespaceFromContext(ctx))
 	if shouldSuppressSelfMessageSend(toolName, args, currentChannel, currentChatID) {
 		return "Suppressed message tool self-send in current chat; assistant will reply via normal outbound.", nil
 	}
 	return al.tools.Execute(ctx, toolName, args)
+}
+
+func withToolMemoryNamespaceArgs(toolName string, args map[string]interface{}, namespace string) map[string]interface{} {
+	ns := normalizeMemoryNamespace(namespace)
+	if ns == "main" {
+		return args
+	}
+	switch strings.TrimSpace(toolName) {
+	case "memory_search", "memory_get", "memory_write":
+	default:
+		return args
+	}
+
+	if raw, ok := args["namespace"].(string); ok && strings.TrimSpace(raw) != "" {
+		return args
+	}
+	next := make(map[string]interface{}, len(args)+1)
+	for k, v := range args {
+		next[k] = v
+	}
+	next["namespace"] = ns
+	return next
+}
+
+type agentContextKey string
+
+const memoryNamespaceContextKey agentContextKey = "memory_namespace"
+const toolAllowlistContextKey agentContextKey = "tool_allowlist"
+
+func withMemoryNamespaceContext(ctx context.Context, namespace string) context.Context {
+	ns := normalizeMemoryNamespace(namespace)
+	if ns == "main" {
+		return ctx
+	}
+	return context.WithValue(ctx, memoryNamespaceContextKey, ns)
+}
+
+func memoryNamespaceFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return "main"
+	}
+	raw, _ := ctx.Value(memoryNamespaceContextKey).(string)
+	return normalizeMemoryNamespace(raw)
+}
+
+func withToolAllowlistContext(ctx context.Context, allowlist []string) context.Context {
+	normalized := normalizeToolAllowlist(allowlist)
+	if len(normalized) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, toolAllowlistContextKey, normalized)
+}
+
+func toolAllowlistFromContext(ctx context.Context) map[string]struct{} {
+	if ctx == nil {
+		return nil
+	}
+	raw, _ := ctx.Value(toolAllowlistContextKey).(map[string]struct{})
+	if len(raw) == 0 {
+		return nil
+	}
+	return raw
+}
+
+func ensureToolAllowedByContext(ctx context.Context, toolName string, args map[string]interface{}) error {
+	allow := toolAllowlistFromContext(ctx)
+	if len(allow) == 0 {
+		return nil
+	}
+
+	name := strings.ToLower(strings.TrimSpace(toolName))
+	if name == "" {
+		return fmt.Errorf("tool name is empty")
+	}
+	if !isToolNameAllowed(allow, name) {
+		return fmt.Errorf("tool '%s' is not allowed by subagent profile", toolName)
+	}
+
+	if name == "parallel" {
+		if err := validateParallelAllowlistArgs(allow, args); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateParallelAllowlistArgs(allow map[string]struct{}, args map[string]interface{}) error {
+	callsRaw, ok := args["calls"].([]interface{})
+	if !ok {
+		return nil
+	}
+	for i, call := range callsRaw {
+		m, ok := call.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tool, _ := m["tool"].(string)
+		name := strings.ToLower(strings.TrimSpace(tool))
+		if name == "" {
+			continue
+		}
+		if !isToolNameAllowed(allow, name) {
+			return fmt.Errorf("tool 'parallel' contains disallowed call[%d]: %s", i, tool)
+		}
+	}
+	return nil
+}
+
+func normalizeToolAllowlist(in []string) map[string]struct{} {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(in))
+	for _, item := range in {
+		name := strings.ToLower(strings.TrimSpace(item))
+		if name == "" {
+			continue
+		}
+		out[name] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func isToolNameAllowed(allow map[string]struct{}, name string) bool {
+	if len(allow) == 0 {
+		return true
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	if _, ok := allow["*"]; ok {
+		return true
+	}
+	if _, ok := allow["all"]; ok {
+		return true
+	}
+	_, ok := allow[name]
+	return ok
+}
+
+func resolveInboundMemoryNamespace(msg bus.InboundMessage) string {
+	if msg.Channel == "system" {
+		return "main"
+	}
+	if msg.Metadata == nil {
+		return "main"
+	}
+	if v := strings.TrimSpace(msg.Metadata["memory_namespace"]); v != "" {
+		return normalizeMemoryNamespace(v)
+	}
+	if v := strings.TrimSpace(msg.Metadata["memory_ns"]); v != "" {
+		return normalizeMemoryNamespace(v)
+	}
+	return "main"
 }
 
 func shouldSuppressSelfMessageSend(toolName string, args map[string]interface{}, currentChannel, currentChatID string) bool {

@@ -15,6 +15,7 @@ import TaskAudit from './pages/TaskAudit';
 import EKG from './pages/EKG';
 import Tasks from './pages/Tasks';
 import LogCodes from './pages/LogCodes';
+import SubagentProfiles from './pages/SubagentProfiles';
 
 export default function App() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="task-audit" element={<TaskAudit />} />
               <Route path="ekg" element={<EKG />} />
               <Route path="tasks" element={<Tasks />} />
+              <Route path="subagent-profiles" element={<SubagentProfiles />} />
             </Route>
           </Routes>
         </BrowserRouter>

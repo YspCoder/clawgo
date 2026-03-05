@@ -45,6 +45,10 @@ func (t *SpawnTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional role for this subagent, e.g. research/coding/testing",
 			},
+			"agent_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional logical agent ID. If omitted, role will be used as fallback.",
+			},
 			"pipeline_id": map[string]interface{}{
 				"type":        "string",
 				"description": "Optional pipeline ID for orchestrated multi-agent workflow",
@@ -81,10 +85,13 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 
 	label, _ := args["label"].(string)
 	role, _ := args["role"].(string)
+	agentID, _ := args["agent_id"].(string)
 	pipelineID, _ := args["pipeline_id"].(string)
 	taskID, _ := args["task_id"].(string)
 	if label == "" && role != "" {
 		label = role
+	} else if label == "" && agentID != "" {
+		label = agentID
 	}
 
 	if t.manager == nil {
@@ -106,7 +113,16 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		}
 	}
 
-	result, err := t.manager.Spawn(ctx, task, label, originChannel, originChatID, pipelineID, taskID)
+	result, err := t.manager.Spawn(ctx, SubagentSpawnOptions{
+		Task:          task,
+		Label:         label,
+		Role:          role,
+		AgentID:       agentID,
+		OriginChannel: originChannel,
+		OriginChatID:  originChatID,
+		PipelineID:    pipelineID,
+		PipelineTask:  taskID,
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to spawn subagent: %w", err)
 	}

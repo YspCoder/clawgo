@@ -93,6 +93,10 @@ func (cb *ContextBuilder) buildToolsSection() string {
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
+	return cb.BuildSystemPromptWithMemoryNamespace("main")
+}
+
+func (cb *ContextBuilder) BuildSystemPromptWithMemoryNamespace(memoryNamespace string) string {
 	parts := []string{}
 
 	// Core identity section
@@ -111,7 +115,11 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 	}
 
 	// Memory context
-	memoryContext := cb.memory.GetMemoryContext()
+	memStore := cb.memory
+	if ns := normalizeMemoryNamespace(memoryNamespace); ns != "main" {
+		memStore = NewMemoryStoreWithNamespace(cb.workspace, ns)
+	}
+	memoryContext := memStore.GetMemoryContext()
 	if memoryContext != "" {
 		parts = append(parts, memoryContext)
 	}
@@ -165,9 +173,13 @@ func (cb *ContextBuilder) shouldLoadBootstrap() bool {
 }
 
 func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID, responseLanguage string) []providers.Message {
+	return cb.BuildMessagesWithMemoryNamespace(history, summary, currentMessage, media, channel, chatID, responseLanguage, "main")
+}
+
+func (cb *ContextBuilder) BuildMessagesWithMemoryNamespace(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID, responseLanguage, memoryNamespace string) []providers.Message {
 	messages := []providers.Message{}
 
-	systemPrompt := cb.BuildSystemPrompt()
+	systemPrompt := cb.BuildSystemPromptWithMemoryNamespace(memoryNamespace)
 
 	// Add Current Session info if provided
 	if channel != "" && chatID != "" {

@@ -33,6 +33,11 @@ func (t *MemoryWriteTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Memory text to write",
 			},
+			"namespace": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional memory namespace. Use main for workspace memory, or subagent id for isolated memory.",
+				"default":     "main",
+			},
 			"kind": map[string]interface{}{
 				"type":        "string",
 				"description": "Target memory kind: longterm or daily",
@@ -68,6 +73,8 @@ func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface
 	if content == "" {
 		return "error: content is required", nil
 	}
+	namespace := parseMemoryNamespaceArg(args)
+	baseDir := memoryNamespaceBaseDir(t.workspace, namespace)
 
 	kind, _ := args["kind"].(string)
 	kind = strings.ToLower(strings.TrimSpace(kind))
@@ -100,16 +107,16 @@ func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface
 
 	switch kind {
 	case "longterm", "memory", "permanent":
-		path := filepath.Join(t.workspace, "MEMORY.md")
+		path := filepath.Join(baseDir, "MEMORY.md")
 		if appendMode {
 			return t.appendWithTimestamp(path, formatted)
 		}
 		if err := os.WriteFile(path, []byte(formatted+"\n"), 0644); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Wrote long-term memory: %s", path), nil
+		return fmt.Sprintf("Wrote long-term memory: %s (namespace=%s)", path, namespace), nil
 	case "daily", "log", "today":
-		memDir := filepath.Join(t.workspace, "memory")
+		memDir := filepath.Join(baseDir, "memory")
 		if err := os.MkdirAll(memDir, 0755); err != nil {
 			return "", err
 		}
@@ -120,7 +127,7 @@ func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface
 		if err := os.WriteFile(path, []byte(formatted+"\n"), 0644); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Wrote daily memory: %s", path), nil
+		return fmt.Sprintf("Wrote daily memory: %s (namespace=%s)", path, namespace), nil
 	default:
 		return "", fmt.Errorf("invalid kind '%s', expected longterm or daily", kind)
 	}

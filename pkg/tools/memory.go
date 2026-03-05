@@ -54,6 +54,11 @@ func (t *MemorySearchTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Search query keywords (e.g., 'docker deploy project')",
 			},
+			"namespace": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional memory namespace. Use main for workspace memory, or subagent id for isolated memory.",
+				"default":     "main",
+			},
 			"maxResults": map[string]interface{}{
 				"type":        "integer",
 				"description": "Maximum number of results to return",
@@ -76,6 +81,7 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	if !ok || query == "" {
 		return "", fmt.Errorf("query is required")
 	}
+	namespace := parseMemoryNamespaceArg(args)
 
 	maxResults := 5
 	if m, ok := args["maxResults"].(float64); ok {
@@ -90,8 +96,8 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 		return "Please provide search keywords.", nil
 	}
 
-	files := t.getMemoryFiles()
-	
+	files := t.getMemoryFiles(namespace)
+
 	resultsChan := make(chan []searchResult, len(files))
 	var wg sync.WaitGroup
 
@@ -137,13 +143,16 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	}
 
 	if len(allResults) == 0 {
-		return fmt.Sprintf("No memory found for query: %s", query), nil
+		return fmt.Sprintf("No memory found for query: %s (namespace=%s)", query, namespace), nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d memories for '%s':\n\n", len(allResults), query))
+	sb.WriteString(fmt.Sprintf("Found %d memories for '%s' (namespace=%s):\n\n", len(allResults), query, namespace))
 	for _, res := range allResults {
-		relPath, _ := filepath.Rel(t.workspace, res.file)
+		relPath, err := filepath.Rel(t.workspace, res.file)
+		if err != nil || strings.HasPrefix(relPath, "..") {
+			relPath = res.file
+		}
 		lineEnd := res.lineNum + countLines(res.content) - 1
 		if lineEnd < res.lineNum {
 			lineEnd = res.lineNum
@@ -154,23 +163,25 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 	return sb.String(), nil
 }
 
-func (t *MemorySearchTool) getMemoryFiles() []string {
+func (t *MemorySearchTool) getMemoryFiles(namespace string) []string {
 	var files []string
 
+	base := memoryNamespaceBaseDir(t.workspace, namespace)
+
 	// Check workspace MEMORY.md first
-	mainMem := filepath.Join(t.workspace, "MEMORY.md")
+	mainMem := filepath.Join(base, "MEMORY.md")
 	if _, err := os.Stat(mainMem); err == nil {
 		files = append(files, mainMem)
 	}
 
 	// Backward-compatible location: memory/MEMORY.md
-	legacyMem := filepath.Join(t.workspace, "memory", "MEMORY.md")
+	legacyMem := filepath.Join(base, "memory", "MEMORY.md")
 	if _, err := os.Stat(legacyMem); err == nil {
 		files = append(files, legacyMem)
 	}
 
 	// Recursively include memory/**/*.md
-	memDir := filepath.Join(t.workspace, "memory")
+	memDir := filepath.Join(base, "memory")
 	_ = filepath.WalkDir(memDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d == nil || d.IsDir() {
 			return nil
