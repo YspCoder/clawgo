@@ -48,7 +48,8 @@ const Office: React.FC = () => {
   const fetchState = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/webui/api/office_state${q}`);
+      const sep = q ? '&' : '?';
+      const r = await fetch(`/webui/api/office_state${q}${sep}_=${Date.now()}`, { cache: 'no-store' });
       if (!r.ok) throw new Error(await r.text());
       const j = (await r.json()) as OfficePayload;
       setPayload(j || {});
@@ -61,7 +62,7 @@ const Office: React.FC = () => {
 
   useEffect(() => {
     fetchState();
-    const timer = setInterval(fetchState, 5000);
+    const timer = setInterval(fetchState, 3000);
     return () => clearInterval(timer);
   }, [fetchState]);
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"clawgo/pkg/agent"
+	"clawgo/pkg/api"
 	"clawgo/pkg/autonomy"
 	"clawgo/pkg/bus"
 	"clawgo/pkg/channels"
@@ -140,7 +141,7 @@ func gatewayCmd() {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
-	registryServer := nodes.NewRegistryServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
+	registryServer := api.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
 	registryServer.SetConfigPath(getConfigPath())
 	registryServer.SetWorkspacePath(cfg.WorkspacePath())
 	registryServer.SetLogFilePath(cfg.LogFilePath())
