@@ -7,17 +7,16 @@
 package main
 
 import (
-	"embed"
 	"errors"
 	"fmt"
 	"os"
 
+	"clawgo"
 	"clawgo/pkg/config"
 	"clawgo/pkg/logger"
 )
 
-//go:embed workspace
-var embeddedFiles embed.FS
+var embeddedFiles = clawgo.EmbeddedWorkspace
 
 var version = "0.1.0"
 var buildTime = "unknown"
