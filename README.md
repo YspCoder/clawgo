@@ -55,10 +55,10 @@ curl -fsSL https://raw.githubusercontent.com/YspCoder/clawgo/main/install.sh | b
 clawgo onboard
 ```
 
-### 3) 配置模型
+### 3) 配置 Provider
 
 ```bash
-clawgo login
+clawgo provider
 ```
 
 ### 4) 看状态
@@ -118,7 +118,7 @@ http://<host>:<port>/webui?token=<gateway.token>
 
 ```text
 clawgo onboard
-clawgo login
+clawgo provider
 clawgo status
 clawgo agent [-m "..."]
 clawgo gateway [run|start|stop|restart|status]

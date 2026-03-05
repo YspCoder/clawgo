@@ -2516,18 +2516,51 @@ func (s *Server) handleWebUIOfficeState(w http.ResponseWriter, r *http.Request) 
 			return st
 		}
 	}
+	officeStateForStatus := func(status string, ts time.Time) string {
+		st := normalizeTaskStatus(status)
+		switch st {
+		case "running":
+			return "working"
+		case "error", "blocked":
+			return "error"
+		case "suppressed":
+			return "syncing"
+		case "success":
+			// Briefly keep success in working pose, then fall back to idle.
+			if !ts.IsZero() && now.Sub(ts) <= 90*time.Second {
+				return "working"
+			}
+			return "idle"
+		default:
+			return "idle"
+		}
+	}
+	officeZoneForState := func(state string) string {
+		switch strings.ToLower(strings.TrimSpace(state)) {
+		case "working":
+			return "work"
+		case "syncing":
+			return "server"
+		case "error":
+			return "bug"
+		default:
+			return "breakroom"
+		}
+	}
 	isFreshTaskState := func(status string, ts time.Time) bool {
 		if ts.IsZero() {
 			return false
 		}
-		window := 30 * time.Minute
+		window := 20 * time.Minute
 		switch status {
-		case "running", "waiting":
-			window = 2 * time.Hour
-		case "blocked", "error":
-			window = 6 * time.Hour
-		case "success", "suppressed":
+		case "running":
+			window = 3 * time.Hour
+		case "waiting":
 			window = 30 * time.Minute
+		case "blocked", "error":
+			window = 2 * time.Hour
+		case "success", "suppressed":
+			window = 12 * time.Minute
 		}
 		return !ts.Before(now.Add(-window))
 	}
@@ -2656,59 +2689,9 @@ func (s *Server) handleWebUIOfficeState(w http.ResponseWriter, r *http.Request) 
 
 	mainState := "idle"
 	mainZone := "breakroom"
-	switch {
-	case stats["running"] > 0:
-		mainState = "executing"
-		mainZone = "work"
-	case stats["error"] > 0 || stats["blocked"] > 0:
-		mainState = "error"
-		mainZone = "bug"
-	case stats["suppressed"] > 0:
-		mainState = "syncing"
-		mainZone = "server"
-	case stats["waiting"] > 0:
-		mainState = "idle"
-		mainZone = "breakroom"
-	case stats["success"] > 0:
-		mainState = "writing"
-		mainZone = "work"
-	default:
-		mainState = "idle"
-		mainZone = "breakroom"
-	}
-
 	mainTaskID := ""
 	mainDetail := "No active task"
-	isMainStatus := func(st string) bool {
-		st = strings.ToLower(strings.TrimSpace(st))
-		switch mainState {
-		case "executing":
-			return st == "running"
-		case "error":
-			return st == "error" || st == "blocked"
-		case "syncing":
-			return st == "suppressed"
-		case "writing":
-			return st == "success"
-		default:
-			return st == "waiting" || st == "idle"
-		}
-	}
-	for _, row := range items {
-		st := normalizeTaskStatus(fmt.Sprintf("%v", row["status"]))
-		if isMainStatus(st) {
-			mainTaskID = strings.TrimSpace(fmt.Sprintf("%v", row["task_id"]))
-			mainDetail = strings.TrimSpace(fmt.Sprintf("%v", row["input_preview"]))
-			if mainDetail == "" {
-				mainDetail = strings.TrimSpace(fmt.Sprintf("%v", row["log"]))
-			}
-			if mainDetail == "" {
-				mainDetail = "Task " + mainTaskID
-			}
-			break
-		}
-	}
-	if mainTaskID == "" && len(items) > 0 {
+	if len(items) > 0 {
 		mainTaskID = strings.TrimSpace(fmt.Sprintf("%v", items[0]["task_id"]))
 		mainDetail = strings.TrimSpace(fmt.Sprintf("%v", items[0]["input_preview"]))
 		if mainDetail == "" {
@@ -2717,6 +2700,10 @@ func (s *Server) handleWebUIOfficeState(w http.ResponseWriter, r *http.Request) 
 		if mainDetail == "" {
 			mainDetail = "Task " + mainTaskID
 		}
+		st := normalizeTaskStatus(fmt.Sprintf("%v", items[0]["status"]))
+		ts := parseTime(fmt.Sprintf("%v", items[0]["time"]))
+		mainState = officeStateForStatus(st, ts)
+		mainZone = officeZoneForState(mainState)
 	}
 
 	nodeState := func(n nodes.NodeInfo) string {
@@ -2727,16 +2714,23 @@ func (s *Server) handleWebUIOfficeState(w http.ResponseWriter, r *http.Request) 
 		if !n.LastSeenAt.IsZero() && now.Sub(n.LastSeenAt) > 20*time.Second {
 			return "syncing"
 		}
-		return "online"
+		if n.Capabilities.Model || n.Capabilities.Run {
+			return "working"
+		}
+		return "idle"
 	}
 	nodeZone := func(n nodes.NodeInfo) string {
-		if !n.Online {
+		st := nodeState(n)
+		if st == "offline" {
 			return "bug"
 		}
-		if n.Capabilities.Model || n.Capabilities.Run {
+		if st == "syncing" {
+			return "server"
+		}
+		if st == "working" && (n.Capabilities.Model || n.Capabilities.Run) {
 			return "work"
 		}
-		if n.Capabilities.Invoke || n.Capabilities.Camera || n.Capabilities.Screen || n.Capabilities.Canvas || n.Capabilities.Location {
+		if st == "working" {
 			return "server"
 		}
 		return "breakroom"

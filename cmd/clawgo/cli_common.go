@@ -92,6 +92,7 @@ func printHelp() {
 	fmt.Println("  agent       Interact with the agent directly")
 	fmt.Println("  gateway     Register/manage gateway service")
 	fmt.Println("  status      Show clawgo status")
+	fmt.Println("  provider    Configure provider credentials")
 	fmt.Println("  config      Get/set config values")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  channel     Test and manage messaging channels")

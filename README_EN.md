@@ -55,10 +55,10 @@ curl -fsSL https://raw.githubusercontent.com/YspCoder/clawgo/main/install.sh | b
 clawgo onboard
 ```
 
-### 3) Configure model/proxy
+### 3) Configure provider
 
 ```bash
-clawgo login
+clawgo provider
 ```
 
 ### 4) Check status
@@ -118,7 +118,7 @@ Main pages:
 
 ```text
 clawgo onboard
-clawgo login
+clawgo provider
 clawgo status
 clawgo agent [-m "..."]
 clawgo gateway [run|start|stop|restart|status]

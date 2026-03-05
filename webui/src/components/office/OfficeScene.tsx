@@ -448,6 +448,7 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
   const [tick, setTick] = useState(0);
   const [showDebug, setShowDebug] = useState(false);
   const [manualState, setManualState] = useState<MainVisualState | null>(null);
+  const [manualStateUntil, setManualStateUntil] = useState<number>(0);
   const [panEnabled, setPanEnabled] = useState<boolean>(() => true);
   const [camera, setCamera] = useState<CameraState>({ x: 0, y: 0, zoom: 1 });
   const [pointerWorld, setPointerWorld] = useState<Point | null>(null);
@@ -461,9 +462,21 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
   useEffect(() => {
     if (manualState && prevLiveStateRef.current !== liveMainState) {
       setManualState(null);
+      setManualStateUntil(0);
     }
     prevLiveStateRef.current = liveMainState;
   }, [liveMainState, manualState]);
+
+  useEffect(() => {
+    if (!manualState || manualStateUntil <= 0) return;
+    const timer = window.setInterval(() => {
+      if (Date.now() >= manualStateUntil) {
+        setManualState(null);
+        setManualStateUntil(0);
+      }
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [manualState, manualStateUntil]);
 
   const placedNodes = useMemo(() => {
     const counters: Record<OfficeZone, number> = { breakroom: 0, work: 0, server: 0, bug: 0 };
@@ -650,6 +663,11 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
 
   const setVisualState = useCallback((state: MainVisualState | null) => {
     setManualState(state);
+    if (state === null) {
+      setManualStateUntil(0);
+      return;
+    }
+    setManualStateUntil(Date.now() + 15_000);
   }, []);
 
   const cycleServerMode = useCallback(() => {
@@ -660,6 +678,7 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
   const serverOn = serverMode === 'on' || (serverMode === 'auto' && effectiveMainState !== 'idle');
   const serverFrame = serverOn ? frameAtTick(DECOR_SPRITES.serverroom, tick, 700) : 0;
   const mainFrame = frameAtTick(MAIN_SPRITES[effectiveMainState], tick);
+  const manualLeftSec = manualState ? Math.max(0, Math.ceil((manualStateUntil - Date.now()) / 1000)) : 0;
 
   const furnitureScale = camera.zoom;
 
@@ -894,7 +913,7 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
         </div>
 
         <div className="absolute right-2 top-2 z-[300] rounded-lg border border-zinc-700 bg-zinc-950/85 px-2 py-1 text-[11px] text-zinc-300">
-          state={effectiveMainState} live={liveMainState} mode={manualState ? 'manual' : 'follow'} server={serverMode} coffee={coffeePaused ? 'paused' : 'on'}
+          state={effectiveMainState} live={liveMainState} mode={manualState ? `manual(${manualLeftSec}s)` : 'follow'} server={serverMode} coffee={coffeePaused ? 'paused' : 'on'}
         </div>
 
         {showDebug ? (

@@ -59,6 +59,8 @@ func main() {
 		gatewayCmd()
 	case "status":
 		statusCmd()
+	case "provider":
+		providerCmd()
 	case "config":
 		configCmd()
 	case "cron":
