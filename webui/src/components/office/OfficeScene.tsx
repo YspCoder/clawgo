@@ -95,34 +95,11 @@ function normalizeZone(z: string | undefined): OfficeZone {
   return 'breakroom';
 }
 
-function stateTone(s: string | undefined): string {
-  const v = (s || '').trim().toLowerCase();
-  switch (v) {
-    case 'running':
-    case 'executing':
-    case 'writing':
-      return 'bg-cyan-400';
-    case 'online':
-      return 'bg-emerald-400';
-    case 'error':
-    case 'blocked':
-    case 'offline':
-      return 'bg-red-400';
-    case 'syncing':
-    case 'suppressed':
-      return 'bg-violet-400';
-    case 'success':
-      return 'bg-emerald-400';
-    default:
-      return 'bg-zinc-300';
-  }
-}
-
 function normalizeMainSpriteState(s: string | undefined): keyof typeof MAIN_SPRITES {
   const v = (s || '').trim().toLowerCase();
-  if (v === 'error' || v === 'blocked') return 'error';
-  if (v === 'syncing' || v === 'suppressed' || v === 'sync') return 'syncing';
-  if (v === 'running' || v === 'executing' || v === 'writing' || v === 'researching' || v === 'success') return 'working';
+  if (v.includes('error') || v.includes('blocked')) return 'error';
+  if (v.includes('sync') || v.includes('suppressed')) return 'syncing';
+  if (v.includes('run') || v.includes('execut') || v.includes('writing') || v.includes('research') || v.includes('success')) return 'working';
   return 'idle';
 }
 
@@ -212,7 +189,6 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
           >
             <div className="relative">
               <SpriteSheet spec={mainSprite} frame={mainFrame} className="absolute left-1/2 top-1/2" />
-              <div className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[145%] h-2.5 w-2.5 rounded-full ring-2 ring-white/80 ${stateTone(main.state)} shadow-lg shadow-black/50`} />
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 translate-y-[62px] rounded bg-black/75 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-zinc-100">
                 clawgo
               </div>
@@ -235,7 +211,6 @@ const OfficeScene: React.FC<OfficeSceneProps> = ({ main, nodes }) => {
                   frame={frameAtTick(NODE_SPRITES[n.spriteIndex], tick, n.avatarSeed % 1000)}
                   className="absolute left-1/2 top-1/2"
                 />
-                <div className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[68%] h-2 w-2 rounded-full ring-1 ring-black/50 ${stateTone(n.state)}`} />
               </div>
             </div>
           ))}
