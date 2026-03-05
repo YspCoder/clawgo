@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { OFFICE_CANVAS, OFFICE_ZONE_POINT, OFFICE_ZONE_SLOTS, OfficeZone } from './officeLayout';
 
 export type OfficeMainState = {
+  id?: string;
+  name?: string;
   state?: string;
   detail?: string;
   zone?: string;

@@ -2496,6 +2496,25 @@ func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.R
 		}
 		return time.Time{}
 	}
+	ipv4Pattern := regexp.MustCompile(`\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b`)
+	maskIPv4 := func(text string) string {
+		if strings.TrimSpace(text) == "" {
+			return text
+		}
+		return ipv4Pattern.ReplaceAllStringFunc(text, func(ip string) string {
+			parts := strings.Split(ip, ".")
+			if len(parts) != 4 {
+				return ip
+			}
+			for _, p := range parts {
+				n, err := strconv.Atoi(p)
+				if err != nil || n < 0 || n > 255 {
+					return ip
+				}
+			}
+			return parts[0] + "." + parts[1] + ".**.**"
+		})
+	}
 	latestByTask := map[string]map[string]interface{}{}
 	latestTimeByTask := map[string]time.Time{}
 
@@ -2663,7 +2682,7 @@ func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.R
 	nodeDetail := func(n NodeInfo) string {
 		parts := make([]string, 0, 4)
 		if ep := strings.TrimSpace(n.Endpoint); ep != "" {
-			parts = append(parts, ep)
+			parts = append(parts, maskIPv4(ep))
 		}
 		switch {
 		case strings.TrimSpace(n.OS) != "" && strings.TrimSpace(n.Arch) != "":
@@ -2680,9 +2699,9 @@ func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.R
 			parts = append(parts, "seen:"+n.LastSeenAt.UTC().Format(time.RFC3339))
 		}
 		if len(parts) == 0 {
-			return "node " + strings.TrimSpace(n.ID)
+			return maskIPv4("node " + strings.TrimSpace(n.ID))
 		}
-		return strings.Join(parts, " · ")
+		return maskIPv4(strings.Join(parts, " · "))
 	}
 
 	allNodes := []NodeInfo{}
@@ -2748,6 +2767,7 @@ func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.R
 		if name == "" {
 			name = id
 		}
+		name = maskIPv4(name)
 		updatedAt := ""
 		if !n.LastSeenAt.IsZero() {
 			updatedAt = n.LastSeenAt.UTC().Format(time.RFC3339)
@@ -2773,6 +2793,7 @@ func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.R
 			mainDetailOut = mainDetailOut + " · " + nodeInfo
 		}
 	}
+	mainDetailOut = maskIPv4(mainDetailOut)
 
 	ekgErr5m := 0
 	cutoff := now.Add(-5 * time.Minute)
@@ -2793,7 +2814,7 @@ func (s *RegistryServer) handleWebUIOfficeState(w http.ResponseWriter, r *http.R
 		"time": now.Format(time.RFC3339),
 		"main": map[string]interface{}{
 			"id":      mainNode.ID,
-			"name":    mainNode.Name,
+			"name":    maskIPv4(mainNode.Name),
 			"state":   mainState,
 			"detail":  mainDetailOut,
 			"zone":    mainZone,

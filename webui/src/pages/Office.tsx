@@ -4,6 +4,22 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import OfficeScene, { OfficeMainState, OfficeNodeState } from '../components/office/OfficeScene';
 
+const IPV4_PATTERN = /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g;
+
+function maskIPv4(text: string | undefined): string {
+  const raw = String(text || '');
+  return raw.replace(IPV4_PATTERN, (ip) => {
+    const parts = ip.split('.');
+    if (parts.length !== 4) return ip;
+    const valid = parts.every((p) => {
+      const n = Number(p);
+      return Number.isInteger(n) && n >= 0 && n <= 255;
+    });
+    if (!valid) return ip;
+    return `${parts[0]}.${parts[1]}.**.**`;
+  });
+}
+
 type OfficeStats = {
   running?: number;
   waiting?: number;
@@ -52,6 +68,26 @@ const Office: React.FC = () => {
   const main = payload.main || {};
   const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
   const stats = payload.stats || {};
+  const safeMain = useMemo(
+    () => ({
+      ...main,
+      id: maskIPv4(main.id),
+      name: maskIPv4(main.name),
+      detail: maskIPv4(main.detail),
+      task_id: maskIPv4(main.task_id),
+    }),
+    [main]
+  );
+  const safeNodes = useMemo(
+    () =>
+      nodes.map((n) => ({
+        ...n,
+        id: maskIPv4(n.id),
+        name: maskIPv4(n.name),
+        detail: maskIPv4(n.detail),
+      })),
+    [nodes]
+  );
 
   const cards = useMemo(
     () => [
@@ -71,7 +107,7 @@ const Office: React.FC = () => {
         <div>
           <h1 className="text-xl md:text-2xl font-semibold">{t('office')}</h1>
           <div className="text-xs text-zinc-500 mt-1">
-            {t('officeMainState')}: {main.state || 'idle'} {main.task_id ? `· ${main.task_id}` : ''}
+            {t('officeMainState')}: {safeMain.state || 'idle'} {safeMain.task_id ? `· ${safeMain.task_id}` : ''}
           </div>
         </div>
         <button onClick={fetchState} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm flex items-center gap-2">
@@ -82,9 +118,9 @@ const Office: React.FC = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2">
-          <OfficeScene main={main} nodes={nodes} />
+          <OfficeScene main={safeMain} nodes={safeNodes} />
           <div className="mt-2 text-xs text-zinc-400 bg-zinc-900/40 border border-zinc-800 rounded-lg px-3 py-2">
-            {main.detail || t('officeNoDetail')}
+            {safeMain.detail || t('officeNoDetail')}
           </div>
         </div>
         <div className="space-y-3">
@@ -103,10 +139,10 @@ const Office: React.FC = () => {
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="text-zinc-500 text-xs mb-2">{t('officeNodeList')}</div>
             <div className="max-h-64 overflow-auto space-y-1.5">
-              {nodes.length === 0 ? (
+              {safeNodes.length === 0 ? (
                 <div className="text-zinc-500 text-sm">{t('officeNoNodes')}</div>
               ) : (
-                nodes.slice(0, 20).map((n, i) => (
+                safeNodes.slice(0, 20).map((n, i) => (
                   <div key={`${n.id || 'node'}-${i}`} className="rounded-md bg-zinc-950/70 border border-zinc-800 px-2 py-1.5">
                     <div className="text-xs text-zinc-200 truncate">{n.name || n.id || 'node'}</div>
                     <div className="text-[11px] text-zinc-500 truncate">
