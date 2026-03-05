@@ -351,7 +351,6 @@ func gatewayCmd() {
 				reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
 				reflect.DeepEqual(cfg.Channels, newCfg.Channels)
 
-			templateChanges := summarizeDialogTemplateChanges(cfg, newCfg)
 			autonomyChanges := summarizeAutonomyChanges(cfg, newCfg)
 
 			if runtimeSame {
@@ -378,9 +377,6 @@ func gatewayCmd() {
 				}
 				cfg = newCfg
 				runtimecfg.Set(cfg)
-				if len(templateChanges) > 0 {
-					fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(templateChanges, ", "))
-				}
 				if len(autonomyChanges) > 0 {
 					fmt.Printf("↻ Autonomy changes: %s\n", strings.Join(autonomyChanges, ", "))
 				}
@@ -427,9 +423,6 @@ func gatewayCmd() {
 				continue
 			}
 			go agentLoop.Run(ctx)
-			if len(templateChanges) > 0 {
-				fmt.Printf("↻ Dialog template changes: %s\n", strings.Join(templateChanges, ", "))
-			}
 			if len(autonomyChanges) > 0 {
 				fmt.Printf("↻ Autonomy changes: %s\n", strings.Join(autonomyChanges, ", "))
 			}
@@ -567,17 +560,6 @@ func summarizeAutonomyChanges(oldCfg, newCfg *config.Config) []string {
 		changes = append(changes, "notify_same_reason_cooldown_sec")
 	}
 	return changes
-}
-
-func summarizeDialogTemplateChanges(oldCfg, newCfg *config.Config) []string {
-	if oldCfg == nil || newCfg == nil {
-		return nil
-	}
-	out := make([]string, 0)
-	if oldCfg.Agents.Defaults.Heartbeat.PromptTemplate != newCfg.Agents.Defaults.Heartbeat.PromptTemplate {
-		out = append(out, "heartbeat.prompt_template")
-	}
-	return out
 }
 
 func runGatewayStartupCompactionCheck(parent context.Context, agentLoop *agent.AgentLoop) {
