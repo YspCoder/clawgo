@@ -93,14 +93,19 @@ const Cron: React.FC = () => {
       if (!ok) return;
     }
     try {
-      await fetch(`/webui/api/cron${q}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, id }),
-      });
+      await ui.withLoading(async () => {
+        const r = await fetch(`/webui/api/cron${q}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, id }),
+        });
+        if (!r.ok) {
+          throw new Error(await r.text());
+        }
+      }, t('loading'));
       await refreshCron();
     } catch (e) {
-      console.error(e);
+      await ui.notify({ title: t('actionFailed'), message: String(e) });
     }
   }
 
@@ -152,12 +157,13 @@ const Cron: React.FC = () => {
       if (r.ok) {
         setIsCronModalOpen(false);
         await refreshCron();
+        await ui.notify({ title: t('saved'), message: t('cronSaved') });
       } else {
         const err = await r.text();
-        alert(`${t('actionFailed')}: ${err}`);
+        await ui.notify({ title: t('actionFailed'), message: err });
       }
     } catch (e) {
-      alert(`${t('actionFailed')}: ${e}`);
+      await ui.notify({ title: t('actionFailed'), message: String(e) });
     }
   }
 

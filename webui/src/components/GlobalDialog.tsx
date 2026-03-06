@@ -8,16 +8,27 @@ type DialogOptions = {
   confirmText?: string;
   cancelText?: string;
   danger?: boolean;
+  initialValue?: string;
+  inputLabel?: string;
+  inputPlaceholder?: string;
 };
 
 export const GlobalDialog: React.FC<{
   open: boolean;
-  kind: 'notice' | 'confirm';
+  kind: 'notice' | 'confirm' | 'prompt';
   options: DialogOptions;
-  onConfirm: () => void;
+  onConfirm: (value?: string) => void;
   onCancel: () => void;
 }> = ({ open, kind, options, onConfirm, onCancel }) => {
   const { t } = useTranslation();
+  const [value, setValue] = React.useState(options.initialValue || '');
+
+  React.useEffect(() => {
+    if (open) {
+      setValue(options.initialValue || '');
+    }
+  }, [open, options.initialValue]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -26,14 +37,33 @@ export const GlobalDialog: React.FC<{
           <motion.div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl"
             initial={{ scale: 0.95, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 8 }}>
             <div className="px-5 py-4 border-b border-zinc-800">
-              <h3 className="text-sm font-semibold text-zinc-100">{options.title || (kind === 'confirm' ? t('dialogPleaseConfirm') : t('dialogNotice'))}</h3>
+              <h3 className="text-sm font-semibold text-zinc-100">{options.title || (kind === 'confirm' ? t('dialogPleaseConfirm') : kind === 'prompt' ? t('dialogInputTitle') : t('dialogNotice'))}</h3>
             </div>
-            <div className="px-5 py-4 text-sm text-zinc-300 whitespace-pre-wrap">{options.message}</div>
+            <div className="px-5 py-4 space-y-3">
+              <div className="text-sm text-zinc-300 whitespace-pre-wrap">{options.message}</div>
+              {kind === 'prompt' && (
+                <div className="space-y-2">
+                  {options.inputLabel && <label className="text-xs text-zinc-400">{options.inputLabel}</label>}
+                  <input
+                    autoFocus
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        onConfirm(value);
+                      }
+                    }}
+                    placeholder={options.inputPlaceholder || t('dialogInputPlaceholder')}
+                    className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-sm text-zinc-100"
+                  />
+                </div>
+              )}
+            </div>
             <div className="px-5 pb-5 flex items-center justify-end gap-2">
-              {kind === 'confirm' && (
+              {(kind === 'confirm' || kind === 'prompt') && (
                 <button onClick={onCancel} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm">{options.cancelText || t('cancel')}</button>
               )}
-              <button onClick={onConfirm} className={`px-3 py-1.5 rounded-lg text-sm ${options.danger ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
+              <button onClick={() => onConfirm(kind === 'prompt' ? value : undefined)} className={`px-3 py-1.5 rounded-lg text-sm ${options.danger ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
                 {options.confirmText || t('dialogOk')}
               </button>
             </div>

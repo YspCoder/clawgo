@@ -7,8 +7,10 @@ type UIContextType = {
   loading: boolean;
   showLoading: (text?: string) => void;
   hideLoading: () => void;
+  withLoading: <T>(task: Promise<T> | (() => Promise<T>), text?: string) => Promise<T>;
   notify: (opts: DialogOptions | string) => Promise<void>;
   confirmDialog: (opts: DialogOptions | string) => Promise<boolean>;
+  promptDialog: (opts: DialogOptions | string) => Promise<string | null>;
   openModal: (node: React.ReactNode, title?: string) => void;
   closeModal: () => void;
 };
@@ -17,18 +19,28 @@ const UIContext = createContext<UIContextType | undefined>(undefined);
 
 export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { t } = useTranslation();
-  const [loading, setLoading] = useState(false);
+  const [loadingCount, setLoadingCount] = useState(0);
   const [loadingText, setLoadingText] = useState(t('loading'));
-  const [dialog, setDialog] = useState<null | { kind: 'notice' | 'confirm'; options: DialogOptions; resolve: (v: any) => void }>(null);
+  const [dialog, setDialog] = useState<null | { kind: 'notice' | 'confirm' | 'prompt'; options: DialogOptions; resolve: (v: any) => void }>(null);
   const [customModal, setCustomModal] = useState<null | { title?: string; node: React.ReactNode }>(null);
+  const loading = loadingCount > 0;
 
   const value = useMemo<UIContextType>(() => ({
     loading,
     showLoading: (text?: string) => {
       setLoadingText(text || t('loading'));
-      setLoading(true);
+      setLoadingCount((count) => count + 1);
     },
-    hideLoading: () => setLoading(false),
+    hideLoading: () => setLoadingCount((count) => Math.max(0, count - 1)),
+    withLoading: async (task, text) => {
+      setLoadingText(text || t('loading'));
+      setLoadingCount((count) => count + 1);
+      try {
+        return typeof task === 'function' ? await task() : await task;
+      } finally {
+        setLoadingCount((count) => Math.max(0, count - 1));
+      }
+    },
     notify: (opts) => new Promise<void>((resolve) => {
       const options = typeof opts === 'string' ? { message: opts } : opts;
       setDialog({ kind: 'notice', options, resolve });
@@ -37,13 +49,23 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const options = typeof opts === 'string' ? { message: opts } : opts;
       setDialog({ kind: 'confirm', options, resolve });
     }),
+    promptDialog: (opts) => new Promise<string | null>((resolve) => {
+      const options = typeof opts === 'string' ? { message: opts } : opts;
+      setDialog({ kind: 'prompt', options, resolve });
+    }),
     openModal: (node, title) => setCustomModal({ node, title }),
     closeModal: () => setCustomModal(null),
   }), [loading, t]);
 
-  const closeDialog = (result: boolean) => {
+  const closeDialog = (result?: boolean | string | null) => {
     if (!dialog) return;
-    dialog.resolve(dialog.kind === 'notice' ? undefined : result);
+    if (dialog.kind === 'notice') {
+      dialog.resolve(undefined);
+    } else if (dialog.kind === 'prompt') {
+      dialog.resolve(typeof result === 'string' ? result : null);
+    } else {
+      dialog.resolve(Boolean(result));
+    }
     setDialog(null);
   };
 
@@ -65,10 +87,10 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       <GlobalDialog
         open={!!dialog}
-        kind={(dialog?.kind || 'notice') as 'notice' | 'confirm'}
+        kind={(dialog?.kind || 'notice') as 'notice' | 'confirm' | 'prompt'}
         options={dialog?.options || { message: '' }}
-        onConfirm={() => closeDialog(true)}
-        onCancel={() => closeDialog(false)}
+        onConfirm={(value) => closeDialog(dialog?.kind === 'prompt' ? value || '' : true)}
+        onCancel={() => closeDialog(dialog?.kind === 'prompt' ? null : false)}
       />
 
       <AnimatePresence>

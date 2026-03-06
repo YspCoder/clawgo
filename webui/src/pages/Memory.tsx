@@ -13,6 +13,10 @@ const Memory: React.FC = () => {
 
   async function loadFiles() {
     const r = await fetch(`/webui/api/memory${q}`);
+    if (!r.ok) {
+      await ui.notify({ title: t('requestFailed'), message: await r.text() });
+      return;
+    }
     const j = await r.json();
     setFiles(Array.isArray(j.files) ? j.files : []);
   }
@@ -21,6 +25,10 @@ const Memory: React.FC = () => {
 
   async function openFile(path: string) {
     const r = await fetch(`/webui/api/memory${qp('path', path)}`);
+    if (!r.ok) {
+      await ui.notify({ title: t('requestFailed'), message: await r.text() });
+      return;
+    }
     const j = await r.json();
     setActive(path);
     setContent(j.content || '');
@@ -28,12 +36,22 @@ const Memory: React.FC = () => {
 
   async function saveFile() {
     if (!active) return;
-    await fetch(`/webui/api/memory${q}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: active, content }),
-    });
-    await loadFiles();
+    try {
+      await ui.withLoading(async () => {
+        const r = await fetch(`/webui/api/memory${q}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: active, content }),
+        });
+        if (!r.ok) {
+          throw new Error(await r.text());
+        }
+        await loadFiles();
+      }, t('saving'));
+      await ui.notify({ title: t('saved'), message: t('memoryFileSaved') });
+    } catch (e) {
+      await ui.notify({ title: t('requestFailed'), message: String(e) });
+    }
   }
 
   async function removeFile(path: string) {
@@ -44,24 +62,48 @@ const Memory: React.FC = () => {
       confirmText: t('delete'),
     });
     if (!ok) return;
-    await fetch(`/webui/api/memory${qp('path', path)}`, { method: 'DELETE' });
-    if (active === path) {
-      setActive('');
-      setContent('');
+    try {
+      await ui.withLoading(async () => {
+        const r = await fetch(`/webui/api/memory${qp('path', path)}`, { method: 'DELETE' });
+        if (!r.ok) {
+          throw new Error(await r.text());
+        }
+        if (active === path) {
+          setActive('');
+          setContent('');
+        }
+        await loadFiles();
+      }, t('deleting'));
+    } catch (e) {
+      await ui.notify({ title: t('requestFailed'), message: String(e) });
     }
-    await loadFiles();
   }
 
   async function createFile() {
-    const name = prompt(t('memoryFileNamePrompt'), `note-${Date.now()}.md`);
-    if (!name) return;
-    await fetch(`/webui/api/memory${q}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: name, content: '' }),
+    const name = await ui.promptDialog({
+      title: t('memoryCreateTitle'),
+      message: t('memoryFileNamePrompt'),
+      confirmText: t('create'),
+      initialValue: `note-${Date.now()}.md`,
+      inputPlaceholder: 'note.md',
     });
-    await loadFiles();
-    await openFile(name);
+    if (!name) return;
+    try {
+      await ui.withLoading(async () => {
+        const r = await fetch(`/webui/api/memory${q}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: name, content: '' }),
+        });
+        if (!r.ok) {
+          throw new Error(await r.text());
+        }
+        await loadFiles();
+        await openFile(name);
+      }, t('creating'));
+    } catch (e) {
+      await ui.notify({ title: t('requestFailed'), message: String(e) });
+    }
   }
 
   useEffect(() => {
