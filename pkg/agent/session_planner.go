@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -27,6 +28,7 @@ type plannedTaskResult struct {
 	Index   int
 	Task    plannedTask
 	Output  string
+	Err     error
 	ErrText string
 }
 
@@ -143,19 +145,19 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 			subMsg.Metadata["planned_task_index"] = fmt.Sprintf("%d", t.Index)
 			subMsg.Metadata["planned_task_total"] = fmt.Sprintf("%d", len(tasks))
 			out, err := al.processMessage(ctx, subMsg)
-			res := plannedTaskResult{Index: index, Task: t, Output: strings.TrimSpace(out)}
+			res := plannedTaskResult{Index: index, Task: t, Output: strings.TrimSpace(out), Err: err}
 			if err != nil {
 				res.ErrText = err.Error()
 			}
 			results[index] = res
 			progressMu.Lock()
 			completed++
-			if res.ErrText != "" {
+			if res.ErrText != "" && !isPlannedTaskCancellation(ctx, res) {
 				failed++
 			}
 			snapshotCompleted := completed
 			snapshotFailed := failed
-			shouldNotify := shouldPublishPlannedTaskProgress(len(tasks), snapshotCompleted, res, milestones, notified)
+			shouldNotify := shouldPublishPlannedTaskProgress(ctx, len(tasks), snapshotCompleted, res, milestones, notified)
 			if shouldNotify && res.ErrText == "" {
 				notified[snapshotCompleted] = struct{}{}
 			}
@@ -167,6 +169,9 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 		}(i, task)
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("已自动拆解为 %d 个任务并执行：\n\n", len(results)))
 	for _, r := range results {
@@ -205,8 +210,11 @@ func plannedProgressMilestones(total int) []int {
 	return out
 }
 
-func shouldPublishPlannedTaskProgress(total, completed int, res plannedTaskResult, milestones []int, notified map[int]struct{}) bool {
+func shouldPublishPlannedTaskProgress(ctx context.Context, total, completed int, res plannedTaskResult, milestones []int, notified map[int]struct{}) bool {
 	if total <= 1 {
+		return false
+	}
+	if isPlannedTaskCancellation(ctx, res) {
 		return false
 	}
 	if strings.TrimSpace(res.ErrText) != "" {
@@ -225,6 +233,16 @@ func shouldPublishPlannedTaskProgress(total, completed int, res plannedTaskResul
 		return true
 	}
 	return false
+}
+
+func isPlannedTaskCancellation(ctx context.Context, res plannedTaskResult) bool {
+	if res.Err != nil && errors.Is(res.Err, context.Canceled) {
+		return true
+	}
+	if strings.EqualFold(strings.TrimSpace(res.ErrText), context.Canceled.Error()) {
+		return true
+	}
+	return ctx != nil && errors.Is(ctx.Err(), context.Canceled)
 }
 
 func (al *AgentLoop) publishPlannedTaskProgress(msg bus.InboundMessage, total, completed, failed int, res plannedTaskResult) {

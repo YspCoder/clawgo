@@ -9,6 +9,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -544,6 +545,11 @@ func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage)
 
 	response, err := al.processPlannedMessage(ctx, msg)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			al.audit.Record(al.getTrigger(msg), msg.Channel, msg.SessionKey, true, err)
+			al.appendTaskAudit(taskID, msg, started, err, true)
+			return
+		}
 		response = fmt.Sprintf("Error processing message: %v", err)
 	}
 
