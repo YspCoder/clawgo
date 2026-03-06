@@ -60,6 +60,7 @@ func agentCmd() {
 	configureCronServiceRuntime(cronService, cfg)
 
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, cronService)
+	agentLoop.SetConfigPath(getConfigPath())
 
 	startupInfo := agentLoop.GetStartupInfo()
 	logger.InfoCF("agent", logger.C0098,

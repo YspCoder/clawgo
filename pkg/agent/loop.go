@@ -61,6 +61,21 @@ type AgentLoop struct {
 	sessionStreamed      map[string]bool
 	subagentManager      *tools.SubagentManager
 	orchestrator         *tools.Orchestrator
+	subagentRouter       *tools.SubagentRouter
+	subagentConfigTool   *tools.SubagentConfigTool
+	pendingSubagentDraft map[string]map[string]interface{}
+	pendingDraftStore    *PendingSubagentDraftStore
+	configPath           string
+}
+
+func (al *AgentLoop) SetConfigPath(path string) {
+	if al == nil {
+		return
+	}
+	al.configPath = strings.TrimSpace(path)
+	if al.subagentConfigTool != nil {
+		al.subagentConfigTool.SetConfigPath(al.configPath)
+	}
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -171,9 +186,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	// Register spawn tool
 	orchestrator := tools.NewOrchestrator()
 	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus, orchestrator)
+	subagentRouter := tools.NewSubagentRouter(subagentManager)
+	subagentConfigTool := tools.NewSubagentConfigTool("")
+	pendingDraftStore := NewPendingSubagentDraftStore(workspace)
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
 	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager))
+	toolsRegistry.Register(subagentConfigTool)
 	if store := subagentManager.ProfileStore(); store != nil {
 		toolsRegistry.Register(tools.NewSubagentProfileTool(store))
 	}
@@ -240,6 +259,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		telegramStreaming:    cfg.Channels.Telegram.Streaming,
 		subagentManager:      subagentManager,
 		orchestrator:         orchestrator,
+		subagentRouter:       subagentRouter,
+		subagentConfigTool:   subagentConfigTool,
+		pendingSubagentDraft: map[string]map[string]interface{}{},
+		pendingDraftStore:    pendingDraftStore,
+	}
+	if pendingDraftStore != nil {
+		loop.pendingSubagentDraft = pendingDraftStore.All()
 	}
 	// Initialize provider fallback chain (primary + proxy_fallbacks).
 	loop.providerPool = map[string]providers.LLMProvider{}
@@ -769,6 +795,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
+	}
+	if configAction, handled, configErr := al.maybeHandleSubagentConfigIntent(ctx, msg); handled {
+		return configAction, configErr
+	}
+	if routed, ok, routeErr := al.maybeAutoRoute(ctx, msg); ok {
+		return routed, routeErr
 	}
 
 	history := al.sessions.GetHistory(msg.SessionKey)

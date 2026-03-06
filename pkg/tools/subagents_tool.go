@@ -27,9 +27,13 @@ func (t *SubagentsTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action":         map[string]interface{}{"type": "string", "description": "list|info|kill|steer|send|log|resume"},
+			"action":         map[string]interface{}{"type": "string", "description": "list|info|kill|steer|send|log|resume|thread|inbox|reply|trace|ack"},
 			"id":             map[string]interface{}{"type": "string", "description": "subagent id/#index/all for info/kill/steer/send/log"},
 			"message":        map[string]interface{}{"type": "string", "description": "steering message for steer/send action"},
+			"message_id":     map[string]interface{}{"type": "string", "description": "message id for reply/ack"},
+			"thread_id":      map[string]interface{}{"type": "string", "description": "thread id for thread/trace action; defaults to task thread"},
+			"agent_id":       map[string]interface{}{"type": "string", "description": "agent id for inbox action; defaults to task agent"},
+			"limit":          map[string]interface{}{"type": "integer", "description": "max messages/events to show", "default": 20},
 			"recent_minutes": map[string]interface{}{"type": "integer", "description": "optional list/info all filter by recent updated minutes"},
 		},
 		"required": []string{"action"},
@@ -47,6 +51,16 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 	id = strings.TrimSpace(id)
 	message, _ := args["message"].(string)
 	message = strings.TrimSpace(message)
+	messageID, _ := args["message_id"].(string)
+	messageID = strings.TrimSpace(messageID)
+	threadID, _ := args["thread_id"].(string)
+	threadID = strings.TrimSpace(threadID)
+	agentID, _ := args["agent_id"].(string)
+	agentID = strings.TrimSpace(agentID)
+	limit := 20
+	if v, ok := args["limit"].(float64); ok && int(v) > 0 {
+		limit = int(v)
+	}
 	recentMinutes := 0
 	if v, ok := args["recent_minutes"].(float64); ok && int(v) > 0 {
 		recentMinutes = int(v)
@@ -89,10 +103,20 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		if !ok {
 			return "subagent not found", nil
 		}
-		return fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nAgent ID: %s\nRole: %s\nSession Key: %s\nMemory Namespace: %s\nTool Allowlist: %v\nMax Retries: %d\nRetry Count: %d\nRetry Backoff(ms): %d\nTimeout(s): %d\nMax Task Chars: %d\nMax Result Chars: %d\nCreated: %d\nUpdated: %d\nSteering Count: %d\nTask: %s\nResult:\n%s",
-			task.ID, task.Status, task.Label, task.AgentID, task.Role, task.SessionKey, task.MemoryNS,
+		info := fmt.Sprintf("ID: %s\nStatus: %s\nLabel: %s\nAgent ID: %s\nRole: %s\nSession Key: %s\nThread ID: %s\nCorrelation ID: %s\nWaiting Reply: %t\nMemory Namespace: %s\nTool Allowlist: %v\nMax Retries: %d\nRetry Count: %d\nRetry Backoff(ms): %d\nTimeout(s): %d\nMax Task Chars: %d\nMax Result Chars: %d\nCreated: %d\nUpdated: %d\nSteering Count: %d\nTask: %s\nResult:\n%s",
+			task.ID, task.Status, task.Label, task.AgentID, task.Role, task.SessionKey, task.ThreadID, task.CorrelationID, task.WaitingReply, task.MemoryNS,
 			task.ToolAllowlist, task.MaxRetries, task.RetryCount, task.RetryBackoff, task.TimeoutSec, task.MaxTaskChars, task.MaxResultChars,
-			task.Created, task.Updated, len(task.Steering), task.Task, task.Result), nil
+			task.Created, task.Updated, len(task.Steering), task.Task, task.Result)
+		if events, err := t.manager.Events(task.ID, 6); err == nil && len(events) > 0 {
+			var sb strings.Builder
+			sb.WriteString(info)
+			sb.WriteString("\nEvents:\n")
+			for _, evt := range events {
+				sb.WriteString(formatSubagentEventLog(evt) + "\n")
+			}
+			return strings.TrimSpace(sb.String()), nil
+		}
+		return info, nil
 	case "kill":
 		if strings.EqualFold(strings.TrimSpace(id), "all") {
 			tasks := t.filterRecent(t.manager.ListTasks(), recentMinutes)
@@ -115,9 +139,9 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 			return "subagent not found", nil
 		}
 		return "subagent kill requested", nil
-	case "steer", "send":
+	case "steer":
 		if message == "" {
-			return "message is required for steer/send", nil
+			return "message is required for steer", nil
 		}
 		resolvedID, err := t.resolveTaskID(id)
 		if err != nil {
@@ -127,6 +151,105 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 			return "subagent not found", nil
 		}
 		return "steering message accepted", nil
+	case "send":
+		if message == "" {
+			return "message is required for send", nil
+		}
+		resolvedID, err := t.resolveTaskID(id)
+		if err != nil {
+			return err.Error(), nil
+		}
+		if !t.manager.SendTaskMessage(resolvedID, message) {
+			return "subagent not found", nil
+		}
+		return "message sent", nil
+	case "reply":
+		if message == "" {
+			return "message is required for reply", nil
+		}
+		resolvedID, err := t.resolveTaskID(id)
+		if err != nil {
+			return err.Error(), nil
+		}
+		if !t.manager.ReplyToTask(resolvedID, messageID, message) {
+			return "subagent not found", nil
+		}
+		return "reply sent", nil
+	case "ack":
+		if messageID == "" {
+			return "message_id is required for ack", nil
+		}
+		resolvedID, err := t.resolveTaskID(id)
+		if err != nil {
+			return err.Error(), nil
+		}
+		if !t.manager.AckTaskMessage(resolvedID, messageID) {
+			return "subagent or message not found", nil
+		}
+		return "message acked", nil
+	case "thread", "trace":
+		if threadID == "" {
+			resolvedID, err := t.resolveTaskID(id)
+			if err != nil {
+				return err.Error(), nil
+			}
+			task, ok := t.manager.GetTask(resolvedID)
+			if !ok {
+				return "subagent not found", nil
+			}
+			threadID = task.ThreadID
+		}
+		if threadID == "" {
+			return "thread_id is required", nil
+		}
+		thread, ok := t.manager.Thread(threadID)
+		if !ok {
+			return "thread not found", nil
+		}
+		msgs, err := t.manager.ThreadMessages(threadID, limit)
+		if err != nil {
+			return "", err
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Thread: %s\nOwner: %s\nStatus: %s\nParticipants: %s\nTopic: %s\n",
+			thread.ThreadID, thread.Owner, thread.Status, strings.Join(thread.Participants, ","), thread.Topic))
+		if len(msgs) > 0 {
+			sb.WriteString("Messages:\n")
+			for _, msg := range msgs {
+				sb.WriteString(fmt.Sprintf("- %s %s -> %s type=%s reply_to=%s status=%s\n  %s\n",
+					msg.MessageID, msg.FromAgent, msg.ToAgent, msg.Type, msg.ReplyTo, msg.Status, msg.Content))
+			}
+		}
+		return strings.TrimSpace(sb.String()), nil
+	case "inbox":
+		if agentID == "" {
+			resolvedID, err := t.resolveTaskID(id)
+			if err != nil {
+				return err.Error(), nil
+			}
+			task, ok := t.manager.GetTask(resolvedID)
+			if !ok {
+				return "subagent not found", nil
+			}
+			agentID = task.AgentID
+		}
+		if agentID == "" {
+			return "agent_id is required", nil
+		}
+		msgs, err := t.manager.Inbox(agentID, limit)
+		if err != nil {
+			return "", err
+		}
+		if len(msgs) == 0 {
+			return "No inbox messages.", nil
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Inbox for %s:\n", agentID))
+		for _, msg := range msgs {
+			sb.WriteString(fmt.Sprintf("- %s thread=%s from=%s type=%s status=%s\n  %s\n",
+				msg.MessageID, msg.ThreadID, msg.FromAgent, msg.Type, msg.Status, msg.Content))
+		}
+		return strings.TrimSpace(sb.String()), nil
 	case "log":
 		resolvedID, err := t.resolveTaskID(id)
 		if err != nil {
@@ -139,12 +262,18 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("Subagent %s Log\n", task.ID))
 		sb.WriteString(fmt.Sprintf("Status: %s\n", task.Status))
-		sb.WriteString(fmt.Sprintf("Agent ID: %s\nRole: %s\nSession Key: %s\nTool Allowlist: %v\nMax Retries: %d\nRetry Count: %d\nRetry Backoff(ms): %d\nTimeout(s): %d\n",
-			task.AgentID, task.Role, task.SessionKey, task.ToolAllowlist, task.MaxRetries, task.RetryCount, task.RetryBackoff, task.TimeoutSec))
+		sb.WriteString(fmt.Sprintf("Agent ID: %s\nRole: %s\nSession Key: %s\nThread ID: %s\nCorrelation ID: %s\nWaiting Reply: %t\nTool Allowlist: %v\nMax Retries: %d\nRetry Count: %d\nRetry Backoff(ms): %d\nTimeout(s): %d\n",
+			task.AgentID, task.Role, task.SessionKey, task.ThreadID, task.CorrelationID, task.WaitingReply, task.ToolAllowlist, task.MaxRetries, task.RetryCount, task.RetryBackoff, task.TimeoutSec))
 		if len(task.Steering) > 0 {
 			sb.WriteString("Steering Messages:\n")
 			for _, m := range task.Steering {
 				sb.WriteString("- " + m + "\n")
+			}
+		}
+		if events, err := t.manager.Events(task.ID, 20); err == nil && len(events) > 0 {
+			sb.WriteString("Events:\n")
+			for _, evt := range events {
+				sb.WriteString(formatSubagentEventLog(evt) + "\n")
 			}
 		}
 		if strings.TrimSpace(task.Result) != "" {

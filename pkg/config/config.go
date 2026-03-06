@@ -27,7 +27,70 @@ type Config struct {
 }
 
 type AgentsConfig struct {
-	Defaults AgentDefaults `json:"defaults"`
+	Defaults      AgentDefaults             `json:"defaults"`
+	Router        AgentRouterConfig         `json:"router,omitempty"`
+	Communication AgentCommunicationConfig  `json:"communication,omitempty"`
+	Subagents     map[string]SubagentConfig `json:"subagents,omitempty"`
+}
+
+type AgentRouterConfig struct {
+	Enabled              bool             `json:"enabled"`
+	MainAgentID          string           `json:"main_agent_id,omitempty"`
+	Strategy             string           `json:"strategy,omitempty"`
+	Rules                []AgentRouteRule `json:"rules,omitempty"`
+	AllowDirectAgentChat bool             `json:"allow_direct_agent_chat,omitempty"`
+	MaxHops              int              `json:"max_hops,omitempty"`
+	DefaultTimeoutSec    int              `json:"default_timeout_sec,omitempty"`
+	DefaultWaitReply     bool             `json:"default_wait_reply,omitempty"`
+	StickyThreadOwner    bool             `json:"sticky_thread_owner,omitempty"`
+}
+
+type AgentRouteRule struct {
+	AgentID  string   `json:"agent_id"`
+	Keywords []string `json:"keywords,omitempty"`
+}
+
+type AgentCommunicationConfig struct {
+	Mode                 string `json:"mode,omitempty"`
+	PersistThreads       bool   `json:"persist_threads,omitempty"`
+	PersistMessages      bool   `json:"persist_messages,omitempty"`
+	MaxMessagesPerThread int    `json:"max_messages_per_thread,omitempty"`
+	DeadLetterQueue      bool   `json:"dead_letter_queue,omitempty"`
+	DefaultMessageTTLSec int    `json:"default_message_ttl_sec,omitempty"`
+}
+
+type SubagentConfig struct {
+	Enabled               bool                  `json:"enabled"`
+	Type                  string                `json:"type,omitempty"`
+	DisplayName           string                `json:"display_name,omitempty"`
+	Role                  string                `json:"role,omitempty"`
+	Description           string                `json:"description,omitempty"`
+	SystemPrompt          string                `json:"system_prompt,omitempty"`
+	MemoryNamespace       string                `json:"memory_namespace,omitempty"`
+	AcceptFrom            []string              `json:"accept_from,omitempty"`
+	CanTalkTo             []string              `json:"can_talk_to,omitempty"`
+	RequiresMainMediation bool                  `json:"requires_main_mediation,omitempty"`
+	DefaultReplyTo        string                `json:"default_reply_to,omitempty"`
+	Tools                 SubagentToolsConfig   `json:"tools,omitempty"`
+	Runtime               SubagentRuntimeConfig `json:"runtime,omitempty"`
+}
+
+type SubagentToolsConfig struct {
+	Allowlist        []string `json:"allowlist,omitempty"`
+	Denylist         []string `json:"denylist,omitempty"`
+	MaxParallelCalls int      `json:"max_parallel_calls,omitempty"`
+}
+
+type SubagentRuntimeConfig struct {
+	Proxy           string  `json:"proxy,omitempty"`
+	Model           string  `json:"model,omitempty"`
+	Temperature     float64 `json:"temperature,omitempty"`
+	TimeoutSec      int     `json:"timeout_sec,omitempty"`
+	MaxRetries      int     `json:"max_retries,omitempty"`
+	RetryBackoffMs  int     `json:"retry_backoff_ms,omitempty"`
+	MaxTaskChars    int     `json:"max_task_chars,omitempty"`
+	MaxResultChars  int     `json:"max_result_chars,omitempty"`
+	MaxParallelRuns int     `json:"max_parallel_runs,omitempty"`
 }
 
 type AgentDefaults struct {
@@ -352,6 +415,26 @@ func DefaultConfig() *Config {
 					},
 				},
 			},
+			Router: AgentRouterConfig{
+				Enabled:              false,
+				MainAgentID:          "main",
+				Strategy:             "rules_first",
+				Rules:                []AgentRouteRule{},
+				AllowDirectAgentChat: false,
+				MaxHops:              6,
+				DefaultTimeoutSec:    600,
+				DefaultWaitReply:     true,
+				StickyThreadOwner:    true,
+			},
+			Communication: AgentCommunicationConfig{
+				Mode:                 "mediated",
+				PersistThreads:       true,
+				PersistMessages:      true,
+				MaxMessagesPerThread: 100,
+				DeadLetterQueue:      true,
+				DefaultMessageTTLSec: 86400,
+			},
+			Subagents: map[string]SubagentConfig{},
 		},
 		Channels: ChannelsConfig{
 			InboundMessageIDDedupeTTLSeconds:  600,

@@ -6,7 +6,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"clawgo/pkg/config"
+	"clawgo/pkg/runtimecfg"
 	"clawgo/pkg/tools"
 )
 
@@ -14,12 +17,16 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 	if al == nil || al.subagentManager == nil {
 		return nil, fmt.Errorf("subagent runtime is not configured")
 	}
+	if al.subagentRouter == nil {
+		return nil, fmt.Errorf("subagent router is not configured")
+	}
 	action = strings.ToLower(strings.TrimSpace(action))
 	if action == "" {
 		action = "list"
 	}
 
 	sm := al.subagentManager
+	router := al.subagentRouter
 	switch action {
 	case "list":
 		tasks := sm.ListTasks()
@@ -63,6 +70,128 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 			return nil, err
 		}
 		return map[string]interface{}{"message": msg}, nil
+	case "dispatch_and_wait":
+		taskInput := runtimeStringArg(args, "task")
+		if taskInput == "" {
+			return nil, fmt.Errorf("task is required")
+		}
+		task, err := router.DispatchTask(ctx, tools.RouterDispatchRequest{
+			Task:           taskInput,
+			Label:          runtimeStringArg(args, "label"),
+			Role:           runtimeStringArg(args, "role"),
+			AgentID:        runtimeStringArg(args, "agent_id"),
+			ThreadID:       runtimeStringArg(args, "thread_id"),
+			CorrelationID:  runtimeStringArg(args, "correlation_id"),
+			ParentRunID:    runtimeStringArg(args, "parent_run_id"),
+			OriginChannel:  fallbackString(runtimeStringArg(args, "channel"), "webui"),
+			OriginChatID:   fallbackString(runtimeStringArg(args, "chat_id"), "webui"),
+			MaxRetries:     runtimeIntArg(args, "max_retries", 0),
+			RetryBackoff:   runtimeIntArg(args, "retry_backoff_ms", 0),
+			TimeoutSec:     runtimeIntArg(args, "timeout_sec", 0),
+			MaxTaskChars:   runtimeIntArg(args, "max_task_chars", 0),
+			MaxResultChars: runtimeIntArg(args, "max_result_chars", 0),
+		})
+		if err != nil {
+			return nil, err
+		}
+		waitTimeoutSec := runtimeIntArg(args, "wait_timeout_sec", 120)
+		waitCtx := ctx
+		var cancel context.CancelFunc
+		if waitTimeoutSec > 0 {
+			waitCtx, cancel = context.WithTimeout(ctx, time.Duration(waitTimeoutSec)*time.Second)
+			defer cancel()
+		}
+		reply, err := router.WaitReply(waitCtx, task.ID, 100*time.Millisecond)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"task":   cloneSubagentTask(task),
+			"reply":  reply,
+			"merged": router.MergeResults([]*tools.RouterReply{reply}),
+		}, nil
+	case "draft_config_subagent":
+		description := runtimeStringArg(args, "description")
+		if description == "" {
+			return nil, fmt.Errorf("description is required")
+		}
+		draft := tools.DraftConfigSubagent(description, runtimeStringArg(args, "agent_id_hint"))
+		return map[string]interface{}{"draft": draft}, nil
+	case "registry":
+		cfg := runtimecfg.Get()
+		if cfg == nil {
+			return map[string]interface{}{"items": []map[string]interface{}{}}, nil
+		}
+		items := make([]map[string]interface{}, 0, len(cfg.Agents.Subagents))
+		for agentID, subcfg := range cfg.Agents.Subagents {
+			items = append(items, map[string]interface{}{
+				"agent_id":         agentID,
+				"enabled":          subcfg.Enabled,
+				"type":             subcfg.Type,
+				"display_name":     subcfg.DisplayName,
+				"role":             subcfg.Role,
+				"description":      subcfg.Description,
+				"system_prompt":    subcfg.SystemPrompt,
+				"memory_namespace": subcfg.MemoryNamespace,
+				"tool_allowlist":   append([]string(nil), subcfg.Tools.Allowlist...),
+				"routing_keywords": routeKeywordsForRegistry(cfg.Agents.Router.Rules, agentID),
+			})
+		}
+		sort.Slice(items, func(i, j int) bool {
+			left, _ := items[i]["agent_id"].(string)
+			right, _ := items[j]["agent_id"].(string)
+			return left < right
+		})
+		return map[string]interface{}{"items": items}, nil
+	case "pending_drafts":
+		items := make([]map[string]interface{}, 0, len(al.pendingSubagentDraft))
+		for sessionKey, draft := range al.pendingSubagentDraft {
+			items = append(items, map[string]interface{}{
+				"session_key": sessionKey,
+				"draft":       cloneDraftMap(draft),
+			})
+		}
+		sort.Slice(items, func(i, j int) bool {
+			left, _ := items[i]["session_key"].(string)
+			right, _ := items[j]["session_key"].(string)
+			return left < right
+		})
+		return map[string]interface{}{"items": items}, nil
+	case "clear_pending_draft":
+		sessionKey := fallbackString(runtimeStringArg(args, "session_key"), "main")
+		if al.loadPendingSubagentDraft(sessionKey) == nil {
+			return map[string]interface{}{"ok": false, "found": false}, nil
+		}
+		al.deletePendingSubagentDraft(sessionKey)
+		return map[string]interface{}{"ok": true, "found": true, "session_key": sessionKey}, nil
+	case "confirm_pending_draft":
+		sessionKey := fallbackString(runtimeStringArg(args, "session_key"), "main")
+		msg, handled, err := al.confirmPendingSubagentDraft(sessionKey)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"ok": handled, "found": handled, "session_key": sessionKey, "message": msg}, nil
+	case "set_config_subagent_enabled":
+		agentID := runtimeStringArg(args, "agent_id")
+		if agentID == "" {
+			return nil, fmt.Errorf("agent_id is required")
+		}
+		enabled, ok := args["enabled"].(bool)
+		if !ok {
+			return nil, fmt.Errorf("enabled is required")
+		}
+		return tools.UpsertConfigSubagent(al.configPath, map[string]interface{}{
+			"agent_id": agentID,
+			"enabled":  enabled,
+		})
+	case "delete_config_subagent":
+		agentID := runtimeStringArg(args, "agent_id")
+		if agentID == "" {
+			return nil, fmt.Errorf("agent_id is required")
+		}
+		return tools.DeleteConfigSubagent(al.configPath, agentID)
+	case "upsert_config_subagent":
+		return tools.UpsertConfigSubagent(al.configPath, args)
 	case "kill":
 		taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
 		if err != nil {
@@ -77,7 +206,7 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 		}
 		label, ok := sm.ResumeTask(ctx, taskID)
 		return map[string]interface{}{"ok": ok, "label": label}, nil
-	case "steer", "send":
+	case "steer":
 		taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
 		if err != nil {
 			return nil, err
@@ -88,6 +217,85 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 		}
 		ok := sm.SteerTask(taskID, msg)
 		return map[string]interface{}{"ok": ok}, nil
+	case "send":
+		taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
+		if err != nil {
+			return nil, err
+		}
+		msg := runtimeStringArg(args, "message")
+		if msg == "" {
+			return nil, fmt.Errorf("message is required")
+		}
+		ok := sm.SendTaskMessage(taskID, msg)
+		return map[string]interface{}{"ok": ok}, nil
+	case "reply":
+		taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
+		if err != nil {
+			return nil, err
+		}
+		msg := runtimeStringArg(args, "message")
+		if msg == "" {
+			return nil, fmt.Errorf("message is required")
+		}
+		ok := sm.ReplyToTask(taskID, runtimeStringArg(args, "message_id"), msg)
+		return map[string]interface{}{"ok": ok}, nil
+	case "ack":
+		taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
+		if err != nil {
+			return nil, err
+		}
+		messageID := runtimeStringArg(args, "message_id")
+		if messageID == "" {
+			return nil, fmt.Errorf("message_id is required")
+		}
+		ok := sm.AckTaskMessage(taskID, messageID)
+		return map[string]interface{}{"ok": ok}, nil
+	case "thread", "trace":
+		threadID := runtimeStringArg(args, "thread_id")
+		if threadID == "" {
+			taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
+			if err != nil {
+				return nil, err
+			}
+			task, ok := sm.GetTask(taskID)
+			if !ok {
+				return map[string]interface{}{"found": false}, nil
+			}
+			threadID = strings.TrimSpace(task.ThreadID)
+		}
+		if threadID == "" {
+			return nil, fmt.Errorf("thread_id is required")
+		}
+		thread, ok := sm.Thread(threadID)
+		if !ok {
+			return map[string]interface{}{"found": false}, nil
+		}
+		items, err := sm.ThreadMessages(threadID, runtimeIntArg(args, "limit", 50))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"found": true, "thread": thread, "messages": items}, nil
+	case "inbox":
+		agentID := runtimeStringArg(args, "agent_id")
+		if agentID == "" {
+			taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
+			if err != nil {
+				return nil, err
+			}
+			task, ok := sm.GetTask(taskID)
+			if !ok {
+				return map[string]interface{}{"found": false}, nil
+			}
+			agentID = strings.TrimSpace(task.AgentID)
+		}
+		if agentID == "" {
+			return nil, fmt.Errorf("agent_id is required")
+		}
+		items, err := sm.Inbox(agentID, runtimeIntArg(args, "limit", 50))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"found": true, "agent_id": agentID, "messages": items}, nil
 	default:
 		return nil, fmt.Errorf("unsupported action: %s", action)
 	}
@@ -293,4 +501,14 @@ func fallbackString(v, fallback string) string {
 		return fallback
 	}
 	return strings.TrimSpace(v)
+}
+
+func routeKeywordsForRegistry(rules []config.AgentRouteRule, agentID string) []string {
+	agentID = strings.TrimSpace(agentID)
+	for _, rule := range rules {
+		if strings.TrimSpace(rule.AgentID) == agentID {
+			return append([]string(nil), rule.Keywords...)
+		}
+	}
+	return nil
 }

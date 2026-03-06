@@ -4,11 +4,13 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"clawgo/pkg/config"
+	"clawgo/pkg/runtimecfg"
 )
 
 func TestSubagentProfileStoreNormalization(t *testing.T) {
-	t.Parallel()
-
 	store := NewSubagentProfileStore(t.TempDir())
 	saved, err := store.Upsert(SubagentProfile{
 		AgentID:         "Coder Agent",
@@ -42,8 +44,6 @@ func TestSubagentProfileStoreNormalization(t *testing.T) {
 }
 
 func TestSubagentManagerSpawnRejectsDisabledProfile(t *testing.T) {
-	t.Parallel()
-
 	workspace := t.TempDir()
 	manager := NewSubagentManager(nil, workspace, nil, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
@@ -72,8 +72,6 @@ func TestSubagentManagerSpawnRejectsDisabledProfile(t *testing.T) {
 }
 
 func TestSubagentManagerSpawnResolvesProfileByRole(t *testing.T) {
-	t.Parallel()
-
 	workspace := t.TempDir()
 	manager := NewSubagentManager(nil, workspace, nil, nil)
 	store := manager.ProfileStore()
@@ -112,5 +110,73 @@ func TestSubagentManagerSpawnResolvesProfileByRole(t *testing.T) {
 	}
 	if len(task.ToolAllowlist) != 1 || task.ToolAllowlist[0] != "read_file" {
 		t.Fatalf("expected allowlist from profile, got: %v", task.ToolAllowlist)
+	}
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+}
+
+func TestSubagentProfileStoreReadsProfilesFromRuntimeConfig(t *testing.T) {
+	runtimecfg.Set(config.DefaultConfig())
+	t.Cleanup(func() {
+		runtimecfg.Set(config.DefaultConfig())
+	})
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Subagents["coder"] = config.SubagentConfig{
+		Enabled:         true,
+		DisplayName:     "Code Agent",
+		Role:            "coding",
+		SystemPrompt:    "write code",
+		MemoryNamespace: "code-ns",
+		Tools: config.SubagentToolsConfig{
+			Allowlist: []string{"read_file", "shell"},
+		},
+		Runtime: config.SubagentRuntimeConfig{
+			MaxRetries:     2,
+			RetryBackoffMs: 2000,
+			TimeoutSec:     120,
+			MaxTaskChars:   4096,
+			MaxResultChars: 2048,
+		},
+	}
+	runtimecfg.Set(cfg)
+
+	store := NewSubagentProfileStore(t.TempDir())
+	profile, ok, err := store.Get("coder")
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected config-backed profile")
+	}
+	if profile.ManagedBy != "config.json" {
+		t.Fatalf("expected config ownership, got: %s", profile.ManagedBy)
+	}
+	if profile.Name != "Code Agent" || profile.Role != "coding" {
+		t.Fatalf("unexpected profile fields: %+v", profile)
+	}
+	if len(profile.ToolAllowlist) != 2 {
+		t.Fatalf("expected merged allowlist, got: %v", profile.ToolAllowlist)
+	}
+}
+
+func TestSubagentProfileStoreRejectsWritesForConfigManagedProfiles(t *testing.T) {
+	runtimecfg.Set(config.DefaultConfig())
+	t.Cleanup(func() {
+		runtimecfg.Set(config.DefaultConfig())
+	})
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Subagents["tester"] = config.SubagentConfig{
+		Enabled: true,
+		Role:    "test",
+	}
+	runtimecfg.Set(cfg)
+
+	store := NewSubagentProfileStore(t.TempDir())
+	if _, err := store.Upsert(SubagentProfile{AgentID: "tester"}); err == nil {
+		t.Fatalf("expected config-managed upsert to fail")
+	}
+	if err := store.Delete("tester"); err == nil {
+		t.Fatalf("expected config-managed delete to fail")
 	}
 }

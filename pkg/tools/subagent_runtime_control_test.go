@@ -147,6 +147,323 @@ func TestSubagentBroadcastIncludesFailureStatus(t *testing.T) {
 	}
 }
 
+func TestSubagentManagerRestoresPersistedRuns(t *testing.T) {
+	workspace := t.TempDir()
+	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		return "persisted", nil
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "persist task",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+
+	task := waitSubagentDone(t, manager, 4*time.Second)
+	if task.Status != "completed" {
+		t.Fatalf("expected completed task, got %s", task.Status)
+	}
+
+	reloaded := NewSubagentManager(nil, workspace, nil, nil)
+	got, ok := reloaded.GetTask(task.ID)
+	if !ok {
+		t.Fatalf("expected persisted task to reload")
+	}
+	if got.Status != "completed" || got.Result != "persisted" {
+		t.Fatalf("unexpected restored task: %+v", got)
+	}
+
+	_, err = reloaded.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "second task",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn after reload failed: %v", err)
+	}
+	tasks := reloaded.ListTasks()
+	found := false
+	for _, item := range tasks {
+		if item.ID == "subagent-2" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected nextID seed to continue from persisted runs, got %+v", tasks)
+	}
+	_ = waitSubagentDone(t, reloaded, 4*time.Second)
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestSubagentManagerPersistsEvents(t *testing.T) {
+	workspace := t.TempDir()
+	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		time.Sleep(100 * time.Millisecond)
+		return "ok", nil
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "event task",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	if !manager.SteerTask("subagent-1", "focus on tests") {
+		t.Fatalf("expected steer to succeed")
+	}
+	task := waitSubagentDone(t, manager, 4*time.Second)
+	events, err := manager.Events(task.ID, 0)
+	if err != nil {
+		t.Fatalf("events failed: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatalf("expected persisted events")
+	}
+	hasSteer := false
+	for _, evt := range events {
+		if evt.Type == "steered" {
+			hasSteer = true
+			break
+		}
+	}
+	if !hasSteer {
+		t.Fatalf("expected steered event, got %+v", events)
+	}
+}
+
+func TestSubagentMailboxStoresThreadAndReplies(t *testing.T) {
+	workspace := t.TempDir()
+	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		return "done", nil
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "implement feature",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+
+	task := waitSubagentDone(t, manager, 4*time.Second)
+	if task.ThreadID == "" {
+		t.Fatalf("expected thread id")
+	}
+	thread, ok := manager.Thread(task.ThreadID)
+	if !ok {
+		t.Fatalf("expected thread to exist")
+	}
+	if thread.Owner != "main" {
+		t.Fatalf("expected thread owner main, got %s", thread.Owner)
+	}
+
+	msgs, err := manager.ThreadMessages(task.ThreadID, 10)
+	if err != nil {
+		t.Fatalf("thread messages failed: %v", err)
+	}
+	if len(msgs) < 2 {
+		t.Fatalf("expected task and reply messages, got %+v", msgs)
+	}
+	if msgs[0].FromAgent != "main" || msgs[0].ToAgent != "coder" {
+		t.Fatalf("unexpected initial message: %+v", msgs[0])
+	}
+	last := msgs[len(msgs)-1]
+	if last.FromAgent != "coder" || last.ToAgent != "main" || last.Type != "result" {
+		t.Fatalf("unexpected reply message: %+v", last)
+	}
+}
+
+func TestSubagentMailboxInboxIncludesControlMessages(t *testing.T) {
+	workspace := t.TempDir()
+	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		time.Sleep(150 * time.Millisecond)
+		return "ok", nil
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "run checks",
+		AgentID:       "tester",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+
+	time.Sleep(30 * time.Millisecond)
+	if !manager.SteerTask("subagent-1", "focus on regressions") {
+		t.Fatalf("expected steer to succeed")
+	}
+	inbox, err := manager.Inbox("tester", 10)
+	if err != nil {
+		t.Fatalf("inbox failed: %v", err)
+	}
+	if len(inbox) < 1 {
+		t.Fatalf("expected queued control message, got %+v", inbox)
+	}
+	foundControl := false
+	for _, msg := range inbox {
+		if msg.Type == "control" && strings.Contains(msg.Content, "regressions") {
+			foundControl = true
+			break
+		}
+	}
+	if !foundControl {
+		t.Fatalf("expected control message in inbox, got %+v", inbox)
+	}
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+}
+
+func TestSubagentMailboxReplyAndAckFlow(t *testing.T) {
+	workspace := t.TempDir()
+	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		time.Sleep(150 * time.Millisecond)
+		return "ok", nil
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "review patch",
+		AgentID:       "tester",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+	time.Sleep(30 * time.Millisecond)
+	if !manager.SendTaskMessage("subagent-1", "please confirm scope") {
+		t.Fatalf("expected send to succeed")
+	}
+
+	inbox, err := manager.Inbox("tester", 10)
+	if err != nil {
+		t.Fatalf("inbox failed: %v", err)
+	}
+	if len(inbox) == 0 {
+		t.Fatalf("expected inbox messages")
+	}
+	initial := inbox[0]
+	if !manager.ReplyToTask("subagent-1", initial.MessageID, "working on it") {
+		t.Fatalf("expected reply to succeed")
+	}
+	threadMsgs, err := manager.ThreadMessages(initial.ThreadID, 10)
+	if err != nil {
+		t.Fatalf("thread messages failed: %v", err)
+	}
+	foundReply := false
+	for _, msg := range threadMsgs {
+		if msg.Type == "reply" && msg.ReplyTo == initial.MessageID {
+			foundReply = true
+			break
+		}
+	}
+	if !foundReply {
+		t.Fatalf("expected reply message linked to %s, got %+v", initial.MessageID, threadMsgs)
+	}
+	if !manager.AckTaskMessage("subagent-1", initial.MessageID) {
+		t.Fatalf("expected ack to succeed")
+	}
+	updated, ok := manager.Message(initial.MessageID)
+	if !ok {
+		t.Fatalf("expected message lookup to succeed")
+	}
+	if updated.Status != "acked" {
+		t.Fatalf("expected acked status, got %+v", updated)
+	}
+	queuedInbox, err := manager.Inbox("tester", 10)
+	if err != nil {
+		t.Fatalf("queued inbox failed: %v", err)
+	}
+	for _, msg := range queuedInbox {
+		if msg.MessageID == initial.MessageID {
+			t.Fatalf("acked message should not remain in queued inbox: %+v", queuedInbox)
+		}
+	}
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+}
+
+func TestSubagentResumeConsumesQueuedThreadInbox(t *testing.T) {
+	workspace := t.TempDir()
+	manager := NewSubagentManager(nil, workspace, nil, nil)
+	observedQueued := make(chan int, 4)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		inbox, err := manager.TaskInbox(task.ID, 10)
+		if err != nil {
+			return "", err
+		}
+		observedQueued <- len(inbox)
+		return "ok", nil
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "initial task",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+	initial := waitSubagentDone(t, manager, 4*time.Second)
+	if queued := <-observedQueued; queued != 0 {
+		t.Fatalf("expected initial run to see empty queued inbox during execution, got %d", queued)
+	}
+
+	if !manager.SendTaskMessage(initial.ID, "please address follow-up") {
+		t.Fatalf("expected send to succeed")
+	}
+	inbox, err := manager.Inbox("coder", 10)
+	if err != nil {
+		t.Fatalf("inbox failed: %v", err)
+	}
+	if len(inbox) == 0 {
+		t.Fatalf("expected queued inbox after send")
+	}
+	messageID := inbox[0].MessageID
+
+	if _, ok := manager.ResumeTask(context.Background(), initial.ID); !ok {
+		t.Fatalf("expected resume to succeed")
+	}
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+	if queued := <-observedQueued; queued != 0 {
+		t.Fatalf("expected resumed run to consume queued inbox before execution, got %d", queued)
+	}
+	remaining, err := manager.Inbox("coder", 10)
+	if err != nil {
+		t.Fatalf("remaining inbox failed: %v", err)
+	}
+	for _, msg := range remaining {
+		if msg.MessageID == messageID {
+			t.Fatalf("expected consumed message to leave queued inbox, got %+v", remaining)
+		}
+	}
+	stored, ok := manager.Message(messageID)
+	if !ok {
+		t.Fatalf("expected stored message lookup")
+	}
+	if stored.Status != "acked" {
+		t.Fatalf("expected consumed message to be acked, got %+v", stored)
+	}
+}
+
 func waitSubagentDone(t *testing.T, manager *SubagentManager, timeout time.Duration) *SubagentTask {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

@@ -665,6 +665,7 @@ func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.Me
 	}
 
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider, cronService)
+	agentLoop.SetConfigPath(getConfigPath())
 
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]interface{})

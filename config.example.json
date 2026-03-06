@@ -38,6 +38,101 @@
           "outcomes_title": "Execution Outcomes"
         }
       }
+    },
+    "router": {
+      "enabled": true,
+      "main_agent_id": "main",
+      "strategy": "rules_first",
+      "rules": [
+        {
+          "agent_id": "coder",
+          "keywords": ["代码", "实现", "修复", "重构", "bug", "debug", "implement", "refactor"]
+        },
+        {
+          "agent_id": "tester",
+          "keywords": ["测试", "回归", "验证", "test", "regression", "verify"]
+        }
+      ],
+      "allow_direct_agent_chat": false,
+      "max_hops": 6,
+      "default_timeout_sec": 600,
+      "default_wait_reply": true,
+      "sticky_thread_owner": true
+    },
+    "communication": {
+      "mode": "mediated",
+      "persist_threads": true,
+      "persist_messages": true,
+      "max_messages_per_thread": 100,
+      "dead_letter_queue": true,
+      "default_message_ttl_sec": 86400
+    },
+    "subagents": {
+      "main": {
+        "enabled": true,
+        "type": "router",
+        "display_name": "Main Agent",
+        "role": "orchestrator",
+        "system_prompt": "你负责消息路由、任务拆解、仲裁与结果汇总。",
+        "memory_namespace": "main",
+        "accept_from": ["user", "coder", "tester"],
+        "can_talk_to": ["coder", "tester"],
+        "tools": {
+          "allowlist": ["sessions", "subagents", "memory_search", "repo_map"]
+        },
+        "runtime": {
+          "proxy": "proxy",
+          "temperature": 0.2,
+          "timeout_sec": 900,
+          "max_retries": 1,
+          "retry_backoff_ms": 1000,
+          "max_parallel_runs": 4
+        }
+      },
+      "coder": {
+        "enabled": true,
+        "type": "worker",
+        "display_name": "Code Agent",
+        "role": "code",
+        "system_prompt": "你负责代码实现与重构，输出具体修改建议和变更结果。",
+        "memory_namespace": "coder",
+        "accept_from": ["main", "tester"],
+        "can_talk_to": ["main", "tester"],
+        "tools": {
+          "allowlist": ["filesystem", "shell", "repo_map", "sessions"]
+        },
+        "runtime": {
+          "proxy": "proxy",
+          "temperature": 0.2,
+          "timeout_sec": 1200,
+          "max_retries": 1,
+          "retry_backoff_ms": 1000,
+          "max_task_chars": 20000,
+          "max_result_chars": 12000,
+          "max_parallel_runs": 2
+        }
+      },
+      "tester": {
+        "enabled": true,
+        "type": "worker",
+        "display_name": "Test Agent",
+        "role": "test",
+        "system_prompt": "你负责测试、验证、回归检查与风险反馈。",
+        "memory_namespace": "tester",
+        "accept_from": ["main", "coder"],
+        "can_talk_to": ["main", "coder"],
+        "tools": {
+          "allowlist": ["shell", "filesystem", "process_manager", "sessions"]
+        },
+        "runtime": {
+          "proxy": "proxy",
+          "temperature": 0.1,
+          "timeout_sec": 1200,
+          "max_retries": 1,
+          "retry_backoff_ms": 1000,
+          "max_parallel_runs": 2
+        }
+      }
     }
   },
   "channels": {

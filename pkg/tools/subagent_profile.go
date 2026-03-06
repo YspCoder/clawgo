@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"clawgo/pkg/config"
+	"clawgo/pkg/runtimecfg"
 )
 
 type SubagentProfile struct {
@@ -27,6 +30,7 @@ type SubagentProfile struct {
 	Status          string   `json:"status"`
 	CreatedAt       int64    `json:"created_at"`
 	UpdatedAt       int64    `json:"updated_at"`
+	ManagedBy       string   `json:"managed_by,omitempty"`
 }
 
 type SubagentProfileStore struct {
@@ -51,32 +55,14 @@ func (s *SubagentProfileStore) List() ([]SubagentProfile, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	dir := s.profilesDir()
-	entries, err := os.ReadDir(dir)
+	merged, err := s.mergedProfilesLocked()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []SubagentProfile{}, nil
-		}
 		return nil, err
 	}
-
-	out := make([]SubagentProfile, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		b, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		var p SubagentProfile
-		if err := json.Unmarshal(b, &p); err != nil {
-			continue
-		}
-		out = append(out, normalizeSubagentProfile(p))
+	out := make([]SubagentProfile, 0, len(merged))
+	for _, p := range merged {
+		out = append(out, p)
 	}
-
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].UpdatedAt != out[j].UpdatedAt {
 			return out[i].UpdatedAt > out[j].UpdatedAt
@@ -94,19 +80,16 @@ func (s *SubagentProfileStore) Get(agentID string) (*SubagentProfile, bool, erro
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	b, err := os.ReadFile(s.profilePath(id))
+	merged, err := s.mergedProfilesLocked()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
 		return nil, false, err
 	}
-	var p SubagentProfile
-	if err := json.Unmarshal(b, &p); err != nil {
-		return nil, false, err
+	p, ok := merged[id]
+	if !ok {
+		return nil, false, nil
 	}
-	norm := normalizeSubagentProfile(p)
-	return &norm, true, nil
+	cp := p
+	return &cp, true, nil
 }
 
 func (s *SubagentProfileStore) FindByRole(role string) (*SubagentProfile, bool, error) {
@@ -135,6 +118,9 @@ func (s *SubagentProfileStore) Upsert(profile SubagentProfile) (*SubagentProfile
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if managed, ok := s.configProfileLocked(p.AgentID); ok {
+		return nil, fmt.Errorf("subagent profile %q is managed by %s", p.AgentID, managed.ManagedBy)
+	}
 
 	now := time.Now().UnixMilli()
 	path := s.profilePath(p.AgentID)
@@ -170,6 +156,9 @@ func (s *SubagentProfileStore) Delete(agentID string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if managed, ok := s.configProfileLocked(id); ok {
+		return fmt.Errorf("subagent profile %q is managed by %s", id, managed.ManagedBy)
+	}
 
 	err := os.Remove(s.profilePath(id))
 	if err != nil && !os.IsNotExist(err) {
@@ -193,6 +182,7 @@ func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
 	}
 	p.Status = normalizeProfileStatus(p.Status)
 	p.ToolAllowlist = normalizeToolAllowlist(p.ToolAllowlist)
+	p.ManagedBy = strings.TrimSpace(p.ManagedBy)
 	p.MaxRetries = clampInt(p.MaxRetries, 0, 8)
 	p.RetryBackoff = clampInt(p.RetryBackoff, 500, 120000)
 	p.TimeoutSec = clampInt(p.TimeoutSec, 0, 3600)
@@ -267,6 +257,106 @@ func parseStringList(raw interface{}) []string {
 		out = append(out, s)
 	}
 	return normalizeStringList(out)
+}
+
+func (s *SubagentProfileStore) mergedProfilesLocked() (map[string]SubagentProfile, error) {
+	merged := make(map[string]SubagentProfile)
+	for _, p := range s.configProfilesLocked() {
+		merged[p.AgentID] = p
+	}
+	fileProfiles, err := s.fileProfilesLocked()
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range fileProfiles {
+		if _, exists := merged[p.AgentID]; exists {
+			continue
+		}
+		merged[p.AgentID] = p
+	}
+	return merged, nil
+}
+
+func (s *SubagentProfileStore) fileProfilesLocked() ([]SubagentProfile, error) {
+	dir := s.profilesDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []SubagentProfile{}, nil
+		}
+		return nil, err
+	}
+	out := make([]SubagentProfile, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var p SubagentProfile
+		if err := json.Unmarshal(b, &p); err != nil {
+			continue
+		}
+		out = append(out, normalizeSubagentProfile(p))
+	}
+	return out, nil
+}
+
+func (s *SubagentProfileStore) configProfilesLocked() []SubagentProfile {
+	cfg := runtimecfg.Get()
+	if cfg == nil || len(cfg.Agents.Subagents) == 0 {
+		return nil
+	}
+	out := make([]SubagentProfile, 0, len(cfg.Agents.Subagents))
+	for agentID, subcfg := range cfg.Agents.Subagents {
+		profile := profileFromConfig(agentID, subcfg)
+		if profile.AgentID == "" {
+			continue
+		}
+		out = append(out, profile)
+	}
+	return out
+}
+
+func (s *SubagentProfileStore) configProfileLocked(agentID string) (SubagentProfile, bool) {
+	id := normalizeSubagentIdentifier(agentID)
+	if id == "" {
+		return SubagentProfile{}, false
+	}
+	cfg := runtimecfg.Get()
+	if cfg == nil {
+		return SubagentProfile{}, false
+	}
+	subcfg, ok := cfg.Agents.Subagents[id]
+	if !ok {
+		return SubagentProfile{}, false
+	}
+	return profileFromConfig(id, subcfg), true
+}
+
+func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentProfile {
+	status := "active"
+	if !subcfg.Enabled {
+		status = "disabled"
+	}
+	return normalizeSubagentProfile(SubagentProfile{
+		AgentID:         agentID,
+		Name:            strings.TrimSpace(subcfg.DisplayName),
+		Role:            strings.TrimSpace(subcfg.Role),
+		SystemPrompt:    strings.TrimSpace(subcfg.SystemPrompt),
+		ToolAllowlist:   append([]string(nil), subcfg.Tools.Allowlist...),
+		MemoryNamespace: strings.TrimSpace(subcfg.MemoryNamespace),
+		MaxRetries:      subcfg.Runtime.MaxRetries,
+		RetryBackoff:    subcfg.Runtime.RetryBackoffMs,
+		TimeoutSec:      subcfg.Runtime.TimeoutSec,
+		MaxTaskChars:    subcfg.Runtime.MaxTaskChars,
+		MaxResultChars:  subcfg.Runtime.MaxResultChars,
+		Status:          status,
+		ManagedBy:       "config.json",
+	})
 }
 
 type SubagentProfileTool struct {
