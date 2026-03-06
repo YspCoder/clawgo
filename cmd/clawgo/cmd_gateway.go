@@ -154,8 +154,12 @@ func gatewayCmd() {
 		}
 		return out
 	})
+	reloadReqCh := make(chan struct{}, 1)
 	registryServer.SetConfigAfterHook(func() {
-		_ = requestGatewayReloadSignal()
+		select {
+		case reloadReqCh <- struct{}{}:
+		default:
+		}
 	})
 	registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
 		return agentLoop.HandleSubagentRuntime(cctx, action, args)
@@ -309,77 +313,35 @@ func gatewayCmd() {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, gatewayNotifySignals()...)
-	for {
-		sig := <-sigChan
-		switch {
-		case isGatewayReloadSignal(sig):
-			fmt.Println("\n↻ Reloading config...")
-			newCfg, err := config.LoadConfig(getConfigPath())
-			if err != nil {
-				fmt.Printf("✗ Reload failed (load config): %v\n", err)
-				continue
-			}
-			if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
-				applyMaximumPermissionPolicy(newCfg)
-			}
-			configureCronServiceRuntime(cronService, newCfg)
-			heartbeatService.Stop()
-			heartbeatService = buildHeartbeatService(newCfg, msgBus)
-			if err := heartbeatService.Start(); err != nil {
-				fmt.Printf("Error starting heartbeat service: %v\n", err)
-			}
+	applyReload := func() {
+		fmt.Println("\n↻ Reloading config...")
+		newCfg, err := config.LoadConfig(getConfigPath())
+		if err != nil {
+			fmt.Printf("✗ Reload failed (load config): %v\n", err)
+			return
+		}
+		if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
+			applyMaximumPermissionPolicy(newCfg)
+		}
+		configureCronServiceRuntime(cronService, newCfg)
+		heartbeatService.Stop()
+		heartbeatService = buildHeartbeatService(newCfg, msgBus)
+		if err := heartbeatService.Start(); err != nil {
+			fmt.Printf("Error starting heartbeat service: %v\n", err)
+		}
 
-			if reflect.DeepEqual(cfg, newCfg) {
-				fmt.Println("✓ Config unchanged, skip reload")
-				continue
-			}
+		if reflect.DeepEqual(cfg, newCfg) {
+			fmt.Println("✓ Config unchanged, skip reload")
+			return
+		}
 
-			runtimeSame := reflect.DeepEqual(cfg.Agents, newCfg.Agents) &&
-				reflect.DeepEqual(cfg.Providers, newCfg.Providers) &&
-				reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
-				reflect.DeepEqual(cfg.Channels, newCfg.Channels)
+		runtimeSame := reflect.DeepEqual(cfg.Agents, newCfg.Agents) &&
+			reflect.DeepEqual(cfg.Providers, newCfg.Providers) &&
+			reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
+			reflect.DeepEqual(cfg.Channels, newCfg.Channels)
 
-			if runtimeSame {
-				configureLogging(newCfg)
-				sentinelService.Stop()
-				sentinelService = sentinel.NewService(
-					getConfigPath(),
-					newCfg.WorkspacePath(),
-					newCfg.Sentinel.IntervalSec,
-					newCfg.Sentinel.AutoHeal,
-					func(message string) {
-						if newCfg.Sentinel.NotifyChannel != "" && newCfg.Sentinel.NotifyChatID != "" {
-							msgBus.PublishOutbound(bus.OutboundMessage{
-								Channel: newCfg.Sentinel.NotifyChannel,
-								ChatID:  newCfg.Sentinel.NotifyChatID,
-								Content: "[Sentinel] " + message,
-							})
-						}
-					},
-				)
-				if newCfg.Sentinel.Enabled {
-					sentinelService.SetManager(channelManager)
-					sentinelService.Start()
-				}
-				cfg = newCfg
-				runtimecfg.Set(cfg)
-				fmt.Println("✓ Config hot-reload applied (logging/metadata only)")
-				continue
-			}
-
-			newAgentLoop, newChannelManager, err := buildGatewayRuntime(ctx, newCfg, msgBus, cronService)
-			if err != nil {
-				fmt.Printf("✗ Reload failed (init runtime): %v\n", err)
-				continue
-			}
-
-			channelManager.StopAll(ctx)
-			agentLoop.Stop()
-
-			channelManager = newChannelManager
-			agentLoop = newAgentLoop
-			cfg = newCfg
-			runtimecfg.Set(cfg)
+		if runtimeSame {
+			configureLogging(newCfg)
 			sentinelService.Stop()
 			sentinelService = sentinel.NewService(
 				getConfigPath(),
@@ -397,26 +359,76 @@ func gatewayCmd() {
 				},
 			)
 			if newCfg.Sentinel.Enabled {
+				sentinelService.SetManager(channelManager)
 				sentinelService.Start()
 			}
-			sentinelService.SetManager(channelManager)
-
-			if err := channelManager.StartAll(ctx); err != nil {
-				fmt.Printf("✗ Reload failed (start channels): %v\n", err)
-				continue
-			}
-			go agentLoop.Run(ctx)
-			fmt.Println("✓ Config hot-reload applied")
-		default:
-			fmt.Println("\nShutting down...")
-			cancel()
-			heartbeatService.Stop()
-			sentinelService.Stop()
-			cronService.Stop()
-			agentLoop.Stop()
-			channelManager.StopAll(ctx)
-			fmt.Println("✓ Gateway stopped")
+			cfg = newCfg
+			runtimecfg.Set(cfg)
+			fmt.Println("✓ Config hot-reload applied (logging/metadata only)")
 			return
+		}
+
+		newAgentLoop, newChannelManager, err := buildGatewayRuntime(ctx, newCfg, msgBus, cronService)
+		if err != nil {
+			fmt.Printf("✗ Reload failed (init runtime): %v\n", err)
+			return
+		}
+
+		channelManager.StopAll(ctx)
+		agentLoop.Stop()
+
+		channelManager = newChannelManager
+		agentLoop = newAgentLoop
+		cfg = newCfg
+		runtimecfg.Set(cfg)
+		sentinelService.Stop()
+		sentinelService = sentinel.NewService(
+			getConfigPath(),
+			newCfg.WorkspacePath(),
+			newCfg.Sentinel.IntervalSec,
+			newCfg.Sentinel.AutoHeal,
+			func(message string) {
+				if newCfg.Sentinel.NotifyChannel != "" && newCfg.Sentinel.NotifyChatID != "" {
+					msgBus.PublishOutbound(bus.OutboundMessage{
+						Channel: newCfg.Sentinel.NotifyChannel,
+						ChatID:  newCfg.Sentinel.NotifyChatID,
+						Content: "[Sentinel] " + message,
+					})
+				}
+			},
+		)
+		if newCfg.Sentinel.Enabled {
+			sentinelService.Start()
+		}
+		sentinelService.SetManager(channelManager)
+
+		if err := channelManager.StartAll(ctx); err != nil {
+			fmt.Printf("✗ Reload failed (start channels): %v\n", err)
+			return
+		}
+		go agentLoop.Run(ctx)
+		fmt.Println("✓ Config hot-reload applied")
+	}
+
+	for {
+		select {
+		case <-reloadReqCh:
+			applyReload()
+		case sig := <-sigChan:
+			switch {
+			case isGatewayReloadSignal(sig):
+				applyReload()
+			default:
+				fmt.Println("\nShutting down...")
+				cancel()
+				heartbeatService.Stop()
+				sentinelService.Stop()
+				cronService.Stop()
+				agentLoop.Stop()
+				channelManager.StopAll(ctx)
+				fmt.Println("✓ Gateway stopped")
+				return
+			}
 		}
 	}
 }
