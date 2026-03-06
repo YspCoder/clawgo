@@ -322,6 +322,9 @@ func validateSubagents(cfg *Config) []error {
 		if raw.Tools.MaxParallelCalls < 0 {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.tools.max_parallel_calls must be >= 0", id))
 		}
+		if raw.Enabled && strings.TrimSpace(raw.SystemPromptFile) == "" {
+			errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file is required when enabled=true", id))
+		}
 		if promptFile := strings.TrimSpace(raw.SystemPromptFile); promptFile != "" {
 			if filepath.IsAbs(promptFile) {
 				errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file must be relative", id))

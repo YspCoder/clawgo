@@ -13,7 +13,7 @@ import (
 func TestResolveAutoRouteTarget(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
-	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true}
+	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, SystemPromptFile: "agents/coder/AGENT.md"}
 
 	agentID, task := resolveAutoRouteTarget(cfg, "@coder fix login")
 	if agentID != "coder" || task != "fix login" {
@@ -25,8 +25,8 @@ func TestResolveAutoRouteTargetRulesFirst(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Router.Strategy = "rules_first"
-	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, Role: "coding"}
-	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing"}
+	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, Role: "coding", SystemPromptFile: "agents/coder/AGENT.md"}
+	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing", SystemPromptFile: "agents/tester/AGENT.md"}
 	cfg.Agents.Router.Rules = []config.AgentRouteRule{{AgentID: "coder", Keywords: []string{"登录", "bug"}}}
 
 	agentID, task := resolveAutoRouteTarget(cfg, "请帮我修复登录接口的 bug 并改代码")
@@ -39,7 +39,7 @@ func TestMaybeAutoRouteDispatchesExplicitAgentMention(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Router.DefaultTimeoutSec = 5
-	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true}
+	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, SystemPromptFile: "agents/coder/AGENT.md"}
 	runtimecfg.Set(cfg)
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
@@ -72,7 +72,7 @@ func TestMaybeAutoRouteDispatchesExplicitAgentMention(t *testing.T) {
 func TestMaybeAutoRouteSkipsNormalMessages(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
-	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true}
+	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, SystemPromptFile: "agents/coder/AGENT.md"}
 	runtimecfg.Set(cfg)
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
@@ -96,7 +96,7 @@ func TestMaybeAutoRouteDispatchesRulesFirstMatch(t *testing.T) {
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Router.Strategy = "rules_first"
 	cfg.Agents.Router.DefaultTimeoutSec = 5
-	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing"}
+	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing", SystemPromptFile: "agents/tester/AGENT.md"}
 	runtimecfg.Set(cfg)
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
@@ -123,5 +123,17 @@ func TestMaybeAutoRouteDispatchesRulesFirstMatch(t *testing.T) {
 	}
 	if out == "" {
 		t.Fatalf("expected merged output")
+	}
+}
+
+func TestResolveAutoRouteTargetSkipsOversizedIntent(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Router.Enabled = true
+	cfg.Agents.Router.Policy.IntentMaxInputChars = 5
+	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, SystemPromptFile: "agents/coder/AGENT.md"}
+
+	agentID, task := resolveAutoRouteTarget(cfg, "@coder implement auth")
+	if agentID != "" || task != "" {
+		t.Fatalf("expected oversized intent to skip routing, got %s / %s", agentID, task)
 	}
 }

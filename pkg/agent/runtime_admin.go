@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,6 +126,14 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 		}
 		items := make([]map[string]interface{}, 0, len(cfg.Agents.Subagents))
 		for agentID, subcfg := range cfg.Agents.Subagents {
+			promptFileFound := false
+			if strings.TrimSpace(subcfg.SystemPromptFile) != "" {
+				if absPath, err := al.resolvePromptFilePath(subcfg.SystemPromptFile); err == nil {
+					if info, statErr := os.Stat(absPath); statErr == nil && !info.IsDir() {
+						promptFileFound = true
+					}
+				}
+			}
 			items = append(items, map[string]interface{}{
 				"agent_id":           agentID,
 				"enabled":            subcfg.Enabled,
@@ -133,6 +143,7 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 				"description":        subcfg.Description,
 				"system_prompt":      subcfg.SystemPrompt,
 				"system_prompt_file": subcfg.SystemPromptFile,
+				"prompt_file_found":  promptFileFound,
 				"memory_namespace":   subcfg.MemoryNamespace,
 				"tool_allowlist":     append([]string(nil), subcfg.Tools.Allowlist...),
 				"routing_keywords":   routeKeywordsForRegistry(cfg.Agents.Router.Rules, agentID),
@@ -177,6 +188,9 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 		if agentID == "" {
 			return nil, fmt.Errorf("agent_id is required")
 		}
+		if al.isProtectedMainAgent(agentID) {
+			return nil, fmt.Errorf("main agent %q cannot be disabled", agentID)
+		}
 		enabled, ok := args["enabled"].(bool)
 		if !ok {
 			return nil, fmt.Errorf("enabled is required")
@@ -190,9 +204,85 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 		if agentID == "" {
 			return nil, fmt.Errorf("agent_id is required")
 		}
+		if al.isProtectedMainAgent(agentID) {
+			return nil, fmt.Errorf("main agent %q cannot be deleted", agentID)
+		}
 		return tools.DeleteConfigSubagent(al.configPath, agentID)
 	case "upsert_config_subagent":
 		return tools.UpsertConfigSubagent(al.configPath, args)
+	case "prompt_file_get":
+		relPath := runtimeStringArg(args, "path")
+		if relPath == "" {
+			return nil, fmt.Errorf("path is required")
+		}
+		absPath, err := al.resolvePromptFilePath(relPath)
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return map[string]interface{}{"found": false, "path": relPath, "content": ""}, nil
+			}
+			return nil, err
+		}
+		return map[string]interface{}{"found": true, "path": relPath, "content": string(data)}, nil
+	case "prompt_file_set":
+		relPath := runtimeStringArg(args, "path")
+		if relPath == "" {
+			return nil, fmt.Errorf("path is required")
+		}
+		content := runtimeRawStringArg(args, "content")
+		absPath, err := al.resolvePromptFilePath(relPath)
+		if err != nil {
+			return nil, err
+		}
+		if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"ok": true, "path": relPath, "bytes": len(content)}, nil
+	case "prompt_file_bootstrap":
+		agentID := runtimeStringArg(args, "agent_id")
+		if agentID == "" {
+			return nil, fmt.Errorf("agent_id is required")
+		}
+		relPath := runtimeStringArg(args, "path")
+		if relPath == "" {
+			relPath = filepath.ToSlash(filepath.Join("agents", agentID, "AGENT.md"))
+		}
+		absPath, err := al.resolvePromptFilePath(relPath)
+		if err != nil {
+			return nil, err
+		}
+		overwrite, _ := args["overwrite"].(bool)
+		if _, err := os.Stat(absPath); err == nil && !overwrite {
+			data, readErr := os.ReadFile(absPath)
+			if readErr != nil {
+				return nil, readErr
+			}
+			return map[string]interface{}{
+				"ok":      true,
+				"created": false,
+				"path":    relPath,
+				"content": string(data),
+			}, nil
+		}
+		if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
+			return nil, err
+		}
+		content := buildPromptTemplate(agentID, runtimeStringArg(args, "role"), runtimeStringArg(args, "display_name"))
+		if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"ok":      true,
+			"created": true,
+			"path":    relPath,
+			"content": content,
+		}, nil
 	case "kill":
 		taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
 		if err != nil {
@@ -476,6 +566,14 @@ func runtimeStringArg(args map[string]interface{}, key string) string {
 	return strings.TrimSpace(v)
 }
 
+func runtimeRawStringArg(args map[string]interface{}, key string) string {
+	if args == nil {
+		return ""
+	}
+	v, _ := args[key].(string)
+	return v
+}
+
 func runtimeIntArg(args map[string]interface{}, key string, fallback int) int {
 	if args == nil {
 		return fallback
@@ -512,4 +610,75 @@ func routeKeywordsForRegistry(rules []config.AgentRouteRule, agentID string) []s
 		}
 	}
 	return nil
+}
+
+func (al *AgentLoop) isProtectedMainAgent(agentID string) bool {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return false
+	}
+	cfg := runtimecfg.Get()
+	if cfg == nil {
+		return agentID == "main"
+	}
+	mainID := strings.TrimSpace(cfg.Agents.Router.MainAgentID)
+	if mainID == "" {
+		mainID = "main"
+	}
+	return agentID == mainID
+}
+
+func (al *AgentLoop) resolvePromptFilePath(relPath string) (string, error) {
+	relPath = strings.TrimSpace(relPath)
+	if relPath == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if filepath.IsAbs(relPath) {
+		return "", fmt.Errorf("path must be relative")
+	}
+	cleaned := filepath.Clean(relPath)
+	if cleaned == "." || strings.HasPrefix(cleaned, "..") {
+		return "", fmt.Errorf("path must stay within workspace")
+	}
+	workspace := "."
+	if al != nil && strings.TrimSpace(al.workspace) != "" {
+		workspace = al.workspace
+	}
+	return filepath.Join(workspace, cleaned), nil
+}
+
+func buildPromptTemplate(agentID, role, displayName string) string {
+	agentID = strings.TrimSpace(agentID)
+	role = strings.TrimSpace(role)
+	displayName = strings.TrimSpace(displayName)
+	title := displayName
+	if title == "" {
+		title = agentID
+	}
+	if title == "" {
+		title = "subagent"
+	}
+	if role == "" {
+		role = "worker"
+	}
+	return strings.TrimSpace(fmt.Sprintf(`# %s
+
+## Role
+You are the %s subagent. Work within your role boundary and report concrete outcomes.
+
+## Priorities
+- Follow workspace-level policy from workspace/AGENTS.md.
+- Complete the assigned task directly. Do not redefine the objective.
+- Prefer concrete edits, verification, and concise reporting over long analysis.
+
+## Collaboration
+- Treat the main agent as the coordinator unless the task explicitly says otherwise.
+- Surface blockers, assumptions, and verification status in your reply.
+- Keep outputs short and execution-focused.
+
+## Output Format
+- Summary: what you changed or checked.
+- Risks: anything not verified or still uncertain.
+- Next: the most useful immediate follow-up, if any.
+`, title, role))
 }

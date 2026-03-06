@@ -81,6 +81,7 @@ type RegistrySubagent = {
   description?: string;
   system_prompt?: string;
   system_prompt_file?: string;
+  prompt_file_found?: boolean;
   memory_namespace?: string;
   tool_allowlist?: string[];
   routing_keywords?: string[];
@@ -119,6 +120,8 @@ const Subagents: React.FC = () => {
   const [draftDescription, setDraftDescription] = useState('');
   const [pendingDrafts, setPendingDrafts] = useState<PendingSubagentDraft[]>([]);
   const [registryItems, setRegistryItems] = useState<RegistrySubagent[]>([]);
+  const [promptFileContent, setPromptFileContent] = useState('');
+  const [promptFileFound, setPromptFileFound] = useState(false);
 
   const apiPath = '/webui/api/subagents_runtime';
   const withAction = (action: string) => `${apiPath}${q}${q ? '&' : '?'}action=${encodeURIComponent(action)}`;
@@ -186,6 +189,22 @@ const Subagents: React.FC = () => {
   useEffect(() => {
     loadThreadAndInbox(selected).catch(() => {});
   }, [selectedId, q, items]);
+
+  useEffect(() => {
+    const path = configSystemPromptFile.trim();
+    if (!path) {
+      setPromptFileContent('');
+      setPromptFileFound(false);
+      return;
+    }
+    callAction({ action: 'prompt_file_get', path })
+      .then((data) => {
+        const found = data?.result?.found === true;
+        setPromptFileFound(found);
+        setPromptFileContent(found ? data?.result?.content || '' : '');
+      })
+      .catch(() => {});
+  }, [configSystemPromptFile, q]);
 
   const spawn = async () => {
     if (!spawnTask.trim()) {
@@ -331,6 +350,7 @@ const Subagents: React.FC = () => {
     setConfigRole(draft.role || '');
     setConfigDisplayName(draft.display_name || '');
     setConfigSystemPrompt(draft.system_prompt || '');
+    setConfigSystemPromptFile(draft.system_prompt_file || '');
     setConfigToolAllowlist(Array.isArray(draft.tool_allowlist) ? draft.tool_allowlist.join(', ') : '');
     setConfigRoutingKeywords(Array.isArray(draft.routing_keywords) ? draft.routing_keywords.join(', ') : '');
   };
@@ -353,7 +373,7 @@ const Subagents: React.FC = () => {
     setConfigRole(item.role || '');
     setConfigDisplayName(item.display_name || '');
     setConfigSystemPrompt(item.system_prompt || '');
-    setConfigSystemPromptFile((item as any).system_prompt_file || '');
+    setConfigSystemPromptFile(item.system_prompt_file || '');
     setConfigToolAllowlist(Array.isArray(item.tool_allowlist) ? item.tool_allowlist.join(', ') : '');
     setConfigRoutingKeywords(Array.isArray(item.routing_keywords) ? item.routing_keywords.join(', ') : '');
   };
@@ -376,6 +396,43 @@ const Subagents: React.FC = () => {
     if (!ok) return;
     const data = await callAction({ action: 'delete_config_subagent', agent_id: item.agent_id });
     if (!data) return;
+    await load();
+  };
+
+  const savePromptFile = async () => {
+    if (!configSystemPromptFile.trim()) {
+      await ui.notify({ title: t('requestFailed'), message: 'system_prompt_file is required' });
+      return;
+    }
+    const data = await callAction({
+      action: 'prompt_file_set',
+      path: configSystemPromptFile,
+      content: promptFileContent,
+    });
+    if (!data) return;
+    setPromptFileFound(true);
+    await ui.notify({ title: t('saved'), message: t('promptFileSaved') });
+    await load();
+  };
+
+  const bootstrapPromptFile = async () => {
+    if (!configAgentID.trim()) {
+      await ui.notify({ title: t('requestFailed'), message: 'agent_id is required' });
+      return;
+    }
+    const data = await callAction({
+      action: 'prompt_file_bootstrap',
+      agent_id: configAgentID,
+      role: configRole,
+      display_name: configDisplayName,
+      path: configSystemPromptFile,
+    });
+    if (!data) return;
+    const path = data?.result?.path || configSystemPromptFile || `agents/${configAgentID}/AGENT.md`;
+    setConfigSystemPromptFile(path);
+    setPromptFileFound(true);
+    setPromptFileContent(data?.result?.content || '');
+    await ui.notify({ title: t('saved'), message: t('promptFileBootstrapped') });
     await load();
   };
 
@@ -470,6 +527,8 @@ const Subagents: React.FC = () => {
                 <div key={item.agent_id || 'unknown'} className="px-3 py-2 border-b last:border-b-0 border-zinc-800/60 text-xs space-y-2">
                   <div className="text-zinc-100">{item.agent_id || '-'} · {item.role || '-'} · {item.enabled ? t('active') : t('paused')}</div>
                   <div className="text-zinc-400">{item.type || '-'} · {item.display_name || '-'}</div>
+                  <div className="text-zinc-500 break-words">{item.system_prompt_file || '-'}</div>
+                  <div className="text-zinc-500">{item.prompt_file_found ? t('promptFileReady') : t('promptFileMissing')}</div>
                   <div className="text-zinc-300 whitespace-pre-wrap break-words">{item.system_prompt || item.description || '-'}</div>
                   <div className="text-zinc-500 break-words">{(item.routing_keywords || []).join(', ') || '-'}</div>
                   <div className="flex items-center gap-2">
@@ -511,6 +570,29 @@ const Subagents: React.FC = () => {
             <input value={configToolAllowlist} onChange={(e) => setConfigToolAllowlist(e.target.value)} placeholder="tool_allowlist (comma separated)" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
             <input value={configRoutingKeywords} onChange={(e) => setConfigRoutingKeywords(e.target.value)} placeholder="routing_keywords (comma separated)" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
             <button onClick={upsertConfigSubagent} className="px-3 py-1.5 text-xs rounded bg-amber-700/80 hover:bg-amber-600">{t('saveToConfig')}</button>
+          </div>
+
+          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('promptFileEditor')}</div>
+              <div className="text-[11px] text-zinc-500">{promptFileFound ? t('promptFileReady') : t('promptFileMissing')}</div>
+            </div>
+            <input
+              value={configSystemPromptFile}
+              onChange={(e) => setConfigSystemPromptFile(e.target.value)}
+              placeholder="agents/<agent_id>/AGENT.md"
+              className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+            />
+            <textarea
+              value={promptFileContent}
+              onChange={(e) => setPromptFileContent(e.target.value)}
+              placeholder={t('promptFileEditorPlaceholder')}
+              className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[220px]"
+            />
+            <div className="flex items-center gap-2">
+              <button onClick={bootstrapPromptFile} className="px-3 py-1.5 text-xs rounded bg-zinc-700 hover:bg-zinc-600">{t('bootstrapPromptFile')}</button>
+              <button onClick={savePromptFile} className="px-3 py-1.5 text-xs rounded bg-emerald-700/80 hover:bg-emerald-600">{t('savePromptFile')}</button>
+            </div>
           </div>
 
           <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">

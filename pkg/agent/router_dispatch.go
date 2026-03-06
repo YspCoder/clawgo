@@ -61,6 +61,10 @@ func resolveAutoRouteTarget(cfg *config.Config, raw string) (string, string) {
 	if content == "" || len(cfg.Agents.Subagents) == 0 {
 		return "", ""
 	}
+	maxChars := cfg.Agents.Router.Policy.IntentMaxInputChars
+	if maxChars > 0 && len([]rune(content)) > maxChars {
+		return "", ""
+	}
 	lower := strings.ToLower(content)
 	for agentID, subcfg := range cfg.Agents.Subagents {
 		if !subcfg.Enabled {

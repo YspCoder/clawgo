@@ -38,9 +38,10 @@ func TestSubagentConfigToolUpsert(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Subagents["main"] = config.SubagentConfig{
-		Enabled: true,
-		Type:    "router",
-		Role:    "orchestrator",
+		Enabled:          true,
+		Type:             "router",
+		Role:             "orchestrator",
+		SystemPromptFile: "agents/main/AGENT.md",
 	}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("save config failed: %v", err)
@@ -50,14 +51,15 @@ func TestSubagentConfigToolUpsert(t *testing.T) {
 
 	tool := NewSubagentConfigTool(configPath)
 	out, err := tool.Execute(context.Background(), map[string]interface{}{
-		"action":           "upsert",
-		"agent_id":         "reviewer",
-		"role":             "testing",
-		"display_name":     "Review Agent",
-		"description":      "负责回归与评审",
-		"system_prompt":    "review changes",
-		"routing_keywords": []interface{}{"review", "regression"},
-		"tool_allowlist":   []interface{}{"shell", "sessions"},
+		"action":             "upsert",
+		"agent_id":           "reviewer",
+		"role":               "testing",
+		"display_name":       "Review Agent",
+		"description":        "负责回归与评审",
+		"system_prompt":      "review changes",
+		"system_prompt_file": "agents/reviewer/AGENT.md",
+		"routing_keywords":   []interface{}{"review", "regression"},
+		"tool_allowlist":     []interface{}{"shell", "sessions"},
 	})
 	if err != nil {
 		t.Fatalf("upsert failed: %v", err)

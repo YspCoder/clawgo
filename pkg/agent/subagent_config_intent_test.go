@@ -18,9 +18,10 @@ func TestMaybeHandleSubagentConfigIntentCreateAndConfirm(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Subagents["main"] = config.SubagentConfig{
-		Enabled: true,
-		Type:    "router",
-		Role:    "orchestrator",
+		Enabled:          true,
+		Type:             "router",
+		Role:             "orchestrator",
+		SystemPromptFile: "agents/main/AGENT.md",
 	}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("save config failed: %v", err)
@@ -103,9 +104,10 @@ func TestPendingSubagentDraftPersistsAcrossLoopRestart(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Subagents["main"] = config.SubagentConfig{
-		Enabled: true,
-		Type:    "router",
-		Role:    "orchestrator",
+		Enabled:          true,
+		Type:             "router",
+		Role:             "orchestrator",
+		SystemPromptFile: "agents/main/AGENT.md",
 	}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("save config failed: %v", err)

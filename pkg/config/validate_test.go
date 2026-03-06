@@ -9,16 +9,18 @@ func TestValidateSubagentsAllowsKnownPeers(t *testing.T) {
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Router.MainAgentID = "main"
 	cfg.Agents.Subagents["main"] = SubagentConfig{
-		Enabled:    true,
-		Type:       "router",
-		AcceptFrom: []string{"user", "coder"},
-		CanTalkTo:  []string{"coder"},
+		Enabled:          true,
+		Type:             "router",
+		SystemPromptFile: "agents/main/AGENT.md",
+		AcceptFrom:       []string{"user", "coder"},
+		CanTalkTo:        []string{"coder"},
 	}
 	cfg.Agents.Subagents["coder"] = SubagentConfig{
-		Enabled:    true,
-		Type:       "worker",
-		AcceptFrom: []string{"main"},
-		CanTalkTo:  []string{"main"},
+		Enabled:          true,
+		Type:             "worker",
+		SystemPromptFile: "agents/coder/AGENT.md",
+		AcceptFrom:       []string{"main"},
+		CanTalkTo:        []string{"main"},
 		Runtime: SubagentRuntimeConfig{
 			Proxy: "proxy",
 		},
@@ -34,8 +36,9 @@ func TestValidateSubagentsRejectsUnknownPeer(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.Agents.Subagents["coder"] = SubagentConfig{
-		Enabled:    true,
-		AcceptFrom: []string{"main"},
+		Enabled:          true,
+		SystemPromptFile: "agents/coder/AGENT.md",
+		AcceptFrom:       []string{"main"},
 	}
 
 	if errs := Validate(cfg); len(errs) == 0 {
@@ -50,6 +53,22 @@ func TestValidateSubagentsRejectsAbsolutePromptFile(t *testing.T) {
 	cfg.Agents.Subagents["coder"] = SubagentConfig{
 		Enabled:          true,
 		SystemPromptFile: "/tmp/AGENT.md",
+		Runtime: SubagentRuntimeConfig{
+			Proxy: "proxy",
+		},
+	}
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}
+
+func TestValidateSubagentsRequiresPromptFileWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Agents.Subagents["coder"] = SubagentConfig{
+		Enabled: true,
 		Runtime: SubagentRuntimeConfig{
 			Proxy: "proxy",
 		},

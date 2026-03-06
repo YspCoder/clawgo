@@ -171,8 +171,9 @@ func TestSubagentProfileStoreRejectsWritesForConfigManagedProfiles(t *testing.T)
 
 	cfg := config.DefaultConfig()
 	cfg.Agents.Subagents["tester"] = config.SubagentConfig{
-		Enabled: true,
-		Role:    "test",
+		Enabled:          true,
+		Role:             "test",
+		SystemPromptFile: "agents/tester/AGENT.md",
 	}
 	runtimecfg.Set(cfg)
 

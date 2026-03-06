@@ -49,11 +49,18 @@ func UpsertConfigSubagent(configPath string, args map[string]interface{}) (map[s
 	if err != nil {
 		return nil, err
 	}
+	mainID := strings.TrimSpace(cfg.Agents.Router.MainAgentID)
+	if mainID == "" {
+		mainID = "main"
+	}
 	if cfg.Agents.Subagents == nil {
 		cfg.Agents.Subagents = map[string]config.SubagentConfig{}
 	}
 	subcfg := cfg.Agents.Subagents[agentID]
 	if enabled, ok := boolArgFromMap(args, "enabled"); ok {
+		if agentID == mainID && !enabled {
+			return nil, fmt.Errorf("main agent %q cannot be disabled", agentID)
+		}
 		subcfg.Enabled = enabled
 	} else if !subcfg.Enabled {
 		subcfg.Enabled = true
@@ -83,6 +90,9 @@ func UpsertConfigSubagent(configPath string, args map[string]interface{}) (map[s
 		subcfg.Type = v
 	} else if strings.TrimSpace(subcfg.Type) == "" {
 		subcfg.Type = "worker"
+	}
+	if subcfg.Enabled && strings.TrimSpace(subcfg.SystemPromptFile) == "" {
+		return nil, fmt.Errorf("system_prompt_file is required for enabled agent %q", agentID)
 	}
 	cfg.Agents.Subagents[agentID] = subcfg
 	if kws := stringListArgFromMap(args, "routing_keywords"); len(kws) > 0 {
@@ -122,6 +132,13 @@ func DeleteConfigSubagent(configPath, agentID string) (map[string]interface{}, e
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return nil, err
+	}
+	mainID := strings.TrimSpace(cfg.Agents.Router.MainAgentID)
+	if mainID == "" {
+		mainID = "main"
+	}
+	if agentID == mainID {
+		return nil, fmt.Errorf("main agent %q cannot be deleted", agentID)
 	}
 	if cfg.Agents.Subagents == nil {
 		return map[string]interface{}{"ok": false, "found": false, "agent_id": agentID}, nil
