@@ -51,6 +51,16 @@ func (c *DingTalkChannel) Start(ctx context.Context) error {
 	}
 	logger.InfoC("dingtalk", logger.C0115)
 
+	// The upstream SDK has a race in StreamClient.Close() that can panic with
+	// "send on closed channel". Keep the existing websocket alive across local
+	// stop/start cycles instead of tearing it down here.
+	if c.streamClient != nil {
+		c.streamClient.AutoReconnect = true
+		c.setRunning(true)
+		logger.InfoC("dingtalk", logger.C0116)
+		return nil
+	}
+
 	runCtx, cancel := context.WithCancel(ctx)
 	c.runCancel.set(cancel)
 
@@ -86,7 +96,10 @@ func (c *DingTalkChannel) Stop(ctx context.Context) error {
 	c.runCancel.cancelAndClear()
 
 	if c.streamClient != nil {
-		c.streamClient.Close()
+		// Avoid StreamClient.Close(): the SDK can panic internally during shutdown.
+		// Disabling auto-reconnect plus the running flag is enough for our local
+		// lifecycle, and callbacks below will ignore messages while stopped.
+		c.streamClient.AutoReconnect = false
 	}
 
 	c.setRunning(false)
@@ -125,6 +138,10 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 // This is called by the Stream SDK when a new message arrives
 // IChatBotMessageHandler is: func(c context.Context, data *chatbot.BotCallbackDataModel) ([]byte, error)
 func (c *DingTalkChannel) onChatBotMessageReceived(ctx context.Context, data *chatbot.BotCallbackDataModel) ([]byte, error) {
+	if !c.IsRunning() {
+		return nil, nil
+	}
+
 	// Extract message content from Text field
 	content := data.Text.Content
 	if content == "" {
