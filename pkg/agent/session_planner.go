@@ -103,7 +103,10 @@ func splitPlannedSegments(content string) []string {
 		return bullet
 	}
 
-	replaced := strings.NewReplacer("；", ";", "\n", ";", "。然后", ";", " 然后 ", ";", " and then ", ";")
+	// Only split implicit plans on strong separators. Plain newlines are often
+	// just formatting inside a single request, and "然后/and then" frequently
+	// describes execution order inside one task rather than separate tasks.
+	replaced := strings.NewReplacer("；", ";")
 	norm := replaced.Replace(content)
 	parts := strings.Split(norm, ";")
 	out := make([]string, 0, len(parts))
@@ -180,13 +183,44 @@ func (al *AgentLoop) publishPlannedTaskProgress(msg bus.InboundMessage, total in
 	if body == "" {
 		body = "(无输出)"
 	}
-	body = truncate(strings.ReplaceAll(body, "\n", " "), 280)
+	body = summarizePlannedTaskProgressBody(body, 6, 320)
 	content := fmt.Sprintf("进度 %d/%d：任务%d已%s\n%s", idx, total, idx, status, body)
 	al.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: msg.Channel,
 		ChatID:  msg.ChatID,
 		Content: content,
 	})
+}
+
+func summarizePlannedTaskProgressBody(body string, maxLines, maxChars int) string {
+	body = strings.ReplaceAll(body, "\r\n", "\n")
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return "(无输出)"
+	}
+	lines := strings.Split(body, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+		if maxLines > 0 && len(out) >= maxLines {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return "(无输出)"
+	}
+	joined := strings.Join(out, "\n")
+	if maxChars > 0 && len(joined) > maxChars {
+		joined = truncate(joined, maxChars)
+	}
+	if len(lines) > len(out) && !strings.HasSuffix(joined, "...") {
+		joined += "\n..."
+	}
+	return joined
 }
 
 func (al *AgentLoop) enrichTaskContentWithMemoryAndEKG(ctx context.Context, task plannedTask) string {
