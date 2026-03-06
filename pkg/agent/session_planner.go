@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -123,6 +124,11 @@ func splitPlannedSegments(content string) []string {
 func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage, tasks []plannedTask) (string, error) {
 	results := make([]plannedTaskResult, len(tasks))
 	var wg sync.WaitGroup
+	var progressMu sync.Mutex
+	completed := 0
+	failed := 0
+	milestones := plannedProgressMilestones(len(tasks))
+	notified := make(map[int]struct{}, len(milestones))
 	for i, task := range tasks {
 		wg.Add(1)
 		go func(index int, t plannedTask) {
@@ -142,7 +148,22 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 				res.ErrText = err.Error()
 			}
 			results[index] = res
-			al.publishPlannedTaskProgress(msg, len(tasks), res)
+			progressMu.Lock()
+			completed++
+			if res.ErrText != "" {
+				failed++
+			}
+			snapshotCompleted := completed
+			snapshotFailed := failed
+			shouldNotify := shouldPublishPlannedTaskProgress(len(tasks), snapshotCompleted, res, milestones, notified)
+			if shouldNotify && res.ErrText == "" {
+				notified[snapshotCompleted] = struct{}{}
+			}
+			progressMu.Unlock()
+
+			if shouldNotify {
+				al.publishPlannedTaskProgress(msg, len(tasks), snapshotCompleted, snapshotFailed, res)
+			}
 		}(i, task)
 	}
 	wg.Wait()
@@ -163,7 +184,50 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 	return strings.TrimSpace(b.String()), nil
 }
 
-func (al *AgentLoop) publishPlannedTaskProgress(msg bus.InboundMessage, total int, res plannedTaskResult) {
+func plannedProgressMilestones(total int) []int {
+	if total <= 3 {
+		return nil
+	}
+	points := []float64{0.33, 0.66}
+	out := make([]int, 0, len(points))
+	seen := map[int]struct{}{}
+	for _, p := range points {
+		step := int(math.Round(float64(total) * p))
+		if step <= 0 || step >= total {
+			continue
+		}
+		if _, ok := seen[step]; ok {
+			continue
+		}
+		seen[step] = struct{}{}
+		out = append(out, step)
+	}
+	return out
+}
+
+func shouldPublishPlannedTaskProgress(total, completed int, res plannedTaskResult, milestones []int, notified map[int]struct{}) bool {
+	if total <= 1 {
+		return false
+	}
+	if strings.TrimSpace(res.ErrText) != "" {
+		return true
+	}
+	if completed >= total {
+		return false
+	}
+	for _, step := range milestones {
+		if completed != step {
+			continue
+		}
+		if _, ok := notified[step]; ok {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+func (al *AgentLoop) publishPlannedTaskProgress(msg bus.InboundMessage, total, completed, failed int, res plannedTaskResult) {
 	if al == nil || al.bus == nil || total <= 1 {
 		return
 	}
@@ -184,7 +248,7 @@ func (al *AgentLoop) publishPlannedTaskProgress(msg bus.InboundMessage, total in
 		body = "(无输出)"
 	}
 	body = summarizePlannedTaskProgressBody(body, 6, 320)
-	content := fmt.Sprintf("进度 %d/%d：任务%d已%s\n%s", idx, total, idx, status, body)
+	content := fmt.Sprintf("阶段进度 %d/%d（失败 %d）\n最近任务：%d 已%s\n%s", completed, total, failed, idx, status, body)
 	al.bus.PublishOutbound(bus.OutboundMessage{
 		Channel: msg.Channel,
 		ChatID:  msg.ChatID,
