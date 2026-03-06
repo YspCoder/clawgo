@@ -115,6 +115,8 @@ type AgentTaskStats = {
   running: number;
   failed: number;
   waiting: number;
+  latestStatus: string;
+  latestUpdated: number;
   active: Array<{ id: string; status: string; title: string }>;
 };
 
@@ -199,13 +201,18 @@ function buildTaskStats(tasks: SubagentTask[]): Record<string, AgentTaskStats> {
     const agentID = normalizeTitle(task.agent_id, '');
     if (!agentID) return acc;
     if (!acc[agentID]) {
-      acc[agentID] = { total: 0, running: 0, failed: 0, waiting: 0, active: [] };
+      acc[agentID] = { total: 0, running: 0, failed: 0, waiting: 0, latestStatus: '', latestUpdated: 0, active: [] };
     }
     const item = acc[agentID];
     item.total += 1;
     if (task.status === 'running') item.running += 1;
-    if (task.status === 'failed') item.failed += 1;
     if (task.waiting_for_reply) item.waiting += 1;
+    const updatedAt = Math.max(task.updated || 0, task.created || 0);
+    if (updatedAt >= item.latestUpdated) {
+      item.latestUpdated = updatedAt;
+      item.latestStatus = normalizeTitle(task.status, '');
+      item.failed = task.status === 'failed' ? 1 : 0;
+    }
     if (task.status === 'running' || task.waiting_for_reply) {
       item.active.push({
         id: task.id,
@@ -400,6 +407,13 @@ const Subagents: React.FC = () => {
     load().catch(() => { });
   }, [q, selectedAgentID]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      load().catch(() => { });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [q, selectedAgentID]);
+
   const selected = useMemo(() => items.find((x) => x.id === selectedId) || null, [items, selectedId]);
   const selectedRegistryItem = useMemo(
     () => registryItems.find((x) => x.agent_id === selectedAgentID) || null,
@@ -489,7 +503,7 @@ const Subagents: React.FC = () => {
       failed: 0,
     };
 
-    const localMainStats = taskStats[normalizeTitle(localRoot.agent_id, 'main')] || { total: 0, running: 0, failed: 0, waiting: 0, active: [] };
+    const localMainStats = taskStats[normalizeTitle(localRoot.agent_id, 'main')] || { total: 0, running: 0, failed: 0, waiting: 0, latestStatus: '', latestUpdated: 0, active: [] };
     const localMainTask = recentTaskByAgent[normalizeTitle(localRoot.agent_id, 'main')];
     localBranchStats.running += localMainStats.running;
     localBranchStats.failed += localMainStats.failed;
@@ -512,7 +526,7 @@ const Subagents: React.FC = () => {
         `transport=${normalizeTitle(localRoot.transport, 'local')} type=${normalizeTitle(localRoot.type, 'router')}`,
         localMainStats.active[0] ? `task: ${localMainStats.active[0].title}` : t('noLiveTasks'),
       ],
-      accent: 'bg-amber-400',
+      accent: localMainStats.running > 0 ? 'bg-emerald-500' : localMainStats.latestStatus === 'failed' ? 'bg-red-500' : 'bg-amber-400',
       clickable: true,
       scale,
       onClick: () => {
@@ -525,7 +539,7 @@ const Subagents: React.FC = () => {
     localChildren.forEach((child, idx) => {
       const childX = localOriginX + idx * (cardWidth + clusterGap);
       const childY = childStartY;
-      const stats = taskStats[normalizeTitle(child.agent_id, '')] || { total: 0, running: 0, failed: 0, waiting: 0, active: [] };
+      const stats = taskStats[normalizeTitle(child.agent_id, '')] || { total: 0, running: 0, failed: 0, waiting: 0, latestStatus: '', latestUpdated: 0, active: [] };
       const task = recentTaskByAgent[normalizeTitle(child.agent_id, '')];
       localBranchStats.running += stats.running;
       localBranchStats.failed += stats.failed;
@@ -547,7 +561,7 @@ const Subagents: React.FC = () => {
           `transport=${normalizeTitle(child.transport, 'local')} type=${normalizeTitle(child.type, 'worker')}`,
           stats.active[0] ? `task: ${stats.active[0].title}` : task ? `last: ${summarizeTask(task.task, task.label)}` : t('noLiveTasks'),
         ],
-        accent: stats.running > 0 ? 'bg-emerald-500' : stats.failed > 0 ? 'bg-red-500' : 'bg-sky-400',
+        accent: stats.running > 0 ? 'bg-emerald-500' : stats.latestStatus === 'failed' ? 'bg-red-500' : 'bg-sky-400',
         clickable: true,
         scale,
         onClick: () => {
