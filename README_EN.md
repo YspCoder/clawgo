@@ -1,120 +1,61 @@
-# ClawGo
+# ClawGo 🦞
 
-ClawGo is a long-running AI agent system written in Go, designed around:
+ClawGo is a long-running AI agent system built in Go for local-first operation, multi-agent coordination, and auditable runtime control.
 
-- declarative main-agent and subagent configuration
-- persistent run / thread / mailbox state
-- node-registered remote agent branches
-- multi-channel access plus a unified WebUI
-- lightweight runtime behavior with strong auditability
+- 🎯 `main agent` owns the user-facing loop, routing, dispatch, and merge
+- 🤖 `subagents` handle concrete execution such as coding, testing, and docs
+- 🌐 `node branches` let remote nodes appear as controlled agent branches
+- 🧠 memory, threads, mailbox state, and task runtime are persisted
+- 🖥️ a unified WebUI covers config, topology, logs, skills, memory, and ops
 
 [中文](./README.md)
 
----
+## Architecture
 
-## Current Architecture
-
-ClawGo is no longer a "single agent plus some tools" runtime. It is now an orchestrated agent tree:
-
-- `main agent`
-  - user-facing entrypoint
-  - owns routing, dispatch, merge, and coordination
-- `local subagents`
-  - for example `coder`, `tester`
-  - declared in `config.json` under `agents.subagents`
-- `node-backed branches`
-  - a registered node is treated as a remote branch under `main`
-  - branch ids look like `node.<node_id>.main`
-  - they can be targeted by the main agent as controlled remote execution branches
-
-The default collaboration pattern is:
+The default collaboration flow is:
 
 ```text
 user -> main -> worker -> main -> user
 ```
 
----
+ClawGo currently has four layers:
+
+- `main agent`
+  - user-facing entrypoint
+  - handles routing, decomposition, dispatch, and merge
+- `local subagents`
+  - declared in `config.json -> agents.subagents`
+  - use isolated sessions and memory namespaces
+- `node-backed branches`
+  - registered nodes appear as remote agent branches in the topology
+  - `transport=node` tasks are sent via `agent_task`
+- `runtime store`
+  - persists runs, events, threads, and messages
 
 ## Core Capabilities
 
-### 1. Agent Config and Routing
-
-- `agents.router`
-  - main-agent routing configuration
-  - supports `rules_first`, explicit `@agent_id`, and keyword routing
-- `agents.subagents`
-  - declares agent identity, role, runtime policy, and tool allowlists
-- `system_prompt_file`
-  - subagents now prefer `agents/<agent_id>/AGENT.md`
-  - they are no longer expected to rely on a one-line inline prompt
-
-### 2. Persistent Subagent Runtime
-
-Runtime state is persisted under:
-
-- `workspace/agents/runtime/subagent_runs.jsonl`
-- `workspace/agents/runtime/subagent_events.jsonl`
-- `workspace/agents/runtime/threads.jsonl`
-- `workspace/agents/runtime/agent_messages.jsonl`
-
-This enables:
-
-- run recovery
-- thread tracing
-- mailbox / inbox inspection
-- dispatch / wait / merge workflows
-
-### 3. Node Branches
-
-A registered node is not treated as just a device entry anymore. It is modeled as a remote main-agent branch:
-
-- nodes appear inside the unified agent topology
-- remote registries are shown as read-only mirrors
-- a subagent with `transport=node` is dispatched through `agent_task` to the target node
-
-### 4. WebUI
-
-The WebUI is now organized as a unified agent operations console, including:
-
-- Dashboard
-- Chat
-- Config
-- Logs
-- Cron
-- Skills
-- Memory
-- Task Audit
-- EKG
-- Agents
-  - unified agent topology
-  - local and remote agent trees
-  - subagent runtime
-  - registry
-  - prompt file editor
-  - dispatch / thread / inbox controls
-
-### 5. Memory Strategy
-
-Memory is not fully shared and not fully isolated either. It uses a dual-write model:
-
-- `main`
-  - keeps workspace-level memory and collaboration summaries
-- `subagent`
-  - writes to its own namespaced memory
-  - paths look like `workspace/agents/<memory_ns>/...`
-- for automatic subagent summaries:
-  - the subagent keeps its own detailed entry
-  - the main memory also receives a short collaboration summary
-
-Example summary format:
-
-```md
-## 15:04 Code Agent | Fix login API and add tests
-
-- Did: Fixed the login API, added regression coverage, and verified the result.
-```
-
----
+- 🚦 Routing and dispatch
+  - `rules_first`
+  - explicit `@agent_id`
+  - keyword-based auto routing
+- 📦 Persistent runtime state
+  - `subagent_runs.jsonl`
+  - `subagent_events.jsonl`
+  - `threads.jsonl`
+  - `agent_messages.jsonl`
+- 📨 mailbox and thread coordination
+  - dispatch
+  - wait
+  - reply
+  - ack
+- 🧠 dual-write memory model
+  - subagents keep detailed local memory
+  - main memory keeps compact collaboration summaries
+- 🪪 declarative agent config
+  - role
+  - tool allowlist
+  - runtime policy
+  - `system_prompt_file`
 
 ## Quick Start
 
@@ -136,15 +77,9 @@ clawgo onboard
 clawgo provider
 ```
 
-### 4. Check status
+### 4. Start
 
-```bash
-clawgo status
-```
-
-### 5. Start
-
-Local interactive mode:
+Interactive mode:
 
 ```bash
 clawgo agent
@@ -154,18 +89,14 @@ clawgo agent -m "Hello"
 Gateway mode:
 
 ```bash
-clawgo gateway
-clawgo gateway start
-clawgo gateway status
-```
-
-Foreground mode:
-
-```bash
 clawgo gateway run
 ```
 
----
+Development mode:
+
+```bash
+make dev
+```
 
 ## WebUI
 
@@ -175,27 +106,41 @@ Open:
 http://<host>:<port>/webui?token=<gateway.token>
 ```
 
-Recommended pages:
+Key pages:
 
 - `Agents`
-  - view the entire agent tree
-  - inspect node branches
-  - inspect active runtime tasks
-  - edit local subagent configuration
+  - unified agent topology
+  - local subagents and remote branches
+  - runtime status via hover
 - `Config`
-  - edit runtime configuration
+  - configuration editing
+  - hot-reload field reference
 - `Logs`
-  - inspect real-time logs
+  - real-time logs
+- `Skills`
+  - install, inspect, and edit skills
+- `Memory`
+  - memory files and summaries
 - `Task Audit`
-  - inspect task decomposition, scheduling, and execution flow
-- `EKG`
-  - inspect error signatures, source distribution, and workload hotspots
+  - execution and scheduling trace
 
----
+### Highlights
+
+**Dashboard**
+
+![ClawGo Dashboard](docs/assets/readme-dashboard.png)
+
+**Agent Topology**
+
+![ClawGo Agent Topology](docs/assets/readme-agents.png)
+
+**Config Workspace**
+
+![ClawGo Config](docs/assets/readme-config.png)
 
 ## Config Layout
 
-The current recommended structure is centered around:
+Recommended structure:
 
 ```json
 {
@@ -219,35 +164,30 @@ The current recommended structure is centered around:
     "subagents": {
       "main": {},
       "coder": {},
-      "tester": {},
-      "node.edge-dev.main": {}
+      "tester": {}
     }
   }
 }
 ```
 
-Important notes:
+Notes:
 
 - `runtime_control` has been removed
-- the current structure uses:
+- the current config uses:
   - `agents.defaults.execution`
   - `agents.defaults.summary_policy`
   - `agents.router.policy`
 - enabled local subagents must define `system_prompt_file`
-- node-backed agents use:
+- remote branches require:
   - `transport: "node"`
   - `node_id`
   - `parent_agent_id`
 
-See the full example:
+See the full example in [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json).
 
-- [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json)
+## Prompt File Convention
 
----
-
-## Subagent Prompt Convention
-
-Each agent should ideally have its own prompt file:
+Keep agent prompts in dedicated files, for example:
 
 - `agents/main/AGENT.md`
 - `agents/coder/AGENT.md`
@@ -263,72 +203,35 @@ Example:
 
 Rules:
 
-- the path must stay inside the workspace
-- the path should be relative
-- when creating a subagent, update both config and the matching `AGENT.md`
-- when a subagent's responsibility changes materially, update its `AGENT.md` too
+- the path must be relative to the workspace
+- the file must live inside the workspace
+- these paths are examples only; the repo does not ship the files
+- users or agent workflows should create the actual `AGENT.md` files
 
----
+## Memory and Runtime
 
-## Common Commands
+ClawGo does not treat all agents as one shared context.
 
-```text
-clawgo onboard
-clawgo provider
-clawgo status
-clawgo agent [-m "..."]
-clawgo gateway [run|start|stop|restart|status]
-clawgo config set|get|check|reload
-clawgo cron ...
-clawgo skills ...
-clawgo uninstall [--purge] [--remove-bin]
-```
+- `main`
+  - keeps workspace-level memory and collaboration summaries
+- `subagent`
+  - uses its own session key
+  - writes to its own memory namespace
+- runtime store
+  - persists runs, events, threads, and messages
 
----
+This gives you:
 
-## Build
+- recoverability
+- traceability
+- clear execution boundaries
 
-Local build:
+## Positioning
 
-```bash
-make build
-```
+ClawGo is a good fit for:
 
-Build all targets:
+- local long-running personal agents
+- multi-agent workflows without heavyweight orchestration platforms
+- systems that need explicit config, explicit audit trails, and strong observability
 
-```bash
-make build-all
-```
-
-Package outputs:
-
-```bash
-make package-all
-```
-
----
-
-## Design Direction
-
-ClawGo currently leans toward these design choices:
-
-- main-agent mediation first
-- persisted runtime state first
-- declarative config first
-- unified operations UI before more aggressive automation
-- nodes modeled as controlled remote agent branches, not fully autonomous peers
-
-In practice, that means this project is closer to:
-
-- a long-running personal AI agent runtime
-- with multi-agent orchestration
-- with node expansion
-- with operational visibility and auditability
-
-rather than a simple chat bot wrapper.
-
----
-
-## License
-
-See `LICENSE` in this repository.
+If you want a working starting point, begin with [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json).

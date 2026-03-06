@@ -34,6 +34,7 @@ const Config: React.FC = () => {
   );
 
   const hotPrefixes = useMemo(() => hotReloadFieldDetails.map((x) => String(x.path || '').replace(/\.\*$/, '')).filter(Boolean), [hotReloadFieldDetails]);
+  const hotReloadTabKey = '__hot_reload__';
 
   const allTopKeys = useMemo(() => Object.keys(cfg || {}).filter(k => typeof (cfg as any)?.[k] === 'object' && (cfg as any)?.[k] !== null), [cfg]);
   const basicTopKeys = useMemo(() => {
@@ -50,7 +51,7 @@ const Config: React.FC = () => {
       const s = search.trim().toLowerCase();
       keys = keys.filter((k) => k.toLowerCase().includes(s));
     }
-    return keys;
+    return [hotReloadTabKey, ...keys];
   }, [allTopKeys, basicTopKeys, basicMode, hotOnly, search, hotPrefixes]);
 
   const [selectedTop, setSelectedTop] = useState<string>('');
@@ -193,7 +194,7 @@ const Config: React.FC = () => {
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 flex flex-col min-h-full">
+    <div className="p-4 md:p-8 w-full space-y-6 flex flex-col min-h-full">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold tracking-tight">{t('configuration')}</h1>
         <div className="flex items-center gap-1 bg-zinc-900/80 p-1 rounded-lg border border-zinc-800">
@@ -222,18 +223,6 @@ const Config: React.FC = () => {
         </button>
       </div>
 
-      <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-4">
-        <div className="text-sm font-semibold text-zinc-300 mb-2">{t('configHotFieldsFull')}</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-          {hotReloadFieldDetails.map((it) => (
-            <div key={it.path} className="p-2 rounded bg-zinc-950 border border-zinc-800">
-              <div className="font-mono text-zinc-200">{it.path}</div>
-              <div className="text-zinc-400">{it.name || ''}{it.description ? ` · ${it.description}` : ''}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       <div className="flex-1 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl overflow-hidden flex flex-col shadow-sm min-h-[420px]">
         {!showRaw ? (
           <div className="flex-1 flex min-h-0">
@@ -246,13 +235,26 @@ const Config: React.FC = () => {
                     onClick={() => setSelectedTop(k)}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTop === k ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'text-zinc-300 hover:bg-zinc-800/60'}`}
                   >
-                    {configLabels[k] || k}
+                    {k === hotReloadTabKey ? t('configHotFieldsFull') : (configLabels[k] || k)}
                   </button>
                 ))}
               </div>
             </aside>
 
             <div className="flex-1 p-4 md:p-6 overflow-y-auto space-y-4">
+              {activeTop === hotReloadTabKey && (
+                <div className="space-y-3">
+                  <div className="text-sm font-semibold text-zinc-300">{t('configHotFieldsFull')}</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    {hotReloadFieldDetails.map((it) => (
+                      <div key={it.path} className="p-2 rounded bg-zinc-950 border border-zinc-800">
+                        <div className="font-mono text-zinc-200">{it.path}</div>
+                        <div className="text-zinc-400">{it.name || ''}{it.description ? ` · ${it.description}` : ''}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {activeTop === 'providers' && !showRaw && (
                 <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -278,7 +280,7 @@ const Config: React.FC = () => {
                   </div>
                 </div>
               )}
-              {activeTop ? (
+              {activeTop && activeTop !== hotReloadTabKey ? (
                 <RecursiveConfig
                   data={(cfg as any)?.[activeTop] || {}}
                   labels={configLabels}

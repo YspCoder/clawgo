@@ -33,8 +33,6 @@ type SubagentTask struct {
 	MaxTaskChars     int                    `json:"max_task_chars,omitempty"`
 	MaxResultChars   int                    `json:"max_result_chars,omitempty"`
 	RetryCount       int                    `json:"retry_count,omitempty"`
-	PipelineID       string                 `json:"pipeline_id,omitempty"`
-	PipelineTask     string                 `json:"pipeline_task,omitempty"`
 	ThreadID         string                 `json:"thread_id,omitempty"`
 	CorrelationID    string                 `json:"correlation_id,omitempty"`
 	ParentRunID      string                 `json:"parent_run_id,omitempty"`
@@ -57,7 +55,6 @@ type SubagentManager struct {
 	mu                 sync.RWMutex
 	provider           providers.LLMProvider
 	bus                *bus.MessageBus
-	orc                *Orchestrator
 	workspace          string
 	nextID             int
 	runFunc            SubagentRunFunc
@@ -78,14 +75,12 @@ type SubagentSpawnOptions struct {
 	MaxResultChars int
 	OriginChannel  string
 	OriginChatID   string
-	PipelineID     string
-	PipelineTask   string
 	ThreadID       string
 	CorrelationID  string
 	ParentRunID    string
 }
 
-func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *bus.MessageBus, orc *Orchestrator) *SubagentManager {
+func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *bus.MessageBus) *SubagentManager {
 	store := NewSubagentProfileStore(workspace)
 	runStore := NewSubagentRunStore(workspace)
 	mailboxStore := NewAgentMailboxStore(workspace)
@@ -95,7 +90,6 @@ func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *b
 		archiveAfterMinute: 60,
 		provider:           provider,
 		bus:                bus,
-		orc:                orc,
 		workspace:          workspace,
 		nextID:             1,
 		profileStore:       store,
@@ -122,9 +116,6 @@ func (sm *SubagentManager) Spawn(ctx context.Context, opts SubagentSpawnOptions)
 	}
 	if task.Role != "" {
 		desc += fmt.Sprintf(" role=%s", task.Role)
-	}
-	if task.PipelineID != "" && task.PipelineTask != "" {
-		desc += fmt.Sprintf(" (pipeline=%s task=%s)", task.PipelineID, task.PipelineTask)
 	}
 	return desc, nil
 }
@@ -240,8 +231,6 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 	}
 	originChannel := strings.TrimSpace(opts.OriginChannel)
 	originChatID := strings.TrimSpace(opts.OriginChatID)
-	pipelineID := strings.TrimSpace(opts.PipelineID)
-	pipelineTask := strings.TrimSpace(opts.PipelineTask)
 	threadID := strings.TrimSpace(opts.ThreadID)
 	correlationID := strings.TrimSpace(opts.CorrelationID)
 	parentRunID := strings.TrimSpace(opts.ParentRunID)
@@ -291,8 +280,6 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		MaxTaskChars:     maxTaskChars,
 		MaxResultChars:   maxResultChars,
 		RetryCount:       0,
-		PipelineID:       pipelineID,
-		PipelineTask:     pipelineTask,
 		ThreadID:         threadID,
 		CorrelationID:    correlationID,
 		ParentRunID:      parentRunID,
@@ -336,9 +323,6 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 	sm.persistTaskLocked(task, "started", "")
 	sm.mu.Unlock()
 
-	if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
-		_ = sm.orc.MarkTaskRunning(task.PipelineID, task.PipelineTask)
-	}
 	result, runErr := sm.runWithRetry(ctx, task)
 	sm.mu.Lock()
 	if runErr != nil {
@@ -359,9 +343,6 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			CreatedAt:     task.Updated,
 		})
 		sm.persistTaskLocked(task, "completed", task.Result)
-		if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
-			_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, runErr)
-		}
 	} else {
 		task.Status = "completed"
 		task.Result = applySubagentResultQuota(result, task.MaxResultChars)
@@ -379,9 +360,6 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			CreatedAt:     task.Updated,
 		})
 		sm.persistTaskLocked(task, "completed", task.Result)
-		if sm.orc != nil && task.PipelineID != "" && task.PipelineTask != "" {
-			_ = sm.orc.MarkTaskDone(task.PipelineID, task.PipelineTask, task.Result, nil)
-		}
 	}
 	sm.mu.Unlock()
 
@@ -399,9 +377,6 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			}
 		}
 		announceContent := fmt.Sprintf("%s.\n\nResult:\n%s", prefix, task.Result)
-		if task.PipelineID != "" && task.PipelineTask != "" {
-			announceContent += fmt.Sprintf("\n\nPipeline: %s\nPipeline Task: %s", task.PipelineID, task.PipelineTask)
-		}
 		sm.bus.PublishInbound(bus.InboundMessage{
 			Channel:    "system",
 			SenderID:   fmt.Sprintf("subagent:%s", task.ID),
@@ -409,17 +384,15 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			SessionKey: task.SessionKey,
 			Content:    announceContent,
 			Metadata: map[string]string{
-				"trigger":       "subagent",
-				"subagent_id":   task.ID,
-				"agent_id":      task.AgentID,
-				"role":          task.Role,
-				"session_key":   task.SessionKey,
-				"memory_ns":     task.MemoryNS,
-				"retry_count":   fmt.Sprintf("%d", task.RetryCount),
-				"timeout_sec":   fmt.Sprintf("%d", task.TimeoutSec),
-				"pipeline_id":   task.PipelineID,
-				"pipeline_task": task.PipelineTask,
-				"status":        task.Status,
+				"trigger":     "subagent",
+				"subagent_id": task.ID,
+				"agent_id":    task.AgentID,
+				"role":        task.Role,
+				"session_key": task.SessionKey,
+				"memory_ns":   task.MemoryNS,
+				"retry_count": fmt.Sprintf("%d", task.RetryCount),
+				"timeout_sec": fmt.Sprintf("%d", task.TimeoutSec),
+				"status":      task.Status,
 			},
 		})
 	}
@@ -692,8 +665,6 @@ func (sm *SubagentManager) ResumeTask(ctx context.Context, taskID string) (strin
 		MaxResultChars: t.MaxResultChars,
 		OriginChannel:  t.OriginChannel,
 		OriginChatID:   t.OriginChatID,
-		PipelineID:     t.PipelineID,
-		PipelineTask:   t.PipelineTask,
 		ThreadID:       t.ThreadID,
 		CorrelationID:  t.CorrelationID,
 		ParentRunID:    t.ID,

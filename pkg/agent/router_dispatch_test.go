@@ -44,7 +44,7 @@ func TestMaybeAutoRouteDispatchesExplicitAgentMention(t *testing.T) {
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
 	workspace := t.TempDir()
-	manager := tools.NewSubagentManager(nil, workspace, nil, nil)
+	manager := tools.NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
 		return "auto-routed", nil
 	})
@@ -101,7 +101,7 @@ func TestMaybeAutoRouteDispatchesRulesFirstMatch(t *testing.T) {
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
 	workspace := t.TempDir()
-	manager := tools.NewSubagentManager(nil, workspace, nil, nil)
+	manager := tools.NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
 		return "tested", nil
 	})

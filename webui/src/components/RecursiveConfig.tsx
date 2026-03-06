@@ -113,7 +113,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
   if (typeof data !== 'object' || data === null) return null;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-10 gap-y-8">
       {Object.entries(data).map(([key, value]) => {
         const currentPath = path ? `${path}.${key}` : key;
         const label = labels[key] || key.replace(/_/g, ' ');

@@ -17,7 +17,7 @@ func TestSubagentSpawnEnforcesTaskQuota(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		return "ok", nil
 	})
@@ -45,7 +45,7 @@ func TestSubagentSpawnEnforcesTaskQuota(t *testing.T) {
 
 func TestSubagentRunWithRetryEventuallySucceeds(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	attempts := 0
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		attempts++
@@ -81,7 +81,7 @@ func TestSubagentRunWithRetryEventuallySucceeds(t *testing.T) {
 
 func TestSubagentRunWithTimeoutFails(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		select {
 		case <-ctx.Done():
@@ -116,7 +116,7 @@ func TestSubagentBroadcastIncludesFailureStatus(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	defer msgBus.Close()
 
-	manager := NewSubagentManager(nil, workspace, msgBus, nil)
+	manager := NewSubagentManager(nil, workspace, msgBus)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		return "", errors.New("boom")
 	})
@@ -152,7 +152,7 @@ func TestSubagentBroadcastIncludesFailureStatus(t *testing.T) {
 
 func TestSubagentManagerRestoresPersistedRuns(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		return "persisted", nil
 	})
@@ -172,7 +172,7 @@ func TestSubagentManagerRestoresPersistedRuns(t *testing.T) {
 		t.Fatalf("expected completed task, got %s", task.Status)
 	}
 
-	reloaded := NewSubagentManager(nil, workspace, nil, nil)
+	reloaded := NewSubagentManager(nil, workspace, nil)
 	got, ok := reloaded.GetTask(task.ID)
 	if !ok {
 		t.Fatalf("expected persisted task to reload")
@@ -207,7 +207,7 @@ func TestSubagentManagerRestoresPersistedRuns(t *testing.T) {
 
 func TestSubagentManagerPersistsEvents(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		time.Sleep(100 * time.Millisecond)
 		return "ok", nil
@@ -249,7 +249,7 @@ func TestSubagentManagerPersistsEvents(t *testing.T) {
 
 func TestSubagentMailboxStoresThreadAndReplies(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		return "done", nil
 	})
@@ -294,7 +294,7 @@ func TestSubagentMailboxStoresThreadAndReplies(t *testing.T) {
 
 func TestSubagentMailboxInboxIncludesControlMessages(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		time.Sleep(150 * time.Millisecond)
 		return "ok", nil
@@ -336,7 +336,7 @@ func TestSubagentMailboxInboxIncludesControlMessages(t *testing.T) {
 
 func TestSubagentMailboxReplyAndAckFlow(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		time.Sleep(150 * time.Millisecond)
 		return "ok", nil
@@ -405,7 +405,7 @@ func TestSubagentMailboxReplyAndAckFlow(t *testing.T) {
 
 func TestSubagentResumeConsumesQueuedThreadInbox(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	observedQueued := make(chan int, 4)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		inbox, err := manager.TaskInbox(task.ID, 10)
@@ -507,7 +507,7 @@ func TestSubagentUsesConfiguredSystemPromptFile(t *testing.T) {
 		t.Fatalf("write coder AGENT failed: %v", err)
 	}
 	provider := &captureProvider{}
-	manager := NewSubagentManager(provider, workspace, nil, nil)
+	manager := NewSubagentManager(provider, workspace, nil)
 	if _, err := manager.ProfileStore().Upsert(SubagentProfile{
 		AgentID:          "coder",
 		Status:           "active",

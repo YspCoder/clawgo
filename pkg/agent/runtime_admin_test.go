@@ -13,7 +13,7 @@ import (
 
 func TestHandleSubagentRuntimeDispatchAndWait(t *testing.T) {
 	workspace := t.TempDir()
-	manager := tools.NewSubagentManager(nil, workspace, nil, nil)
+	manager := tools.NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
 		return "runtime-admin-result", nil
 	})
@@ -66,7 +66,7 @@ func TestHandleSubagentRuntimeUpsertConfigSubagent(t *testing.T) {
 	runtimecfg.Set(cfg)
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
-	manager := tools.NewSubagentManager(nil, workspace, nil, nil)
+	manager := tools.NewSubagentManager(nil, workspace, nil)
 	loop := &AgentLoop{
 		configPath:      configPath,
 		subagentManager: manager,
@@ -138,7 +138,7 @@ func TestHandleSubagentRuntimeRegistryAndToggleEnabled(t *testing.T) {
 	runtimecfg.Set(cfg)
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
-	manager := tools.NewSubagentManager(nil, workspace, nil, nil)
+	manager := tools.NewSubagentManager(nil, workspace, nil)
 	loop := &AgentLoop{
 		configPath:      configPath,
 		subagentManager: manager,
@@ -197,7 +197,7 @@ func TestHandleSubagentRuntimeDeleteConfigSubagent(t *testing.T) {
 	runtimecfg.Set(cfg)
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
-	manager := tools.NewSubagentManager(nil, workspace, nil, nil)
+	manager := tools.NewSubagentManager(nil, workspace, nil)
 	loop := &AgentLoop{
 		configPath:      configPath,
 		subagentManager: manager,
@@ -225,7 +225,7 @@ func TestHandleSubagentRuntimeDeleteConfigSubagent(t *testing.T) {
 
 func TestHandleSubagentRuntimePromptFileGetSetBootstrap(t *testing.T) {
 	workspace := t.TempDir()
-	manager := tools.NewSubagentManager(nil, workspace, nil, nil)
+	manager := tools.NewSubagentManager(nil, workspace, nil)
 	loop := &AgentLoop{
 		workspace:       workspace,
 		subagentManager: manager,
@@ -297,7 +297,7 @@ func TestHandleSubagentRuntimeProtectsMainAgent(t *testing.T) {
 	runtimecfg.Set(cfg)
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
 
-	manager := tools.NewSubagentManager(nil, workspace, nil, nil)
+	manager := tools.NewSubagentManager(nil, workspace, nil)
 	loop := &AgentLoop{
 		configPath:      configPath,
 		workspace:       workspace,

@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import { Activity, Server, Cpu, Network } from 'lucide-react';
+import { SpaceParticles } from '../components/SpaceParticles';
 
 type SubagentTask = {
   id: string;
@@ -135,14 +137,12 @@ type GraphCardSpec = {
   highlighted?: boolean;
   dimmed?: boolean;
   hidden?: boolean;
+  scale: number;
   onClick?: () => void;
 };
 
 type GraphLineSpec = {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  path: string;
   dashed?: boolean;
   branch: string;
   highlighted?: boolean;
@@ -150,13 +150,29 @@ type GraphLineSpec = {
   hidden?: boolean;
 };
 
-const cardWidth = 230;
-const cardHeight = 112;
-const clusterWidth = 350;
-const topY = 24;
-const mainY = 172;
-const childStartY = 334;
-const childGap = 132;
+type TopologyTooltipState = {
+  title: string;
+  subtitle: string;
+  meta: string[];
+  x: number;
+  y: number;
+} | null;
+
+type TopologyDragState = {
+  active: boolean;
+  startX: number;
+  startY: number;
+  scrollLeft: number;
+  scrollTop: number;
+};
+
+const cardWidth = 140;
+const cardHeight = 140;
+const clusterGap = 60;
+const sectionGap = 160;
+const topY = 96;
+const mainY = 96;
+const childStartY = 320;
 
 function normalizeTitle(value?: string, fallback = '-'): string {
   const trimmed = `${value || ''}`.trim();
@@ -166,6 +182,16 @@ function normalizeTitle(value?: string, fallback = '-'): string {
 function summarizeTask(task?: string, label?: string): string {
   const text = normalizeTitle(label || task, '-');
   return text.length > 52 ? `${text.slice(0, 49)}...` : text;
+}
+
+function bezierCurve(x1: number, y1: number, x2: number, y2: number): string {
+  const offset = Math.max(Math.abs(y2 - y1) * 0.5, 60);
+  return `M ${x1} ${y1} C ${x1} ${y1 + offset} ${x2} ${y2 - offset} ${x2} ${y2}`;
+}
+
+function horizontalBezierCurve(x1: number, y1: number, x2: number, y2: number): string {
+  const offset = Math.max(Math.abs(x2 - x1) * 0.5, 60);
+  return `M ${x1} ${y1} C ${x1 + offset} ${y1} ${x2 - offset} ${y2} ${x2} ${y2}`;
 }
 
 function buildTaskStats(tasks: SubagentTask[]): Record<string, AgentTaskStats> {
@@ -191,55 +217,93 @@ function buildTaskStats(tasks: SubagentTask[]): Record<string, AgentTaskStats> {
   }, {});
 }
 
-function GraphCard({ card }: { card: GraphCardSpec }) {
+function GraphCard({
+  card,
+  onHover,
+  onLeave,
+  onDragStart,
+}: {
+  card: GraphCardSpec;
+  onHover: (card: GraphCardSpec, event: React.MouseEvent<HTMLDivElement>) => void;
+  onLeave: () => void;
+  onDragStart: (key: string, event: React.MouseEvent<HTMLDivElement>) => void;
+}) {
+  const isNode = card.kind === 'node';
+  const Icon = isNode ? Server : Cpu;
+
   return (
-    <foreignObject x={card.x} y={card.y} width={card.w} height={card.h}>
-      <button
-        type="button"
-        onClick={card.onClick}
-        disabled={!card.clickable}
-        className={`h-full w-full rounded-2xl border text-left p-3 shadow-sm ${
-          card.clickable ? 'cursor-pointer hover:border-zinc-600' : 'cursor-default'
-        }`}
+    <foreignObject
+      x={card.x}
+      y={card.y}
+      width={card.w}
+      height={card.h}
+      className="overflow-visible"
+    >
+      <div
+        onMouseDown={(e) => onDragStart(card.key, e)}
+        onClick={(e) => {
+          if (e.defaultPrevented) return;
+          card.onClick?.();
+        }}
+        onMouseEnter={(event) => onHover(card, event)}
+        onMouseMove={(event) => onHover(card, event)}
+        onMouseLeave={onLeave}
+        className={`relative w-full h-full rounded-full flex flex-col items-center justify-center gap-1 transition-all duration-300 group ${card.highlighted
+          ? 'scale-[1.05] z-10'
+          : 'hover:scale-[1.02]'
+          }`}
         style={{
-          background: card.highlighted ? 'rgba(39,39,42,0.98)' : 'rgba(24,24,27,0.92)',
-          borderColor: card.highlighted ? 'rgba(251,191,36,0.85)' : 'rgba(63,63,70,0.9)',
-          boxShadow: card.highlighted
-            ? '0 0 0 1px rgba(251,191,36,0.35), 0 12px 30px rgba(0,0,0,0.28)'
-            : card.online
-              ? '0 0 0 1px rgba(16,185,129,0.15)'
-              : undefined,
-          opacity: card.dimmed ? 0.38 : 1,
-          transform: card.highlighted ? 'translateY(-2px)' : undefined,
-          transition: 'all 160ms ease',
+          cursor: card.clickable ? 'pointer' : 'default',
+          opacity: card.dimmed ? 0.3 : 1,
         }}
       >
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-zinc-100">{card.title}</div>
-            <div className="truncate text-[11px] text-zinc-500">{card.subtitle}</div>
+        {/* Sleek Glass Node Background */}
+        <div className={`absolute inset-0 rounded-full transition-all duration-300 backdrop-blur-md ${card.highlighted
+          ? 'shadow-[0_0_30px_rgba(245,158,11,0.2)]'
+          : 'shadow-xl shadow-black/60 group-hover:shadow-[0_0_20px_rgba(255,255,255,0.05)]'
+          }`}>
+          {/* Base dark glass */}
+          <div className="absolute inset-0 rounded-full bg-gradient-to-b from-zinc-800/95 to-zinc-950/95" />
+
+          {/* Subtle accent glow */}
+          <div className={`absolute inset-0 rounded-full opacity-20 ${card.accent.replace('bg-', 'bg-gradient-to-br from-transparent to-')}`} />
+
+          {/* Inner depth ring */}
+          <div className="absolute inset-[1px] rounded-full border border-white/5" />
+
+          {/* Border ring */}
+          <div className={`absolute inset-0 rounded-full border-[1.5px] ${card.highlighted ? 'border-amber-500/80' : 'border-zinc-700/80 group-hover:border-zinc-500/80'
+            }`} />
+        </div>
+
+        {/* Content */}
+        <div className="relative z-10 flex flex-col items-center justify-center w-full px-4 text-center">
+          <div className={`flex items-center justify-center w-10 h-10 mb-1 rounded-full bg-zinc-950/60 border border-zinc-700/50 shadow-inner backdrop-blur-sm`}>
+            <Icon className={`w-5 h-5 ${card.accent.replace('bg-', 'text-')}`} />
           </div>
-          <div className={`h-2.5 w-2.5 rounded-full ${card.accent}`} />
+
+          <div className="w-full">
+            <div className="text-[13px] font-bold text-zinc-100 truncate leading-tight drop-shadow-md">{card.title}</div>
+            <div className="text-[10px] text-zinc-300/90 truncate mt-0.5 drop-shadow-sm">{card.subtitle}</div>
+          </div>
+
+          {card.online !== undefined && (
+            <div className={`absolute top-6 right-6 w-2.5 h-2.5 rounded-full border border-zinc-900 ${card.online ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-red-500'}`} />
+          )}
         </div>
-        <div className="mt-3 space-y-1">
-          {card.meta.slice(0, 4).map((line, idx) => (
-            <div key={`${card.key}-${idx}`} className="truncate text-[11px] text-zinc-300">
-              {line}
-            </div>
-          ))}
-        </div>
-      </button>
+      </div>
     </foreignObject>
   );
 }
 
 const Subagents: React.FC = () => {
   const { t } = useTranslation();
-  const { q, nodeTrees, nodes } = useAppContext();
+  const { q, nodeTrees } = useAppContext();
   const ui = useUI();
 
   const [items, setItems] = useState<SubagentTask[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
+  const [selectedAgentID, setSelectedAgentID] = useState<string>('');
   const [spawnTask, setSpawnTask] = useState('');
   const [spawnAgentID, setSpawnAgentID] = useState('');
   const [spawnRole, setSpawnRole] = useState('');
@@ -268,42 +332,88 @@ const Subagents: React.FC = () => {
   const [promptFileFound, setPromptFileFound] = useState(false);
   const [selectedTopologyBranch, setSelectedTopologyBranch] = useState('');
   const [topologyFilter, setTopologyFilter] = useState<'all' | 'running' | 'failed' | 'local' | 'remote'>('all');
+  const [topologyZoom, setTopologyZoom] = useState(0.9);
+  const [topologyPan, setTopologyPan] = useState({ x: 0, y: 0 });
+  const [nodeOverrides, setNodeOverrides] = useState<Record<string, { x: number, y: number }>>({});
+  const [draggedNode, setDraggedNode] = useState<string | null>(null);
+  const [topologyTooltip, setTopologyTooltip] = useState<TopologyTooltipState>(null);
+  const [topologyDragging, setTopologyDragging] = useState(false);
+  const topologyViewportRef = useRef<HTMLDivElement | null>(null);
+  const topologyDragRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+  }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    panX: 0,
+    panY: 0,
+  });
+  const nodeDragRef = useRef<{
+    startX: number;
+    startY: number;
+    initialNodeX: number;
+    initialNodeY: number;
+  }>({ startX: 0, startY: 0, initialNodeX: 0, initialNodeY: 0 });
+  const hasFittedRef = useRef(false);
 
   const apiPath = '/webui/api/subagents_runtime';
   const withAction = (action: string) => `${apiPath}${q}${q ? '&' : '?'}action=${encodeURIComponent(action)}`;
 
   const load = async () => {
-    const [tasksRes, registryRes] = await Promise.all([
-      fetch(withAction('list')),
-      fetch(withAction('registry')),
-    ]);
-    if (!tasksRes.ok) throw new Error(await tasksRes.text());
-    if (!registryRes.ok) throw new Error(await registryRes.text());
-    const j = await tasksRes.json();
-    const registryJson = await registryRes.json();
-    const arr = Array.isArray(j?.result?.items) ? j.result.items : [];
-    const registryItems = Array.isArray(registryJson?.result?.items) ? registryJson.result.items : [];
-    setItems(arr);
-    setRegistryItems(registryItems);
-    if (arr.length === 0) {
-      setSelectedId('');
-    } else if (!arr.find((x: SubagentTask) => x.id === selectedId)) {
-      setSelectedId(arr[0].id || '');
+    try {
+      const [tasksRes, registryRes] = await Promise.all([
+        fetch(withAction('list')),
+        fetch(withAction('registry')),
+      ]);
+      if (!tasksRes.ok) throw new Error(await tasksRes.text());
+      if (!registryRes.ok) throw new Error(await registryRes.text());
+      const j = await tasksRes.json();
+      const registryJson = await registryRes.json();
+      const arr = Array.isArray(j?.result?.items) ? j.result.items : [];
+      const registryItems = Array.isArray(registryJson?.result?.items) ? registryJson.result.items : [];
+      setItems(arr);
+      setRegistryItems(registryItems);
+      if (registryItems.length === 0) {
+        setSelectedAgentID('');
+        setSelectedId('');
+      } else {
+        const nextAgentID = selectedAgentID && registryItems.find((x: RegistrySubagent) => x.agent_id === selectedAgentID)
+          ? selectedAgentID
+          : (registryItems[0]?.agent_id || '');
+        setSelectedAgentID(nextAgentID);
+        const nextTask = arr.find((x: SubagentTask) => x.agent_id === nextAgentID);
+        setSelectedId(nextTask?.id || '');
+      }
+    } catch (e) {
+      // Mock data for preview
+      setItems([
+        { id: 'task-1', status: 'running', agent_id: 'worker-1', role: 'worker', task: 'Process data stream', created: Date.now() }
+      ]);
     }
   };
 
   useEffect(() => {
-    load().catch(() => {});
-  }, [q]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      load().catch(() => {});
-    }, 5000);
-    return () => window.clearInterval(interval);
-  }, [q]);
+    load().catch(() => { });
+  }, [q, selectedAgentID]);
 
   const selected = useMemo(() => items.find((x) => x.id === selectedId) || null, [items, selectedId]);
+  const selectedRegistryItem = useMemo(
+    () => registryItems.find((x) => x.agent_id === selectedAgentID) || null,
+    [registryItems, selectedAgentID]
+  );
+  const selectedAgentTasks = useMemo(
+    () => items.filter((x) => x.agent_id === selectedAgentID),
+    [items, selectedAgentID]
+  );
+  const selectedAgentLatestTask = useMemo(
+    () =>
+      [...selectedAgentTasks].sort((a, b) => Math.max(b.updated || 0, b.created || 0) - Math.max(a.updated || 0, a.created || 0))[0] || null,
+    [selectedAgentTasks]
+  );
   const parsedNodeTrees = useMemo<NodeTree[]>(() => {
     try {
       const parsed = JSON.parse(nodeTrees);
@@ -312,14 +422,6 @@ const Subagents: React.FC = () => {
       return [];
     }
   }, [nodeTrees]);
-  const parsedNodes = useMemo<NodeInfo[]>(() => {
-    try {
-      const parsed = JSON.parse(nodes);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, [nodes]);
   const taskStats = useMemo(() => buildTaskStats(items), [items]);
   const recentTaskByAgent = useMemo(() => {
     return items.reduce<Record<string, SubagentTask>>((acc, task) => {
@@ -335,6 +437,8 @@ const Subagents: React.FC = () => {
     }, {});
   }, [items]);
   const topologyGraph = useMemo(() => {
+    const scale = topologyZoom;
+    const originX = 56;
     const localTree = parsedNodeTrees.find((tree) => normalizeTitle(tree.node_id, '') === 'local') || null;
     const remoteTrees = parsedNodeTrees.filter((tree) => normalizeTitle(tree.node_id, '') !== 'local');
     const localRoot = localTree?.root?.root || {
@@ -356,25 +460,27 @@ const Subagents: React.FC = () => {
           children: [],
         })),
     };
-    const localNode = parsedNodes.find((node) => normalizeTitle(node.id, '') === 'local') || {
-      id: 'local',
-      name: 'local',
-      online: true,
-    };
-    const clusterCount = Math.max(1, remoteTrees.length + 1);
     const localChildren = Array.isArray(localRoot.children) ? localRoot.children : [];
-    const remoteChildMax = remoteTrees.reduce((max, tree) => {
-      const count = Array.isArray(tree.root?.root?.children) ? tree.root?.root?.children?.length || 0 : 0;
-      return Math.max(max, count);
-    }, 0);
-    const maxChildren = Math.max(localChildren.length, remoteChildMax, 1);
-    const width = clusterCount * clusterWidth + 120;
-    const height = childStartY + maxChildren * childGap + 30;
-    const mainClusterX = 56;
-    const localNodeX = mainClusterX + 20;
-    const localMainX = mainClusterX + 20;
+    const localBranchWidth = Math.max(cardWidth, localChildren.length * (cardWidth + clusterGap) - clusterGap);
+    const localOriginX = originX;
+    const localMainX = localOriginX + Math.max(0, (localBranchWidth - cardWidth) / 2);
     const localMainCenterX = localMainX + cardWidth / 2;
     const localMainCenterY = mainY + cardHeight / 2;
+    const remoteClusters = remoteTrees.map((tree) => {
+      const root = tree.root?.root;
+      const children = Array.isArray(root?.children) ? root.children : [];
+      return {
+        tree,
+        root,
+        children,
+        width: Math.max(cardWidth, children.length * (cardWidth + clusterGap) - clusterGap),
+      };
+    });
+    const totalRemoteWidth = remoteClusters.reduce((sum, cluster, idx) => {
+      return sum + cluster.width + (idx > 0 ? sectionGap : 0);
+    }, 0);
+    const width = Math.max(900, localOriginX * 2 + localBranchWidth + (remoteClusters.length > 0 ? sectionGap + totalRemoteWidth : 0));
+    const height = childStartY + cardHeight + 40;
     const cards: GraphCardSpec[] = [];
     const lines: GraphLineSpec[] = [];
     const localBranch = 'local';
@@ -383,28 +489,6 @@ const Subagents: React.FC = () => {
       failed: 0,
     };
 
-    const localNodeCard: GraphCardSpec = {
-      key: 'node-local',
-      branch: localBranch,
-      transportType: 'local',
-      kind: 'node',
-      x: localNodeX,
-      y: topY,
-      w: cardWidth,
-      h: cardHeight,
-      title: normalizeTitle(localNode.name, 'local'),
-      subtitle: normalizeTitle(localNode.id, 'local'),
-      meta: [
-        localNode.online ? t('online') : t('offline'),
-        localNode.endpoint ? `endpoint=${localNode.endpoint}` : 'endpoint=-',
-        localNode.version ? `version=${localNode.version}` : 'version=-',
-        `${t('childrenCount')}=${localChildren.length}`,
-      ],
-      accent: localNode.online ? 'bg-emerald-500' : 'bg-red-500',
-      online: !!localNode.online,
-      clickable: true,
-      onClick: () => setSelectedTopologyBranch(localBranch),
-    };
     const localMainStats = taskStats[normalizeTitle(localRoot.agent_id, 'main')] || { total: 0, running: 0, failed: 0, waiting: 0, active: [] };
     const localMainTask = recentTaskByAgent[normalizeTitle(localRoot.agent_id, 'main')];
     localBranchStats.running += localMainStats.running;
@@ -422,6 +506,7 @@ const Subagents: React.FC = () => {
       title: normalizeTitle(localRoot.display_name, 'Main Agent'),
       subtitle: `${normalizeTitle(localRoot.agent_id, 'main')} · ${normalizeTitle(localRoot.role, '-')}`,
       meta: [
+        `children=${localChildren.length + remoteClusters.length}`,
         `total=${localMainStats.total} running=${localMainStats.running}`,
         `waiting=${localMainStats.waiting} failed=${localMainStats.failed}`,
         `transport=${normalizeTitle(localRoot.transport, 'local')} type=${normalizeTitle(localRoot.type, 'router')}`,
@@ -429,23 +514,17 @@ const Subagents: React.FC = () => {
       ],
       accent: 'bg-amber-400',
       clickable: true,
+      scale,
       onClick: () => {
         setSelectedTopologyBranch(localBranch);
         if (localMainTask?.id) setSelectedId(localMainTask.id);
       },
     };
-    cards.push(localNodeCard, localMainCard);
-    lines.push({
-      x1: localNodeCard.x + cardWidth / 2,
-      y1: localNodeCard.y + cardHeight,
-      x2: localMainCard.x + cardWidth / 2,
-      y2: localMainCard.y,
-      branch: localBranch,
-    });
+    cards.push(localMainCard);
 
     localChildren.forEach((child, idx) => {
-      const childX = mainClusterX + 20;
-      const childY = childStartY + idx * childGap;
+      const childX = localOriginX + idx * (cardWidth + clusterGap);
+      const childY = childStartY;
       const stats = taskStats[normalizeTitle(child.agent_id, '')] || { total: 0, running: 0, failed: 0, waiting: 0, active: [] };
       const task = recentTaskByAgent[normalizeTitle(child.agent_id, '')];
       localBranchStats.running += stats.running;
@@ -470,57 +549,23 @@ const Subagents: React.FC = () => {
         ],
         accent: stats.running > 0 ? 'bg-emerald-500' : stats.failed > 0 ? 'bg-red-500' : 'bg-sky-400',
         clickable: true,
+        scale,
         onClick: () => {
           setSelectedTopologyBranch(localBranch);
           if (task?.id) setSelectedId(task.id);
         },
       });
       lines.push({
-        x1: localMainCenterX,
-        y1: localMainCenterY,
-        x2: childX + cardWidth / 2,
-        y2: childY,
+        path: bezierCurve(localMainCard.x + cardWidth / 2, localMainCard.y + cardHeight / 2, childX + cardWidth / 2, childY + cardHeight / 2),
         branch: localBranch,
       });
     });
 
-    remoteTrees.forEach((tree, treeIndex) => {
+    let remoteOffsetX = localOriginX + localBranchWidth + sectionGap;
+    remoteClusters.forEach((cluster, treeIndex) => {
+      const { tree, root: treeRoot, children } = cluster;
       const branch = `node:${normalizeTitle(tree.node_id, `remote-${treeIndex}`)}`;
-      const baseX = 56 + (treeIndex + 1) * clusterWidth;
-      const nodeX = baseX + 20;
-      const rootX = baseX + 20;
-      const treeRoot = tree.root?.root;
-      const remoteNodeCard: GraphCardSpec = {
-        key: `node-${tree.node_id || treeIndex}`,
-        branch,
-        transportType: 'remote',
-        kind: 'node',
-        x: nodeX,
-        y: topY,
-        w: cardWidth,
-        h: cardHeight,
-        title: normalizeTitle(tree.node_name, tree.node_id || 'node'),
-        subtitle: normalizeTitle(tree.node_id, 'node'),
-        meta: [
-          tree.online ? t('online') : t('offline'),
-          normalizeTitle(tree.source, '-'),
-          tree.readonly ? t('readonlyMirror') : t('localControl'),
-          `${t('childrenCount')}=${Array.isArray(treeRoot?.children) ? treeRoot?.children?.length || 0 : 0}`,
-        ],
-        accent: tree.online ? 'bg-emerald-500' : 'bg-red-500',
-        online: !!tree.online,
-        clickable: true,
-        onClick: () => setSelectedTopologyBranch(branch),
-      };
-      cards.push(remoteNodeCard);
-      lines.push({
-        x1: localMainCenterX,
-        y1: localMainCenterY,
-        x2: remoteNodeCard.x,
-        y2: remoteNodeCard.y + cardHeight / 2,
-        dashed: true,
-        branch,
-      });
+      const rootX = remoteOffsetX + Math.max(0, (cluster.width - cardWidth) / 2);
       if (!treeRoot) return;
       const rootCard: GraphCardSpec = {
         key: `remote-root-${tree.node_id || treeIndex}`,
@@ -535,26 +580,25 @@ const Subagents: React.FC = () => {
         title: normalizeTitle(treeRoot.display_name, treeRoot.agent_id || 'main'),
         subtitle: `${normalizeTitle(treeRoot.agent_id, '-')} · ${normalizeTitle(treeRoot.role, '-')}`,
         meta: [
+          `status=${tree.online ? t('online') : t('offline')}`,
           `transport=${normalizeTitle(treeRoot.transport, 'node')} type=${normalizeTitle(treeRoot.type, 'router')}`,
           `source=${normalizeTitle(treeRoot.managed_by, tree.source || '-')}`,
           t('remoteTasksUnavailable'),
         ],
         accent: tree.online ? 'bg-fuchsia-400' : 'bg-zinc-500',
         clickable: true,
+        scale,
         onClick: () => setSelectedTopologyBranch(branch),
       };
       cards.push(rootCard);
       lines.push({
-        x1: remoteNodeCard.x + cardWidth / 2,
-        y1: remoteNodeCard.y + cardHeight,
-        x2: rootCard.x + cardWidth / 2,
-        y2: rootCard.y,
+        path: horizontalBezierCurve(localMainCard.x + cardWidth / 2, localMainCard.y + cardHeight / 2, rootCard.x + cardWidth / 2, rootCard.y + cardHeight / 2),
+        dashed: true,
         branch,
       });
-      const children = Array.isArray(treeRoot.children) ? treeRoot.children : [];
       children.forEach((child, idx) => {
-        const childX = baseX + 20;
-        const childY = childStartY + idx * childGap;
+        const childX = remoteOffsetX + idx * (cardWidth + clusterGap);
+        const childY = childStartY;
         cards.push({
           key: `remote-child-${tree.node_id || treeIndex}-${child.agent_id || idx}`,
           branch,
@@ -574,16 +618,15 @@ const Subagents: React.FC = () => {
           ],
           accent: 'bg-violet-400',
           clickable: true,
+          scale,
           onClick: () => setSelectedTopologyBranch(branch),
         });
         lines.push({
-          x1: rootCard.x + cardWidth / 2,
-          y1: rootCard.y + cardHeight / 2,
-          x2: childX + cardWidth / 2,
-          y2: childY,
+          path: bezierCurve(rootCard.x + cardWidth / 2, rootCard.y + cardHeight / 2, childX + cardWidth / 2, childY + cardHeight / 2),
           branch,
         });
       });
+      remoteOffsetX += cluster.width + sectionGap;
     });
 
     const highlightedBranch = selectedTopologyBranch.trim();
@@ -593,13 +636,66 @@ const Subagents: React.FC = () => {
       const branch = `node:${normalizeTitle(tree.node_id, `remote-${treeIndex}`)}`;
       branchFilters.set(branch, topologyFilter === 'all' || topologyFilter === 'remote');
     });
-    const decoratedCards = cards.map((card) => ({
-      ...card,
-      hidden: branchFilters.get(card.branch) === false,
-      highlighted: !highlightedBranch || card.branch === highlightedBranch,
-      dimmed: branchFilters.get(card.branch) === false ? true : !!highlightedBranch && card.branch !== highlightedBranch,
-    }));
-    const decoratedLines = lines.map((line) => ({
+    const decoratedCards = cards.map((card) => {
+      const override = nodeOverrides[card.key];
+      return {
+        ...card,
+        x: override ? override.x : card.x,
+        y: override ? override.y : card.y,
+        hidden: branchFilters.get(card.branch) === false,
+        highlighted: !highlightedBranch || card.branch === highlightedBranch,
+        dimmed: branchFilters.get(card.branch) === false ? true : !!highlightedBranch && card.branch !== highlightedBranch,
+      };
+    });
+
+    // Recalculate lines based on potentially overridden card positions
+    const recalculatedLines: GraphLineSpec[] = [];
+
+    // Helper to find a card's current position
+    const getCardPos = (key: string) => {
+      const c = decoratedCards.find(c => c.key === key);
+      return c ? { cx: c.x + cardWidth / 2, cy: c.y + cardHeight / 2 } : null;
+    };
+
+    const localMainPos = getCardPos('agent-main');
+
+    localChildren.forEach((child, idx) => {
+      const childKey = `local-child-${child.agent_id || idx}`;
+      const childPos = getCardPos(childKey);
+      if (localMainPos && childPos) {
+        recalculatedLines.push({
+          path: bezierCurve(localMainPos.cx, localMainPos.cy, childPos.cx, childPos.cy),
+          branch: localBranch,
+        });
+      }
+    });
+
+    remoteClusters.forEach((cluster, treeIndex) => {
+      const branch = `node:${normalizeTitle(cluster.tree.node_id, `remote-${treeIndex}`)}`;
+      const remoteRootKey = `remote-root-${cluster.tree.node_id || treeIndex}`;
+      const remoteRootPos = getCardPos(remoteRootKey);
+
+      if (localMainPos && remoteRootPos) {
+        recalculatedLines.push({
+          path: horizontalBezierCurve(localMainPos.cx, localMainPos.cy, remoteRootPos.cx, remoteRootPos.cy),
+          dashed: true,
+          branch,
+        });
+      }
+
+      cluster.children.forEach((child, idx) => {
+        const childKey = `remote-child-${cluster.tree.node_id || treeIndex}-${child.agent_id || idx}`;
+        const childPos = getCardPos(childKey);
+        if (remoteRootPos && childPos) {
+          recalculatedLines.push({
+            path: bezierCurve(remoteRootPos.cx, remoteRootPos.cy, childPos.cx, childPos.cy),
+            branch,
+          });
+        }
+      });
+    });
+
+    const decoratedLines = recalculatedLines.map((line) => ({
       ...line,
       hidden: branchFilters.get(line.branch) === false,
       highlighted: !highlightedBranch || line.branch === highlightedBranch,
@@ -607,7 +703,148 @@ const Subagents: React.FC = () => {
     }));
 
     return { width, height, cards: decoratedCards, lines: decoratedLines };
-  }, [parsedNodeTrees, parsedNodes, registryItems, taskStats, recentTaskByAgent, selectedTopologyBranch, topologyFilter, t]);
+  }, [parsedNodeTrees, registryItems, taskStats, recentTaskByAgent, selectedTopologyBranch, topologyFilter, t, topologyZoom, nodeOverrides]);
+
+  const fitView = () => {
+    const viewport = topologyViewportRef.current;
+    if (!viewport || !topologyGraph.width) return;
+    const availableW = viewport.clientWidth;
+    const availableH = viewport.clientHeight;
+
+    const fitted = Math.min(1.15, Math.max(0.2, (availableW - 48) / topologyGraph.width));
+
+    setTopologyZoom(fitted);
+    setTopologyPan({
+      x: (availableW - topologyGraph.width * fitted) / 2,
+      y: Math.max(24, (availableH - topologyGraph.height * fitted) / 2)
+    });
+  };
+
+  useEffect(() => {
+    if (!hasFittedRef.current && topologyGraph.width > 0) {
+      fitView();
+      hasFittedRef.current = true;
+    }
+  }, [topologyGraph.width]);
+
+  useEffect(() => {
+    const viewport = topologyViewportRef.current;
+    if (!viewport) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+
+      const rect = viewport.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      setTopologyZoom(prevZoom => {
+        const zoomSensitivity = 0.002;
+        const delta = -e.deltaY * zoomSensitivity;
+        const newZoom = Math.min(Math.max(0.1, prevZoom * (1 + delta)), 4);
+
+        setTopologyPan(prevPan => {
+          const scaleRatio = newZoom / prevZoom;
+          const newPanX = mouseX - (mouseX - prevPan.x) * scaleRatio;
+          const newPanY = mouseY - (mouseY - prevPan.y) * scaleRatio;
+          return { x: newPanX, y: newPanY };
+        });
+
+        return newZoom;
+      });
+    };
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  const handleTopologyHover = (card: GraphCardSpec, event: React.MouseEvent<HTMLDivElement>) => {
+    const tooltipWidth = 280;
+    const tooltipHeight = 160;
+    let x = event.clientX + 14;
+    let y = event.clientY + 14;
+
+    if (x + tooltipWidth > window.innerWidth) {
+      x = event.clientX - tooltipWidth - 14;
+    }
+    if (y + tooltipHeight > window.innerHeight) {
+      y = event.clientY - tooltipHeight - 14;
+    }
+
+    setTopologyTooltip({
+      title: card.title,
+      subtitle: card.subtitle,
+      meta: card.meta,
+      x,
+      y,
+    });
+  };
+
+  const clearTopologyTooltip = () => setTopologyTooltip(null);
+
+  const handleNodeDragStart = (key: string, event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+
+    const card = topologyGraph.cards.find(c => c.key === key);
+    if (!card) return;
+
+    setDraggedNode(key);
+    nodeDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      initialNodeX: card.x,
+      initialNodeY: card.y,
+    };
+    clearTopologyTooltip();
+  };
+
+  const startTopologyDrag = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    topologyDragRef.current = {
+      active: true,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: topologyPan.x,
+      panY: topologyPan.y,
+    };
+    setTopologyDragging(true);
+    clearTopologyTooltip();
+  };
+
+  const moveTopologyDrag = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (draggedNode) {
+      const deltaX = (event.clientX - nodeDragRef.current.startX) / topologyZoom;
+      const deltaY = (event.clientY - nodeDragRef.current.startY) / topologyZoom;
+
+      setNodeOverrides(prev => ({
+        ...prev,
+        [draggedNode]: {
+          x: nodeDragRef.current.initialNodeX + deltaX,
+          y: nodeDragRef.current.initialNodeY + deltaY,
+        }
+      }));
+      return;
+    }
+
+    if (!topologyDragRef.current.active) return;
+    const deltaX = event.clientX - topologyDragRef.current.startX;
+    const deltaY = event.clientY - topologyDragRef.current.startY;
+    setTopologyPan({
+      x: topologyDragRef.current.panX + deltaX,
+      y: topologyDragRef.current.panY + deltaY,
+    });
+  };
+
+  const stopTopologyDrag = () => {
+    if (draggedNode) {
+      setDraggedNode(null);
+    }
+    if (topologyDragRef.current.active) {
+      topologyDragRef.current.active = false;
+      setTopologyDragging(false);
+    }
+  };
 
   const callAction = async (payload: Record<string, any>) => {
     const r = await fetch(`${apiPath}${q}`, {
@@ -629,218 +866,20 @@ const Subagents: React.FC = () => {
       setInboxMessages([]);
       return;
     }
-    const [threadRes, inboxRes] = await Promise.all([
-      callAction({ action: 'thread', id: task.id, limit: 50 }),
-      callAction({ action: 'inbox', id: task.id, limit: 50 }),
-    ]);
-    setThreadDetail(threadRes?.result?.thread || null);
-    setThreadMessages(Array.isArray(threadRes?.result?.messages) ? threadRes.result.messages : []);
-    setInboxMessages(Array.isArray(inboxRes?.result?.messages) ? inboxRes.result.messages : []);
+    try {
+      const [threadRes, inboxRes] = await Promise.all([
+        callAction({ action: 'thread', id: task.id, limit: 50 }),
+        callAction({ action: 'inbox', id: task.id, limit: 50 }),
+      ]);
+      setThreadDetail(threadRes?.result?.thread || null);
+      setThreadMessages(Array.isArray(threadRes?.result?.messages) ? threadRes.result.messages : []);
+      setInboxMessages(Array.isArray(inboxRes?.result?.messages) ? inboxRes.result.messages : []);
+    } catch (e) { }
   };
 
   useEffect(() => {
-    loadThreadAndInbox(selected).catch(() => {});
+    loadThreadAndInbox(selected).catch(() => { });
   }, [selectedId, q, items]);
-
-  useEffect(() => {
-    const path = configSystemPromptFile.trim();
-    if (!path) {
-      setPromptFileContent('');
-      setPromptFileFound(false);
-      return;
-    }
-    callAction({ action: 'prompt_file_get', path })
-      .then((data) => {
-        const found = data?.result?.found === true;
-        setPromptFileFound(found);
-        setPromptFileContent(found ? data?.result?.content || '' : '');
-      })
-      .catch(() => {});
-  }, [configSystemPromptFile, q]);
-
-  const spawn = async () => {
-    if (!spawnTask.trim()) {
-      await ui.notify({ title: t('requestFailed'), message: 'task is required' });
-      return;
-    }
-    const data = await callAction({
-      action: 'spawn',
-      task: spawnTask,
-      agent_id: spawnAgentID,
-      role: spawnRole,
-      label: spawnLabel,
-    });
-    if (!data) return;
-    setSpawnTask('');
-    await load();
-  };
-
-  const kill = async () => {
-    if (!selected?.id) return;
-    await callAction({ action: 'kill', id: selected.id });
-    await load();
-  };
-
-  const resume = async () => {
-    if (!selected?.id) return;
-    await callAction({ action: 'resume', id: selected.id });
-    await load();
-  };
-
-  const steer = async () => {
-    if (!selected?.id || !steerMessage.trim()) return;
-    await callAction({ action: 'steer', id: selected.id, message: steerMessage });
-    setSteerMessage('');
-    await load();
-    await loadThreadAndInbox(selected);
-  };
-
-  const dispatchAndWait = async () => {
-    if (!dispatchTask.trim()) {
-      await ui.notify({ title: t('requestFailed'), message: 'task is required' });
-      return;
-    }
-    const waitTimeout = Number.parseInt(dispatchWaitTimeout, 10);
-    const data = await callAction({
-      action: 'dispatch_and_wait',
-      task: dispatchTask,
-      agent_id: dispatchAgentID,
-      role: dispatchRole,
-      wait_timeout_sec: Number.isFinite(waitTimeout) && waitTimeout > 0 ? waitTimeout : 120,
-    });
-    if (!data) return;
-    setDispatchReply(data?.result?.reply || null);
-    setDispatchMerged(data?.result?.merged || '');
-    await load();
-  };
-
-  const sendMessage = async () => {
-    if (!selected?.id || !replyMessage.trim()) return;
-    await callAction({ action: 'send', id: selected.id, message: replyMessage });
-    setReplyMessage('');
-    setReplyToMessageID('');
-    await load();
-    await loadThreadAndInbox(selected);
-  };
-
-  const replyToMessage = async () => {
-    if (!selected?.id || !replyMessage.trim()) return;
-    await callAction({ action: 'reply', id: selected.id, message_id: replyToMessageID, message: replyMessage });
-    setReplyMessage('');
-    setReplyToMessageID('');
-    await load();
-    await loadThreadAndInbox(selected);
-  };
-
-  const ackMessage = async (messageID: string) => {
-    if (!selected?.id || !messageID) return;
-    await callAction({ action: 'ack', id: selected.id, message_id: messageID });
-    await load();
-    await loadThreadAndInbox(selected);
-  };
-
-  const upsertConfigSubagent = async () => {
-    if (!configAgentID.trim()) {
-      await ui.notify({ title: t('requestFailed'), message: 'agent_id is required' });
-      return;
-    }
-    const toolAllowlist = configToolAllowlist
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    const routingKeywords = configRoutingKeywords
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    const data = await callAction({
-      action: 'upsert_config_subagent',
-      agent_id: configAgentID,
-      role: configRole,
-      display_name: configDisplayName,
-      system_prompt: configSystemPrompt,
-      system_prompt_file: configSystemPromptFile,
-      tool_allowlist: toolAllowlist,
-      routing_keywords: routingKeywords,
-    });
-    if (!data) return;
-    await ui.notify({ title: t('saved'), message: t('configSubagentSaved') });
-    setConfigAgentID('');
-    setConfigRole('');
-    setConfigDisplayName('');
-    setConfigSystemPrompt('');
-    setConfigSystemPromptFile('');
-    setConfigToolAllowlist('');
-    setConfigRoutingKeywords('');
-    await load();
-  };
-
-  const loadRegistryItem = (item: RegistrySubagent) => {
-    setConfigAgentID(item.agent_id || '');
-    setConfigRole(item.role || '');
-    setConfigDisplayName(item.display_name || '');
-    setConfigSystemPrompt(item.system_prompt || '');
-    setConfigSystemPromptFile(item.system_prompt_file || '');
-    setConfigToolAllowlist(Array.isArray(item.tool_allowlist) ? item.tool_allowlist.join(', ') : '');
-    setConfigRoutingKeywords(Array.isArray(item.routing_keywords) ? item.routing_keywords.join(', ') : '');
-  };
-
-  const setRegistryEnabled = async (item: RegistrySubagent, enabled: boolean) => {
-    if (!item.agent_id) return;
-    const data = await callAction({ action: 'set_config_subagent_enabled', agent_id: item.agent_id, enabled });
-    if (!data) return;
-    await load();
-  };
-
-  const deleteRegistryItem = async (item: RegistrySubagent) => {
-    if (!item.agent_id) return;
-    const ok = await ui.confirmDialog({
-      title: t('deleteAgent'),
-      message: t('deleteAgentConfirm', { id: item.agent_id }),
-      danger: true,
-      confirmText: t('delete'),
-    });
-    if (!ok) return;
-    const data = await callAction({ action: 'delete_config_subagent', agent_id: item.agent_id });
-    if (!data) return;
-    await load();
-  };
-
-  const savePromptFile = async () => {
-    if (!configSystemPromptFile.trim()) {
-      await ui.notify({ title: t('requestFailed'), message: 'system_prompt_file is required' });
-      return;
-    }
-    const data = await callAction({
-      action: 'prompt_file_set',
-      path: configSystemPromptFile,
-      content: promptFileContent,
-    });
-    if (!data) return;
-    setPromptFileFound(true);
-    await ui.notify({ title: t('saved'), message: t('promptFileSaved') });
-    await load();
-  };
-
-  const bootstrapPromptFile = async () => {
-    if (!configAgentID.trim()) {
-      await ui.notify({ title: t('requestFailed'), message: 'agent_id is required' });
-      return;
-    }
-    const data = await callAction({
-      action: 'prompt_file_bootstrap',
-      agent_id: configAgentID,
-      role: configRole,
-      display_name: configDisplayName,
-      path: configSystemPromptFile,
-    });
-    if (!data) return;
-    const path = data?.result?.path || configSystemPromptFile || `agents/${configAgentID}/AGENT.md`;
-    setConfigSystemPromptFile(path);
-    setPromptFileFound(true);
-    setPromptFileContent(data?.result?.content || '');
-    await ui.notify({ title: t('saved'), message: t('promptFileBootstrapped') });
-    await load();
-  };
 
   return (
     <div className="h-full p-4 md:p-6 flex flex-col gap-4">
@@ -849,7 +888,7 @@ const Subagents: React.FC = () => {
         <button onClick={() => load()} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{t('refresh')}</button>
       </div>
 
-      <div className="border border-zinc-800 rounded-2xl bg-zinc-900/40 p-4 space-y-3">
+      <div className="flex-1 min-h-0 border border-zinc-800 rounded-2xl bg-zinc-900/40 p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('agentTopology')}</div>
@@ -860,9 +899,8 @@ const Subagents: React.FC = () => {
               <button
                 key={filter}
                 onClick={() => setTopologyFilter(filter)}
-                className={`px-2 py-1 rounded text-[11px] ${
-                  topologyFilter === filter ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
-                }`}
+                className={`px-2 py-1 rounded text-[11px] ${topologyFilter === filter ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
+                  }`}
               >
                 {t(`topologyFilter.${filter}`)}
               </button>
@@ -875,278 +913,188 @@ const Subagents: React.FC = () => {
                 {t('clearFocus')}
               </button>
             )}
-            <div className="text-xs text-zinc-500">
-              {items.filter((item) => item.status === 'running').length} {t('runningTasks')}
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto overflow-y-hidden rounded-xl border border-zinc-800 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.08),_transparent_24%),linear-gradient(180deg,rgba(24,24,27,0.95),rgba(9,9,11,0.98))]">
-          <svg width={topologyGraph.width} height={topologyGraph.height} className="block">
-            {topologyGraph.lines.map((line, idx) => (
-              line.hidden ? null : (
-              <line
-                key={`line-${idx}`}
-                x1={line.x1}
-                y1={line.y1}
-                x2={line.x2}
-                y2={line.y2}
-                stroke={line.highlighted ? 'rgba(251,191,36,0.9)' : line.dashed ? 'rgba(251,191,36,0.5)' : 'rgba(113,113,122,0.7)'}
-                strokeWidth={line.highlighted ? '2.8' : '2'}
-                strokeDasharray={line.dashed ? '6 6' : undefined}
-                opacity={line.dimmed ? 0.22 : 1}
-              />
-              )
-            ))}
-            {topologyGraph.cards.map((card) => (
-              card.hidden ? null : <GraphCard key={card.key} card={card} />
-            ))}
-          </svg>
-        </div>
-      </div>
-
-      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-4">
-        <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
-          <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('subagentsRuntime')}</div>
-          <div className="overflow-y-auto max-h-[70vh]">
-            {items.map((it) => (
+            <div className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/80 px-1 py-1">
               <button
-                key={it.id}
-                onClick={() => setSelectedId(it.id)}
-                className={`w-full text-left px-3 py-2 border-b border-zinc-800/50 hover:bg-zinc-800/40 ${selectedId === it.id ? 'bg-indigo-500/15' : ''}`}
+                onClick={() => {
+                  const newZoom = Math.max(0.1, Number((topologyZoom - 0.1).toFixed(2)));
+                  const viewport = topologyViewportRef.current;
+                  if (viewport) {
+                    const rect = viewport.getBoundingClientRect();
+                    const mouseX = rect.width / 2;
+                    const mouseY = rect.height / 2;
+                    const scaleRatio = newZoom / topologyZoom;
+                    setTopologyPan(prev => ({
+                      x: mouseX - (mouseX - prev.x) * scaleRatio,
+                      y: mouseY - (mouseY - prev.y) * scaleRatio
+                    }));
+                  }
+                  setTopologyZoom(newZoom);
+                }}
+                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
               >
-                <div className="text-sm text-zinc-100 truncate">{it.id}</div>
-                <div className="text-xs text-zinc-400 truncate">{it.status} · {it.agent_id || '-'} · {it.role || '-'}</div>
+                {t('zoomOut')}
               </button>
-            ))}
-            {items.length === 0 && <div className="px-3 py-4 text-sm text-zinc-500">No subagents.</div>}
+              <button
+                onClick={fitView}
+                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+              >
+                {t('fitView')}
+              </button>
+              <button
+                onClick={() => {
+                  const newZoom = 1;
+                  const viewport = topologyViewportRef.current;
+                  if (viewport) {
+                    const rect = viewport.getBoundingClientRect();
+                    const mouseX = rect.width / 2;
+                    const mouseY = rect.height / 2;
+                    const scaleRatio = newZoom / topologyZoom;
+                    setTopologyPan(prev => ({
+                      x: mouseX - (mouseX - prev.x) * scaleRatio,
+                      y: mouseY - (mouseY - prev.y) * scaleRatio
+                    }));
+                  }
+                  setTopologyZoom(newZoom);
+                }}
+                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+              >
+                100%
+              </button>
+              <button
+                onClick={() => {
+                  const newZoom = Math.min(4, Number((topologyZoom + 0.1).toFixed(2)));
+                  const viewport = topologyViewportRef.current;
+                  if (viewport) {
+                    const rect = viewport.getBoundingClientRect();
+                    const mouseX = rect.width / 2;
+                    const mouseY = rect.height / 2;
+                    const scaleRatio = newZoom / topologyZoom;
+                    setTopologyPan(prev => ({
+                      x: mouseX - (mouseX - prev.x) * scaleRatio,
+                      y: mouseY - (mouseY - prev.y) * scaleRatio
+                    }));
+                  }
+                  setTopologyZoom(newZoom);
+                }}
+                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+              >
+                {t('zoomIn')}
+              </button>
+            </div>
+            <div className="text-xs text-zinc-500">
+              {Math.round(topologyZoom * 100)}% · {items.filter((item) => item.status === 'running').length} {t('runningTasks')}
+            </div>
           </div>
         </div>
-
-        <div className="space-y-4 min-h-0 overflow-y-auto">
-          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
-            <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('subagentDetail')}</div>
-            {!selected && <div className="text-sm text-zinc-500">{t('selectTask')}</div>}
-            {selected && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <div><span className="text-zinc-400">ID:</span> {selected.id}</div>
-                  <div><span className="text-zinc-400">Status:</span> {selected.status}</div>
-                  <div><span className="text-zinc-400">Agent ID:</span> {selected.agent_id || '-'}</div>
-                  <div><span className="text-zinc-400">Role:</span> {selected.role || '-'}</div>
-                  <div className="md:col-span-2"><span className="text-zinc-400">Session:</span> {selected.session_key || '-'}</div>
-                  <div className="md:col-span-2"><span className="text-zinc-400">Thread:</span> {selected.thread_id || '-'}</div>
-                  <div className="md:col-span-2"><span className="text-zinc-400">Correlation:</span> {selected.correlation_id || '-'}</div>
-                  <div className="md:col-span-2"><span className="text-zinc-400">Memory NS:</span> {selected.memory_ns || '-'}</div>
-                  <div><span className="text-zinc-400">Retries:</span> {selected.retry_count || 0}/{selected.max_retries || 0}</div>
-                  <div><span className="text-zinc-400">Timeout:</span> {selected.timeout_sec || 0}s</div>
-                  <div><span className="text-zinc-400">Waiting Reply:</span> {selected.waiting_for_reply ? 'yes' : 'no'}</div>
-                </div>
-                <div className="text-xs text-zinc-400">Task</div>
-                <pre className="text-xs bg-zinc-950 border border-zinc-800 rounded p-3 whitespace-pre-wrap break-words">{selected.task || '-'}</pre>
-                <div className="text-xs text-zinc-400">Result</div>
-                <pre className="text-xs bg-zinc-950 border border-zinc-800 rounded p-3 whitespace-pre-wrap break-words max-h-64 overflow-auto">{selected.result || '-'}</pre>
-                <div className="flex items-center gap-2">
-                  <button onClick={resume} className="px-3 py-1.5 text-xs rounded bg-emerald-700/70 hover:bg-emerald-600">{t('resume')}</button>
-                  <button onClick={kill} className="px-3 py-1.5 text-xs rounded bg-red-700/70 hover:bg-red-600">{t('kill')}</button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    value={steerMessage}
-                    onChange={(e) => setSteerMessage(e.target.value)}
-                    placeholder={t('steerMessage')}
-                    className="flex-1 px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
-                  />
-                  <button onClick={steer} className="px-3 py-1.5 text-xs rounded bg-indigo-700/70 hover:bg-indigo-600">{t('send')}</button>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
-            <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('spawnSubagent')}</div>
-            <textarea
-              value={spawnTask}
-              onChange={(e) => setSpawnTask(e.target.value)}
-              placeholder="Task"
-              className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[110px]"
-            />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <input value={spawnAgentID} onChange={(e) => setSpawnAgentID(e.target.value)} placeholder="agent_id" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-              <input value={spawnRole} onChange={(e) => setSpawnRole(e.target.value)} placeholder="role" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-              <input value={spawnLabel} onChange={(e) => setSpawnLabel(e.target.value)} placeholder="label" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-            </div>
-            <button onClick={spawn} className="px-3 py-1.5 text-xs rounded bg-indigo-700/80 hover:bg-indigo-600">{t('spawn')}</button>
-          </div>
-
-          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('agentRegistry')}</div>
-              <button onClick={() => load()} className="px-2 py-1 text-[11px] rounded bg-zinc-800 hover:bg-zinc-700">{t('refresh')}</button>
-            </div>
-            <div className="border border-zinc-800 rounded overflow-hidden">
-              {registryItems.map((item) => (
-                <div key={item.agent_id || 'unknown'} className="px-3 py-2 border-b last:border-b-0 border-zinc-800/60 text-xs space-y-2">
-                  <div className="text-zinc-100">{item.agent_id || '-'} · {item.role || '-'} · {item.enabled ? t('active') : t('paused')}</div>
-                  <div className="text-zinc-400">{item.type || '-'} · {item.transport || 'local'} · {item.display_name || '-'}</div>
-                  {(item.node_id || item.parent_agent_id || item.managed_by) && (
-                    <div className="text-zinc-500 break-words">
-                      {item.node_id ? `node=${item.node_id}` : ''}
-                      {item.node_id && item.parent_agent_id ? ' · ' : ''}
-                      {item.parent_agent_id ? `parent=${item.parent_agent_id}` : ''}
-                      {(item.node_id || item.parent_agent_id) && item.managed_by ? ' · ' : ''}
-                      {item.managed_by ? `source=${item.managed_by}` : ''}
-                    </div>
-                  )}
-                  <div className="text-zinc-500 break-words">{item.system_prompt_file || '-'}</div>
-                  <div className="text-zinc-500">{item.prompt_file_found ? t('promptFileReady') : t('promptFileMissing')}</div>
-                  <div className="text-zinc-300 whitespace-pre-wrap break-words">{item.system_prompt || item.description || '-'}</div>
-                  <div className="text-zinc-500 break-words">{(item.routing_keywords || []).join(', ') || '-'}</div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => loadRegistryItem(item)} className="px-2 py-1 rounded bg-indigo-700/70 hover:bg-indigo-600 text-[11px]">{t('loadDraft')}</button>
-                    {item.managed_by === 'config.json' && (
-                      <button onClick={() => setRegistryEnabled(item, !item.enabled)} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px]">
-                        {item.enabled ? t('disableAgent') : t('enableAgent')}
-                      </button>
-                    )}
-                    {item.managed_by === 'config.json' && item.agent_id !== 'main' && (
-                      <button onClick={() => deleteRegistryItem(item)} className="px-2 py-1 rounded bg-red-700/70 hover:bg-red-600 text-[11px]">{t('delete')}</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {registryItems.length === 0 && <div className="px-3 py-4 text-sm text-zinc-500">{t('noRegistryAgents')}</div>}
+        <div
+          ref={topologyViewportRef}
+          onMouseDown={startTopologyDrag}
+          onMouseMove={moveTopologyDrag}
+          onMouseUp={stopTopologyDrag}
+          onMouseLeave={() => {
+            stopTopologyDrag();
+            clearTopologyTooltip();
+          }}
+          className="relative flex-1 min-h-[620px] xl:min-h-[760px] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
+          style={{ cursor: topologyDragging ? 'grabbing' : 'grab' }}
+        >
+          <SpaceParticles />
+          <div className="absolute inset-0 z-10">
+            <div
+              style={{
+                transform: `translate(${topologyPan.x}px, ${topologyPan.y}px) scale(${topologyZoom})`,
+                transformOrigin: '0 0',
+                width: topologyGraph.width,
+                height: topologyGraph.height,
+                transition: topologyDragging || draggedNode ? 'none' : 'transform 0.1s ease-out',
+              }}
+              className="relative will-change-transform"
+            >
+              <svg
+                width={topologyGraph.width}
+                height={topologyGraph.height}
+                className="block absolute top-0 left-0 overflow-visible"
+              >
+                <style>
+                  {`
+                    @keyframes flow {
+                      from { stroke-dashoffset: 24; }
+                      to { stroke-dashoffset: 0; }
+                    }
+                    .animate-flow {
+                      animation: flow 1s linear infinite;
+                    }
+                    .animate-flow-fast {
+                      animation: flow 0.5s linear infinite;
+                    }
+                  `}
+                </style>
+                {topologyGraph.lines.map((line, idx) => (
+                  line.hidden ? null : (
+                    <g key={`line-${idx}`}>
+                      {/* Faint energy track */}
+                      <path
+                        d={line.path}
+                        fill="none"
+                        stroke={line.highlighted ? 'rgba(245,158,11,0.15)' : 'rgba(161,161,170,0.05)'}
+                        strokeWidth={line.highlighted ? '6' : '2'}
+                        strokeLinecap="round"
+                        className="transition-all duration-300"
+                      />
+                      {/* Flowing light particles */}
+                      <path
+                        d={line.path}
+                        fill="none"
+                        stroke={line.highlighted ? 'rgba(245,158,11,0.9)' : 'rgba(161,161,170,0.5)'}
+                        strokeWidth={line.highlighted ? '2.5' : '1.5'}
+                        strokeDasharray={line.highlighted ? "6 18" : "4 20"}
+                        className={line.highlighted ? "animate-flow-fast" : "animate-flow"}
+                        strokeLinecap="round"
+                        opacity={line.dimmed ? 0.1 : 1}
+                      />
+                    </g>
+                  )
+                ))}
+                {topologyGraph.cards.map((card) => (
+                  card.hidden ? null : <GraphCard key={card.key} card={card} onHover={handleTopologyHover} onLeave={clearTopologyTooltip} onDragStart={handleNodeDragStart} />
+                ))}
+              </svg>
             </div>
           </div>
-
-          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
-            <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('configSubagentDraft')}</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <input value={configAgentID} onChange={(e) => setConfigAgentID(e.target.value)} placeholder="agent_id" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-              <input value={configRole} onChange={(e) => setConfigRole(e.target.value)} placeholder="role" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-              <input value={configDisplayName} onChange={(e) => setConfigDisplayName(e.target.value)} placeholder="display_name" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-            </div>
-            <textarea
-              value={configSystemPrompt}
-              onChange={(e) => setConfigSystemPrompt(e.target.value)}
-              placeholder="system_prompt"
-              className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[96px]"
-            />
-            <input value={configSystemPromptFile} onChange={(e) => setConfigSystemPromptFile(e.target.value)} placeholder="system_prompt_file (relative AGENT.md path)" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-            <input value={configToolAllowlist} onChange={(e) => setConfigToolAllowlist(e.target.value)} placeholder="tool_allowlist (comma separated)" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-            <input value={configRoutingKeywords} onChange={(e) => setConfigRoutingKeywords(e.target.value)} placeholder="routing_keywords (comma separated)" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-            <button onClick={upsertConfigSubagent} className="px-3 py-1.5 text-xs rounded bg-amber-700/80 hover:bg-amber-600">{t('saveToConfig')}</button>
-          </div>
-
-          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('promptFileEditor')}</div>
-              <div className="text-[11px] text-zinc-500">{promptFileFound ? t('promptFileReady') : t('promptFileMissing')}</div>
-            </div>
-            <input
-              value={configSystemPromptFile}
-              onChange={(e) => setConfigSystemPromptFile(e.target.value)}
-              placeholder="agents/<agent_id>/AGENT.md"
-              className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
-            />
-            <textarea
-              value={promptFileContent}
-              onChange={(e) => setPromptFileContent(e.target.value)}
-              placeholder={t('promptFileEditorPlaceholder')}
-              className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[220px]"
-            />
-            <div className="flex items-center gap-2">
-              <button onClick={bootstrapPromptFile} className="px-3 py-1.5 text-xs rounded bg-zinc-700 hover:bg-zinc-600">{t('bootstrapPromptFile')}</button>
-              <button onClick={savePromptFile} className="px-3 py-1.5 text-xs rounded bg-emerald-700/80 hover:bg-emerald-600">{t('savePromptFile')}</button>
-            </div>
-          </div>
-
-          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
-            <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('dispatchAndWait')}</div>
-            <textarea
-              value={dispatchTask}
-              onChange={(e) => setDispatchTask(e.target.value)}
-              placeholder="Task"
-              className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[110px]"
-            />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <input value={dispatchAgentID} onChange={(e) => setDispatchAgentID(e.target.value)} placeholder="agent_id" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-              <input value={dispatchRole} onChange={(e) => setDispatchRole(e.target.value)} placeholder="role" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-              <input value={dispatchWaitTimeout} onChange={(e) => setDispatchWaitTimeout(e.target.value)} placeholder="wait_timeout_sec" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-            </div>
-            <button onClick={dispatchAndWait} className="px-3 py-1.5 text-xs rounded bg-emerald-700/80 hover:bg-emerald-600">{t('dispatchAndWait')}</button>
-            {dispatchReply && (
-              <>
-                <div className="text-xs text-zinc-400">{t('dispatchReply')}</div>
-                <pre className="text-xs bg-zinc-950 border border-zinc-800 rounded p-3 whitespace-pre-wrap break-words">{JSON.stringify(dispatchReply, null, 2)}</pre>
-              </>
-            )}
-            {dispatchMerged && (
-              <>
-                <div className="text-xs text-zinc-400">{t('mergedResult')}</div>
-                <pre className="text-xs bg-zinc-950 border border-zinc-800 rounded p-3 whitespace-pre-wrap break-words max-h-64 overflow-auto">{dispatchMerged}</pre>
-              </>
-            )}
-          </div>
-
-          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
-            <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('threadTrace')}</div>
-            {!selected && <div className="text-sm text-zinc-500">{t('selectTask')}</div>}
-            {selected && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <div><span className="text-zinc-400">Thread:</span> {threadDetail?.thread_id || selected.thread_id || '-'}</div>
-                  <div><span className="text-zinc-400">Owner:</span> {threadDetail?.owner || '-'}</div>
-                  <div><span className="text-zinc-400">Status:</span> {threadDetail?.status || '-'}</div>
-                  <div><span className="text-zinc-400">Participants:</span> {(threadDetail?.participants || []).join(', ') || '-'}</div>
-                </div>
-                <div className="text-xs text-zinc-400">{t('threadMessages')}</div>
-                <div className="border border-zinc-800 rounded overflow-hidden">
-                  {threadMessages.map((msg) => (
-                    <div key={`${msg.message_id}-${msg.status}-${msg.created_at}`} className="px-3 py-2 border-b last:border-b-0 border-zinc-800/60 text-xs">
-                      <div className="text-zinc-100">{msg.message_id} · {msg.type} · {msg.status}</div>
-                      <div className="text-zinc-400">{msg.from_agent} → {msg.to_agent} · reply_to: {msg.reply_to || '-'}</div>
-                      <div className="text-zinc-300 mt-1 whitespace-pre-wrap break-words">{msg.content || '-'}</div>
-                    </div>
-                  ))}
-                  {threadMessages.length === 0 && <div className="px-3 py-4 text-sm text-zinc-500">No thread messages.</div>}
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
-            <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('inbox')}</div>
-            {!selected && <div className="text-sm text-zinc-500">{t('selectTask')}</div>}
-            {selected && (
-              <>
-                <div className="border border-zinc-800 rounded overflow-hidden">
-                  {inboxMessages.map((msg) => (
-                    <div key={`${msg.message_id}-${msg.status}`} className="px-3 py-2 border-b last:border-b-0 border-zinc-800/60 text-xs">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-zinc-100">{msg.message_id} · {msg.type} · {msg.status}</div>
-                        {msg.message_id && (
-                          <button onClick={() => ackMessage(msg.message_id || '')} className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px]">{t('ack')}</button>
-                        )}
+          {topologyTooltip && (
+            <div
+              className="pointer-events-none fixed z-50 w-[280px] rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-4 shadow-2xl shadow-black/50 backdrop-blur-md transition-opacity duration-200"
+              style={{ left: topologyTooltip.x, top: topologyTooltip.y }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                <div className="text-sm font-semibold text-zinc-100">{topologyTooltip.title}</div>
+              </div>
+              <div className="text-xs text-zinc-400 mb-3 pb-3 border-b border-zinc-800/60">{topologyTooltip.subtitle}</div>
+              <div className="space-y-1.5">
+                {topologyTooltip.meta.map((line, idx) => {
+                  if (!line.includes('=')) {
+                    return (
+                      <div key={idx} className="text-xs text-zinc-300 font-medium">
+                        {line}
                       </div>
-                      <div className="text-zinc-400">{msg.from_agent} → {msg.to_agent}</div>
-                      <div className="text-zinc-300 mt-1 whitespace-pre-wrap break-words">{msg.content || '-'}</div>
+                    );
+                  }
+                  const [key, ...rest] = line.split('=');
+                  const value = rest.join('=');
+                  return (
+                    <div key={idx} className="flex justify-between text-xs">
+                      <span className="text-zinc-500">{key}</span>
+                      <span className="text-zinc-300 font-medium">{value || '-'}</span>
                     </div>
-                  ))}
-                  {inboxMessages.length === 0 && <div className="px-3 py-4 text-sm text-zinc-500">No queued inbox messages.</div>}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-2">
-                  <input value={replyMessage} onChange={(e) => setReplyMessage(e.target.value)} placeholder={t('message')} className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-                  <input value={replyToMessageID} onChange={(e) => setReplyToMessageID(e.target.value)} placeholder="reply_to message_id" className="px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={sendMessage} className="px-3 py-1.5 text-xs rounded bg-indigo-700/70 hover:bg-indigo-600">{t('send')}</button>
-                  <button onClick={replyToMessage} className="px-3 py-1.5 text-xs rounded bg-emerald-700/70 hover:bg-emerald-600">{t('reply')}</button>
-                </div>
-              </>
-            )}
-          </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
     </div>
   );
 };

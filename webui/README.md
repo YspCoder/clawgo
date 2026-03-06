@@ -1,54 +1,85 @@
-# ClawGo WebUI
+# ClawGo WebUI ✨
 
-ClawGo 的前端控制台，基于 **React + Vite**。
+ClawGo WebUI 是项目的前端控制台，基于 React 19 + Vite 6，服务于网关模式下的统一运维与操作。
 
-## 功能简介
+## 功能范围
 
-- Dashboard（状态看板）
-- Chat（对话与流式回复）
-- Logs（实时日志 / Raw）
-- Skills（技能列表、安装、管理）
-- Config（配置编辑与热更新）
-- Cron（定时任务管理）
-- Nodes（节点状态与管理）
-- Memory（记忆文件管理）
+- 🗺️ `Agents`
+  - 统一 agent 拓扑
+  - 本地 subagent 与远端 branch 展示
+  - 悬浮查看状态与运行信息
+- ⚙️ `Config`
+  - 配置编辑
+  - 热更新字段参考
+- 📜 `Logs`
+  - 实时日志查看
+- 🧠 `Skills`
+  - 技能安装、浏览、编辑
+- 🗂️ `Memory`
+  - 记忆文件查看与编辑
+- 🧾 `Task Audit`
+  - 执行链路和审计记录
 
-## 本地使用
+## 开发命令
 
-### 1) 安装依赖
+安装依赖：
 
 ```bash
 npm install
 ```
 
-### 2) 开发模式
+开发模式：
 
 ```bash
 npm run dev
 ```
 
-### 3) 构建
+构建：
 
 ```bash
 npm run build
 ```
 
-### 4) 预览构建产物
+预览构建产物：
 
 ```bash
 npm run preview
 ```
 
-## 线上访问
+类型检查：
 
-部署后通过 gateway 访问：
+```bash
+npm run lint
+```
+
+## 运行方式
+
+WebUI 通常通过 gateway 提供：
 
 ```text
 http://<host>:<port>/webui?token=<gateway_token>
 ```
 
-例如：
+本地开发时，前端开发服务由：
 
-```text
-http://134.195.210.114:18790/webui?token=xxxxx
+```bash
+npm run dev
 ```
+
+启动。
+
+## 技术栈
+
+- React 19
+- React Router 7
+- Vite 6
+- TypeScript
+- Tailwind CSS 4
+- i18next
+
+## 约定
+
+- UI 以 gateway API 为主，不单独维护复杂业务状态源
+- 页面命名与后端能力保持一致，避免重复概念
+- `Agents` 页面展示的是统一 agent 拓扑，不再拆分独立 `Nodes` 页
+- `system_prompt_file` 编辑能力由 agent/profile 页面承载

@@ -8,6 +8,7 @@ type SubagentProfile = {
   name?: string;
   role?: string;
   system_prompt?: string;
+  system_prompt_file?: string;
   tool_allowlist?: string[];
   memory_namespace?: string;
   max_retries?: number;
@@ -32,6 +33,7 @@ const emptyDraft: SubagentProfile = {
   name: '',
   role: '',
   system_prompt: '',
+  system_prompt_file: '',
   memory_namespace: '',
   status: 'active',
   tool_allowlist: [],
@@ -52,6 +54,8 @@ const SubagentProfiles: React.FC = () => {
   const [draft, setDraft] = useState<SubagentProfile>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [groups, setGroups] = useState<ToolAllowlistGroup[]>([]);
+  const [promptFileContent, setPromptFileContent] = useState('');
+  const [promptFileFound, setPromptFileFound] = useState(false);
 
   const selected = useMemo(
     () => items.find((p) => p.agent_id === selectedId) || null,
@@ -77,6 +81,7 @@ const SubagentProfiles: React.FC = () => {
       name: next.name || '',
       role: next.role || '',
       system_prompt: next.system_prompt || '',
+      system_prompt_file: next.system_prompt_file || '',
       memory_namespace: next.memory_namespace || '',
       status: (next.status as string) || 'active',
       tool_allowlist: Array.isArray(next.tool_allowlist) ? next.tool_allowlist : [],
@@ -103,6 +108,33 @@ const SubagentProfiles: React.FC = () => {
     loadGroups().catch(() => {});
   }, [q]);
 
+  useEffect(() => {
+    const path = String(draft.system_prompt_file || '').trim();
+    if (!path) {
+      setPromptFileContent('');
+      setPromptFileFound(false);
+      return;
+    }
+    fetch(`/webui/api/subagents_runtime${q}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'prompt_file_get', path }),
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await r.text());
+        return r.json();
+      })
+      .then((data) => {
+        const found = data?.result?.found === true;
+        setPromptFileFound(found);
+        setPromptFileContent(found ? String(data?.result?.content || '') : '');
+      })
+      .catch(() => {
+        setPromptFileFound(false);
+        setPromptFileContent('');
+      });
+  }, [draft.system_prompt_file, q]);
+
   const onSelect = (p: SubagentProfile) => {
     setSelectedId(p.agent_id || '');
     setDraft({
@@ -110,6 +142,7 @@ const SubagentProfiles: React.FC = () => {
       name: p.name || '',
       role: p.role || '',
       system_prompt: p.system_prompt || '',
+      system_prompt_file: p.system_prompt_file || '',
       memory_namespace: p.memory_namespace || '',
       status: (p.status as string) || 'active',
       tool_allowlist: Array.isArray(p.tool_allowlist) ? p.tool_allowlist : [],
@@ -162,6 +195,7 @@ const SubagentProfiles: React.FC = () => {
           name: draft.name || '',
           role: draft.role || '',
           system_prompt: draft.system_prompt || '',
+          system_prompt_file: draft.system_prompt_file || '',
           memory_namespace: draft.memory_namespace || '',
           status: draft.status || 'active',
           tool_allowlist: draft.tool_allowlist || [],
@@ -216,6 +250,25 @@ const SubagentProfiles: React.FC = () => {
       return;
     }
     await load();
+  };
+
+  const savePromptFile = async () => {
+    const path = String(draft.system_prompt_file || '').trim();
+    if (!path) {
+      await ui.notify({ title: t('requestFailed'), message: 'system_prompt_file is required' });
+      return;
+    }
+    const r = await fetch(`/webui/api/subagents_runtime${q}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'prompt_file_set', path, content: promptFileContent }),
+    });
+    if (!r.ok) {
+      await ui.notify({ title: t('requestFailed'), message: await r.text() });
+      return;
+    }
+    setPromptFileFound(true);
+    await ui.notify({ title: t('saved'), message: t('promptFileSaved') });
   };
 
   return (
@@ -298,6 +351,15 @@ const SubagentProfiles: React.FC = () => {
               </select>
             </div>
             <div className="md:col-span-2">
+              <div className="text-xs text-zinc-400 mb-1">system_prompt_file</div>
+              <input
+                value={draft.system_prompt_file || ''}
+                onChange={(e) => setDraft({ ...draft, system_prompt_file: e.target.value })}
+                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                placeholder="agents/coder/AGENT.md"
+              />
+            </div>
+            <div className="md:col-span-2">
               <div className="text-xs text-zinc-400 mb-1">{t('memoryNamespace')}</div>
               <input
                 value={draft.memory_namespace || ''}
@@ -338,6 +400,28 @@ const SubagentProfiles: React.FC = () => {
                 className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[140px]"
                 placeholder="You are a coding specialist..."
               />
+            </div>
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between mb-1 gap-3">
+                <div className="text-xs text-zinc-400">system_prompt_file content</div>
+                <div className="text-[11px] text-zinc-500">{promptFileFound ? t('promptFileReady') : t('promptFileMissing')}</div>
+              </div>
+              <textarea
+                value={promptFileContent}
+                onChange={(e) => setPromptFileContent(e.target.value)}
+                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[220px]"
+                placeholder="AGENT.md content..."
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={savePromptFile}
+                  disabled={!String(draft.system_prompt_file || '').trim()}
+                  className="px-3 py-1.5 text-xs rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50"
+                >
+                  {t('savePromptFile')}
+                </button>
+              </div>
             </div>
             <div>
               <div className="text-xs text-zinc-400 mb-1">Max Retries</div>

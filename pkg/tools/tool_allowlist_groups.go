@@ -44,12 +44,6 @@ var defaultToolAllowlistGroups = []ToolAllowlistGroup{
 		Tools:       []string{"memory_search", "memory_get", "memory_write"},
 	},
 	{
-		Name:        "pipeline",
-		Description: "Pipeline orchestration tools",
-		Aliases:     []string{"pipelines"},
-		Tools:       []string{"pipeline_create", "pipeline_status", "pipeline_state_set", "pipeline_dispatch"},
-	},
-	{
 		Name:        "subagents",
 		Description: "Subagent management tools",
 		Aliases:     []string{"subagent", "agent_runtime"},

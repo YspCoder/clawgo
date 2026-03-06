@@ -46,7 +46,7 @@ func TestSubagentProfileStoreNormalization(t *testing.T) {
 
 func TestSubagentManagerSpawnRejectsDisabledProfile(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		return "ok", nil
 	})
@@ -74,7 +74,7 @@ func TestSubagentManagerSpawnRejectsDisabledProfile(t *testing.T) {
 
 func TestSubagentManagerSpawnResolvesProfileByRole(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	store := manager.ProfileStore()
 	if store == nil {
 		t.Fatalf("expected profile store to be available")
@@ -232,5 +232,46 @@ func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
 	}
 	if err := store.Delete(profile.AgentID); err == nil {
 		t.Fatalf("expected node-managed delete to fail")
+	}
+}
+
+func TestSubagentProfileStoreExcludesLocalNodeMainBranchProfile(t *testing.T) {
+	runtimecfg.Set(config.DefaultConfig())
+	t.Cleanup(func() {
+		runtimecfg.Set(config.DefaultConfig())
+		nodes.DefaultManager().Remove("local")
+	})
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Router.Enabled = true
+	cfg.Agents.Router.MainAgentID = "main"
+	cfg.Agents.Subagents["main"] = config.SubagentConfig{
+		Enabled:          true,
+		Type:             "router",
+		SystemPromptFile: "agents/main/AGENT.md",
+	}
+	runtimecfg.Set(cfg)
+
+	nodes.DefaultManager().Upsert(nodes.NodeInfo{
+		ID:     "local",
+		Name:   "Local",
+		Online: true,
+	})
+
+	store := NewSubagentProfileStore(t.TempDir())
+	if profile, ok, err := store.Get(nodeBranchAgentID("local")); err != nil {
+		t.Fatalf("get failed: %v", err)
+	} else if ok {
+		t.Fatalf("expected local node branch profile to be excluded, got %+v", profile)
+	}
+
+	items, err := store.List()
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	for _, item := range items {
+		if item.AgentID == nodeBranchAgentID("local") {
+			t.Fatalf("local node branch profile should not appear in list")
+		}
 	}
 }

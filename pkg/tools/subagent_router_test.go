@@ -9,7 +9,7 @@ import (
 
 func TestSubagentRouterDispatchAndWaitReply(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil, nil)
+	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
 		return "router-result", nil
 	})

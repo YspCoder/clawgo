@@ -104,6 +104,7 @@ This workspace is your long-term operating context.
     - relative to workspace
     - inside workspace
     - normally under `agents/<agent_id>/AGENT.md`
+- The repo does not bundle these subagent prompt files; create them as workspace assets when needed.
 - If you create `system_prompt_file`, you must also create the corresponding file content in the same task.
 - If you update a subagent’s role/responsibility materially, update its `AGENT.md` as well.
 

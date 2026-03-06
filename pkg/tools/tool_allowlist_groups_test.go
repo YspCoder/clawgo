@@ -17,7 +17,7 @@ func TestExpandToolAllowlistEntries_GroupPrefix(t *testing.T) {
 }
 
 func TestExpandToolAllowlistEntries_BareGroupAndAlias(t *testing.T) {
-	got := ExpandToolAllowlistEntries([]string{"memory_all", "@pipeline"})
+	got := ExpandToolAllowlistEntries([]string{"memory_all", "@subagents"})
 	contains := map[string]bool{}
 	for _, item := range got {
 		contains[item] = true
@@ -25,7 +25,7 @@ func TestExpandToolAllowlistEntries_BareGroupAndAlias(t *testing.T) {
 	if !contains["memory_search"] || !contains["memory_write"] {
 		t.Fatalf("memory_all expansion missing memory tools: %v", got)
 	}
-	if !contains["pipeline_dispatch"] || !contains["pipeline_status"] {
-		t.Fatalf("pipeline alias expansion missing pipeline tools: %v", got)
+	if !contains["spawn"] || !contains["subagents"] || !contains["subagent_profile"] {
+		t.Fatalf("subagents alias expansion missing subagent tools: %v", got)
 	}
 }

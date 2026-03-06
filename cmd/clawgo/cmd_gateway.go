@@ -160,9 +160,6 @@ func gatewayCmd() {
 	registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
 		return agentLoop.HandleSubagentRuntime(cctx, action, args)
 	})
-	registryServer.SetPipelineHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
-		return agentLoop.HandlePipelineRuntime(cctx, action, args)
-	})
 	registryServer.SetCronHandler(func(action string, args map[string]interface{}) (interface{}, error) {
 		getStr := func(k string) string {
 			v, _ := args[k].(string)

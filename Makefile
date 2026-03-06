@@ -1,4 +1,4 @@
-.PHONY: all build build-linux-slim build-all package-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts
+.PHONY: all build build-linux-slim build-all package-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts dev
 
 # Build variables
 BINARY_NAME=clawgo
@@ -47,6 +47,11 @@ WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 WORKSPACE_SOURCE_DIR=$(CURDIR)/workspace
 EMBED_WORKSPACE_DIR=$(CURDIR)/cmd/$(BINARY_NAME)/workspace
+DEV_CONFIG?=$(if $(wildcard $(CURDIR)/config.json),$(CURDIR)/config.json,$(CLAWGO_HOME)/config.json)
+DEV_ARGS?=--debug gateway run
+DEV_WORKSPACE?=$(WORKSPACE_DIR)
+DEV_WEBUI_DIR?=$(CURDIR)/webui
+DEV_WEBUI_BUILD?=1
 
 # OS detection
 UNAME_S:=$(shell uname -s)
@@ -298,6 +303,31 @@ deps:
 run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
+## dev: Run the local gateway in foreground for debugging
+dev: sync-embed-workspace
+	@if [ ! -f "$(DEV_CONFIG)" ]; then \
+		echo "✗ Missing config file: $(DEV_CONFIG)"; \
+		echo "  Override with: make dev DEV_CONFIG=/path/to/config.json"; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(DEV_WEBUI_DIR)" ]; then \
+		echo "✗ Missing WebUI directory: $(DEV_WEBUI_DIR)"; \
+		exit 1; \
+	fi
+	@set -e; trap '$(MAKE) -C $(CURDIR) cleanup-embed-workspace' EXIT; \
+	if [ "$(DEV_WEBUI_BUILD)" = "1" ]; then \
+		echo "Building WebUI..."; \
+		(cd "$(DEV_WEBUI_DIR)" && npm run build); \
+	fi; \
+	echo "Syncing WebUI dist to $(DEV_WORKSPACE)/webui ..."; \
+	mkdir -p "$(DEV_WORKSPACE)/webui"; \
+	rsync -a --delete "$(DEV_WEBUI_DIR)/dist/" "$(DEV_WORKSPACE)/webui/"; \
+	echo "Starting local gateway debug session..."; \
+	echo "  Config: $(DEV_CONFIG)"; \
+	echo "  WebUI:  $(DEV_WORKSPACE)/webui"; \
+	echo "  Args:   $(DEV_ARGS)"; \
+	CLAWGO_CONFIG="$(DEV_CONFIG)" $(GO) run $(GOFLAGS) ./$(CMD_DIR) $(DEV_ARGS)
+
 ## test: Build and compile-check in Docker (Dockerfile.test)
 test: sync-embed-workspace
 	@echo "Running Docker compile test..."
@@ -317,6 +347,7 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build              # Build for current platform"
+	@echo "  make dev                # Run local gateway in foreground with debug logs"
 	@echo "  make install            # Install to /usr/local/bin"
 	@echo "  make install-user       # Install to ~/.local/bin"
 	@echo "  make uninstall          # Remove from /usr/local/bin"
@@ -325,6 +356,11 @@ help:
 	@echo "Environment Variables:"
 	@echo "  INSTALL_PREFIX          # Installation prefix (default: /usr/local)"
 	@echo "  WORKSPACE_DIR           # Workspace directory (default: ~/.clawgo/workspace)"
+	@echo "  DEV_CONFIG              # Config path for make dev"
+	@echo "  DEV_ARGS                # CLI args for make dev (default: --debug gateway run)"
+	@echo "  DEV_WORKSPACE           # Workspace path for WebUI sync in make dev"
+	@echo "  DEV_WEBUI_DIR           # WebUI source dir for make dev (default: ./webui)"
+	@echo "  DEV_WEBUI_BUILD         # 1=build WebUI before make dev (default: 1)"
 	@echo "  VERSION                 # Version string (default: git describe)"
 	@echo "  STRIP_SYMBOLS           # 1=strip debug/symbol info (default: 1)"
 	@echo ""

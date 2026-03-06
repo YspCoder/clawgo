@@ -65,8 +65,6 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 			MaxResultChars: runtimeIntArg(args, "max_result_chars", 0),
 			OriginChannel:  fallbackString(runtimeStringArg(args, "channel"), "webui"),
 			OriginChatID:   fallbackString(runtimeStringArg(args, "chat_id"), "webui"),
-			PipelineID:     runtimeStringArg(args, "pipeline_id"),
-			PipelineTask:   runtimeStringArg(args, "task_id"),
 		})
 		if err != nil {
 			return nil, err
@@ -388,89 +386,6 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 	}
 }
 
-func (al *AgentLoop) HandlePipelineRuntime(ctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
-	if al == nil || al.orchestrator == nil {
-		return nil, fmt.Errorf("pipeline runtime is not configured")
-	}
-	action = strings.ToLower(strings.TrimSpace(action))
-	if action == "" {
-		action = "list"
-	}
-
-	switch action {
-	case "list":
-		return map[string]interface{}{"items": al.orchestrator.ListPipelines()}, nil
-	case "get", "status":
-		pipelineID := fallbackString(runtimeStringArg(args, "pipeline_id"), runtimeStringArg(args, "id"))
-		if strings.TrimSpace(pipelineID) == "" {
-			return nil, fmt.Errorf("pipeline_id is required")
-		}
-		p, ok := al.orchestrator.GetPipeline(strings.TrimSpace(pipelineID))
-		if !ok {
-			return map[string]interface{}{"found": false}, nil
-		}
-		return map[string]interface{}{"found": true, "pipeline": p}, nil
-	case "ready":
-		pipelineID := fallbackString(runtimeStringArg(args, "pipeline_id"), runtimeStringArg(args, "id"))
-		if strings.TrimSpace(pipelineID) == "" {
-			return nil, fmt.Errorf("pipeline_id is required")
-		}
-		items, err := al.orchestrator.ReadyTasks(strings.TrimSpace(pipelineID))
-		if err != nil {
-			return nil, err
-		}
-		return map[string]interface{}{"items": items}, nil
-	case "create":
-		objective := runtimeStringArg(args, "objective")
-		if objective == "" {
-			return nil, fmt.Errorf("objective is required")
-		}
-		specs, err := parsePipelineSpecsForRuntime(args["tasks"])
-		if err != nil {
-			return nil, err
-		}
-		label := runtimeStringArg(args, "label")
-		p, err := al.orchestrator.CreatePipeline(label, objective, "webui", "webui", specs)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]interface{}{"pipeline": p}, nil
-	case "state_set":
-		pipelineID := fallbackString(runtimeStringArg(args, "pipeline_id"), runtimeStringArg(args, "id"))
-		key := runtimeStringArg(args, "key")
-		if strings.TrimSpace(pipelineID) == "" || strings.TrimSpace(key) == "" {
-			return nil, fmt.Errorf("pipeline_id and key are required")
-		}
-		value, ok := args["value"]
-		if !ok {
-			return nil, fmt.Errorf("value is required")
-		}
-		if err := al.orchestrator.SetSharedState(strings.TrimSpace(pipelineID), strings.TrimSpace(key), value); err != nil {
-			return nil, err
-		}
-		p, _ := al.orchestrator.GetPipeline(strings.TrimSpace(pipelineID))
-		return map[string]interface{}{"ok": true, "pipeline": p}, nil
-	case "dispatch":
-		pipelineID := fallbackString(runtimeStringArg(args, "pipeline_id"), runtimeStringArg(args, "id"))
-		if strings.TrimSpace(pipelineID) == "" {
-			return nil, fmt.Errorf("pipeline_id is required")
-		}
-		maxDispatch := runtimeIntArg(args, "max_dispatch", 3)
-		dispatchTool := tools.NewPipelineDispatchTool(al.orchestrator, al.subagentManager)
-		result, err := dispatchTool.Execute(ctx, map[string]interface{}{
-			"pipeline_id":  strings.TrimSpace(pipelineID),
-			"max_dispatch": float64(maxDispatch),
-		})
-		if err != nil {
-			return nil, err
-		}
-		p, _ := al.orchestrator.GetPipeline(strings.TrimSpace(pipelineID))
-		return map[string]interface{}{"message": result, "pipeline": p}, nil
-	default:
-		return nil, fmt.Errorf("unsupported action: %s", action)
-	}
-}
-
 func cloneSubagentTask(in *tools.SubagentTask) *tools.SubagentTask {
 	if in == nil {
 		return nil
@@ -512,46 +427,6 @@ func resolveSubagentTaskIDForRuntime(sm *tools.SubagentManager, raw string) (str
 		return "", fmt.Errorf("subagent index out of range")
 	}
 	return tasks[idx-1].ID, nil
-}
-
-func parsePipelineSpecsForRuntime(raw interface{}) ([]tools.PipelineSpec, error) {
-	items, ok := raw.([]interface{})
-	if !ok || len(items) == 0 {
-		return nil, fmt.Errorf("tasks is required")
-	}
-	specs := make([]tools.PipelineSpec, 0, len(items))
-	for i, item := range items {
-		m, ok := item.(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("tasks[%d] must be object", i)
-		}
-		id := runtimeStringArg(m, "id")
-		if id == "" {
-			return nil, fmt.Errorf("tasks[%d].id is required", i)
-		}
-		goal := runtimeStringArg(m, "goal")
-		if goal == "" {
-			return nil, fmt.Errorf("tasks[%d].goal is required", i)
-		}
-		spec := tools.PipelineSpec{
-			ID:   id,
-			Role: runtimeStringArg(m, "role"),
-			Goal: goal,
-		}
-		if deps, ok := m["depends_on"].([]interface{}); ok {
-			spec.DependsOn = make([]string, 0, len(deps))
-			for _, dep := range deps {
-				d, _ := dep.(string)
-				d = strings.TrimSpace(d)
-				if d == "" {
-					continue
-				}
-				spec.DependsOn = append(spec.DependsOn, d)
-			}
-		}
-		specs = append(specs, spec)
-	}
-	return specs, nil
 }
 
 func runtimeStringArg(args map[string]interface{}, key string) string {

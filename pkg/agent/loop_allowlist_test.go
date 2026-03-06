@@ -52,13 +52,3 @@ func TestEnsureToolAllowedByContext_GroupAllowlist(t *testing.T) {
 		t.Fatalf("expected files_read group to block write_file")
 	}
 }
-
-func TestEnsureToolAllowedByContext_GroupAliasToken(t *testing.T) {
-	ctx := withToolAllowlistContext(context.Background(), []string{"@pipeline"})
-	if err := ensureToolAllowedByContext(ctx, "pipeline_status", map[string]interface{}{}); err != nil {
-		t.Fatalf("expected @pipeline to allow pipeline_status, got: %v", err)
-	}
-	if err := ensureToolAllowedByContext(ctx, "memory_search", map[string]interface{}{}); err == nil {
-		t.Fatalf("expected @pipeline to block memory_search")
-	}
-}

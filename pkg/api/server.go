@@ -44,7 +44,6 @@ type Server struct {
 	onConfigAfter func()
 	onCron        func(action string, args map[string]interface{}) (interface{}, error)
 	onSubagents   func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
-	onPipelines   func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
 	webUIDir      string
 	ekgCacheMu    sync.Mutex
 	ekgCachePath  string
@@ -80,9 +79,6 @@ func (s *Server) SetCronHandler(fn func(action string, args map[string]interface
 func (s *Server) SetSubagentHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
 	s.onSubagents = fn
 }
-func (s *Server) SetPipelineHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
-	s.onPipelines = fn
-}
 func (s *Server) SetWebUIDir(dir string) { s.webUIDir = strings.TrimSpace(dir) }
 
 func (s *Server) Start(ctx context.Context) error {
@@ -111,7 +107,6 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/webui/api/subagent_profiles", s.handleWebUISubagentProfiles)
 	mux.HandleFunc("/webui/api/subagents_runtime", s.handleWebUISubagentsRuntime)
-	mux.HandleFunc("/webui/api/pipelines", s.handleWebUIPipelines)
 	mux.HandleFunc("/webui/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
 	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
 	mux.HandleFunc("/webui/api/task_queue", s.handleWebUITaskQueue)
@@ -2326,58 +2321,6 @@ func (s *Server) handleWebUISubagentsRuntime(w http.ResponseWriter, r *http.Requ
 	}
 
 	result, err := s.onSubagents(r.Context(), action, args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "result": result})
-}
-
-func (s *Server) handleWebUIPipelines(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if s.onPipelines == nil {
-		http.Error(w, "pipeline runtime handler not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	action := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("action")))
-	args := map[string]interface{}{}
-	switch r.Method {
-	case http.MethodGet:
-		if action == "" {
-			action = "list"
-		}
-		for key, values := range r.URL.Query() {
-			if key == "action" || key == "token" || len(values) == 0 {
-				continue
-			}
-			args[key] = strings.TrimSpace(values[0])
-		}
-	case http.MethodPost:
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		if body == nil {
-			body = map[string]interface{}{}
-		}
-		if action == "" {
-			if raw, _ := body["action"].(string); raw != "" {
-				action = strings.ToLower(strings.TrimSpace(raw))
-			}
-		}
-		delete(body, "action")
-		args = body
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	result, err := s.onPipelines(r.Context(), action, args)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

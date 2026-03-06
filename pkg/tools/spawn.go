@@ -69,14 +69,6 @@ func (t *SpawnTool) Parameters() map[string]interface{} {
 				"type":        "integer",
 				"description": "Optional result size quota in characters.",
 			},
-			"pipeline_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional pipeline ID for orchestrated multi-agent workflow",
-			},
-			"task_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional task ID under the pipeline",
-			},
 			"channel": map[string]interface{}{
 				"type":        "string",
 				"description": "Optional origin channel override",
@@ -111,8 +103,6 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 	timeoutSec := intArg(args, "timeout_sec")
 	maxTaskChars := intArg(args, "max_task_chars")
 	maxResultChars := intArg(args, "max_result_chars")
-	pipelineID, _ := args["pipeline_id"].(string)
-	taskID, _ := args["task_id"].(string)
 	if label == "" && role != "" {
 		label = role
 	} else if label == "" && agentID != "" {
@@ -150,8 +140,6 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		MaxResultChars: maxResultChars,
 		OriginChannel:  originChannel,
 		OriginChatID:   originChatID,
-		PipelineID:     pipelineID,
-		PipelineTask:   taskID,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to spawn subagent: %w", err)

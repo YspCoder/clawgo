@@ -382,6 +382,9 @@ func (s *SubagentProfileStore) nodeProfileLocked(agentID string) (SubagentProfil
 		}
 	}
 	for _, node := range nodes.DefaultManager().List() {
+		if isLocalNode(node.ID) {
+			continue
+		}
 		profile := profileFromNode(node, parentAgentID)
 		if profile.AgentID == id {
 			return profile, true
@@ -430,6 +433,9 @@ func (s *SubagentProfileStore) nodeProfilesLocked() []SubagentProfile {
 	}
 	out := make([]SubagentProfile, 0, len(nodeItems))
 	for _, node := range nodeItems {
+		if isLocalNode(node.ID) {
+			continue
+		}
 		profile := profileFromNode(node, parentAgentID)
 		if profile.AgentID == "" {
 			continue
@@ -473,6 +479,10 @@ func nodeBranchAgentID(nodeID string) string {
 	return "node." + id + ".main"
 }
 
+func isLocalNode(nodeID string) bool {
+	return normalizeSubagentIdentifier(nodeID) == "local"
+}
+
 type SubagentProfileTool struct {
 	store *SubagentProfileStore
 }
@@ -504,7 +514,7 @@ func (t *SubagentProfileTool) Parameters() map[string]interface{} {
 			"status":             map[string]interface{}{"type": "string", "description": "active|disabled"},
 			"tool_allowlist": map[string]interface{}{
 				"type":        "array",
-				"description": "Tool allowlist entries. Supports tool names, '*'/'all', and grouped tokens like 'group:files_read' or '@pipeline'.",
+				"description": "Tool allowlist entries. Supports tool names, '*'/'all', and grouped tokens like 'group:files_read'.",
 				"items":       map[string]interface{}{"type": "string"},
 			},
 			"max_retries":      map[string]interface{}{"type": "integer", "description": "Retry limit for subagent task execution."},

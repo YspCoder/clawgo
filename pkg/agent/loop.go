@@ -61,7 +61,6 @@ type AgentLoop struct {
 	streamMu             sync.Mutex
 	sessionStreamed      map[string]bool
 	subagentManager      *tools.SubagentManager
-	orchestrator         *tools.Orchestrator
 	subagentRouter       *tools.SubagentRouter
 	subagentConfigTool   *tools.SubagentConfigTool
 	nodeRouter           *nodes.Router
@@ -184,8 +183,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(messageTool)
 
 	// Register spawn tool
-	orchestrator := tools.NewOrchestrator()
-	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus, orchestrator)
+	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus)
 	subagentRouter := tools.NewSubagentRouter(subagentManager)
 	subagentConfigTool := tools.NewSubagentConfigTool("")
 	spawnTool := tools.NewSpawnTool(subagentManager)
@@ -195,10 +193,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	if store := subagentManager.ProfileStore(); store != nil {
 		toolsRegistry.Register(tools.NewSubagentProfileTool(store))
 	}
-	toolsRegistry.Register(tools.NewPipelineCreateTool(orchestrator))
-	toolsRegistry.Register(tools.NewPipelineStatusTool(orchestrator))
-	toolsRegistry.Register(tools.NewPipelineStateSetTool(orchestrator))
-	toolsRegistry.Register(tools.NewPipelineDispatchTool(orchestrator, subagentManager))
 	toolsRegistry.Register(tools.NewSessionsTool(
 		func(limit int) []tools.SessionInfo {
 			sessions := alSessionListForTool(sessionsManager, limit)
@@ -257,7 +251,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		providerResponses:    map[string]config.ProviderResponsesConfig{},
 		telegramStreaming:    cfg.Channels.Telegram.Streaming,
 		subagentManager:      subagentManager,
-		orchestrator:         orchestrator,
 		subagentRouter:       subagentRouter,
 		subagentConfigTool:   subagentConfigTool,
 		nodeRouter:           nodesRouter,
@@ -1748,7 +1741,7 @@ func withToolContextArgs(toolName string, args map[string]interface{}, channel, 
 		return args
 	}
 	switch toolName {
-	case "message", "spawn", "remind", "pipeline_create", "pipeline_dispatch":
+	case "message", "spawn", "remind":
 	default:
 		return args
 	}

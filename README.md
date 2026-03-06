@@ -1,122 +1,63 @@
-# ClawGo
+# ClawGo 🦞
 
-一个用 Go 编写的长期运行 AI Agent 系统，核心特点是：
+ClawGo 是一个用 Go 构建的长期运行 Agent 系统，面向本地优先、多 Agent 协作、可审计运维。
 
-- 主 agent + subagent 的声明式配置
-- 可持久化的 run / thread / mailbox 运行态
-- node 注册后的远端 agent 分支
-- 多通道接入与统一 WebUI 运维面板
-- 轻量、可审计、适合长期运行
+- 🎯 `main agent` 负责对话入口、路由、调度、汇总
+- 🤖 `subagents` 负责具体执行，如编码、测试、文档
+- 🌐 `node branches` 允许把远端节点挂成受控 agent 分支
+- 🧠 记忆、线程、邮箱、任务运行态可持久化
+- 🖥️ 内置统一 WebUI，覆盖配置、拓扑、日志、技能、记忆与运维
 
 [English](./README_EN.md)
 
----
+## 架构概览
 
-## 当前架构
-
-ClawGo 现在不是“单 agent + 一堆工具”的结构，而是一个可编排的 agent tree：
-
-- `main agent`
-  - 用户入口
-  - 负责路由、调度、汇总结果
-- `local subagents`
-  - 例如 `coder`、`tester`
-  - 由 `config.json` 中的 `agents.subagents` 声明
-- `node-backed branches`
-  - 注册进来的 node 会被视为 `main` 下的一条远端 agent 分支
-  - 形如 `node.<node_id>.main`
-  - 可以作为主 agent 的受控执行目标
-
-默认协作模式是：
+ClawGo 的默认协作模式是：
 
 ```text
 user -> main -> worker -> main -> user
 ```
 
----
+当前系统由四层组成：
+
+- `main agent`
+  - 用户入口
+  - 负责路由、拆解、派发、汇总
+- `local subagents`
+  - 在 `config.json -> agents.subagents` 中声明
+  - 使用独立 session 和 memory namespace
+- `node-backed branches`
+  - 注册 node 后，会在主拓扑里表现为远端 agent 分支
+  - `transport=node` 的任务通过 `agent_task` 发往远端
+- `runtime store`
+  - 保存 run、event、thread、message 等运行态
 
 ## 主要能力
 
-### 1. Agent 配置与路由
+- 🚦 路由与调度
+  - 支持 `rules_first`
+  - 支持显式 `@agent_id`
+  - 支持关键词自动路由
+- 📦 持久化运行态
+  - `subagent_runs.jsonl`
+  - `subagent_events.jsonl`
+  - `threads.jsonl`
+  - `agent_messages.jsonl`
+- 📨 mailbox / thread 协作
+  - dispatch
+  - wait
+  - reply
+  - ack
+- 🧠 记忆双写
+  - 子 agent 写自己的详细记忆
+  - 主记忆保留简洁协作摘要
+- 🪪 声明式 agent 配置
+  - role
+  - tool allowlist
+  - runtime policy
+  - `system_prompt_file`
 
-- `agents.router`
-  - 主 agent 路由配置
-  - 支持 `rules_first`、显式 `@agent_id` 路由、关键词路由
-- `agents.subagents`
-  - 声明 subagent 身份、角色、运行参数、工具白名单
-- `system_prompt_file`
-  - subagent 优先读取 `agents/<agent_id>/AGENT.md`
-  - 不再依赖一句短 inline prompt
-
-### 2. Subagent 运行态持久化
-
-运行态会落到：
-
-- `workspace/agents/runtime/subagent_runs.jsonl`
-- `workspace/agents/runtime/subagent_events.jsonl`
-- `workspace/agents/runtime/threads.jsonl`
-- `workspace/agents/runtime/agent_messages.jsonl`
-
-因此可以支持：
-
-- run 恢复
-- 线程追踪
-- mailbox / inbox 查询
-- dispatch / wait / merge
-
-### 3. Node 分支
-
-注册进来的 node 不只是设备状态，而是一个远端主 agent 分支：
-
-- node 会出现在统一 agent topology 里
-- 远端 registry 会以只读镜像方式展示
-- `transport=node` 的 subagent 会通过 `agent_task` 发往远端 node
-
-### 4. WebUI
-
-当前 WebUI 已经整合为统一的 agent 操作台，包含：
-
-- Dashboard
-- Chat
-- Config
-- Logs
-- Cron
-- Skills
-- Memory
-- Task Audit
-- EKG
-- Agents
-  - 统一的 agent topology
-  - 本地/远端 agent 树
-  - subagent runtime
-  - registry
-  - prompt file editor
-  - dispatch / thread / inbox
-
-### 5. 记忆策略
-
-记忆不是简单共用，也不是完全隔离，而是双写：
-
-- `main`
-  - 维护主记忆与协作摘要
-- `subagent`
-  - 写入自己的 namespaced memory
-  - 路径类似 `workspace/agents/<memory_ns>/...`
-- 对于 subagent 的自动摘要：
-  - 子 agent 自己记详细日志
-  - 主记忆里同步保留一条简洁协作摘要
-
-当前摘要格式大致是：
-
-```md
-## 15:04 Code Agent | 修复登录接口并补测试
-
-- Did: 完成了登录接口修复、增加回归测试，并验证通过。
-```
-
----
-
-## 3 分钟上手
+## 快速开始
 
 ### 1. 安装
 
@@ -130,21 +71,15 @@ curl -fsSL https://raw.githubusercontent.com/YspCoder/clawgo/main/install.sh | b
 clawgo onboard
 ```
 
-### 3. 配置 provider
+### 3. 配置模型
 
 ```bash
 clawgo provider
 ```
 
-### 4. 查看状态
+### 4. 启动
 
-```bash
-clawgo status
-```
-
-### 5. 启动
-
-本地交互模式：
+交互模式：
 
 ```bash
 clawgo agent
@@ -154,48 +89,58 @@ clawgo agent -m "Hello"
 网关模式：
 
 ```bash
-clawgo gateway
-clawgo gateway start
-clawgo gateway status
-```
-
-前台运行：
-
-```bash
 clawgo gateway run
 ```
 
----
+开发模式：
+
+```bash
+make dev
+```
 
 ## WebUI
 
-访问地址：
+访问：
 
 ```text
 http://<host>:<port>/webui?token=<gateway.token>
 ```
 
-建议重点看这几个页面：
+核心页面：
 
 - `Agents`
-  - 看整个 agent tree
-  - 看 node 分支
-  - 看当前运行任务
-  - 配置本地 subagent
+  - 统一 agent 拓扑
+  - 本地 subagent 与远端 branch 展示
+  - 运行状态悬浮查看
 - `Config`
-  - 调整配置
+  - 配置编辑
+  - 热更新字段查看
 - `Logs`
   - 实时日志
+- `Skills`
+  - 技能安装、查看、编辑
+- `Memory`
+  - 记忆文件与摘要
 - `Task Audit`
-  - 看任务拆解、调度与执行痕迹
-- `EKG`
-  - 看错误签名、来源统计、负载分布
+  - 任务链路与执行审计
 
----
+### 亮点截图
+
+**Dashboard**
+
+![ClawGo Dashboard](docs/assets/readme-dashboard.png)
+
+**Agents 拓扑**
+
+![ClawGo Agents Topology](docs/assets/readme-agents.png)
+
+**Config 工作台**
+
+![ClawGo Config](docs/assets/readme-config.png)
 
 ## 配置结构
 
-当前推荐围绕这些字段配置：
+当前推荐结构：
 
 ```json
 {
@@ -219,41 +164,36 @@ http://<host>:<port>/webui?token=<gateway.token>
     "subagents": {
       "main": {},
       "coder": {},
-      "tester": {},
-      "node.edge-dev.main": {}
+      "tester": {}
     }
   }
 }
 ```
 
-关键点：
+说明：
 
-- `runtime_control` 已移除
+- `runtime_control` 已删除
 - 现在使用：
   - `agents.defaults.execution`
   - `agents.defaults.summary_policy`
   - `agents.router.policy`
 - 启用中的本地 subagent 必须配置 `system_prompt_file`
-- node-backed agent 使用：
+- 远端分支需要：
   - `transport: "node"`
   - `node_id`
   - `parent_agent_id`
 
-可参考完整示例：
+完整示例见 [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json)。
 
-- [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json)
+## Prompt 文件约定
 
----
-
-## Subagent Prompt 约定
-
-推荐为每个 agent 提供独立 prompt 文件：
+推荐把 agent prompt 放到独立文件中，例如：
 
 - `agents/main/AGENT.md`
 - `agents/coder/AGENT.md`
 - `agents/tester/AGENT.md`
 
-对应配置示例：
+配置示例：
 
 ```json
 {
@@ -261,73 +201,36 @@ http://<host>:<port>/webui?token=<gateway.token>
 }
 ```
 
-规则：
+约定：
 
 - 路径必须是 workspace 内相对路径
-- 创建 subagent 时应同时更新 config 和对应 `AGENT.md`
-- 如果 subagent 职责发生实质变化，应同步更新它的 `AGENT.md`
+- 这些路径只是示例，仓库不会内置对应文件
+- 用户或 agent workflow 需要自行创建这些 `AGENT.md`
 
----
+## 记忆与运行态
 
-## 常用命令
+ClawGo 默认不是“所有 agent 共用一份上下文”。
 
-```text
-clawgo onboard
-clawgo provider
-clawgo status
-clawgo agent [-m "..."]
-clawgo gateway [run|start|stop|restart|status]
-clawgo config set|get|check|reload
-clawgo cron ...
-clawgo skills ...
-clawgo uninstall [--purge] [--remove-bin]
-```
+- `main`
+  - 维护主记忆与协作摘要
+- `subagent`
+  - 使用独立 session key
+  - 写入自己的 memory namespace
+- runtime store
+  - 持久化任务、事件、线程、消息
 
----
+这样可以同时得到：
 
-## 构建
+- 可恢复
+- 可追踪
+- 边界清晰
 
-本地构建：
+## 项目定位
 
-```bash
-make build
-```
+ClawGo 适合这些场景：
 
-全平台构建：
+- 本地长期运行的个人 AI agent
+- 需要多 agent 协作但不想上重型编排平台
+- 需要清晰配置、清晰审计、清晰可观测性的自动化系统
 
-```bash
-make build-all
-```
-
-打包：
-
-```bash
-make package-all
-```
-
----
-
-## 当前设计取向
-
-ClawGo 当前刻意偏向这些原则：
-
-- 主 agent 仲裁优先
-- 运行态落盘优先
-- 配置声明优先
-- WebUI 先做统一运维台，再做复杂自动化
-- node 先作为受控远端 agent 分支，而不是完全独立自治体
-
-也就是说，这个项目更像一个：
-
-- 可长期运行的个人 AI agent runtime
-- 带多 agent 编排能力
-- 带 node 扩展能力
-- 带运维与审计面的系统
-
-而不是一个“只会聊天”的单体机器人。
-
----
-
-## License
-
-见仓库中的 `LICENSE` 文件。
+如果你希望先看一个完整配置，直接从 [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json) 开始。
