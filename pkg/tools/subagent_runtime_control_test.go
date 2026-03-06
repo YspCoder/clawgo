@@ -205,6 +205,55 @@ func TestSubagentManagerRestoresPersistedRuns(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 }
 
+func TestSubagentManagerAutoRecoversRunningTaskAfterRestart(t *testing.T) {
+	workspace := t.TempDir()
+	block := make(chan struct{})
+	manager := NewSubagentManager(nil, workspace, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		<-block
+		return "should-not-complete-here", nil
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "recover me",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+	time.Sleep(80 * time.Millisecond)
+
+	recovered := make(chan string, 1)
+	reloaded := NewSubagentManager(nil, workspace, nil)
+	reloaded.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		recovered <- task.ID
+		return "recovered-ok", nil
+	})
+
+	select {
+	case taskID := <-recovered:
+		if taskID != "subagent-1" {
+			t.Fatalf("expected recovered task id subagent-1, got %s", taskID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("expected running task to auto-recover after restart")
+	}
+
+	got, ok := reloaded.GetTask("subagent-1")
+	if !ok {
+		t.Fatalf("expected recovered task to exist")
+	}
+	if got.Status != "completed" || got.Result != "recovered-ok" {
+		t.Fatalf("unexpected recovered task: %+v", got)
+	}
+
+	close(block)
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+	time.Sleep(100 * time.Millisecond)
+}
+
 func TestSubagentManagerPersistsEvents(t *testing.T) {
 	workspace := t.TempDir()
 	manager := NewSubagentManager(nil, workspace, nil)

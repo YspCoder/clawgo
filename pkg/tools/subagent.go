@@ -51,6 +51,7 @@ type SubagentTask struct {
 type SubagentManager struct {
 	tasks              map[string]*SubagentTask
 	cancelFuncs        map[string]context.CancelFunc
+	recoverableTaskIDs []string
 	archiveAfterMinute int64
 	mu                 sync.RWMutex
 	provider           providers.LLMProvider
@@ -99,9 +100,13 @@ func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *b
 	if runStore != nil {
 		for _, task := range runStore.List() {
 			mgr.tasks[task.ID] = task
+			if task.Status == "running" {
+				mgr.recoverableTaskIDs = append(mgr.recoverableTaskIDs, task.ID)
+			}
 		}
 		mgr.nextID = runStore.NextIDSeed()
 	}
+	go mgr.resumeRecoveredTasks()
 	return mgr
 }
 
@@ -534,12 +539,45 @@ func (sm *SubagentManager) SetRunFunc(f SubagentRunFunc) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.runFunc = f
+	go sm.resumeRecoveredTasks()
 }
 
 func (sm *SubagentManager) ProfileStore() *SubagentProfileStore {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.profileStore
+}
+
+func (sm *SubagentManager) resumeRecoveredTasks() {
+	if sm == nil {
+		return
+	}
+	sm.mu.Lock()
+	if sm.runFunc == nil && sm.provider == nil {
+		sm.mu.Unlock()
+		return
+	}
+	taskIDs := append([]string(nil), sm.recoverableTaskIDs...)
+	sm.recoverableTaskIDs = nil
+	toResume := make([]*SubagentTask, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		task, ok := sm.tasks[taskID]
+		if !ok || task == nil || task.Status != "running" {
+			continue
+		}
+		task.Updated = time.Now().UnixMilli()
+		sm.persistTaskLocked(task, "recovered", "auto-resumed after restart")
+		toResume = append(toResume, task)
+	}
+	sm.mu.Unlock()
+
+	for _, task := range toResume {
+		taskCtx, cancel := context.WithCancel(context.Background())
+		sm.mu.Lock()
+		sm.cancelFuncs[task.ID] = cancel
+		sm.mu.Unlock()
+		go sm.runTask(taskCtx, task)
+	}
 }
 
 func (sm *SubagentManager) NextTaskSequence() int {
