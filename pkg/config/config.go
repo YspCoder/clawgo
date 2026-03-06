@@ -2,6 +2,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -510,7 +512,7 @@ func DefaultConfig() *Config {
 		Gateway: GatewayConfig{
 			Host:  "0.0.0.0",
 			Port:  18790,
-			Token: "",
+			Token: generateGatewayToken(),
 		},
 		Cron: CronConfig{
 			MinSleepSec:                  1,
@@ -566,6 +568,14 @@ func DefaultConfig() *Config {
 			},
 		},
 	}
+}
+
+func generateGatewayToken() string {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return ""
+	}
+	return "cg_" + hex.EncodeToString(buf[:])
 }
 
 func LoadConfig(path string) (*Config, error) {

@@ -44,6 +44,9 @@ func ensureConfigOnboard(configPath string, defaults *config.Config) (string, er
 	if defaults == nil {
 		return "", fmt.Errorf("defaults is nil")
 	}
+	if defaults.Gateway.Token == "" {
+		defaults.Gateway.Token = config.DefaultConfig().Gateway.Token
+	}
 
 	exists := true
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {

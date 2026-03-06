@@ -2,6 +2,15 @@ package config
 
 import "testing"
 
+func TestDefaultConfigGeneratesGatewayToken(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	if cfg.Gateway.Token == "" {
+		t.Fatalf("expected default gateway token")
+	}
+}
+
 func TestValidateSubagentsAllowsKnownPeers(t *testing.T) {
 	t.Parallel()
 
