@@ -66,6 +66,7 @@ type PendingSubagentDraft = {
     display_name?: string;
     description?: string;
     system_prompt?: string;
+    system_prompt_file?: string;
     tool_allowlist?: string[];
     routing_keywords?: string[];
   };
@@ -79,6 +80,7 @@ type RegistrySubagent = {
   role?: string;
   description?: string;
   system_prompt?: string;
+  system_prompt_file?: string;
   memory_namespace?: string;
   tool_allowlist?: string[];
   routing_keywords?: string[];
@@ -111,6 +113,7 @@ const Subagents: React.FC = () => {
   const [configRole, setConfigRole] = useState('');
   const [configDisplayName, setConfigDisplayName] = useState('');
   const [configSystemPrompt, setConfigSystemPrompt] = useState('');
+  const [configSystemPromptFile, setConfigSystemPromptFile] = useState('');
   const [configToolAllowlist, setConfigToolAllowlist] = useState('');
   const [configRoutingKeywords, setConfigRoutingKeywords] = useState('');
   const [draftDescription, setDraftDescription] = useState('');
@@ -284,6 +287,7 @@ const Subagents: React.FC = () => {
       role: configRole,
       display_name: configDisplayName,
       system_prompt: configSystemPrompt,
+      system_prompt_file: configSystemPromptFile,
       tool_allowlist: toolAllowlist,
       routing_keywords: routingKeywords,
     });
@@ -293,6 +297,7 @@ const Subagents: React.FC = () => {
     setConfigRole('');
     setConfigDisplayName('');
     setConfigSystemPrompt('');
+    setConfigSystemPromptFile('');
     setConfigToolAllowlist('');
     setConfigRoutingKeywords('');
     await load();
@@ -314,6 +319,7 @@ const Subagents: React.FC = () => {
     setConfigRole(draft.role || '');
     setConfigDisplayName(draft.display_name || '');
     setConfigSystemPrompt(draft.system_prompt || '');
+    setConfigSystemPromptFile(draft.system_prompt_file || '');
     setConfigToolAllowlist(Array.isArray(draft.tool_allowlist) ? draft.tool_allowlist.join(', ') : '');
     setConfigRoutingKeywords(Array.isArray(draft.routing_keywords) ? draft.routing_keywords.join(', ') : '');
     await load();
@@ -347,6 +353,7 @@ const Subagents: React.FC = () => {
     setConfigRole(item.role || '');
     setConfigDisplayName(item.display_name || '');
     setConfigSystemPrompt(item.system_prompt || '');
+    setConfigSystemPromptFile((item as any).system_prompt_file || '');
     setConfigToolAllowlist(Array.isArray(item.tool_allowlist) ? item.tool_allowlist.join(', ') : '');
     setConfigRoutingKeywords(Array.isArray(item.routing_keywords) ? item.routing_keywords.join(', ') : '');
   };
@@ -500,6 +507,7 @@ const Subagents: React.FC = () => {
               placeholder="system_prompt"
               className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[96px]"
             />
+            <input value={configSystemPromptFile} onChange={(e) => setConfigSystemPromptFile(e.target.value)} placeholder="system_prompt_file (relative AGENT.md path)" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
             <input value={configToolAllowlist} onChange={(e) => setConfigToolAllowlist(e.target.value)} placeholder="tool_allowlist (comma separated)" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
             <input value={configRoutingKeywords} onChange={(e) => setConfigRoutingKeywords(e.target.value)} placeholder="routing_keywords (comma separated)" className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded" />
             <button onClick={upsertConfigSubagent} className="px-3 py-1.5 text-xs rounded bg-amber-700/80 hover:bg-amber-600">{t('saveToConfig')}</button>

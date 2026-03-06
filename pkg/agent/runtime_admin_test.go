@@ -72,12 +72,13 @@ func TestHandleSubagentRuntimeUpsertConfigSubagent(t *testing.T) {
 		subagentRouter:  tools.NewSubagentRouter(manager),
 	}
 	out, err := loop.HandleSubagentRuntime(context.Background(), "upsert_config_subagent", map[string]interface{}{
-		"agent_id":         "reviewer",
-		"role":             "testing",
-		"display_name":     "Review Agent",
-		"system_prompt":    "review changes",
-		"routing_keywords": []interface{}{"review", "regression"},
-		"tool_allowlist":   []interface{}{"shell", "sessions"},
+		"agent_id":           "reviewer",
+		"role":               "testing",
+		"display_name":       "Review Agent",
+		"system_prompt":      "review changes",
+		"system_prompt_file": "agents/reviewer/AGENT.md",
+		"routing_keywords":   []interface{}{"review", "regression"},
+		"tool_allowlist":     []interface{}{"shell", "sessions"},
 	})
 	if err != nil {
 		t.Fatalf("upsert config subagent failed: %v", err)
@@ -93,6 +94,9 @@ func TestHandleSubagentRuntimeUpsertConfigSubagent(t *testing.T) {
 	subcfg, ok := reloaded.Agents.Subagents["reviewer"]
 	if !ok || subcfg.DisplayName != "Review Agent" {
 		t.Fatalf("expected reviewer subagent in config, got %+v", reloaded.Agents.Subagents)
+	}
+	if subcfg.SystemPromptFile != "agents/reviewer/AGENT.md" {
+		t.Fatalf("expected system_prompt_file to persist, got %+v", subcfg)
 	}
 	if len(reloaded.Agents.Router.Rules) == 0 {
 		t.Fatalf("expected router rules to be persisted")

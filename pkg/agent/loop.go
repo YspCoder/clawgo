@@ -148,12 +148,12 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		toolsRegistry.Register(tools.NewCronTool(cs))
 	}
 
-	maxParallelCalls := cfg.Agents.Defaults.RuntimeControl.ToolMaxParallelCalls
+	maxParallelCalls := cfg.Agents.Defaults.Execution.ToolMaxParallelCalls
 	if maxParallelCalls <= 0 {
 		maxParallelCalls = 4
 	}
 	parallelSafe := make(map[string]struct{})
-	for _, name := range cfg.Agents.Defaults.RuntimeControl.ToolParallelSafeNames {
+	for _, name := range cfg.Agents.Defaults.Execution.ToolParallelSafeNames {
 		trimmed := strings.TrimSpace(name)
 		if trimmed != "" {
 			parallelSafe[trimmed] = struct{}{}
@@ -313,14 +313,48 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		if sessionKey == "" {
 			sessionKey = fmt.Sprintf("subagent:%s", strings.TrimSpace(task.ID))
 		}
-		taskInput := task.Task
-		if p := strings.TrimSpace(task.SystemPrompt); p != "" {
-			taskInput = fmt.Sprintf("Role Profile Prompt:\n%s\n\nTask:\n%s", p, task.Task)
-		}
+		taskInput := loop.buildSubagentTaskInput(task)
 		return loop.ProcessDirectWithOptions(ctx, taskInput, sessionKey, task.OriginChannel, task.OriginChatID, task.MemoryNS, task.ToolAllowlist)
 	})
 
 	return loop
+}
+
+func (al *AgentLoop) buildSubagentTaskInput(task *tools.SubagentTask) string {
+	if task == nil {
+		return ""
+	}
+	taskText := strings.TrimSpace(task.Task)
+	if promptFile := strings.TrimSpace(task.SystemPromptFile); promptFile != "" {
+		if promptText := al.readSubagentPromptFile(promptFile); promptText != "" {
+			return fmt.Sprintf("Role Profile Policy (%s):\n%s\n\nTask:\n%s", promptFile, promptText, taskText)
+		}
+	}
+	if prompt := strings.TrimSpace(task.SystemPrompt); prompt != "" {
+		return fmt.Sprintf("Role Profile Prompt:\n%s\n\nTask:\n%s", prompt, taskText)
+	}
+	return taskText
+}
+
+func (al *AgentLoop) readSubagentPromptFile(relPath string) string {
+	if al == nil {
+		return ""
+	}
+	workspace := strings.TrimSpace(al.workspace)
+	relPath = strings.TrimSpace(relPath)
+	if workspace == "" || relPath == "" || filepath.IsAbs(relPath) {
+		return ""
+	}
+	fullPath := filepath.Clean(filepath.Join(workspace, relPath))
+	relToWorkspace, err := filepath.Rel(workspace, fullPath)
+	if err != nil || strings.HasPrefix(relToWorkspace, "..") {
+		return ""
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {

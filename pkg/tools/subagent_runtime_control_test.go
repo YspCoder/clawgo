@@ -3,11 +3,14 @@ package tools
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"clawgo/pkg/bus"
+	"clawgo/pkg/providers"
 )
 
 func TestSubagentSpawnEnforcesTaskQuota(t *testing.T) {
@@ -479,4 +482,59 @@ func waitSubagentDone(t *testing.T, manager *SubagentManager, timeout time.Durat
 	}
 	t.Fatalf("timeout waiting for subagent completion")
 	return nil
+}
+
+type captureProvider struct {
+	messages []providers.Message
+}
+
+func (p *captureProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, options map[string]interface{}) (*providers.LLMResponse, error) {
+	p.messages = append([]providers.Message(nil), messages...)
+	return &providers.LLMResponse{Content: "ok", FinishReason: "stop"}, nil
+}
+
+func (p *captureProvider) GetDefaultModel() string { return "test-model" }
+
+func TestSubagentUsesConfiguredSystemPromptFile(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "agents", "coder"), 0755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("workspace-policy"), 0644); err != nil {
+		t.Fatalf("write workspace AGENTS failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "agents", "coder", "AGENT.md"), []byte("coder-policy-from-file"), 0644); err != nil {
+		t.Fatalf("write coder AGENT failed: %v", err)
+	}
+	provider := &captureProvider{}
+	manager := NewSubagentManager(provider, workspace, nil, nil)
+	if _, err := manager.ProfileStore().Upsert(SubagentProfile{
+		AgentID:          "coder",
+		Status:           "active",
+		SystemPrompt:     "inline-fallback",
+		SystemPromptFile: "agents/coder/AGENT.md",
+	}); err != nil {
+		t.Fatalf("profile upsert failed: %v", err)
+	}
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "implement feature",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+	if len(provider.messages) == 0 {
+		t.Fatalf("expected provider to receive messages")
+	}
+	systemPrompt := provider.messages[0].Content
+	if !strings.Contains(systemPrompt, "coder-policy-from-file") {
+		t.Fatalf("expected system prompt to include configured file content, got: %s", systemPrompt)
+	}
+	if strings.Contains(systemPrompt, "inline-fallback") {
+		t.Fatalf("expected configured file content to take precedence over inline prompt, got: %s", systemPrompt)
+	}
 }

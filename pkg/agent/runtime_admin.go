@@ -125,16 +125,17 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 		items := make([]map[string]interface{}, 0, len(cfg.Agents.Subagents))
 		for agentID, subcfg := range cfg.Agents.Subagents {
 			items = append(items, map[string]interface{}{
-				"agent_id":         agentID,
-				"enabled":          subcfg.Enabled,
-				"type":             subcfg.Type,
-				"display_name":     subcfg.DisplayName,
-				"role":             subcfg.Role,
-				"description":      subcfg.Description,
-				"system_prompt":    subcfg.SystemPrompt,
-				"memory_namespace": subcfg.MemoryNamespace,
-				"tool_allowlist":   append([]string(nil), subcfg.Tools.Allowlist...),
-				"routing_keywords": routeKeywordsForRegistry(cfg.Agents.Router.Rules, agentID),
+				"agent_id":           agentID,
+				"enabled":            subcfg.Enabled,
+				"type":               subcfg.Type,
+				"display_name":       subcfg.DisplayName,
+				"role":               subcfg.Role,
+				"description":        subcfg.Description,
+				"system_prompt":      subcfg.SystemPrompt,
+				"system_prompt_file": subcfg.SystemPromptFile,
+				"memory_namespace":   subcfg.MemoryNamespace,
+				"tool_allowlist":     append([]string(nil), subcfg.Tools.Allowlist...),
+				"routing_keywords":   routeKeywordsForRegistry(cfg.Agents.Router.Rules, agentID),
 			})
 		}
 		sort.Slice(items, func(i, j int) bool {

@@ -122,11 +122,12 @@ func TestSubagentProfileStoreReadsProfilesFromRuntimeConfig(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.Agents.Subagents["coder"] = config.SubagentConfig{
-		Enabled:         true,
-		DisplayName:     "Code Agent",
-		Role:            "coding",
-		SystemPrompt:    "write code",
-		MemoryNamespace: "code-ns",
+		Enabled:          true,
+		DisplayName:      "Code Agent",
+		Role:             "coding",
+		SystemPrompt:     "write code",
+		SystemPromptFile: "agents/coder/AGENT.md",
+		MemoryNamespace:  "code-ns",
 		Tools: config.SubagentToolsConfig{
 			Allowlist: []string{"read_file", "shell"},
 		},
@@ -153,6 +154,9 @@ func TestSubagentProfileStoreReadsProfilesFromRuntimeConfig(t *testing.T) {
 	}
 	if profile.Name != "Code Agent" || profile.Role != "coding" {
 		t.Fatalf("unexpected profile fields: %+v", profile)
+	}
+	if profile.SystemPromptFile != "agents/coder/AGENT.md" {
+		t.Fatalf("expected system_prompt_file from config, got: %s", profile.SystemPromptFile)
 	}
 	if len(profile.ToolAllowlist) != 2 {
 		t.Fatalf("expected merged allowlist, got: %v", profile.ToolAllowlist)

@@ -14,36 +14,37 @@ import (
 )
 
 type SubagentTask struct {
-	ID             string                 `json:"id"`
-	Task           string                 `json:"task"`
-	Label          string                 `json:"label"`
-	Role           string                 `json:"role"`
-	AgentID        string                 `json:"agent_id"`
-	SessionKey     string                 `json:"session_key"`
-	MemoryNS       string                 `json:"memory_ns"`
-	SystemPrompt   string                 `json:"system_prompt,omitempty"`
-	ToolAllowlist  []string               `json:"tool_allowlist,omitempty"`
-	MaxRetries     int                    `json:"max_retries,omitempty"`
-	RetryBackoff   int                    `json:"retry_backoff,omitempty"`
-	TimeoutSec     int                    `json:"timeout_sec,omitempty"`
-	MaxTaskChars   int                    `json:"max_task_chars,omitempty"`
-	MaxResultChars int                    `json:"max_result_chars,omitempty"`
-	RetryCount     int                    `json:"retry_count,omitempty"`
-	PipelineID     string                 `json:"pipeline_id,omitempty"`
-	PipelineTask   string                 `json:"pipeline_task,omitempty"`
-	ThreadID       string                 `json:"thread_id,omitempty"`
-	CorrelationID  string                 `json:"correlation_id,omitempty"`
-	ParentRunID    string                 `json:"parent_run_id,omitempty"`
-	LastMessageID  string                 `json:"last_message_id,omitempty"`
-	WaitingReply   bool                   `json:"waiting_for_reply,omitempty"`
-	SharedState    map[string]interface{} `json:"shared_state,omitempty"`
-	OriginChannel  string                 `json:"origin_channel,omitempty"`
-	OriginChatID   string                 `json:"origin_chat_id,omitempty"`
-	Status         string                 `json:"status"`
-	Result         string                 `json:"result,omitempty"`
-	Steering       []string               `json:"steering,omitempty"`
-	Created        int64                  `json:"created"`
-	Updated        int64                  `json:"updated"`
+	ID               string                 `json:"id"`
+	Task             string                 `json:"task"`
+	Label            string                 `json:"label"`
+	Role             string                 `json:"role"`
+	AgentID          string                 `json:"agent_id"`
+	SessionKey       string                 `json:"session_key"`
+	MemoryNS         string                 `json:"memory_ns"`
+	SystemPrompt     string                 `json:"system_prompt,omitempty"`
+	SystemPromptFile string                 `json:"system_prompt_file,omitempty"`
+	ToolAllowlist    []string               `json:"tool_allowlist,omitempty"`
+	MaxRetries       int                    `json:"max_retries,omitempty"`
+	RetryBackoff     int                    `json:"retry_backoff,omitempty"`
+	TimeoutSec       int                    `json:"timeout_sec,omitempty"`
+	MaxTaskChars     int                    `json:"max_task_chars,omitempty"`
+	MaxResultChars   int                    `json:"max_result_chars,omitempty"`
+	RetryCount       int                    `json:"retry_count,omitempty"`
+	PipelineID       string                 `json:"pipeline_id,omitempty"`
+	PipelineTask     string                 `json:"pipeline_task,omitempty"`
+	ThreadID         string                 `json:"thread_id,omitempty"`
+	CorrelationID    string                 `json:"correlation_id,omitempty"`
+	ParentRunID      string                 `json:"parent_run_id,omitempty"`
+	LastMessageID    string                 `json:"last_message_id,omitempty"`
+	WaitingReply     bool                   `json:"waiting_for_reply,omitempty"`
+	SharedState      map[string]interface{} `json:"shared_state,omitempty"`
+	OriginChannel    string                 `json:"origin_channel,omitempty"`
+	OriginChatID     string                 `json:"origin_chat_id,omitempty"`
+	Status           string                 `json:"status"`
+	Result           string                 `json:"result,omitempty"`
+	Steering         []string               `json:"steering,omitempty"`
+	Created          int64                  `json:"created"`
+	Updated          int64                  `json:"updated"`
 }
 
 type SubagentManager struct {
@@ -163,6 +164,7 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 	}
 	memoryNS := agentID
 	systemPrompt := ""
+	systemPromptFile := ""
 	toolAllowlist := []string(nil)
 	maxRetries := 0
 	retryBackoff := 1000
@@ -190,6 +192,7 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 			memoryNS = ns
 		}
 		systemPrompt = strings.TrimSpace(profile.SystemPrompt)
+		systemPromptFile = strings.TrimSpace(profile.SystemPromptFile)
 		toolAllowlist = append([]string(nil), profile.ToolAllowlist...)
 		maxRetries = profile.MaxRetries
 		retryBackoff = profile.RetryBackoff
@@ -257,31 +260,32 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		}
 	}
 	subagentTask := &SubagentTask{
-		ID:             taskID,
-		Task:           task,
-		Label:          label,
-		Role:           role,
-		AgentID:        agentID,
-		SessionKey:     sessionKey,
-		MemoryNS:       memoryNS,
-		SystemPrompt:   systemPrompt,
-		ToolAllowlist:  toolAllowlist,
-		MaxRetries:     maxRetries,
-		RetryBackoff:   retryBackoff,
-		TimeoutSec:     timeoutSec,
-		MaxTaskChars:   maxTaskChars,
-		MaxResultChars: maxResultChars,
-		RetryCount:     0,
-		PipelineID:     pipelineID,
-		PipelineTask:   pipelineTask,
-		ThreadID:       threadID,
-		CorrelationID:  correlationID,
-		ParentRunID:    parentRunID,
-		OriginChannel:  originChannel,
-		OriginChatID:   originChatID,
-		Status:         "running",
-		Created:        now,
-		Updated:        now,
+		ID:               taskID,
+		Task:             task,
+		Label:            label,
+		Role:             role,
+		AgentID:          agentID,
+		SessionKey:       sessionKey,
+		MemoryNS:         memoryNS,
+		SystemPrompt:     systemPrompt,
+		SystemPromptFile: systemPromptFile,
+		ToolAllowlist:    toolAllowlist,
+		MaxRetries:       maxRetries,
+		RetryBackoff:     retryBackoff,
+		TimeoutSec:       timeoutSec,
+		MaxTaskChars:     maxTaskChars,
+		MaxResultChars:   maxResultChars,
+		RetryCount:       0,
+		PipelineID:       pipelineID,
+		PipelineTask:     pipelineTask,
+		ThreadID:         threadID,
+		CorrelationID:    correlationID,
+		ParentRunID:      parentRunID,
+		OriginChannel:    originChannel,
+		OriginChatID:     originChatID,
+		Status:           "running",
+		Created:          now,
+		Updated:          now,
 	}
 	taskCtx, cancel := context.WithCancel(ctx)
 	sm.tasks[taskID] = subagentTask
@@ -469,19 +473,7 @@ func (sm *SubagentManager) executeTaskOnce(ctx context.Context, task *SubagentTa
 		return "", fmt.Errorf("no llm provider configured for subagent execution")
 	}
 
-	systemPrompt := "You are a subagent. Follow workspace AGENTS.md and complete the task independently."
-	rolePrompt := strings.TrimSpace(task.SystemPrompt)
-	if ws := strings.TrimSpace(sm.workspace); ws != "" {
-		if data, err := os.ReadFile(filepath.Join(ws, "AGENTS.md")); err == nil {
-			txt := strings.TrimSpace(string(data))
-			if txt != "" {
-				systemPrompt = "Workspace policy (AGENTS.md):\n" + txt + "\n\nComplete the given task independently and report the result."
-			}
-		}
-	}
-	if rolePrompt != "" {
-		systemPrompt += "\n\nRole-specific profile prompt:\n" + rolePrompt
-	}
+	systemPrompt := sm.resolveSystemPrompt(task)
 	messages := []providers.Message{
 		{
 			Role:    "system",
@@ -508,6 +500,44 @@ func (sm *SubagentManager) executeTaskOnce(ctx context.Context, task *SubagentTa
 	}
 	sm.ackMessageStatuses(consumedIDs)
 	return response.Content, nil
+}
+
+func (sm *SubagentManager) resolveSystemPrompt(task *SubagentTask) string {
+	systemPrompt := "You are a subagent. Follow workspace AGENTS.md and complete the task independently."
+	workspacePrompt := sm.readWorkspacePromptFile("AGENTS.md")
+	if workspacePrompt != "" {
+		systemPrompt = "Workspace policy (AGENTS.md):\n" + workspacePrompt + "\n\nComplete the given task independently and report the result."
+	}
+	if task == nil {
+		return systemPrompt
+	}
+	if promptFile := strings.TrimSpace(task.SystemPromptFile); promptFile != "" {
+		if promptText := sm.readWorkspacePromptFile(promptFile); promptText != "" {
+			return systemPrompt + "\n\nSubagent policy (" + promptFile + "):\n" + promptText
+		}
+	}
+	if rolePrompt := strings.TrimSpace(task.SystemPrompt); rolePrompt != "" {
+		return systemPrompt + "\n\nRole-specific profile prompt:\n" + rolePrompt
+	}
+	return systemPrompt
+}
+
+func (sm *SubagentManager) readWorkspacePromptFile(relPath string) string {
+	ws := strings.TrimSpace(sm.workspace)
+	relPath = strings.TrimSpace(relPath)
+	if ws == "" || relPath == "" || filepath.IsAbs(relPath) {
+		return ""
+	}
+	fullPath := filepath.Clean(filepath.Join(ws, relPath))
+	relToWorkspace, err := filepath.Rel(ws, fullPath)
+	if err != nil || strings.HasPrefix(relToWorkspace, "..") {
+		return ""
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 type SubagentRunFunc func(ctx context.Context, task *SubagentTask) (string, error)

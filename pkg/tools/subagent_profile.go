@@ -16,21 +16,22 @@ import (
 )
 
 type SubagentProfile struct {
-	AgentID         string   `json:"agent_id"`
-	Name            string   `json:"name"`
-	Role            string   `json:"role,omitempty"`
-	SystemPrompt    string   `json:"system_prompt,omitempty"`
-	ToolAllowlist   []string `json:"tool_allowlist,omitempty"`
-	MemoryNamespace string   `json:"memory_namespace,omitempty"`
-	MaxRetries      int      `json:"max_retries,omitempty"`
-	RetryBackoff    int      `json:"retry_backoff_ms,omitempty"`
-	TimeoutSec      int      `json:"timeout_sec,omitempty"`
-	MaxTaskChars    int      `json:"max_task_chars,omitempty"`
-	MaxResultChars  int      `json:"max_result_chars,omitempty"`
-	Status          string   `json:"status"`
-	CreatedAt       int64    `json:"created_at"`
-	UpdatedAt       int64    `json:"updated_at"`
-	ManagedBy       string   `json:"managed_by,omitempty"`
+	AgentID          string   `json:"agent_id"`
+	Name             string   `json:"name"`
+	Role             string   `json:"role,omitempty"`
+	SystemPrompt     string   `json:"system_prompt,omitempty"`
+	SystemPromptFile string   `json:"system_prompt_file,omitempty"`
+	ToolAllowlist    []string `json:"tool_allowlist,omitempty"`
+	MemoryNamespace  string   `json:"memory_namespace,omitempty"`
+	MaxRetries       int      `json:"max_retries,omitempty"`
+	RetryBackoff     int      `json:"retry_backoff_ms,omitempty"`
+	TimeoutSec       int      `json:"timeout_sec,omitempty"`
+	MaxTaskChars     int      `json:"max_task_chars,omitempty"`
+	MaxResultChars   int      `json:"max_result_chars,omitempty"`
+	Status           string   `json:"status"`
+	CreatedAt        int64    `json:"created_at"`
+	UpdatedAt        int64    `json:"updated_at"`
+	ManagedBy        string   `json:"managed_by,omitempty"`
 }
 
 type SubagentProfileStore struct {
@@ -176,6 +177,7 @@ func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
 	}
 	p.Role = strings.TrimSpace(p.Role)
 	p.SystemPrompt = strings.TrimSpace(p.SystemPrompt)
+	p.SystemPromptFile = strings.TrimSpace(p.SystemPromptFile)
 	p.MemoryNamespace = normalizeSubagentIdentifier(p.MemoryNamespace)
 	if p.MemoryNamespace == "" {
 		p.MemoryNamespace = p.AgentID
@@ -343,19 +345,20 @@ func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentPro
 		status = "disabled"
 	}
 	return normalizeSubagentProfile(SubagentProfile{
-		AgentID:         agentID,
-		Name:            strings.TrimSpace(subcfg.DisplayName),
-		Role:            strings.TrimSpace(subcfg.Role),
-		SystemPrompt:    strings.TrimSpace(subcfg.SystemPrompt),
-		ToolAllowlist:   append([]string(nil), subcfg.Tools.Allowlist...),
-		MemoryNamespace: strings.TrimSpace(subcfg.MemoryNamespace),
-		MaxRetries:      subcfg.Runtime.MaxRetries,
-		RetryBackoff:    subcfg.Runtime.RetryBackoffMs,
-		TimeoutSec:      subcfg.Runtime.TimeoutSec,
-		MaxTaskChars:    subcfg.Runtime.MaxTaskChars,
-		MaxResultChars:  subcfg.Runtime.MaxResultChars,
-		Status:          status,
-		ManagedBy:       "config.json",
+		AgentID:          agentID,
+		Name:             strings.TrimSpace(subcfg.DisplayName),
+		Role:             strings.TrimSpace(subcfg.Role),
+		SystemPrompt:     strings.TrimSpace(subcfg.SystemPrompt),
+		SystemPromptFile: strings.TrimSpace(subcfg.SystemPromptFile),
+		ToolAllowlist:    append([]string(nil), subcfg.Tools.Allowlist...),
+		MemoryNamespace:  strings.TrimSpace(subcfg.MemoryNamespace),
+		MaxRetries:       subcfg.Runtime.MaxRetries,
+		RetryBackoff:     subcfg.Runtime.RetryBackoffMs,
+		TimeoutSec:       subcfg.Runtime.TimeoutSec,
+		MaxTaskChars:     subcfg.Runtime.MaxTaskChars,
+		MaxResultChars:   subcfg.Runtime.MaxResultChars,
+		Status:           status,
+		ManagedBy:        "config.json",
 	})
 }
 
@@ -382,11 +385,12 @@ func (t *SubagentProfileTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Unique subagent id, e.g. coder/writer/tester",
 			},
-			"name":             map[string]interface{}{"type": "string"},
-			"role":             map[string]interface{}{"type": "string"},
-			"system_prompt":    map[string]interface{}{"type": "string"},
-			"memory_namespace": map[string]interface{}{"type": "string"},
-			"status":           map[string]interface{}{"type": "string", "description": "active|disabled"},
+			"name":               map[string]interface{}{"type": "string"},
+			"role":               map[string]interface{}{"type": "string"},
+			"system_prompt":      map[string]interface{}{"type": "string"},
+			"system_prompt_file": map[string]interface{}{"type": "string"},
+			"memory_namespace":   map[string]interface{}{"type": "string"},
+			"status":             map[string]interface{}{"type": "string", "description": "active|disabled"},
 			"tool_allowlist": map[string]interface{}{
 				"type":        "array",
 				"description": "Tool allowlist entries. Supports tool names, '*'/'all', and grouped tokens like 'group:files_read' or '@pipeline'.",
@@ -450,18 +454,19 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 			return "subagent profile already exists", nil
 		}
 		p := SubagentProfile{
-			AgentID:         agentID,
-			Name:            stringArg(args, "name"),
-			Role:            stringArg(args, "role"),
-			SystemPrompt:    stringArg(args, "system_prompt"),
-			MemoryNamespace: stringArg(args, "memory_namespace"),
-			Status:          stringArg(args, "status"),
-			ToolAllowlist:   parseStringList(args["tool_allowlist"]),
-			MaxRetries:      profileIntArg(args, "max_retries"),
-			RetryBackoff:    profileIntArg(args, "retry_backoff_ms"),
-			TimeoutSec:      profileIntArg(args, "timeout_sec"),
-			MaxTaskChars:    profileIntArg(args, "max_task_chars"),
-			MaxResultChars:  profileIntArg(args, "max_result_chars"),
+			AgentID:          agentID,
+			Name:             stringArg(args, "name"),
+			Role:             stringArg(args, "role"),
+			SystemPrompt:     stringArg(args, "system_prompt"),
+			SystemPromptFile: stringArg(args, "system_prompt_file"),
+			MemoryNamespace:  stringArg(args, "memory_namespace"),
+			Status:           stringArg(args, "status"),
+			ToolAllowlist:    parseStringList(args["tool_allowlist"]),
+			MaxRetries:       profileIntArg(args, "max_retries"),
+			RetryBackoff:     profileIntArg(args, "retry_backoff_ms"),
+			TimeoutSec:       profileIntArg(args, "timeout_sec"),
+			MaxTaskChars:     profileIntArg(args, "max_task_chars"),
+			MaxResultChars:   profileIntArg(args, "max_result_chars"),
 		}
 		saved, err := t.store.Upsert(p)
 		if err != nil {
@@ -488,6 +493,9 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 		}
 		if _, ok := args["system_prompt"]; ok {
 			next.SystemPrompt = stringArg(args, "system_prompt")
+		}
+		if _, ok := args["system_prompt_file"]; ok {
+			next.SystemPromptFile = stringArg(args, "system_prompt_file")
 		}
 		if _, ok := args["memory_namespace"]; ok {
 			next.MemoryNamespace = stringArg(args, "memory_namespace")

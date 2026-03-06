@@ -34,15 +34,21 @@ type AgentsConfig struct {
 }
 
 type AgentRouterConfig struct {
-	Enabled              bool             `json:"enabled"`
-	MainAgentID          string           `json:"main_agent_id,omitempty"`
-	Strategy             string           `json:"strategy,omitempty"`
-	Rules                []AgentRouteRule `json:"rules,omitempty"`
-	AllowDirectAgentChat bool             `json:"allow_direct_agent_chat,omitempty"`
-	MaxHops              int              `json:"max_hops,omitempty"`
-	DefaultTimeoutSec    int              `json:"default_timeout_sec,omitempty"`
-	DefaultWaitReply     bool             `json:"default_wait_reply,omitempty"`
-	StickyThreadOwner    bool             `json:"sticky_thread_owner,omitempty"`
+	Enabled              bool                    `json:"enabled"`
+	MainAgentID          string                  `json:"main_agent_id,omitempty"`
+	Strategy             string                  `json:"strategy,omitempty"`
+	Policy               AgentRouterPolicyConfig `json:"policy,omitempty"`
+	Rules                []AgentRouteRule        `json:"rules,omitempty"`
+	AllowDirectAgentChat bool                    `json:"allow_direct_agent_chat,omitempty"`
+	MaxHops              int                     `json:"max_hops,omitempty"`
+	DefaultTimeoutSec    int                     `json:"default_timeout_sec,omitempty"`
+	DefaultWaitReply     bool                    `json:"default_wait_reply,omitempty"`
+	StickyThreadOwner    bool                    `json:"sticky_thread_owner,omitempty"`
+}
+
+type AgentRouterPolicyConfig struct {
+	IntentMaxInputChars  int `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
+	MaxRoundsWithoutUser int `json:"max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
 }
 
 type AgentRouteRule struct {
@@ -66,6 +72,7 @@ type SubagentConfig struct {
 	Role                  string                `json:"role,omitempty"`
 	Description           string                `json:"description,omitempty"`
 	SystemPrompt          string                `json:"system_prompt,omitempty"`
+	SystemPromptFile      string                `json:"system_prompt_file,omitempty"`
 	MemoryNamespace       string                `json:"memory_namespace,omitempty"`
 	AcceptFrom            []string              `json:"accept_from,omitempty"`
 	CanTalkTo             []string              `json:"can_talk_to,omitempty"`
@@ -94,15 +101,16 @@ type SubagentRuntimeConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace         string                  `json:"workspace" env:"CLAWGO_AGENTS_DEFAULTS_WORKSPACE"`
-	Proxy             string                  `json:"proxy" env:"CLAWGO_AGENTS_DEFAULTS_PROXY"`
-	ProxyFallbacks    []string                `json:"proxy_fallbacks" env:"CLAWGO_AGENTS_DEFAULTS_PROXY_FALLBACKS"`
-	MaxTokens         int                     `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature       float64                 `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations int                     `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	Heartbeat         HeartbeatConfig         `json:"heartbeat"`
-	ContextCompaction ContextCompactionConfig `json:"context_compaction"`
-	RuntimeControl    RuntimeControlConfig    `json:"runtime_control"`
+	Workspace         string                    `json:"workspace" env:"CLAWGO_AGENTS_DEFAULTS_WORKSPACE"`
+	Proxy             string                    `json:"proxy" env:"CLAWGO_AGENTS_DEFAULTS_PROXY"`
+	ProxyFallbacks    []string                  `json:"proxy_fallbacks" env:"CLAWGO_AGENTS_DEFAULTS_PROXY_FALLBACKS"`
+	MaxTokens         int                       `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature       float64                   `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations int                       `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	Heartbeat         HeartbeatConfig           `json:"heartbeat"`
+	ContextCompaction ContextCompactionConfig   `json:"context_compaction"`
+	Execution         AgentExecutionConfig      `json:"execution"`
+	SummaryPolicy     SystemSummaryPolicyConfig `json:"summary_policy"`
 }
 
 type HeartbeatConfig struct {
@@ -112,14 +120,11 @@ type HeartbeatConfig struct {
 	PromptTemplate string `json:"prompt_template" env:"CLAWGO_AGENTS_DEFAULTS_HEARTBEAT_PROMPT_TEMPLATE"`
 }
 
-type RuntimeControlConfig struct {
-	IntentMaxInputChars           int                       `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
-	AutoLearnMaxRoundsWithoutUser int                       `json:"autolearn_max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
-	RunStateTTLSeconds            int                       `json:"run_state_ttl_seconds" env:"CLAWGO_RUN_STATE_TTL_SECONDS"`
-	RunStateMax                   int                       `json:"run_state_max" env:"CLAWGO_RUN_STATE_MAX"`
-	ToolParallelSafeNames         []string                  `json:"tool_parallel_safe_names"`
-	ToolMaxParallelCalls          int                       `json:"tool_max_parallel_calls"`
-	SystemSummary                 SystemSummaryPolicyConfig `json:"system_summary"`
+type AgentExecutionConfig struct {
+	RunStateTTLSeconds    int      `json:"run_state_ttl_seconds" env:"CLAWGO_RUN_STATE_TTL_SECONDS"`
+	RunStateMax           int      `json:"run_state_max" env:"CLAWGO_RUN_STATE_MAX"`
+	ToolParallelSafeNames []string `json:"tool_parallel_safe_names"`
+	ToolMaxParallelCalls  int      `json:"tool_max_parallel_calls"`
 }
 
 type SystemSummaryPolicyConfig struct {
@@ -397,28 +402,30 @@ func DefaultConfig() *Config {
 					MaxSummaryChars:    6000,
 					MaxTranscriptChars: 20000,
 				},
-				RuntimeControl: RuntimeControlConfig{
-					IntentMaxInputChars:           1200,
-					AutoLearnMaxRoundsWithoutUser: 200,
-					RunStateTTLSeconds:            1800,
-					RunStateMax:                   500,
-					ToolParallelSafeNames:         []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"},
-					ToolMaxParallelCalls:          2,
-					SystemSummary: SystemSummaryPolicyConfig{
-						Marker:          "## System Task Summary",
-						CompletedPrefix: "- Completed:",
-						ChangesPrefix:   "- Changes:",
-						OutcomePrefix:   "- Outcome:",
-						CompletedTitle:  "Completed Actions",
-						ChangesTitle:    "Change Summaries",
-						OutcomesTitle:   "Execution Outcomes",
-					},
+				Execution: AgentExecutionConfig{
+					RunStateTTLSeconds:    1800,
+					RunStateMax:           500,
+					ToolParallelSafeNames: []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"},
+					ToolMaxParallelCalls:  2,
+				},
+				SummaryPolicy: SystemSummaryPolicyConfig{
+					Marker:          "## System Task Summary",
+					CompletedPrefix: "- Completed:",
+					ChangesPrefix:   "- Changes:",
+					OutcomePrefix:   "- Outcome:",
+					CompletedTitle:  "Completed Actions",
+					ChangesTitle:    "Change Summaries",
+					OutcomesTitle:   "Execution Outcomes",
 				},
 			},
 			Router: AgentRouterConfig{
-				Enabled:              false,
-				MainAgentID:          "main",
-				Strategy:             "rules_first",
+				Enabled:     false,
+				MainAgentID: "main",
+				Strategy:    "rules_first",
+				Policy: AgentRouterPolicyConfig{
+					IntentMaxInputChars:  1200,
+					MaxRoundsWithoutUser: 200,
+				},
 				Rules:                []AgentRouteRule{},
 				AllowDirectAgentChat: false,
 				MaxHops:              6,

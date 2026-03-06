@@ -42,3 +42,20 @@ func TestValidateSubagentsRejectsUnknownPeer(t *testing.T) {
 		t.Fatalf("expected validation errors")
 	}
 }
+
+func TestValidateSubagentsRejectsAbsolutePromptFile(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Agents.Subagents["coder"] = SubagentConfig{
+		Enabled:          true,
+		SystemPromptFile: "/tmp/AGENT.md",
+		Runtime: SubagentRuntimeConfig{
+			Proxy: "proxy",
+		},
+	}
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}

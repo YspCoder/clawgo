@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -17,43 +18,38 @@ func Validate(cfg *Config) []error {
 	if cfg.Agents.Defaults.MaxToolIterations <= 0 {
 		errs = append(errs, fmt.Errorf("agents.defaults.max_tool_iterations must be > 0"))
 	}
-	rc := cfg.Agents.Defaults.RuntimeControl
-	if rc.IntentMaxInputChars < 200 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.intent_max_input_chars must be >= 200"))
+	exec := cfg.Agents.Defaults.Execution
+	if exec.RunStateTTLSeconds < 60 {
+		errs = append(errs, fmt.Errorf("agents.defaults.execution.run_state_ttl_seconds must be >= 60"))
 	}
-	if rc.AutoLearnMaxRoundsWithoutUser <= 0 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.autolearn_max_rounds_without_user must be > 0"))
+	if exec.RunStateMax <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.execution.run_state_max must be > 0"))
 	}
-	if rc.RunStateTTLSeconds < 60 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.run_state_ttl_seconds must be >= 60"))
+	errs = append(errs, validateNonEmptyStringList("agents.defaults.execution.tool_parallel_safe_names", exec.ToolParallelSafeNames)...)
+	if exec.ToolMaxParallelCalls <= 0 {
+		errs = append(errs, fmt.Errorf("agents.defaults.execution.tool_max_parallel_calls must be > 0"))
 	}
-	if rc.RunStateMax <= 0 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.run_state_max must be > 0"))
+	summary := cfg.Agents.Defaults.SummaryPolicy
+	if strings.TrimSpace(summary.Marker) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.summary_policy.marker must be non-empty"))
 	}
-	errs = append(errs, validateNonEmptyStringList("agents.defaults.runtime_control.tool_parallel_safe_names", rc.ToolParallelSafeNames)...)
-	if rc.ToolMaxParallelCalls <= 0 {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.tool_max_parallel_calls must be > 0"))
+	if strings.TrimSpace(summary.CompletedPrefix) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.summary_policy.completed_prefix must be non-empty"))
 	}
-	if strings.TrimSpace(rc.SystemSummary.Marker) == "" {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.marker must be non-empty"))
+	if strings.TrimSpace(summary.ChangesPrefix) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.summary_policy.changes_prefix must be non-empty"))
 	}
-	if strings.TrimSpace(rc.SystemSummary.CompletedPrefix) == "" {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.completed_prefix must be non-empty"))
+	if strings.TrimSpace(summary.OutcomePrefix) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.summary_policy.outcome_prefix must be non-empty"))
 	}
-	if strings.TrimSpace(rc.SystemSummary.ChangesPrefix) == "" {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.changes_prefix must be non-empty"))
+	if strings.TrimSpace(summary.CompletedTitle) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.summary_policy.completed_title must be non-empty"))
 	}
-	if strings.TrimSpace(rc.SystemSummary.OutcomePrefix) == "" {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.outcome_prefix must be non-empty"))
+	if strings.TrimSpace(summary.ChangesTitle) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.summary_policy.changes_title must be non-empty"))
 	}
-	if strings.TrimSpace(rc.SystemSummary.CompletedTitle) == "" {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.completed_title must be non-empty"))
-	}
-	if strings.TrimSpace(rc.SystemSummary.ChangesTitle) == "" {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.changes_title must be non-empty"))
-	}
-	if strings.TrimSpace(rc.SystemSummary.OutcomesTitle) == "" {
-		errs = append(errs, fmt.Errorf("agents.defaults.runtime_control.system_summary.outcomes_title must be non-empty"))
+	if strings.TrimSpace(summary.OutcomesTitle) == "" {
+		errs = append(errs, fmt.Errorf("agents.defaults.summary_policy.outcomes_title must be non-empty"))
 	}
 	hb := cfg.Agents.Defaults.Heartbeat
 	if hb.Enabled {
@@ -219,6 +215,12 @@ func Validate(cfg *Config) []error {
 func validateAgentRouter(cfg *Config) []error {
 	router := cfg.Agents.Router
 	var errs []error
+	if router.Policy.IntentMaxInputChars < 200 {
+		errs = append(errs, fmt.Errorf("agents.router.policy.intent_max_input_chars must be >= 200"))
+	}
+	if router.Policy.MaxRoundsWithoutUser <= 0 {
+		errs = append(errs, fmt.Errorf("agents.router.policy.max_rounds_without_user must be > 0"))
+	}
 	if strings.TrimSpace(router.Strategy) != "" {
 		switch strings.TrimSpace(router.Strategy) {
 		case "rules_first", "round_robin", "manual":
@@ -319,6 +321,14 @@ func validateSubagents(cfg *Config) []error {
 		}
 		if raw.Tools.MaxParallelCalls < 0 {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.tools.max_parallel_calls must be >= 0", id))
+		}
+		if promptFile := strings.TrimSpace(raw.SystemPromptFile); promptFile != "" {
+			if filepath.IsAbs(promptFile) {
+				errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file must be relative", id))
+			}
+			if cleaned := filepath.Clean(promptFile); strings.HasPrefix(cleaned, "..") {
+				errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file must stay within workspace", id))
+			}
 		}
 		if proxy := strings.TrimSpace(raw.Runtime.Proxy); proxy != "" && !providerExists(cfg, proxy) {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.proxy %q not found in providers", id, proxy))
