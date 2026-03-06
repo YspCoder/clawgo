@@ -88,8 +88,6 @@ func (cb *ContextBuilder) buildToolsSection() string {
 		sb.WriteString(s)
 		sb.WriteString("\n")
 	}
-	sb.WriteString("\nWhen creating a new subagent or changing config.json agent definitions, draft first and wait for explicit user confirmation before persisting changes.\n")
-
 	return sb.String()
 }
 

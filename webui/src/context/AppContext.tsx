@@ -14,6 +14,8 @@ interface AppContextType {
   setCfgRaw: (raw: string) => void;
   nodes: string;
   setNodes: (nodes: string) => void;
+  nodeTrees: string;
+  setNodeTrees: (trees: string) => void;
   cron: CronJob[];
   setCron: (cron: CronJob[]) => void;
   skills: Skill[];
@@ -53,6 +55,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cfg, setCfg] = useState<Cfg>({});
   const [cfgRaw, setCfgRaw] = useState('{}');
   const [nodes, setNodes] = useState('[]');
+  const [nodeTrees, setNodeTrees] = useState('[]');
   const [cron, setCron] = useState<CronJob[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [clawhubInstalled, setClawhubInstalled] = useState(false);
@@ -99,6 +102,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!r.ok) throw new Error('Failed to load nodes');
       const j = await r.json();
       setNodes(JSON.stringify(j.nodes || [], null, 2));
+      setNodeTrees(JSON.stringify(j.trees || [], null, 2));
       setIsGatewayOnline(true);
     } catch (e) {
       setIsGatewayOnline(false);
@@ -167,6 +171,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     refreshAll();
     const interval = setInterval(() => {
+      loadConfig();
       refreshCron();
       refreshNodes();
       refreshSkills();
@@ -174,12 +179,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       refreshVersion();
     }, 10000);
     return () => clearInterval(interval);
-  }, [token, refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion]);
+  }, [token, refreshAll, loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion]);
 
   return (
     <AppContext.Provider value={{
       token, setToken, sidebarOpen, setSidebarOpen, isGatewayOnline, setIsGatewayOnline,
-      cfg, setCfg, cfgRaw, setCfgRaw, nodes, setNodes,
+      cfg, setCfg, cfgRaw, setCfgRaw, nodes, setNodes, nodeTrees, setNodeTrees,
       cron, setCron, skills, setSkills, clawhubInstalled, clawhubPath,
       sessions, setSessions,
       refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion, loadConfig,

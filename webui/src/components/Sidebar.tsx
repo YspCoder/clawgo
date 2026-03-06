@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, Settings, Clock, Server, Terminal, Zap, FolderOpen, ClipboardList, BrainCircuit, Hash, Bot, Workflow, Boxes } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Settings, Clock, Terminal, Zap, FolderOpen, ClipboardList, BrainCircuit, Hash, Bot, Workflow, Boxes } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import NavItem from './NavItem';
@@ -14,6 +14,7 @@ const Sidebar: React.FC = () => {
       items: [
         { icon: <LayoutDashboard className="w-5 h-5" />, label: t('dashboard'), to: '/' },
         { icon: <MessageSquare className="w-5 h-5" />, label: t('chat'), to: '/chat' },
+        { icon: <Boxes className="w-5 h-5" />, label: t('subagentsRuntime'), to: '/subagents' },
         { icon: <Terminal className="w-5 h-5" />, label: t('logs'), to: '/logs' },
         { icon: <Hash className="w-5 h-5" />, label: t('logCodes'), to: '/log-codes' },
         { icon: <Zap className="w-5 h-5" />, label: t('skills'), to: '/skills' },
@@ -24,10 +25,8 @@ const Sidebar: React.FC = () => {
       items: [
         { icon: <Settings className="w-5 h-5" />, label: t('config'), to: '/config' },
         { icon: <Clock className="w-5 h-5" />, label: t('cronJobs'), to: '/cron' },
-        { icon: <Server className="w-5 h-5" />, label: t('nodes'), to: '/nodes' },
         { icon: <FolderOpen className="w-5 h-5" />, label: t('memory'), to: '/memory' },
         { icon: <Bot className="w-5 h-5" />, label: t('subagentProfiles'), to: '/subagent-profiles' },
-        { icon: <Boxes className="w-5 h-5" />, label: t('subagentsRuntime'), to: '/subagents' },
         { icon: <Workflow className="w-5 h-5" />, label: t('pipelines'), to: '/pipelines' },
       ],
     },

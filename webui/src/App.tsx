@@ -7,7 +7,6 @@ import Dashboard from './pages/Dashboard';
 import Chat from './pages/Chat';
 import Config from './pages/Config';
 import Cron from './pages/Cron';
-import Nodes from './pages/Nodes';
 import Logs from './pages/Logs';
 import Skills from './pages/Skills';
 import Memory from './pages/Memory';
@@ -32,7 +31,6 @@ export default function App() {
               <Route path="skills" element={<Skills />} />
               <Route path="config" element={<Config />} />
               <Route path="cron" element={<Cron />} />
-              <Route path="nodes" element={<Nodes />} />
               <Route path="memory" element={<Memory />} />
               <Route path="task-audit" element={<TaskAudit />} />
               <Route path="ekg" element={<EKG />} />

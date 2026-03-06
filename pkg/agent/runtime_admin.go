@@ -112,42 +112,66 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 			"reply":  reply,
 			"merged": router.MergeResults([]*tools.RouterReply{reply}),
 		}, nil
-	case "draft_config_subagent":
-		description := runtimeStringArg(args, "description")
-		if description == "" {
-			return nil, fmt.Errorf("description is required")
-		}
-		draft := tools.DraftConfigSubagent(description, runtimeStringArg(args, "agent_id_hint"))
-		return map[string]interface{}{"draft": draft}, nil
 	case "registry":
 		cfg := runtimecfg.Get()
-		if cfg == nil {
-			return map[string]interface{}{"items": []map[string]interface{}{}}, nil
-		}
-		items := make([]map[string]interface{}, 0, len(cfg.Agents.Subagents))
-		for agentID, subcfg := range cfg.Agents.Subagents {
-			promptFileFound := false
-			if strings.TrimSpace(subcfg.SystemPromptFile) != "" {
-				if absPath, err := al.resolvePromptFilePath(subcfg.SystemPromptFile); err == nil {
-					if info, statErr := os.Stat(absPath); statErr == nil && !info.IsDir() {
-						promptFileFound = true
+		items := make([]map[string]interface{}, 0)
+		if cfg != nil {
+			items = make([]map[string]interface{}, 0, len(cfg.Agents.Subagents))
+			for agentID, subcfg := range cfg.Agents.Subagents {
+				promptFileFound := false
+				if strings.TrimSpace(subcfg.SystemPromptFile) != "" {
+					if absPath, err := al.resolvePromptFilePath(subcfg.SystemPromptFile); err == nil {
+						if info, statErr := os.Stat(absPath); statErr == nil && !info.IsDir() {
+							promptFileFound = true
+						}
 					}
 				}
+				items = append(items, map[string]interface{}{
+					"agent_id":           agentID,
+					"enabled":            subcfg.Enabled,
+					"type":               subcfg.Type,
+					"transport":          fallbackString(strings.TrimSpace(subcfg.Transport), "local"),
+					"node_id":            strings.TrimSpace(subcfg.NodeID),
+					"parent_agent_id":    strings.TrimSpace(subcfg.ParentAgentID),
+					"display_name":       subcfg.DisplayName,
+					"role":               subcfg.Role,
+					"description":        subcfg.Description,
+					"system_prompt":      subcfg.SystemPrompt,
+					"system_prompt_file": subcfg.SystemPromptFile,
+					"prompt_file_found":  promptFileFound,
+					"memory_namespace":   subcfg.MemoryNamespace,
+					"tool_allowlist":     append([]string(nil), subcfg.Tools.Allowlist...),
+					"routing_keywords":   routeKeywordsForRegistry(cfg.Agents.Router.Rules, agentID),
+					"managed_by":         "config.json",
+				})
 			}
-			items = append(items, map[string]interface{}{
-				"agent_id":           agentID,
-				"enabled":            subcfg.Enabled,
-				"type":               subcfg.Type,
-				"display_name":       subcfg.DisplayName,
-				"role":               subcfg.Role,
-				"description":        subcfg.Description,
-				"system_prompt":      subcfg.SystemPrompt,
-				"system_prompt_file": subcfg.SystemPromptFile,
-				"prompt_file_found":  promptFileFound,
-				"memory_namespace":   subcfg.MemoryNamespace,
-				"tool_allowlist":     append([]string(nil), subcfg.Tools.Allowlist...),
-				"routing_keywords":   routeKeywordsForRegistry(cfg.Agents.Router.Rules, agentID),
-			})
+		}
+		if store := sm.ProfileStore(); store != nil {
+			if profiles, err := store.List(); err == nil {
+				for _, profile := range profiles {
+					if strings.TrimSpace(profile.ManagedBy) != "node_registry" {
+						continue
+					}
+					items = append(items, map[string]interface{}{
+						"agent_id":           profile.AgentID,
+						"enabled":            strings.EqualFold(strings.TrimSpace(profile.Status), "active"),
+						"type":               "node_branch",
+						"transport":          profile.Transport,
+						"node_id":            profile.NodeID,
+						"parent_agent_id":    profile.ParentAgentID,
+						"display_name":       profile.Name,
+						"role":               profile.Role,
+						"description":        "Node-registered remote main agent branch",
+						"system_prompt":      profile.SystemPrompt,
+						"system_prompt_file": profile.SystemPromptFile,
+						"prompt_file_found":  false,
+						"memory_namespace":   profile.MemoryNamespace,
+						"tool_allowlist":     append([]string(nil), profile.ToolAllowlist...),
+						"routing_keywords":   []string{},
+						"managed_by":         profile.ManagedBy,
+					})
+				}
+			}
 		}
 		sort.Slice(items, func(i, j int) bool {
 			left, _ := items[i]["agent_id"].(string)
@@ -155,34 +179,6 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 			return left < right
 		})
 		return map[string]interface{}{"items": items}, nil
-	case "pending_drafts":
-		items := make([]map[string]interface{}, 0, len(al.pendingSubagentDraft))
-		for sessionKey, draft := range al.pendingSubagentDraft {
-			items = append(items, map[string]interface{}{
-				"session_key": sessionKey,
-				"draft":       cloneDraftMap(draft),
-			})
-		}
-		sort.Slice(items, func(i, j int) bool {
-			left, _ := items[i]["session_key"].(string)
-			right, _ := items[j]["session_key"].(string)
-			return left < right
-		})
-		return map[string]interface{}{"items": items}, nil
-	case "clear_pending_draft":
-		sessionKey := fallbackString(runtimeStringArg(args, "session_key"), "main")
-		if al.loadPendingSubagentDraft(sessionKey) == nil {
-			return map[string]interface{}{"ok": false, "found": false}, nil
-		}
-		al.deletePendingSubagentDraft(sessionKey)
-		return map[string]interface{}{"ok": true, "found": true, "session_key": sessionKey}, nil
-	case "confirm_pending_draft":
-		sessionKey := fallbackString(runtimeStringArg(args, "session_key"), "main")
-		msg, handled, err := al.confirmPendingSubagentDraft(sessionKey)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]interface{}{"ok": handled, "found": handled, "session_key": sessionKey, "message": msg}, nil
 	case "set_config_subagent_enabled":
 		agentID := runtimeStringArg(args, "agent_id")
 		if agentID == "" {

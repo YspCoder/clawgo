@@ -134,6 +134,22 @@
           "retry_backoff_ms": 1000,
           "max_parallel_runs": 2
         }
+      },
+      "node.edge-dev.main": {
+        "enabled": true,
+        "type": "worker",
+        "transport": "node",
+        "node_id": "edge-dev",
+        "parent_agent_id": "main",
+        "display_name": "Edge Dev Main Agent",
+        "role": "remote_main",
+        "memory_namespace": "node.edge-dev.main",
+        "runtime": {
+          "timeout_sec": 1200,
+          "max_retries": 1,
+          "retry_backoff_ms": 1000,
+          "max_parallel_runs": 1
+        }
       }
     }
   },

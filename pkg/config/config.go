@@ -68,6 +68,9 @@ type AgentCommunicationConfig struct {
 type SubagentConfig struct {
 	Enabled               bool                  `json:"enabled"`
 	Type                  string                `json:"type,omitempty"`
+	Transport             string                `json:"transport,omitempty"`
+	NodeID                string                `json:"node_id,omitempty"`
+	ParentAgentID         string                `json:"parent_agent_id,omitempty"`
 	DisplayName           string                `json:"display_name,omitempty"`
 	Role                  string                `json:"role,omitempty"`
 	Description           string                `json:"description,omitempty"`

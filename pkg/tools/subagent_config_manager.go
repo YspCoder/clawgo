@@ -68,6 +68,15 @@ func UpsertConfigSubagent(configPath string, args map[string]interface{}) (map[s
 	if v := stringArgFromMap(args, "role"); v != "" {
 		subcfg.Role = v
 	}
+	if v := stringArgFromMap(args, "transport"); v != "" {
+		subcfg.Transport = v
+	}
+	if v := stringArgFromMap(args, "node_id"); v != "" {
+		subcfg.NodeID = v
+	}
+	if v := stringArgFromMap(args, "parent_agent_id"); v != "" {
+		subcfg.ParentAgentID = v
+	}
 	if v := stringArgFromMap(args, "display_name"); v != "" {
 		subcfg.DisplayName = v
 	}
@@ -91,7 +100,10 @@ func UpsertConfigSubagent(configPath string, args map[string]interface{}) (map[s
 	} else if strings.TrimSpace(subcfg.Type) == "" {
 		subcfg.Type = "worker"
 	}
-	if subcfg.Enabled && strings.TrimSpace(subcfg.SystemPromptFile) == "" {
+	if strings.TrimSpace(subcfg.Transport) == "" {
+		subcfg.Transport = "local"
+	}
+	if subcfg.Enabled && strings.TrimSpace(subcfg.Transport) != "node" && strings.TrimSpace(subcfg.SystemPromptFile) == "" {
 		return nil, fmt.Errorf("system_prompt_file is required for enabled agent %q", agentID)
 	}
 	cfg.Agents.Subagents[agentID] = subcfg

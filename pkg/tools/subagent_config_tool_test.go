@@ -10,28 +10,6 @@ import (
 	"clawgo/pkg/runtimecfg"
 )
 
-func TestSubagentConfigToolDraft(t *testing.T) {
-	tool := NewSubagentConfigTool("")
-	out, err := tool.Execute(context.Background(), map[string]interface{}{
-		"action":      "draft",
-		"description": "创建一个负责回归测试和验证修复结果的子代理",
-	})
-	if err != nil {
-		t.Fatalf("draft failed: %v", err)
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("unmarshal payload failed: %v", err)
-	}
-	draft, ok := payload["draft"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected draft map, got %#v", payload["draft"])
-	}
-	if draft["agent_id"] == "" || draft["role"] == "" {
-		t.Fatalf("expected draft agent_id and role, got %#v", draft)
-	}
-}
-
 func TestSubagentConfigToolUpsert(t *testing.T) {
 	workspace := t.TempDir()
 	configPath := filepath.Join(workspace, "config.json")

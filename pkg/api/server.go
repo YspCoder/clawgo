@@ -636,7 +636,8 @@ func (s *Server) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
 		if !matched {
 			list = append([]nodes.NodeInfo{local}, list...)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list})
+		trees := s.buildNodeAgentTrees(r.Context(), list)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list, "trees": trees})
 	case http.MethodPost:
 		var body struct {
 			Action string `json:"action"`
@@ -661,6 +662,207 @@ func (s *Server) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) buildNodeAgentTrees(ctx context.Context, nodeList []nodes.NodeInfo) []map[string]interface{} {
+	trees := make([]map[string]interface{}, 0, len(nodeList))
+	localRegistry := s.fetchRegistryItems(ctx)
+	for _, node := range nodeList {
+		nodeID := strings.TrimSpace(node.ID)
+		items := []map[string]interface{}{}
+		source := "unavailable"
+		readonly := true
+		if nodeID == "local" {
+			items = localRegistry
+			source = "local_runtime"
+			readonly = false
+		} else if remoteItems, err := s.fetchRemoteNodeRegistry(ctx, node); err == nil {
+			items = remoteItems
+			source = "remote_webui"
+		}
+		trees = append(trees, map[string]interface{}{
+			"node_id":   nodeID,
+			"node_name": fallbackNodeName(node),
+			"online":    node.Online,
+			"source":    source,
+			"readonly":  readonly,
+			"root":      buildAgentTreeRoot(nodeID, items),
+		})
+	}
+	return trees
+}
+
+func (s *Server) fetchRegistryItems(ctx context.Context) []map[string]interface{} {
+	if s == nil || s.onSubagents == nil {
+		return nil
+	}
+	result, err := s.onSubagents(ctx, "registry", nil)
+	if err != nil {
+		return nil
+	}
+	payload, ok := result.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	rawItems, ok := payload["items"].([]map[string]interface{})
+	if ok {
+		return rawItems
+	}
+	list, ok := payload["items"].([]interface{})
+	if !ok {
+		return nil
+	}
+	items := make([]map[string]interface{}, 0, len(list))
+	for _, item := range list {
+		row, ok := item.(map[string]interface{})
+		if ok {
+			items = append(items, row)
+		}
+	}
+	return items
+}
+
+func (s *Server) fetchRemoteNodeRegistry(ctx context.Context, node nodes.NodeInfo) ([]map[string]interface{}, error) {
+	baseURL := nodeWebUIBaseURL(node)
+	if baseURL == "" {
+		return nil, fmt.Errorf("node %s endpoint missing", strings.TrimSpace(node.ID))
+	}
+	reqURL := baseURL + "/webui/api/subagents_runtime?action=registry"
+	if tok := strings.TrimSpace(node.Token); tok != "" {
+		reqURL += "&token=" + url.QueryEscape(tok)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("remote status %d", resp.StatusCode)
+	}
+	var payload struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Items []map[string]interface{} `json:"items"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	return payload.Result.Items, nil
+}
+
+func nodeWebUIBaseURL(node nodes.NodeInfo) string {
+	endpoint := strings.TrimSpace(node.Endpoint)
+	if endpoint == "" || strings.EqualFold(endpoint, "gateway") {
+		return ""
+	}
+	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
+		return strings.TrimRight(endpoint, "/")
+	}
+	return "http://" + strings.TrimRight(endpoint, "/")
+}
+
+func fallbackNodeName(node nodes.NodeInfo) string {
+	if name := strings.TrimSpace(node.Name); name != "" {
+		return name
+	}
+	if id := strings.TrimSpace(node.ID); id != "" {
+		return id
+	}
+	return "node"
+}
+
+func buildAgentTreeRoot(nodeID string, items []map[string]interface{}) map[string]interface{} {
+	rootID := "main"
+	for _, item := range items {
+		if strings.TrimSpace(stringFromMap(item, "type")) == "router" && strings.TrimSpace(stringFromMap(item, "agent_id")) != "" {
+			rootID = strings.TrimSpace(stringFromMap(item, "agent_id"))
+			break
+		}
+	}
+	nodesByID := make(map[string]map[string]interface{}, len(items)+1)
+	for _, item := range items {
+		id := strings.TrimSpace(stringFromMap(item, "agent_id"))
+		if id == "" {
+			continue
+		}
+		nodesByID[id] = map[string]interface{}{
+			"agent_id":        id,
+			"display_name":    stringFromMap(item, "display_name"),
+			"role":            stringFromMap(item, "role"),
+			"type":            stringFromMap(item, "type"),
+			"transport":       fallbackString(stringFromMap(item, "transport"), "local"),
+			"managed_by":      stringFromMap(item, "managed_by"),
+			"node_id":         stringFromMap(item, "node_id"),
+			"parent_agent_id": stringFromMap(item, "parent_agent_id"),
+			"enabled":         boolFromMap(item, "enabled"),
+			"children":        []map[string]interface{}{},
+		}
+	}
+	root, ok := nodesByID[rootID]
+	if !ok {
+		root = map[string]interface{}{
+			"agent_id":     rootID,
+			"display_name": "Main Agent",
+			"role":         "orchestrator",
+			"type":         "router",
+			"transport":    "local",
+			"managed_by":   "derived",
+			"enabled":      true,
+			"children":     []map[string]interface{}{},
+		}
+		nodesByID[rootID] = root
+	}
+	for _, item := range items {
+		id := strings.TrimSpace(stringFromMap(item, "agent_id"))
+		if id == "" || id == rootID {
+			continue
+		}
+		parentID := strings.TrimSpace(stringFromMap(item, "parent_agent_id"))
+		if parentID == "" {
+			parentID = rootID
+		}
+		parent, ok := nodesByID[parentID]
+		if !ok {
+			parent = root
+		}
+		parent["children"] = append(parent["children"].([]map[string]interface{}), nodesByID[id])
+	}
+	return map[string]interface{}{
+		"node_id":   nodeID,
+		"agent_id":  root["agent_id"],
+		"root":      root,
+		"child_cnt": len(root["children"].([]map[string]interface{})),
+	}
+}
+
+func stringFromMap(item map[string]interface{}, key string) string {
+	if item == nil {
+		return ""
+	}
+	v, _ := item[key].(string)
+	return strings.TrimSpace(v)
+}
+
+func boolFromMap(item map[string]interface{}, key string) bool {
+	if item == nil {
+		return false
+	}
+	v, _ := item[key].(bool)
+	return v
+}
+
+func fallbackString(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		return value
+	}
+	return strings.TrimSpace(fallback)
 }
 
 func (s *Server) handleWebUICron(w http.ResponseWriter, r *http.Request) {

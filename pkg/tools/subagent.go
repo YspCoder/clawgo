@@ -19,6 +19,9 @@ type SubagentTask struct {
 	Label            string                 `json:"label"`
 	Role             string                 `json:"role"`
 	AgentID          string                 `json:"agent_id"`
+	Transport        string                 `json:"transport,omitempty"`
+	NodeID           string                 `json:"node_id,omitempty"`
+	ParentAgentID    string                 `json:"parent_agent_id,omitempty"`
 	SessionKey       string                 `json:"session_key"`
 	MemoryNS         string                 `json:"memory_ns"`
 	SystemPrompt     string                 `json:"system_prompt,omitempty"`
@@ -165,6 +168,9 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 	memoryNS := agentID
 	systemPrompt := ""
 	systemPromptFile := ""
+	transport := "local"
+	nodeID := ""
+	parentAgentID := ""
 	toolAllowlist := []string(nil)
 	maxRetries := 0
 	retryBackoff := 1000
@@ -191,6 +197,12 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		if ns := normalizeSubagentIdentifier(profile.MemoryNamespace); ns != "" {
 			memoryNS = ns
 		}
+		transport = strings.TrimSpace(profile.Transport)
+		if transport == "" {
+			transport = "local"
+		}
+		nodeID = strings.TrimSpace(profile.NodeID)
+		parentAgentID = strings.TrimSpace(profile.ParentAgentID)
 		systemPrompt = strings.TrimSpace(profile.SystemPrompt)
 		systemPromptFile = strings.TrimSpace(profile.SystemPromptFile)
 		toolAllowlist = append([]string(nil), profile.ToolAllowlist...)
@@ -265,6 +277,9 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		Label:            label,
 		Role:             role,
 		AgentID:          agentID,
+		Transport:        transport,
+		NodeID:           nodeID,
+		ParentAgentID:    parentAgentID,
 		SessionKey:       sessionKey,
 		MemoryNS:         memoryNS,
 		SystemPrompt:     systemPrompt,

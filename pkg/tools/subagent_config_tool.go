@@ -20,7 +20,7 @@ func NewSubagentConfigTool(configPath string) *SubagentConfigTool {
 func (t *SubagentConfigTool) Name() string { return "subagent_config" }
 
 func (t *SubagentConfigTool) Description() string {
-	return "Draft or persist subagent config and router rules into config.json."
+	return "Persist subagent config and router rules into config.json."
 }
 
 func (t *SubagentConfigTool) Parameters() map[string]interface{} {
@@ -29,17 +29,20 @@ func (t *SubagentConfigTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"action": map[string]interface{}{
 				"type":        "string",
-				"description": "draft|upsert",
+				"description": "upsert",
 			},
 			"description": map[string]interface{}{
 				"type":        "string",
-				"description": "Natural-language worker description for draft or upsert.",
+				"description": "Natural-language worker description used by callers before upsert.",
 			},
 			"agent_id_hint": map[string]interface{}{
 				"type":        "string",
-				"description": "Optional preferred agent id seed for draft.",
+				"description": "Optional preferred agent id seed used by callers before upsert.",
 			},
 			"agent_id":           map[string]interface{}{"type": "string"},
+			"transport":          map[string]interface{}{"type": "string"},
+			"node_id":            map[string]interface{}{"type": "string"},
+			"parent_agent_id":    map[string]interface{}{"type": "string"},
 			"role":               map[string]interface{}{"type": "string"},
 			"display_name":       map[string]interface{}{"type": "string"},
 			"system_prompt":      map[string]interface{}{"type": "string"},
@@ -68,14 +71,6 @@ func (t *SubagentConfigTool) SetConfigPath(path string) {
 func (t *SubagentConfigTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	_ = ctx
 	switch stringArgFromMap(args, "action") {
-	case "draft":
-		description := stringArgFromMap(args, "description")
-		if description == "" {
-			return "", fmt.Errorf("description is required")
-		}
-		return marshalSubagentConfigPayload(map[string]interface{}{
-			"draft": DraftConfigSubagent(description, stringArgFromMap(args, "agent_id_hint")),
-		})
 	case "upsert":
 		result, err := UpsertConfigSubagent(t.getConfigPath(), cloneSubagentConfigArgs(args))
 		if err != nil {

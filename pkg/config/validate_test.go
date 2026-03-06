@@ -78,3 +78,26 @@ func TestValidateSubagentsRequiresPromptFileWhenEnabled(t *testing.T) {
 		t.Fatalf("expected validation errors")
 	}
 }
+
+func TestValidateNodeBackedSubagentAllowsMissingPromptFile(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Agents.Router.Enabled = true
+	cfg.Agents.Router.MainAgentID = "main"
+	cfg.Agents.Subagents["main"] = SubagentConfig{
+		Enabled:          true,
+		Type:             "router",
+		SystemPromptFile: "agents/main/AGENT.md",
+	}
+	cfg.Agents.Subagents["node.edge.main"] = SubagentConfig{
+		Enabled:   true,
+		Type:      "worker",
+		Transport: "node",
+		NodeID:    "edge",
+	}
+
+	if errs := Validate(cfg); len(errs) != 0 {
+		t.Fatalf("expected node-backed config to be valid, got %v", errs)
+	}
+}

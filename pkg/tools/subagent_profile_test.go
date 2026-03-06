@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"clawgo/pkg/config"
+	"clawgo/pkg/nodes"
 	"clawgo/pkg/runtimecfg"
 )
 
@@ -183,5 +184,53 @@ func TestSubagentProfileStoreRejectsWritesForConfigManagedProfiles(t *testing.T)
 	}
 	if err := store.Delete("tester"); err == nil {
 		t.Fatalf("expected config-managed delete to fail")
+	}
+}
+
+func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
+	runtimecfg.Set(config.DefaultConfig())
+	t.Cleanup(func() {
+		runtimecfg.Set(config.DefaultConfig())
+		nodes.DefaultManager().Remove("edge-dev")
+	})
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Router.Enabled = true
+	cfg.Agents.Router.MainAgentID = "main"
+	cfg.Agents.Subagents["main"] = config.SubagentConfig{
+		Enabled:          true,
+		Type:             "router",
+		SystemPromptFile: "agents/main/AGENT.md",
+	}
+	runtimecfg.Set(cfg)
+
+	nodes.DefaultManager().Upsert(nodes.NodeInfo{
+		ID:     "edge-dev",
+		Name:   "Edge Dev",
+		Online: true,
+		Capabilities: nodes.Capabilities{
+			Model: true,
+		},
+	})
+
+	store := NewSubagentProfileStore(t.TempDir())
+	profile, ok, err := store.Get(nodeBranchAgentID("edge-dev"))
+	if err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected node-backed profile")
+	}
+	if profile.ManagedBy != "node_registry" || profile.Transport != "node" || profile.NodeID != "edge-dev" {
+		t.Fatalf("unexpected node profile: %+v", profile)
+	}
+	if profile.ParentAgentID != "main" {
+		t.Fatalf("expected main parent agent, got %+v", profile)
+	}
+	if _, err := store.Upsert(SubagentProfile{AgentID: profile.AgentID}); err == nil {
+		t.Fatalf("expected node-managed upsert to fail")
+	}
+	if err := store.Delete(profile.AgentID); err == nil {
+		t.Fatalf("expected node-managed delete to fail")
 	}
 }

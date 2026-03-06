@@ -301,6 +301,17 @@ func validateSubagents(cfg *Config) []error {
 				errs = append(errs, fmt.Errorf("agents.subagents.%s.type must be one of: router, worker, reviewer, observer", id))
 			}
 		}
+		transport := strings.TrimSpace(raw.Transport)
+		if transport != "" {
+			switch transport {
+			case "local", "node":
+			default:
+				errs = append(errs, fmt.Errorf("agents.subagents.%s.transport must be one of: local, node", id))
+			}
+		}
+		if transport == "node" && strings.TrimSpace(raw.NodeID) == "" {
+			errs = append(errs, fmt.Errorf("agents.subagents.%s.node_id is required when transport=node", id))
+		}
 		if raw.Runtime.TimeoutSec < 0 {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.timeout_sec must be >= 0", id))
 		}
@@ -322,7 +333,7 @@ func validateSubagents(cfg *Config) []error {
 		if raw.Tools.MaxParallelCalls < 0 {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.tools.max_parallel_calls must be >= 0", id))
 		}
-		if raw.Enabled && strings.TrimSpace(raw.SystemPromptFile) == "" {
+		if raw.Enabled && transport != "node" && strings.TrimSpace(raw.SystemPromptFile) == "" {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file is required when enabled=true", id))
 		}
 		if promptFile := strings.TrimSpace(raw.SystemPromptFile); promptFile != "" {
