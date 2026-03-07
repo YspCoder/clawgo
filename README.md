@@ -1,63 +1,85 @@
 # ClawGo 🦞
 
-ClawGo 是一个用 Go 构建的长期运行 Agent 系统，面向本地优先、多 Agent 协作、可审计运维。
+**面向生产的 Go 原生 Agent Runtime。**
 
-- 🎯 `main agent` 负责对话入口、路由、调度、汇总
-- 🤖 `subagents` 负责具体执行，如编码、测试、文档
-- 🌐 `node branches` 允许把远端节点挂成受控 agent 分支
-- 🧠 记忆、线程、邮箱、任务运行态可持久化
-- 🖥️ 内置统一 WebUI，覆盖配置、拓扑、日志、技能、记忆与运维
+ClawGo 不是“又一个聊天壳子”，而是一套可长期运行、可观测、可恢复、可编排的 Agent 运行时。
+
+- 👀 **可观测**：Agent 拓扑、内部流、任务审计、EKG 一体化可见
+- 🔁 **可恢复**：运行态落盘，重启后任务可恢复，watchdog 按进展续时
+- 🧩 **可编排**：`main agent -> subagent -> main`，支持本地与远端 node 分支
+- ⚙️ **可工程化**：`config.json`、`AGENT.md`、热更新、WebUI、声明式 registry
 
 [English](./README_EN.md)
 
-## 架构概览
+## 为什么是 ClawGo
 
-ClawGo 的默认协作模式是：
+大多数 Agent 项目停留在：
 
-```text
-user -> main -> worker -> main -> user
-```
+- 一个聊天界面
+- 一组工具调用
+- 一段 prompt
 
-当前系统由四层组成：
+ClawGo 更关注真正的运行时能力：
 
-- `main agent`
-  - 用户入口
-  - 负责路由、拆解、派发、汇总
-- `local subagents`
-  - 在 `config.json -> agents.subagents` 中声明
-  - 使用独立 session 和 memory namespace
-- `node-backed branches`
-  - 注册 node 后，会在主拓扑里表现为远端 agent 分支
-  - `transport=node` 的任务通过 `agent_task` 发往远端
-- `runtime store`
-  - 保存 run、event、thread、message 等运行态
+- `main agent` 负责入口、路由、派发、汇总
+- `subagent` 负责编码、测试、产品、文档等具体执行
+- `node branch` 把远端节点挂成受控 agent 分支
+- `runtime store` 持久化 run、event、thread、message、memory
 
-## 主要能力
+一句话：
 
-- 🚦 路由与调度
-  - 支持 `rules_first`
-  - 支持显式 `@agent_id`
-  - 支持关键词自动路由
-- 📦 持久化运行态
-  - `subagent_runs.jsonl`
-  - `subagent_events.jsonl`
-  - `threads.jsonl`
-  - `agent_messages.jsonl`
-- 📨 mailbox / thread 协作
-  - dispatch
-  - wait
-  - reply
-  - ack
-- 🧠 记忆双写
-  - 子 agent 写自己的详细记忆
-  - 主记忆保留简洁协作摘要
-- 🪪 声明式 agent 配置
-  - role
-  - tool allowlist
-  - runtime policy
-  - `system_prompt_file`
+> **ClawGo = Agent Runtime，而不只是 Agent Chat。**
 
-## 快速开始
+## 核心亮点 ✨
+
+### 1. 多 Agent 拓扑可视化
+
+- 统一展示 `main / subagents / remote branches`
+- 内部流与用户主对话分离
+- 子 agent 协作过程可观测，但不污染用户通道
+
+### 2. 任务可恢复，不是一挂全没
+
+- `subagent_runs.jsonl`
+- `subagent_events.jsonl`
+- `threads.jsonl`
+- `agent_messages.jsonl`
+- 重启后可恢复运行中的任务
+
+### 3. watchdog 按进展续时
+
+- 系统超时统一走全局 watchdog
+- 还在推进的任务不会因为固定墙钟超时被直接杀掉
+- 无进展时才超时，行为更接近真实工程执行
+
+### 4. 配置工程化，而不是 prompt 堆砌
+
+- `config.json` 管理 agent registry
+- `system_prompt_file -> AGENT.md`
+- WebUI 可编辑、热更新、查看运行态
+
+### 5. 适合真正长期运行
+
+- 本地优先
+- Go 原生 runtime
+- 多通道接入
+- Task Audit / Logs / Memory / Skills / Config / Agents 全链路闭环
+
+## WebUI 亮点 🖥️
+
+**Dashboard**
+
+![ClawGo Dashboard](docs/assets/readme-dashboard.png)
+
+**Agents 拓扑**
+
+![ClawGo Agents Topology](docs/assets/readme-agents.png)
+
+**Config 工作台**
+
+![ClawGo Config](docs/assets/readme-config.png)
+
+## 快速开始 🚀
 
 ### 1. 安装
 
@@ -98,45 +120,38 @@ clawgo gateway run
 make dev
 ```
 
-## WebUI
-
-访问：
+WebUI:
 
 ```text
 http://<host>:<port>/webui?token=<gateway.token>
 ```
 
-核心页面：
+## 架构概览
 
-- `Agents`
-  - 统一 agent 拓扑
-  - 本地 subagent 与远端 branch 展示
-  - 运行状态悬浮查看
-- `Config`
-  - 配置编辑
-  - 热更新字段查看
-- `Logs`
-  - 实时日志
-- `Skills`
-  - 技能安装、查看、编辑
-- `Memory`
-  - 记忆文件与摘要
-- `Task Audit`
-  - 任务链路与执行审计
+默认协作模式：
 
-### 亮点截图
+```text
+user -> main -> worker -> main -> user
+```
 
-**Dashboard**
+当前系统包含四层：
 
-![ClawGo Dashboard](docs/assets/readme-dashboard.png)
+1. `main agent`
+   负责用户入口、路由、派发、汇总
+2. `local subagents`
+   在 `config.json -> agents.subagents` 中声明，使用独立 session 和 memory namespace
+3. `node-backed branches`
+   远端节点作为受控 agent 分支挂载到主拓扑
+4. `runtime store`
+   保存运行态、线程、消息、事件和审计数据
 
-**Agents 拓扑**
+## 你能用它做什么
 
-![ClawGo Agents Topology](docs/assets/readme-agents.png)
-
-**Config 工作台**
-
-![ClawGo Config](docs/assets/readme-config.png)
+- 🤖 本地长期运行的个人 Agent
+- 🧪 `pm -> coder -> tester` 这种多 Agent 协作链
+- 🌐 本地主控 + 远端 node 分支的分布式执行
+- 🔍 需要强观测、强审计、强恢复的 Agent 系统
+- 🏭 想把 prompt、agent、工具权限、运行策略工程化管理的团队
 
 ## 配置结构
 
@@ -172,8 +187,8 @@ http://<host>:<port>/webui?token=<gateway.token>
 
 说明：
 
-- `runtime_control` 已删除
-- 现在使用：
+- `runtime_control` 已移除
+- 当前使用：
   - `agents.defaults.execution`
   - `agents.defaults.summary_policy`
   - `agents.router.policy`
@@ -187,7 +202,7 @@ http://<host>:<port>/webui?token=<gateway.token>
 
 ## Prompt 文件约定
 
-推荐把 agent prompt 放到独立文件中，例如：
+推荐把 agent prompt 独立为文件：
 
 - `agents/main/AGENT.md`
 - `agents/coder/AGENT.md`
@@ -201,36 +216,34 @@ http://<host>:<port>/webui?token=<gateway.token>
 }
 ```
 
-约定：
+规则：
 
 - 路径必须是 workspace 内相对路径
-- 这些路径只是示例，仓库不会内置对应文件
-- 用户或 agent workflow 需要自行创建这些 `AGENT.md`
+- 仓库不会内置这些示例文件
+- 用户或 agent workflow 需要自行创建实际的 `AGENT.md`
 
 ## 记忆与运行态
 
-ClawGo 默认不是“所有 agent 共用一份上下文”。
+ClawGo 不是所有 agent 共用一份上下文。
 
 - `main`
-  - 维护主记忆与协作摘要
+  - 保存主记忆与协作摘要
 - `subagent`
   - 使用独立 session key
   - 写入自己的 memory namespace
-- runtime store
+- `runtime store`
   - 持久化任务、事件、线程、消息
 
-这样可以同时得到：
+这带来三件事：
 
-- 可恢复
-- 可追踪
-- 边界清晰
+- 更好恢复
+- 更好追踪
+- 更清晰的执行边界
 
-## 项目定位
+## 当前最适合的人群
 
-ClawGo 适合这些场景：
+- 想用 Go 做 Agent Runtime 的开发者
+- 想要可视化多 Agent 拓扑和内部流的团队
+- 不满足于“聊天 + prompt”，而想要真正运行时能力的用户
 
-- 本地长期运行的个人 AI agent
-- 需要多 agent 协作但不想上重型编排平台
-- 需要清晰配置、清晰审计、清晰可观测性的自动化系统
-
-如果你希望先看一个完整配置，直接从 [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json) 开始。
+如果你想快速上手，先看 [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json)，再跑一次 `make dev`。

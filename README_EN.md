@@ -1,63 +1,85 @@
 # ClawGo 🦞
 
-ClawGo is a long-running AI agent system built in Go for local-first operation, multi-agent coordination, and auditable runtime control.
+**A production-oriented, Go-native Agent Runtime.**
 
-- 🎯 `main agent` owns the user-facing loop, routing, dispatch, and merge
-- 🤖 `subagents` handle concrete execution such as coding, testing, and docs
-- 🌐 `node branches` let remote nodes appear as controlled agent branches
-- 🧠 memory, threads, mailbox state, and task runtime are persisted
-- 🖥️ a unified WebUI covers config, topology, logs, skills, memory, and ops
+ClawGo is not just another chat wrapper. It is a long-running, observable, recoverable, orchestrated runtime for real agent systems.
+
+- 👀 **Observable**: agent topology, internal streams, task audit, and EKG visibility
+- 🔁 **Recoverable**: persisted runtime state, restart recovery, progress-aware watchdog
+- 🧩 **Orchestrated**: `main agent -> subagent -> main`, with local and remote node branches
+- ⚙️ **Operational**: `config.json`, `AGENT.md`, hot reload, WebUI, declarative registry
 
 [中文](./README.md)
 
-## Architecture
+## Why ClawGo
 
-The default collaboration flow is:
+Most agent projects stop at:
 
-```text
-user -> main -> worker -> main -> user
-```
+- a chat UI
+- a tool runner
+- a prompt layer
 
-ClawGo currently has four layers:
+ClawGo focuses on runtime capabilities:
 
-- `main agent`
-  - user-facing entrypoint
-  - handles routing, decomposition, dispatch, and merge
-- `local subagents`
-  - declared in `config.json -> agents.subagents`
-  - use isolated sessions and memory namespaces
-- `node-backed branches`
-  - registered nodes appear as remote agent branches in the topology
-  - `transport=node` tasks are sent via `agent_task`
-- `runtime store`
-  - persists runs, events, threads, and messages
+- `main agent` handles entry, routing, dispatch, and merge
+- `subagents` execute coding, testing, product, docs, and other focused tasks
+- `node branches` attach remote nodes as controlled agent branches
+- `runtime store` persists runs, events, threads, messages, and memory
 
-## Core Capabilities
+In one line:
 
-- 🚦 Routing and dispatch
-  - `rules_first`
-  - explicit `@agent_id`
-  - keyword-based auto routing
-- 📦 Persistent runtime state
-  - `subagent_runs.jsonl`
-  - `subagent_events.jsonl`
-  - `threads.jsonl`
-  - `agent_messages.jsonl`
-- 📨 mailbox and thread coordination
-  - dispatch
-  - wait
-  - reply
-  - ack
-- 🧠 dual-write memory model
-  - subagents keep detailed local memory
-  - main memory keeps compact collaboration summaries
-- 🪪 declarative agent config
-  - role
-  - tool allowlist
-  - runtime policy
-  - `system_prompt_file`
+> **ClawGo is an Agent Runtime, not just an Agent Chat shell.**
 
-## Quick Start
+## Core Highlights ✨
+
+### 1. Observable multi-agent topology
+
+- unified view of `main / subagents / remote branches`
+- internal subagent streams are visible
+- user-facing chat stays clean while internal collaboration remains inspectable
+
+### 2. Recoverable execution
+
+- `subagent_runs.jsonl`
+- `subagent_events.jsonl`
+- `threads.jsonl`
+- `agent_messages.jsonl`
+- running tasks can recover after restart
+
+### 3. Progress-aware watchdog
+
+- system timeouts go through one global watchdog
+- active tasks are extended instead of being killed by a fixed wall-clock timeout
+- tasks time out only when they stop making progress
+
+### 4. Engineering-first agent configuration
+
+- agent registry in `config.json`
+- `system_prompt_file -> AGENT.md`
+- WebUI for editing, hot reload, and runtime inspection
+
+### 5. Built for long-running use
+
+- local-first
+- Go-native runtime
+- multi-channel capable
+- end-to-end ops surface: Task Audit, Logs, Memory, Skills, Config, Agents
+
+## WebUI Highlights 🖥️
+
+**Dashboard**
+
+![ClawGo Dashboard](docs/assets/readme-dashboard.png)
+
+**Agent Topology**
+
+![ClawGo Agents Topology](docs/assets/readme-agents.png)
+
+**Config Workspace**
+
+![ClawGo Config](docs/assets/readme-config.png)
+
+## Quick Start 🚀
 
 ### 1. Install
 
@@ -98,45 +120,38 @@ Development mode:
 make dev
 ```
 
-## WebUI
-
-Open:
+WebUI:
 
 ```text
 http://<host>:<port>/webui?token=<gateway.token>
 ```
 
-Key pages:
+## Architecture
 
-- `Agents`
-  - unified agent topology
-  - local subagents and remote branches
-  - runtime status via hover
-- `Config`
-  - configuration editing
-  - hot-reload field reference
-- `Logs`
-  - real-time logs
-- `Skills`
-  - install, inspect, and edit skills
-- `Memory`
-  - memory files and summaries
-- `Task Audit`
-  - execution and scheduling trace
+Default collaboration flow:
 
-### Highlights
+```text
+user -> main -> worker -> main -> user
+```
 
-**Dashboard**
+ClawGo currently has four layers:
 
-![ClawGo Dashboard](docs/assets/readme-dashboard.png)
+1. `main agent`
+   user-facing entry, routing, dispatch, and merge
+2. `local subagents`
+   declared in `config.json -> agents.subagents`, with isolated sessions and memory namespaces
+3. `node-backed branches`
+   remote nodes mounted as controlled agent branches
+4. `runtime store`
+   persisted runtime, threads, messages, events, and audit data
 
-**Agent Topology**
+## What It Is Good For
 
-![ClawGo Agent Topology](docs/assets/readme-agents.png)
-
-**Config Workspace**
-
-![ClawGo Config](docs/assets/readme-config.png)
+- 🤖 long-running local personal agents
+- 🧪 multi-agent flows like `pm -> coder -> tester`
+- 🌐 local control with remote node branches
+- 🔍 systems that need strong observability, auditability, and recovery
+- 🏭 teams that want agent config, prompts, tool permissions, and runtime policy managed as code
 
 ## Config Layout
 
@@ -173,7 +188,7 @@ Recommended structure:
 Notes:
 
 - `runtime_control` has been removed
-- the current config uses:
+- the current structure uses:
   - `agents.defaults.execution`
   - `agents.defaults.summary_policy`
   - `agents.router.policy`
@@ -183,11 +198,11 @@ Notes:
   - `node_id`
   - `parent_agent_id`
 
-See the full example in [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json).
+See [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json) for a full example.
 
 ## Prompt File Convention
 
-Keep agent prompts in dedicated files, for example:
+Keep agent prompts in dedicated files:
 
 - `agents/main/AGENT.md`
 - `agents/coder/AGENT.md`
@@ -204,8 +219,7 @@ Example:
 Rules:
 
 - the path must be relative to the workspace
-- the file must live inside the workspace
-- these paths are examples only; the repo does not ship the files
+- the repo does not ship these example files
 - users or agent workflows should create the actual `AGENT.md` files
 
 ## Memory and Runtime
@@ -217,21 +231,19 @@ ClawGo does not treat all agents as one shared context.
 - `subagent`
   - uses its own session key
   - writes to its own memory namespace
-- runtime store
+- `runtime store`
   - persists runs, events, threads, and messages
 
 This gives you:
 
-- recoverability
-- traceability
-- clear execution boundaries
+- better recovery
+- better traceability
+- clearer execution boundaries
 
-## Positioning
+## Best Fit
 
-ClawGo is a good fit for:
+- developers building agent runtimes in Go
+- teams that want visible multi-agent topology and internal collaboration streams
+- users who need more than “chat + prompt”
 
-- local long-running personal agents
-- multi-agent workflows without heavyweight orchestration platforms
-- systems that need explicit config, explicit audit trails, and strong observability
-
-If you want a working starting point, begin with [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json).
+If you want a working starting point, open [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json) and run `make dev`.
