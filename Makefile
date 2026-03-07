@@ -1,4 +1,4 @@
-.PHONY: all build build-linux-slim build-all package-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace cleanup-embed-workspace test-only clean-test-artifacts dev
+.PHONY: all build build-linux-slim build-all build-webui package-all install install-win uninstall clean help test install-bootstrap-docs sync-embed-workspace sync-embed-workspace-base sync-embed-webui cleanup-embed-workspace test-only clean-test-artifacts dev
 
 # Build variables
 BINARY_NAME=clawgo
@@ -47,11 +47,14 @@ WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 WORKSPACE_SOURCE_DIR=$(CURDIR)/workspace
 EMBED_WORKSPACE_DIR=$(CURDIR)/cmd/$(BINARY_NAME)/workspace
+EMBED_WEBUI_DIR=$(EMBED_WORKSPACE_DIR)/webui
 DEV_CONFIG?=$(if $(wildcard $(CURDIR)/config.json),$(CURDIR)/config.json,$(CLAWGO_HOME)/config.json)
 DEV_ARGS?=--debug gateway run
 DEV_WORKSPACE?=$(WORKSPACE_DIR)
 DEV_WEBUI_DIR?=$(CURDIR)/webui
-DEV_WEBUI_BUILD?=1
+WEBUI_DIST_DIR=$(DEV_WEBUI_DIR)/dist
+WEBUI_PACKAGE_LOCK=$(DEV_WEBUI_DIR)/package-lock.json
+NPM?=npm
 
 # OS detection
 UNAME_S:=$(shell uname -s)
@@ -139,6 +142,28 @@ build-all: sync-embed-workspace
 	done
 	@echo "All builds complete"
 
+## build-webui: Install WebUI dependencies when needed and build dist assets
+build-webui:
+	@echo "Building WebUI..."
+	@if [ ! -d "$(DEV_WEBUI_DIR)" ]; then \
+		echo "✗ Missing WebUI directory: $(DEV_WEBUI_DIR)"; \
+		exit 1; \
+	fi
+	@if ! command -v "$(NPM)" >/dev/null 2>&1; then \
+		echo "✗ npm is required to build the WebUI"; \
+		exit 1; \
+	fi
+	@set -e; \
+	if [ ! -d "$(DEV_WEBUI_DIR)/node_modules" ]; then \
+		echo "Installing WebUI dependencies..."; \
+		if [ -f "$(WEBUI_PACKAGE_LOCK)" ]; then \
+			(cd "$(DEV_WEBUI_DIR)" && "$(NPM)" ci); \
+		else \
+			(cd "$(DEV_WEBUI_DIR)" && "$(NPM)" install); \
+		fi; \
+	fi; \
+	(cd "$(DEV_WEBUI_DIR)" && "$(NPM)" run build)
+
 ## package-all: Create compressed archives and checksums for all build targets
 package-all: build-all
 	@echo "Packaging build artifacts..."
@@ -155,7 +180,9 @@ package-all: build-all
 			archive="$(BINARY_NAME)-$$goos-$$goarch.tar.gz"; \
 			tar -czf "$$archive" "$$bin"; \
 		fi; \
-	done; \
+	done
+	@tar -czf "$(BUILD_DIR)/webui.tar.gz" -C "$(DEV_WEBUI_DIR)" dist
+	@set -e; cd $(BUILD_DIR); \
 	if command -v sha256sum >/dev/null 2>&1; then \
 		sha256sum *.tar.gz *.zip 2>/dev/null | tee checksums.txt || true; \
 	elif command -v shasum >/dev/null 2>&1; then \
@@ -163,8 +190,12 @@ package-all: build-all
 	fi
 	@echo "Package complete: $(BUILD_DIR)"
 
-## sync-embed-workspace: Sync root workspace files into cmd/clawgo/workspace for go:embed
-sync-embed-workspace:
+## sync-embed-workspace: Sync workspace seed files and built WebUI into cmd/clawgo/workspace for go:embed
+sync-embed-workspace: sync-embed-workspace-base sync-embed-webui
+	@echo "✓ Embed assets ready in $(EMBED_WORKSPACE_DIR)"
+
+## sync-embed-workspace-base: Sync root workspace files into cmd/clawgo/workspace for go:embed
+sync-embed-workspace-base:
 	@echo "Syncing workspace seed files for embedding..."
 	@if [ ! -d "$(WORKSPACE_SOURCE_DIR)" ]; then \
 		echo "✗ Missing source workspace directory: $(WORKSPACE_SOURCE_DIR)"; \
@@ -172,7 +203,17 @@ sync-embed-workspace:
 	fi
 	@mkdir -p "$(EMBED_WORKSPACE_DIR)"
 	@rsync -a --delete "$(WORKSPACE_SOURCE_DIR)/" "$(EMBED_WORKSPACE_DIR)/"
-	@echo "✓ Synced to $(EMBED_WORKSPACE_DIR)"
+	@echo "✓ Synced workspace to $(EMBED_WORKSPACE_DIR)"
+
+## sync-embed-webui: Build and sync WebUI dist into embedded workspace assets
+sync-embed-webui: build-webui
+	@if [ ! -d "$(WEBUI_DIST_DIR)" ]; then \
+		echo "✗ Missing WebUI dist directory: $(WEBUI_DIST_DIR)"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(EMBED_WEBUI_DIR)"
+	@rsync -a --delete "$(WEBUI_DIST_DIR)/" "$(EMBED_WEBUI_DIR)/"
+	@echo "✓ Synced WebUI dist to $(EMBED_WEBUI_DIR)"
 
 ## cleanup-embed-workspace: Remove synced embed workspace artifacts
 cleanup-embed-workspace:
@@ -315,10 +356,6 @@ dev: sync-embed-workspace
 		exit 1; \
 	fi
 	@set -e; trap '$(MAKE) -C $(CURDIR) cleanup-embed-workspace' EXIT; \
-	if [ "$(DEV_WEBUI_BUILD)" = "1" ]; then \
-		echo "Building WebUI..."; \
-		(cd "$(DEV_WEBUI_DIR)" && npm run build); \
-	fi; \
 	echo "Syncing WebUI dist to $(DEV_WORKSPACE)/webui ..."; \
 	mkdir -p "$(DEV_WORKSPACE)/webui"; \
 	rsync -a --delete "$(DEV_WEBUI_DIR)/dist/" "$(DEV_WORKSPACE)/webui/"; \
@@ -360,7 +397,7 @@ help:
 	@echo "  DEV_ARGS                # CLI args for make dev (default: --debug gateway run)"
 	@echo "  DEV_WORKSPACE           # Workspace path for WebUI sync in make dev"
 	@echo "  DEV_WEBUI_DIR           # WebUI source dir for make dev (default: ./webui)"
-	@echo "  DEV_WEBUI_BUILD         # 1=build WebUI before make dev (default: 1)"
+	@echo "  NPM                     # npm executable for WebUI build (default: npm)"
 	@echo "  VERSION                 # Version string (default: git describe)"
 	@echo "  STRIP_SYMBOLS           # 1=strip debug/symbol info (default: 1)"
 	@echo ""
