@@ -336,6 +336,7 @@ const Subagents: React.FC = () => {
   const [items, setItems] = useState<SubagentTask[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [selectedAgentID, setSelectedAgentID] = useState<string>('');
+  const [streamPanelDismissed, setStreamPanelDismissed] = useState(false);
   const [spawnTask, setSpawnTask] = useState('');
   const [spawnAgentID, setSpawnAgentID] = useState('');
   const [spawnRole, setSpawnRole] = useState('');
@@ -396,6 +397,21 @@ const Subagents: React.FC = () => {
   const apiPath = '/webui/api/subagents_runtime';
   const withAction = (action: string) => `${apiPath}${q}${q ? '&' : '?'}action=${encodeURIComponent(action)}`;
 
+  const openAgentStream = (agentID: string, taskID = '', branch = '') => {
+    setStreamPanelDismissed(false);
+    if (branch) setSelectedTopologyBranch(branch);
+    setSelectedAgentID(agentID);
+    setSelectedId(taskID);
+  };
+
+  const closeAgentStream = () => {
+    setStreamPanelDismissed(true);
+    setSelectedAgentID('');
+    setSelectedId('');
+    setStreamTask(null);
+    setStreamItems([]);
+  };
+
   const load = async () => {
     try {
       const [tasksRes, registryRes] = await Promise.all([
@@ -416,7 +432,7 @@ const Subagents: React.FC = () => {
       } else {
         const nextAgentID = selectedAgentID && registryItems.find((x: RegistrySubagent) => x.agent_id === selectedAgentID)
           ? selectedAgentID
-          : (registryItems[0]?.agent_id || '');
+          : (streamPanelDismissed ? '' : (registryItems[0]?.agent_id || ''));
         setSelectedAgentID(nextAgentID);
         const nextTask = arr.find((x: SubagentTask) => x.agent_id === nextAgentID);
         setSelectedId(nextTask?.id || '');
@@ -431,14 +447,14 @@ const Subagents: React.FC = () => {
 
   useEffect(() => {
     load().catch(() => { });
-  }, [q, selectedAgentID]);
+  }, [q, selectedAgentID, streamPanelDismissed]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       load().catch(() => { });
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [q, selectedAgentID]);
+  }, [q, selectedAgentID, streamPanelDismissed]);
 
   const selected = useMemo(() => items.find((x) => x.id === selectedId) || null, [items, selectedId]);
   const selectedRegistryItem = useMemo(
@@ -561,9 +577,7 @@ const Subagents: React.FC = () => {
       clickable: true,
       scale,
       onClick: () => {
-        setSelectedTopologyBranch(localBranch);
-        setSelectedAgentID(normalizeTitle(localRoot.agent_id, 'main'));
-        if (localMainTask?.id) setSelectedId(localMainTask.id);
+        openAgentStream(normalizeTitle(localRoot.agent_id, 'main'), localMainTask?.id || '', localBranch);
       },
     };
     cards.push(localMainCard);
@@ -598,9 +612,7 @@ const Subagents: React.FC = () => {
         clickable: true,
         scale,
         onClick: () => {
-          setSelectedTopologyBranch(localBranch);
-          setSelectedAgentID(normalizeTitle(child.agent_id, ''));
-          if (task?.id) setSelectedId(task.id);
+          openAgentStream(normalizeTitle(child.agent_id, ''), task?.id || '', localBranch);
         },
       });
       lines.push({
@@ -637,9 +649,7 @@ const Subagents: React.FC = () => {
         clickable: true,
         scale,
         onClick: () => {
-          setSelectedTopologyBranch(branch);
-          setSelectedAgentID(normalizeTitle(treeRoot.agent_id, ''));
-          setSelectedId('');
+          openAgentStream(normalizeTitle(treeRoot.agent_id, ''), '', branch);
         },
       };
       cards.push(rootCard);
@@ -672,9 +682,7 @@ const Subagents: React.FC = () => {
           clickable: true,
           scale,
           onClick: () => {
-            setSelectedTopologyBranch(branch);
-            setSelectedAgentID(normalizeTitle(child.agent_id, ''));
-            setSelectedId('');
+            openAgentStream(normalizeTitle(child.agent_id, ''), '', branch);
           },
         });
         lines.push({
@@ -1184,10 +1192,7 @@ const Subagents: React.FC = () => {
                 </div>
                 <button
                   onClick={() => {
-                    setSelectedAgentID('');
-                    setSelectedId('');
-                    setStreamTask(null);
-                    setStreamItems([]);
+                    closeAgentStream();
                   }}
                   className="px-2 py-1 rounded-xl text-[11px] control-chip"
                 >
