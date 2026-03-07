@@ -332,25 +332,6 @@ html.theme-dark .brand-button {
   border-radius: var(--radius-panel);
 }
 
-.topology-stream-panel {
-  left: 1rem;
-  right: 1rem;
-  bottom: 1rem;
-  height: 48vh;
-}
-
-@media (min-width: 768px) {
-  .topology-stream-panel {
-    left: auto;
-    right: 1rem;
-    top: 1rem;
-    bottom: 1rem;
-    width: 360px;
-    max-width: calc(100% - 2rem);
-    height: auto;
-  }
-}
-
 .rounded-xl {
   border-radius: var(--radius-button) !important;
 }

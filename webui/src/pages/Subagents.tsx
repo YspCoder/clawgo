@@ -1174,7 +1174,7 @@ const Subagents: React.FC = () => {
           {selectedAgentID && (
             <div
               onWheelCapture={(event) => event.stopPropagation()}
-              className="topology-stream-panel radius-panel absolute z-20 brand-card border border-zinc-800 shadow-2xl shadow-black/40 backdrop-blur-md overflow-hidden flex flex-col"
+              className="absolute bottom-4 left-4 right-4 z-20 flex h-[46vh] flex-col overflow-hidden border border-zinc-800 brand-card radius-panel shadow-2xl shadow-black/40 backdrop-blur-md md:left-auto md:top-4 md:right-4 md:bottom-4 md:h-auto md:w-[360px] md:max-w-[calc(100%-2rem)] xl:w-[380px]"
             >
               <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
                 <div className="min-w-0">
@@ -1189,7 +1189,7 @@ const Subagents: React.FC = () => {
                     setStreamTask(null);
                     setStreamItems([]);
                   }}
-                  className="px-2 py-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+                  className="px-2 py-1 rounded-xl text-[11px] control-chip"
                 >
                   {t('close')}
                 </button>

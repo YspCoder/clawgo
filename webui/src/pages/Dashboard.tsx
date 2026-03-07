@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { RefreshCw, Activity, MessageSquare, Clock, Server, Wrench, Sparkles, AlertTriangle, Workflow } from 'lucide-react';
+import { RefreshCw, Activity, MessageSquare, Wrench, Sparkles, AlertTriangle, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import StatCard from '../components/StatCard';
@@ -9,8 +9,6 @@ const Dashboard: React.FC = () => {
   const {
     isGatewayOnline,
     sessions,
-    cron,
-    nodes,
     refreshAll,
     gatewayVersion,
     webuiVersion,
@@ -19,30 +17,6 @@ const Dashboard: React.FC = () => {
     taskQueueItems,
     ekgSummary,
   } = useAppContext();
-
-  const parsedNodes = useMemo(() => {
-    try {
-      const arr = JSON.parse(nodes);
-      return Array.isArray(arr) ? arr : [];
-    } catch {
-      return [];
-    }
-  }, [nodes]);
-
-  const onlineNodes = useMemo(
-    () => parsedNodes.filter((n: any) => n?.online).length,
-    [parsedNodes],
-  );
-
-  const pausedCron = useMemo(
-    () => cron.filter((job) => !job.enabled).length,
-    [cron],
-  );
-
-  const enabledCron = useMemo(
-    () => cron.filter((job) => job.enabled).length,
-    [cron],
-  );
 
   const subagentCount = useMemo(() => {
     const subagents = (cfg as any)?.agents?.subagents || {};
@@ -79,13 +53,12 @@ const Dashboard: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         <StatCard title={t('gatewayStatus')} value={isGatewayOnline ? t('online') : t('offline')} icon={<Activity className={`w-6 h-6 ${isGatewayOnline ? 'text-emerald-400' : 'text-red-400'}`} />} />
         <StatCard title={t('activeSessions')} value={sessions.length} icon={<MessageSquare className="w-6 h-6 text-blue-400" />} />
-        <StatCard title={t('nodesOnline')} value={onlineNodes} icon={<Server className="w-6 h-6 text-amber-400" />} />
-        <StatCard title={t('cronJobs')} value={cron.length} icon={<Clock className="w-6 h-6 text-purple-400" />} />
         <StatCard title={t('skills')} value={skills.length} icon={<Sparkles className="w-6 h-6 text-pink-400" />} />
         <StatCard title={t('subagentsRuntime')} value={subagentCount} icon={<Wrench className="w-6 h-6 text-cyan-400" />} />
+        <StatCard title={t('taskAudit')} value={recentTasks.length} icon={<Activity className="w-6 h-6 text-amber-400" />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -112,28 +85,6 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="text-3xl font-semibold text-zinc-100">{recentFailures.length}</div>
           <div className="mt-2 text-xs text-zinc-500">{t('dashboardRecentFailedTasks')}</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-        <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6 min-h-[340px] h-full">
-          <div className="flex items-center gap-2 mb-5 text-zinc-200">
-            <Clock className="w-5 h-5 text-zinc-400" />
-            <h2 className="text-lg font-medium">{t('recentCron')}</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4 min-h-[104px]">
-              <div className="text-[11px] uppercase tracking-widest text-zinc-500">{t('active')}</div>
-              <div className="mt-2 text-2xl font-semibold text-zinc-100">{enabledCron}</div>
-            </div>
-            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4 min-h-[104px]">
-              <div className="text-[11px] uppercase tracking-widest text-zinc-500">{t('paused')}</div>
-              <div className="mt-2 text-2xl font-semibold text-zinc-100">{pausedCron}</div>
-            </div>
-          </div>
-          <div className="h-[180px] flex items-center justify-center text-sm text-zinc-500">
-            {cron.length === 0 ? t('noCronJobs') : `${cron.length} ${t('cronJobs')}`}
-          </div>
         </div>
       </div>
 
