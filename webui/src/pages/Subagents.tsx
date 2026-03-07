@@ -1174,7 +1174,7 @@ const Subagents: React.FC = () => {
           </div>
           {topologyTooltip && (
             <div
-              className="pointer-events-none fixed z-50 w-[360px] max-w-[min(360px,calc(100vw-24px))] max-h-[min(70vh,560px)] overflow-y-auto brand-card-subtle border border-zinc-700/80 p-4 shadow-2xl shadow-black/50 backdrop-blur-md transition-opacity duration-200"
+              className="pointer-events-none fixed z-50 w-[360px] max-w-[min(360px,calc(100vw-24px))] brand-card-subtle border border-zinc-700/80 p-4 shadow-2xl shadow-black/50 backdrop-blur-md transition-opacity duration-200"
               style={{ left: topologyTooltip.x, top: topologyTooltip.y }}
             >
               <div className="flex items-center gap-2 mb-2">
@@ -1215,21 +1215,27 @@ const Subagents: React.FC = () => {
                         </div>
                       </div>
                       {streamPreviewByAgent[topologyTooltip.agentID]?.items?.length ? (
-                        streamPreviewByAgent[topologyTooltip.agentID].items.slice(-3).reverse().map((item, idx) => (
-                          <div key={`${item.kind || 'item'}-${item.at || 0}-${idx}`} className="brand-card-subtle border border-zinc-800 p-3 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-xs font-medium text-zinc-200">
-                                {item.kind === 'event'
+                        <div className="brand-card-subtle border border-zinc-800 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-medium text-zinc-200">
+                              {(() => {
+                                const item = streamPreviewByAgent[topologyTooltip.agentID].items[streamPreviewByAgent[topologyTooltip.agentID].items.length - 1];
+                                return item.kind === 'event'
                                   ? `${item.event_type || 'event'}${item.status ? ` · ${item.status}` : ''}`
-                                  : `${item.from_agent || '-'} -> ${item.to_agent || '-'} · ${item.message_type || 'message'}`}
-                              </div>
-                              <div className="text-[11px] text-zinc-500">{formatStreamTime(item.at)}</div>
+                                  : `${item.from_agent || '-'} -> ${item.to_agent || '-'} · ${item.message_type || 'message'}`;
+                              })()}
                             </div>
-                            <div className="text-xs text-zinc-300 leading-5">
-                              {summarizePreviewText(item.kind === 'event' ? (item.message || '(no event message)') : (item.content || '(empty message)'))}
+                            <div className="text-[11px] text-zinc-500">
+                              {formatStreamTime(streamPreviewByAgent[topologyTooltip.agentID].items[streamPreviewByAgent[topologyTooltip.agentID].items.length - 1]?.at)}
                             </div>
                           </div>
-                        ))
+                          <div className="text-xs text-zinc-300 leading-5 whitespace-pre-wrap break-words">
+                            {(() => {
+                              const item = streamPreviewByAgent[topologyTooltip.agentID].items[streamPreviewByAgent[topologyTooltip.agentID].items.length - 1];
+                              return summarizePreviewText(item.kind === 'event' ? (item.message || '(no event message)') : (item.content || '(empty message)'), 520);
+                            })()}
+                          </div>
+                        </div>
                       ) : (
                         <div className="text-xs text-zinc-400">No internal stream events yet.</div>
                       )}
