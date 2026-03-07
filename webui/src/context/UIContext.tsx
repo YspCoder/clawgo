@@ -1,10 +1,15 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { GlobalDialog, DialogOptions } from '../components/GlobalDialog';
 
+type ThemeMode = 'light' | 'dark';
+
 type UIContextType = {
   loading: boolean;
+  theme: ThemeMode;
+  setTheme: (theme: ThemeMode) => void;
+  toggleTheme: () => void;
   showLoading: (text?: string) => void;
   hideLoading: () => void;
   withLoading: <T>(task: Promise<T> | (() => Promise<T>), text?: string) => Promise<T>;
@@ -16,17 +21,38 @@ type UIContextType = {
 };
 
 const UIContext = createContext<UIContextType | undefined>(undefined);
+const THEME_STORAGE_KEY = 'clawgo:webui:theme';
+
+function getInitialTheme(): ThemeMode {
+  if (typeof window === 'undefined') return 'dark';
+  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
 
 export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { t } = useTranslation();
   const [loadingCount, setLoadingCount] = useState(0);
   const [loadingText, setLoadingText] = useState(t('loading'));
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [dialog, setDialog] = useState<null | { kind: 'notice' | 'confirm' | 'prompt'; options: DialogOptions; resolve: (v: any) => void }>(null);
   const [customModal, setCustomModal] = useState<null | { title?: string; node: React.ReactNode }>(null);
   const loading = loadingCount > 0;
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    root.classList.remove('theme-light', 'theme-dark');
+    root.classList.add(theme === 'dark' ? 'theme-dark' : 'theme-light');
+    root.style.colorScheme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
   const value = useMemo<UIContextType>(() => ({
     loading,
+    theme,
+    setTheme,
+    toggleTheme: () => setTheme((current) => current === 'dark' ? 'light' : 'dark'),
     showLoading: (text?: string) => {
       setLoadingText(text || t('loading'));
       setLoadingCount((count) => count + 1);
@@ -55,7 +81,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     }),
     openModal: (node, title) => setCustomModal({ node, title }),
     closeModal: () => setCustomModal(null),
-  }), [loading, t]);
+  }), [loading, t, theme]);
 
   const closeDialog = (result?: boolean | string | null) => {
     if (!dialog) return;

@@ -1,11 +1,13 @@
 import React from 'react';
-import { Terminal, Globe, Menu } from 'lucide-react';
+import { Terminal, Globe, Menu, Moon, SunMedium } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { useUI } from '../context/UIContext';
 
 const Header: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { isGatewayOnline, setSidebarOpen, sidebarCollapsed } = useAppContext();
+  const { theme, toggleTheme } = useUI();
 
   const toggleLang = () => {
     const nextLang = i18n.language === 'en' ? 'zh' : 'en';
@@ -13,20 +15,20 @@ const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-14 md:h-16 border-b border-zinc-800 bg-zinc-900/70 flex items-center justify-between px-3 md:px-6 shrink-0 z-10">
+    <header className="app-header h-14 md:h-16 border-b border-zinc-800 flex items-center justify-between px-3 md:px-6 shrink-0 z-10">
       <div className="flex items-center gap-2 md:gap-3 min-w-0">
         <button className="md:hidden p-2 rounded-lg hover:bg-zinc-800 text-zinc-300" onClick={() => setSidebarOpen(true)}>
           <Menu className="w-5 h-5" />
         </button>
         <div className="hidden md:flex items-center gap-3 rounded-xl px-2 py-1.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
+          <div className="brand-badge w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shrink-0">
             <Terminal className="w-5 h-5 text-white" />
           </div>
           {!sidebarCollapsed && (
             <span className="font-semibold text-lg md:text-xl tracking-tight truncate">{t('appName')}</span>
           )}
         </div>
-        <div className="md:hidden w-8 h-8 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
+        <div className="brand-badge md:hidden w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shrink-0">
           <Terminal className="w-4 h-4 text-white" />
         </div>
         <span className="md:hidden font-semibold text-lg tracking-tight truncate">{t('appName')}</span>
@@ -49,6 +51,15 @@ const Header: React.FC = () => {
         </div>
         
         <div className="hidden md:block h-5 w-px bg-zinc-800" />
+
+        <button
+          onClick={toggleTheme}
+          className="flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 px-3 py-1.5 rounded-lg"
+          title={theme === 'dark' ? t('themeLight') : t('themeDark')}
+        >
+          {theme === 'dark' ? <SunMedium className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          <span className="hidden sm:inline">{theme === 'dark' ? t('themeLight') : t('themeDark')}</span>
+        </button>
         
         <button 
           onClick={toggleLang}

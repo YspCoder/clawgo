@@ -10,6 +10,7 @@ export const SpaceParticles: React.FC = () => {
         if (!ctx) return;
 
         let animationFrameId: number;
+        let isDark = typeof document !== 'undefined' ? document.documentElement.classList.contains('theme-dark') : true;
         const particles: Array<{
             x: number;
             y: number;
@@ -29,6 +30,14 @@ export const SpaceParticles: React.FC = () => {
 
         window.addEventListener('resize', resize);
         resize();
+
+        let observer: MutationObserver | null = null;
+        if (typeof document !== 'undefined') {
+            observer = new MutationObserver(() => {
+                isDark = document.documentElement.classList.contains('theme-dark');
+            });
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        }
 
         // Initialize particles
         const particleCount = Math.floor((canvas.width * canvas.height) / 12000); // Responsive count
@@ -51,8 +60,15 @@ export const SpaceParticles: React.FC = () => {
                 canvas.width / 2, canvas.height / 2, 0,
                 canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height)
             );
-            gradient.addColorStop(0, 'rgba(30, 27, 75, 0.15)'); // Deep indigo tint
-            gradient.addColorStop(1, 'rgba(9, 9, 11, 0.9)'); // Zinc-950
+            if (isDark) {
+                gradient.addColorStop(0, 'rgba(255, 133, 82, 0.16)');
+                gradient.addColorStop(0.55, 'rgba(112, 41, 22, 0.20)');
+                gradient.addColorStop(1, 'rgba(28, 12, 8, 0.88)');
+            } else {
+                gradient.addColorStop(0, 'rgba(255, 243, 233, 0.30)');
+                gradient.addColorStop(0.55, 'rgba(255, 179, 107, 0.16)');
+                gradient.addColorStop(1, 'rgba(255, 226, 209, 0.55)');
+            }
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -67,7 +83,9 @@ export const SpaceParticles: React.FC = () => {
 
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(167, 139, 250, ${p.opacity})`; // Violet-400 tint
+                ctx.fillStyle = isDark
+                    ? `rgba(255, 179, 107, ${p.opacity})`
+                    : `rgba(217, 72, 28, ${Math.max(0.08, p.opacity * 0.65)})`;
                 ctx.fill();
             });
 
@@ -81,7 +99,10 @@ export const SpaceParticles: React.FC = () => {
 
                     if (dist < 120) {
                         ctx.beginPath();
-                        ctx.strokeStyle = `rgba(139, 92, 246, ${0.15 * (1 - dist / 120)})`; // Violet-500
+                        const lineOpacity = 0.16 * (1 - dist / 120);
+                        ctx.strokeStyle = isDark
+                            ? `rgba(240, 90, 40, ${lineOpacity})`
+                            : `rgba(164, 58, 24, ${lineOpacity * 0.85})`;
                         ctx.moveTo(particles[i].x, particles[i].y);
                         ctx.lineTo(particles[j].x, particles[j].y);
                         ctx.stroke();
@@ -96,6 +117,7 @@ export const SpaceParticles: React.FC = () => {
 
         return () => {
             window.removeEventListener('resize', resize);
+            observer?.disconnect();
             cancelAnimationFrame(animationFrameId);
         };
     }, []);

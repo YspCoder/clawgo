@@ -179,26 +179,26 @@ const Logs: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowRaw(!showRaw)}
-            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors text-zinc-300"
+            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors text-zinc-300"
           >
             {showRaw ? t('pretty') : t('raw')}
           </button>
           <button 
             onClick={() => setIsStreaming(!isStreaming)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              isStreaming ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300' : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              isStreaming ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300' : 'brand-button text-white'
             }`}
           >
             {isStreaming ? <><Square className="w-4 h-4" /> {t('pause')}</> : <><Play className="w-4 h-4" /> {t('resume')}</>}
           </button>
-          <button onClick={clearLogs} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors text-zinc-300">
+          <button onClick={clearLogs} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors text-zinc-300">
             <Trash2 className="w-4 h-4" /> {t('clear')}
           </button>
         </div>
       </div>
 
-      <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl">
-        <div className="bg-zinc-900/50 px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
+      <div className="flex-1 brand-card border border-zinc-800 rounded-[30px] overflow-hidden flex flex-col shadow-2xl">
+        <div className="bg-zinc-900/20 px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-zinc-500" />
             <span className="text-xs font-mono text-zinc-500">{t('systemLog')}</span>
@@ -214,13 +214,13 @@ const Logs: React.FC = () => {
           ) : showRaw ? (
             <div className="p-3 font-mono text-xs space-y-1">
               {logs.map((log, i) => (
-                <div key={i} className="border-b border-zinc-900 py-1 text-zinc-300 break-all">{log.__raw || JSON.stringify(log)}</div>
+                <div key={i} className="border-b border-zinc-900/70 py-1 text-zinc-300 break-all">{log.__raw || JSON.stringify(log)}</div>
               ))}
               <div ref={logEndRef} />
             </div>
           ) : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-zinc-900/95 border-b border-zinc-800">
+              <thead className="sticky top-0 bg-zinc-900/85 border-b border-zinc-800">
                 <tr className="text-zinc-400">
                   <th className="text-left p-2 font-medium">{t('time')}</th>
                   <th className="text-left p-2 font-medium">{t('level')}</th>
@@ -239,7 +239,7 @@ const Logs: React.FC = () => {
                   const caller = (log as any).caller || (log as any).source || '';
                   const code = toCode(rawCode);
                   return (
-                    <tr key={i} className="border-b border-zinc-900 hover:bg-zinc-900/40 align-top">
+                    <tr key={i} className="border-b border-zinc-900/70 hover:bg-zinc-900/25 align-top">
                       <td className="p-2 text-zinc-500 whitespace-nowrap">{formatLocalTime(log.time)}</td>
                       <td className={`p-2 font-semibold whitespace-nowrap ${getLevelColor(lvl)}`}>{lvl}</td>
                       <td className="p-2 text-zinc-200 break-all">{message}</td>

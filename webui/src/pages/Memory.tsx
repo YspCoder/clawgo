@@ -111,14 +111,14 @@ const Memory: React.FC = () => {
   }, [q]);
 
   return (
-    <div className="flex h-full flex-col lg:flex-row">
-      <aside className="w-full lg:w-72 border-b lg:border-b-0 lg:border-r border-zinc-800 p-4 space-y-2 overflow-y-auto">
+    <div className="flex h-full flex-col lg:flex-row brand-card rounded-[30px] border border-zinc-800 overflow-hidden">
+      <aside className="w-full lg:w-72 border-b lg:border-b-0 lg:border-r border-zinc-800 p-4 space-y-2 overflow-y-auto bg-zinc-950/20">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">{t('memoryFiles')}</h2>
-          <button onClick={createFile} className="px-2 py-1 rounded bg-zinc-800">+</button>
+          <button onClick={createFile} className="brand-button px-2.5 py-1 rounded-xl text-white">+</button>
         </div>
         {files.map((f) => (
-          <div key={f} className={`flex items-center justify-between p-2 rounded ${active === f ? 'bg-zinc-800' : 'hover:bg-zinc-900'}`}>
+          <div key={f} className={`flex items-center justify-between p-2.5 rounded-2xl ${active === f ? 'nav-item-active' : 'hover:bg-zinc-900/30'}`}>
             <button className="text-left flex-1" onClick={() => openFile(f)}>{f}</button>
             <button className="text-red-400" onClick={() => removeFile(f)}>x</button>
           </div>
@@ -127,9 +127,9 @@ const Memory: React.FC = () => {
       <main className="flex-1 p-4 md:p-6 space-y-3 min-h-0">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">{active || t('noFileSelected')}</h2>
-          <button onClick={saveFile} className="px-3 py-1 rounded bg-indigo-600">{t('save')}</button>
+          <button onClick={saveFile} className="brand-button px-3 py-1.5 rounded-xl text-white">{t('save')}</button>
         </div>
-        <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[50vh] lg:h-[80vh] bg-zinc-900 border border-zinc-800 rounded p-3" />
+        <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[50vh] lg:h-[80vh] bg-zinc-900/70 border border-zinc-800 rounded-[24px] p-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
       </main>
     </div>
   );

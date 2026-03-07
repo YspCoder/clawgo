@@ -175,7 +175,7 @@ const Cron: React.FC = () => {
           <button onClick={() => refreshCron()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
             <RefreshCw className="w-4 h-4" /> {t('refresh')}
           </button>
-          <button onClick={() => openCronModal()} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
+          <button onClick={() => openCronModal()} className="brand-button flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">
             <Plus className="w-4 h-4" /> {t('addJob')}
           </button>
         </div>
@@ -185,12 +185,12 @@ const Cron: React.FC = () => {
         {cron.map((j) => {
           const schedule = formatSchedule(j, t);
           return (
-          <div key={j.id} className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-6 flex flex-col shadow-sm group hover:border-zinc-700/50 transition-colors">
+          <div key={j.id} className="brand-card rounded-[30px] border border-zinc-800/80 p-6 flex flex-col group hover:border-zinc-700/50 transition-colors">
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-zinc-100 mb-1">{j.name || j.id}</h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider bg-zinc-800/50 px-2 py-0.5 rounded">{t('id')}: {j.id.slice(-6)}</span>
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider bg-zinc-800/40 px-2 py-0.5 rounded-full">{t('id')}: {j.id.slice(-6)}</span>
                 </div>
               </div>
               {j.enabled ? (
@@ -206,7 +206,7 @@ const Cron: React.FC = () => {
 
             <div className="flex-1 space-y-3 mb-6">
               <div className="text-sm text-zinc-400 line-clamp-2 italic">"{j.message}"</div>
-              <div className="bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
+              <div className="brand-card-subtle rounded-2xl p-3 border border-zinc-800/50">
                 <div className="text-[10px] text-zinc-500 uppercase mb-0.5">{schedule.label}</div>
                 <div className="text-xs text-zinc-300 font-medium break-all">{schedule.value}</div>
               </div>
@@ -215,7 +215,7 @@ const Cron: React.FC = () => {
             <div className="flex items-center gap-2 pt-4 border-t border-zinc-800/50">
               <button
                 onClick={() => openCronModal(j)}
-                className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium transition-colors text-zinc-300"
+                className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-800/70 hover:bg-zinc-700 rounded-xl text-xs font-medium transition-colors text-zinc-300"
               >
                 <Edit2 className="w-3.5 h-3.5" /> {t('editJob')}
               </button>
@@ -238,7 +238,7 @@ const Cron: React.FC = () => {
           );
         })}
         {cron.length === 0 && (
-          <div className="col-span-full py-20 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-3xl flex flex-col items-center justify-center text-zinc-500">
+          <div className="col-span-full py-20 brand-card border border-dashed border-zinc-800 rounded-[32px] flex flex-col items-center justify-center text-zinc-500">
             <Clock className="w-12 h-12 mb-4 opacity-20" />
             <p className="text-lg font-medium">{t('noCronJobs')}</p>
           </div>
@@ -259,16 +259,16 @@ const Cron: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden"
+              className="brand-card relative w-full max-w-lg border border-zinc-800 rounded-[32px] shadow-2xl overflow-hidden"
             >
-              <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50">
+              <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/20 relative z-[1]">
                 <h2 className="text-xl font-semibold text-zinc-100">{editingCron ? t('editJob') : t('addJob')}</h2>
                 <button onClick={() => setIsCronModalOpen(false)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400 hover:text-zinc-200">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto relative z-[1]">
                 <div className="grid grid-cols-2 gap-4">
                   <label className="block">
                     <span className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('jobName')}</span>
@@ -276,7 +276,7 @@ const Cron: React.FC = () => {
                       type="text"
                       value={cronForm.name}
                       onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                      className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                     />
                   </label>
                   <label className="block">
@@ -286,7 +286,7 @@ const Cron: React.FC = () => {
                       value={cronForm.expr}
                       onChange={(e) => setCronForm({ ...cronForm, expr: e.target.value })}
                       placeholder={t('cronExpressionPlaceholder')}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                      className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                     />
                   </label>
                 </div>
@@ -297,7 +297,7 @@ const Cron: React.FC = () => {
                     value={cronForm.message}
                     onChange={(e) => setCronForm({ ...cronForm, message: e.target.value })}
                     rows={3}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors resize-none"
+                    className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors resize-none"
                   />
                 </label>
 
@@ -312,7 +312,7 @@ const Cron: React.FC = () => {
                         const nextTo = candidates.includes(cronForm.to) ? cronForm.to : (candidates[0] || '');
                         setCronForm({ ...cronForm, channel: nextChannel, to: nextTo });
                       }}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                      className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                     >
                       {(enabledChannels.length > 0 ? enabledChannels : [cronForm.channel]).map((ch) => (
                         <option key={ch} value={ch}>{ch}</option>
@@ -325,7 +325,7 @@ const Cron: React.FC = () => {
                       <select
                         value={cronForm.to}
                         onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                        className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                       >
                         {(channelRecipients[cronForm.channel] || []).map((id) => (
                           <option key={id} value={id}>{id}</option>
@@ -337,7 +337,7 @@ const Cron: React.FC = () => {
                         value={cronForm.to}
                         onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
                         placeholder={t('recipientId')}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+                        className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
                       />
                     )}
                   </label>
@@ -365,7 +365,7 @@ const Cron: React.FC = () => {
                 </div>
               </div>
 
-              <div className="p-6 border-t border-zinc-800 bg-zinc-900/50 flex items-center justify-end gap-3">
+              <div className="p-6 border-t border-zinc-800 bg-zinc-900/20 flex items-center justify-end gap-3 relative z-[1]">
                 <button
                   onClick={() => setIsCronModalOpen(false)}
                   className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -374,7 +374,7 @@ const Cron: React.FC = () => {
                 </button>
                 <button
                   onClick={handleCronSubmit}
-                  className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-600/20"
+                  className="brand-button px-6 py-2 text-white rounded-xl text-sm font-medium transition-all"
                 >
                   {editingCron ? t('update') : t('create')}
                 </button>

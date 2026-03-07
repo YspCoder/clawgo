@@ -208,43 +208,43 @@ const Config: React.FC = () => {
     <div className="p-4 md:p-8 w-full space-y-6 flex flex-col min-h-full">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold tracking-tight">{t('configuration')}</h1>
-        <div className="flex items-center gap-1 bg-zinc-900/80 p-1 rounded-lg border border-zinc-800">
-          <button onClick={() => setShowRaw(false)} className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${!showRaw ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}>{t('form')}</button>
-          <button onClick={() => setShowRaw(true)} className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${showRaw ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}>{t('rawJson')}</button>
+        <div className="flex items-center gap-1 bg-zinc-900/60 p-1 rounded-xl border border-zinc-800">
+          <button onClick={() => setShowRaw(false)} className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${!showRaw ? 'brand-button text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}>{t('form')}</button>
+          <button onClick={() => setShowRaw(true)} className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${showRaw ? 'brand-button text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}>{t('rawJson')}</button>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors">
             <RefreshCw className="w-4 h-4" /> {t('reload')}
           </button>
-          <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">{t('configDiffPreview')}</button>
-          <button onClick={() => setBasicMode(v => !v)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">
+          <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900/70 border border-zinc-800 rounded-xl text-sm">{t('configDiffPreview')}</button>
+          <button onClick={() => setBasicMode(v => !v)} className="px-3 py-2 bg-zinc-900/70 border border-zinc-800 rounded-xl text-sm">
             {basicMode ? t('configBasicMode') : t('configAdvancedMode')}
           </button>
           <label className="flex items-center gap-2 text-sm text-zinc-300">
             <input type="checkbox" checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
             {t('configHotOnly')}
           </label>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="px-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm" />
         </div>
-        <button onClick={saveConfig} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
+        <button onClick={saveConfig} className="brand-button flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">
           <Save className="w-4 h-4" /> {t('saveChanges')}
         </button>
       </div>
 
-      <div className="flex-1 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl overflow-hidden flex flex-col shadow-sm min-h-[420px]">
+      <div className="flex-1 brand-card border border-zinc-800/80 rounded-[30px] overflow-hidden flex flex-col shadow-sm min-h-[420px]">
         {!showRaw ? (
           <div className="flex-1 flex min-h-0">
-            <aside className="w-44 md:w-56 border-r border-zinc-800 bg-zinc-950/40 p-2 md:p-3 overflow-y-auto shrink-0">
+            <aside className="w-44 md:w-56 border-r border-zinc-800 bg-zinc-950/20 p-2 md:p-3 overflow-y-auto shrink-0">
               <div className="text-xs text-zinc-500 uppercase tracking-widest mb-2 px-2">{t('configTopLevel')}</div>
               <div className="space-y-1">
                 {filteredTopKeys.map((k) => (
                   <button
                     key={k}
                     onClick={() => setSelectedTop(k)}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeTop === k ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'text-zinc-300 hover:bg-zinc-800/60'}`}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-colors ${activeTop === k ? 'nav-item-active text-indigo-700 border border-indigo-500/30' : 'text-zinc-300 hover:bg-zinc-800/30'}`}
                   >
                     {k === hotReloadTabKey ? t('configHotFieldsFull') : (configLabels[k] || k)}
                   </button>
@@ -258,7 +258,7 @@ const Config: React.FC = () => {
                   <div className="text-sm font-semibold text-zinc-300">{t('configHotFieldsFull')}</div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                     {hotReloadFieldDetails.map((it) => (
-                      <div key={it.path} className="p-2 rounded bg-zinc-950 border border-zinc-800">
+                      <div key={it.path} className="p-2 rounded-xl bg-zinc-950/70 border border-zinc-800">
                         <div className="font-mono text-zinc-200">{it.path}</div>
                         <div className="text-zinc-400">{it.name || ''}{it.description ? ` · ${it.description}` : ''}</div>
                       </div>
@@ -267,21 +267,21 @@ const Config: React.FC = () => {
                 </div>
               )}
               {activeTop === 'providers' && !showRaw && (
-                <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-3 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
                     <div className="flex items-center gap-2">
-                      <input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder={t('configNewProviderName')} className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs" />
-                      <button onClick={addProxy} className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-xs">{t('add')}</button>
+                      <input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder={t('configNewProviderName')} className="px-2 py-1 rounded-lg bg-zinc-900/70 border border-zinc-700 text-xs" />
+                      <button onClick={addProxy} className="brand-button px-2 py-1 rounded-lg text-xs text-white">{t('add')}</button>
                     </div>
                   </div>
                   <div className="space-y-2">
                     {Object.entries(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).map(([name, p]) => (
-                      <div key={name} className="grid grid-cols-1 md:grid-cols-7 gap-2 rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 text-xs">
+                      <div key={name} className="grid grid-cols-1 md:grid-cols-7 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
                         <div className="md:col-span-1 font-mono text-zinc-300 flex items-center">{name}</div>
-                        <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
-                        <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="md:col-span-2 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
-                        <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`} className="md:col-span-1 px-2 py-1 rounded bg-zinc-950 border border-zinc-800" />
+                        <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                        <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                        <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
                         <button onClick={()=>removeProxy(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
                       </div>
                     ))}
@@ -309,7 +309,7 @@ const Config: React.FC = () => {
           <textarea
             value={cfgRaw}
             onChange={(e) => setCfgRaw(e.target.value)}
-            className="flex-1 w-full bg-zinc-950 p-6 font-mono text-sm text-zinc-300 focus:outline-none resize-none"
+            className="flex-1 w-full bg-zinc-950/35 p-6 font-mono text-sm text-zinc-300 focus:outline-none resize-none"
             spellCheck={false}
           />
         )}
@@ -317,10 +317,10 @@ const Config: React.FC = () => {
 
       {showDiff && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl max-h-[85vh] bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col">
+          <div className="w-full max-w-4xl max-h-[85vh] brand-card border border-zinc-800 rounded-[30px] overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
               <div className="font-semibold">{t('configDiffPreviewCount', { count: diffRows.length })}</div>
-              <button className="px-3 py-1 rounded bg-zinc-800" onClick={() => setShowDiff(false)}>{t('close')}</button>
+              <button className="px-3 py-1 rounded-xl bg-zinc-800" onClick={() => setShowDiff(false)}>{t('close')}</button>
             </div>
             <div className="overflow-auto text-xs">
               <table className="w-full">

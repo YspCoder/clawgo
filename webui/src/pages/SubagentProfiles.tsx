@@ -276,17 +276,17 @@ const SubagentProfiles: React.FC = () => {
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentProfiles')}</h1>
         <div className="flex items-center gap-2">
-          <button onClick={() => load()} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">
+          <button onClick={() => load()} className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm">
             {t('refresh')}
           </button>
-          <button onClick={onNew} className="px-3 py-1.5 rounded-lg bg-emerald-700/80 hover:bg-emerald-600 text-sm">
+          <button onClick={onNew} className="px-3 py-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 text-sm">
             {t('newProfile')}
           </button>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
-        <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden">
+        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden">
           <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">
             {t('subagentProfiles')}
           </div>
@@ -295,7 +295,7 @@ const SubagentProfiles: React.FC = () => {
               <button
                 key={it.agent_id}
                 onClick={() => onSelect(it)}
-                className={`w-full text-left px-3 py-2 border-b border-zinc-800/50 hover:bg-zinc-800/40 ${selectedId === it.agent_id ? 'bg-indigo-500/15' : ''}`}
+                className={`w-full text-left px-3 py-2 border-b border-zinc-800/50 hover:bg-zinc-800/20 ${selectedId === it.agent_id ? 'bg-indigo-500/15' : ''}`}
               >
                 <div className="text-sm text-zinc-100 truncate">{it.agent_id || '-'}</div>
                 <div className="text-xs text-zinc-400 truncate">
@@ -309,7 +309,7 @@ const SubagentProfiles: React.FC = () => {
           </div>
         </div>
 
-        <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 p-4 space-y-3">
+        <div className="brand-card rounded-[28px] border border-zinc-800 p-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <div className="text-xs text-zinc-400 mb-1">{t('id')}</div>
@@ -317,7 +317,7 @@ const SubagentProfiles: React.FC = () => {
                 value={draft.agent_id || ''}
                 disabled={!!selected}
                 onChange={(e) => setDraft({ ...draft, agent_id: e.target.value })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded disabled:opacity-60"
+                className="w-full px-2 py-1.5 text-xs bg-zinc-900/70 border border-zinc-700 rounded-xl disabled:opacity-60"
                 placeholder="coder"
               />
             </div>

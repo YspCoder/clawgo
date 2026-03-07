@@ -71,14 +71,14 @@ const TaskAudit: React.FC = () => {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl md:text-2xl font-semibold">{t('taskAudit')}</h1>
         <div className="flex items-center gap-2">
-          <select value={sourceFilter} onChange={(e)=>setSourceFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
+          <select value={sourceFilter} onChange={(e)=>setSourceFilter(e.target.value)} className="bg-zinc-900/70 border border-zinc-700 rounded-xl px-2 py-1.5 text-xs">
             <option value="all">{t('allSources')}</option>
             <option value="direct">{t('sourceDirect')}</option>
             <option value="memory_todo">{t('sourceMemoryTodo')}</option>
             <option value="task_watchdog">task_watchdog</option>
             <option value="-">-</option>
           </select>
-          <select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">
+          <select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)} className="bg-zinc-900/70 border border-zinc-700 rounded-xl px-2 py-1.5 text-xs">
             <option value="all">{t('allStatus')}</option>
             <option value="running">{t('statusRunning')}</option>
             <option value="waiting">{t('statusWaiting')}</option>
@@ -87,12 +87,12 @@ const TaskAudit: React.FC = () => {
             <option value="error">{t('statusError')}</option>
             <option value="suppressed">{t('statusSuppressed')}</option>
           </select>
-          <button onClick={fetchData} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{loading ? t('loading') : t('refresh')}</button>
+          <button onClick={fetchData} className="brand-button px-3 py-1.5 rounded-xl text-sm text-white">{loading ? t('loading') : t('refresh')}</button>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
-        <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden flex flex-col min-h-0">
+        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('taskQueue')}</div>
           <div className="overflow-y-auto min-h-0">
             {filteredItems.length === 0 ? (
@@ -103,7 +103,7 @@ const TaskAudit: React.FC = () => {
                 <button
                   key={`${it.task_id || idx}-${it.time || idx}`}
                   onClick={() => setSelected(it)}
-                  className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/40 ${active ? 'bg-indigo-500/15' : ''}`}
+                  className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/20 ${active ? 'bg-indigo-500/15' : ''}`}
                 >
                   <div className="text-sm font-medium text-zinc-100 truncate">{it.task_id || `task-${idx + 1}`}</div>
                   <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · attempts:{it.attempts || 1} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'} · {it.provider || '-'} / {it.model || '-'}</div>
@@ -114,7 +114,7 @@ const TaskAudit: React.FC = () => {
           </div>
         </div>
 
-        <div className="border border-zinc-800 rounded-xl bg-zinc-900/40 overflow-hidden flex flex-col min-h-0">
+        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('taskDetail')}</div>
           <div className="p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
             {!selected ? (
@@ -135,38 +135,38 @@ const TaskAudit: React.FC = () => {
 
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('inputPreview')}</div>
-                  <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap">{selected.input_preview || '-'}</div>
+                  <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap">{selected.input_preview || '-'}</div>
                 </div>
 
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('error')}</div>
-                  <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-red-300">{selected.error || '-'}</div>
+                  <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-red-300">{selected.error || '-'}</div>
                 </div>
 
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('blockReason')}</div>
-                  <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-amber-200">{selected.block_reason || '-'}</div>
+                  <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-amber-200">{selected.block_reason || '-'}</div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <div className="text-zinc-500 text-xs mb-1">{t('lastPauseReason')}</div>
-                    <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{selected.last_pause_reason || '-'}</div>
+                    <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{selected.last_pause_reason || '-'}</div>
                   </div>
                   <div>
                     <div className="text-zinc-500 text-xs mb-1">{t('lastPauseAt')}</div>
-                    <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{formatLocalDateTime(selected.last_pause_at)}</div>
+                    <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{formatLocalDateTime(selected.last_pause_at)}</div>
                   </div>
                 </div>
 
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('taskLogs')}</div>
-                  <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{Array.isArray(selected.logs) && selected.logs.length ? selected.logs.join('\n') : '-'}</div>
+                  <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{Array.isArray(selected.logs) && selected.logs.length ? selected.logs.join('\n') : '-'}</div>
                 </div>
 
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('mediaSources')}</div>
-                  <div className="p-2 rounded bg-zinc-950/60 border border-zinc-800 text-xs">
+                  <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 text-xs">
                     {Array.isArray(selected.media_items) && selected.media_items.length > 0 ? (
                       <div className="space-y-1">
                         {selected.media_items.map((m, i) => (
@@ -181,7 +181,7 @@ const TaskAudit: React.FC = () => {
 
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('rawJson')}</div>
-                  <pre className="p-2 rounded bg-zinc-950/60 border border-zinc-800 text-xs overflow-auto">{selectedPretty}</pre>
+                  <pre className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 text-xs overflow-auto">{selectedPretty}</pre>
                 </div>
               </>
             )}

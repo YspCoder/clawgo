@@ -10,14 +10,14 @@ const Layout: React.FC = () => {
   const { sidebarOpen, setSidebarOpen } = useAppContext();
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-950 text-zinc-50 overflow-hidden font-sans">
+    <div className="app-shell flex flex-col h-screen bg-zinc-950 text-zinc-50 overflow-hidden font-sans">
       <Header />
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         {sidebarOpen && (
           <button className="fixed inset-0 top-16 bg-black/40 z-30 md:hidden" onClick={() => setSidebarOpen(false)} aria-label="close sidebar" />
         )}
-        <main className="flex-1 flex flex-col min-w-0 relative bg-zinc-950/50">
+        <main className="flex-1 flex flex-col min-w-0 relative app-main-surface">
           <AnimatePresence mode="wait">
             <motion.div 
               key={location.pathname}

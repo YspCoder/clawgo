@@ -964,10 +964,10 @@ const Subagents: React.FC = () => {
     <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentsRuntime')}</h1>
-        <button onClick={() => load()} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{t('refresh')}</button>
+        <button onClick={() => load()} className="brand-button px-3 py-1.5 rounded-xl text-sm text-white">{t('refresh')}</button>
       </div>
 
-      <div className="flex-1 min-h-0 border border-zinc-800 rounded-2xl bg-zinc-900/40 p-4 flex flex-col gap-3">
+      <div className="flex-1 min-h-0 brand-card border border-zinc-800 rounded-[30px] p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('agentTopology')}</div>
@@ -978,7 +978,7 @@ const Subagents: React.FC = () => {
               <button
                 key={filter}
                 onClick={() => setTopologyFilter(filter)}
-                className={`px-2 py-1 rounded text-[11px] ${topologyFilter === filter ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
+                className={`px-2 py-1 rounded-xl text-[11px] ${topologyFilter === filter ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
                   }`}
               >
                 {t(`topologyFilter.${filter}`)}
@@ -987,12 +987,12 @@ const Subagents: React.FC = () => {
             {selectedTopologyBranch && (
               <button
                 onClick={() => setSelectedTopologyBranch('')}
-                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+                className="px-2 py-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
               >
                 {t('clearFocus')}
               </button>
             )}
-            <div className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-900/80 px-1 py-1">
+            <div className="flex items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 px-1 py-1">
               <button
                 onClick={() => {
                   const newZoom = Math.max(0.1, Number((topologyZoom - 0.1).toFixed(2)));
@@ -1009,13 +1009,13 @@ const Subagents: React.FC = () => {
                   }
                   setTopologyZoom(newZoom);
                 }}
-                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+                className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
               >
                 {t('zoomOut')}
               </button>
               <button
                 onClick={fitView}
-                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+                className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
               >
                 {t('fitView')}
               </button>
@@ -1035,7 +1035,7 @@ const Subagents: React.FC = () => {
                   }
                   setTopologyZoom(newZoom);
                 }}
-                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+                className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
               >
                 100%
               </button>
@@ -1055,7 +1055,7 @@ const Subagents: React.FC = () => {
                   }
                   setTopologyZoom(newZoom);
                 }}
-                className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+                className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
               >
                 {t('zoomIn')}
               </button>
@@ -1074,7 +1074,7 @@ const Subagents: React.FC = () => {
             stopTopologyDrag();
             clearTopologyTooltip();
           }}
-          className="relative flex-1 min-h-[420px] sm:min-h-[560px] xl:min-h-[760px] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
+          className="relative flex-1 min-h-[420px] sm:min-h-[560px] xl:min-h-[760px] overflow-hidden rounded-[24px] border border-zinc-800 bg-zinc-950/80"
           style={{ cursor: topologyDragging ? 'grabbing' : 'grab' }}
         >
           <SpaceParticles />
@@ -1142,7 +1142,7 @@ const Subagents: React.FC = () => {
           </div>
           {topologyTooltip && (
             <div
-              className="pointer-events-none fixed z-50 w-[280px] rounded-xl border border-zinc-700/80 bg-zinc-900/95 p-4 shadow-2xl shadow-black/50 backdrop-blur-md transition-opacity duration-200"
+              className="pointer-events-none fixed z-50 w-[280px] brand-card-subtle rounded-[24px] border border-zinc-700/80 p-4 shadow-2xl shadow-black/50 backdrop-blur-md transition-opacity duration-200"
               style={{ left: topologyTooltip.x, top: topologyTooltip.y }}
             >
               <div className="flex items-center gap-2 mb-2">
@@ -1174,7 +1174,7 @@ const Subagents: React.FC = () => {
           {selectedAgentID && (
             <div
               onWheelCapture={(event) => event.stopPropagation()}
-              className="absolute left-4 right-4 bottom-4 z-20 h-[48vh] xl:left-auto xl:right-4 xl:top-4 xl:bottom-4 xl:h-auto xl:w-[360px] rounded-2xl border border-zinc-800 bg-zinc-950/92 shadow-2xl shadow-black/40 backdrop-blur-md overflow-hidden flex flex-col"
+              className="absolute left-4 right-4 bottom-4 z-20 h-[48vh] xl:left-auto xl:right-4 xl:top-4 xl:bottom-4 xl:h-auto xl:w-[360px] brand-card rounded-[28px] border border-zinc-800 shadow-2xl shadow-black/40 backdrop-blur-md overflow-hidden flex flex-col"
             >
               <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
                 <div className="min-w-0">
@@ -1189,7 +1189,7 @@ const Subagents: React.FC = () => {
                     setStreamTask(null);
                     setStreamItems([]);
                   }}
-                  className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+                  className="px-2 py-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
                 >
                   {t('close')}
                 </button>
@@ -1208,7 +1208,7 @@ const Subagents: React.FC = () => {
                 {streamItems.length === 0 ? (
                   <div className="text-sm text-zinc-500">No internal stream events yet.</div>
                 ) : streamItems.map((item, idx) => (
-                  <div key={`${item.kind || 'item'}-${item.at || 0}-${idx}`} className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3">
+                  <div key={`${item.kind || 'item'}-${item.at || 0}-${idx}`} className="brand-card-subtle rounded-2xl border border-zinc-800 p-3">
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="text-xs font-medium text-zinc-200">
                         {item.kind === 'event'

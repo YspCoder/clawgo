@@ -47,13 +47,13 @@ const LogCodes: React.FC = () => {
           value={kw}
           onChange={(e) => setKw(e.target.value)}
           placeholder={t('logCodesSearchPlaceholder')}
-          className="w-full sm:w-80 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+          className="w-full sm:w-80 bg-zinc-900/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
         />
       </div>
 
-      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden">
+      <div className="brand-card border border-zinc-800 rounded-[30px] overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-900/90 border-b border-zinc-800">
+          <thead className="bg-zinc-900/70 border-b border-zinc-800">
             <tr className="text-zinc-400">
               <th className="text-left p-3 font-medium w-40">{t('code')}</th>
               <th className="text-left p-3 font-medium">{t('template')}</th>
@@ -61,7 +61,7 @@ const LogCodes: React.FC = () => {
           </thead>
           <tbody>
             {filtered.map((it) => (
-              <tr key={it.code} className="border-b border-zinc-900 hover:bg-zinc-900/40">
+              <tr key={it.code} className="border-b border-zinc-900/70 hover:bg-zinc-900/20">
                 <td className="p-3 font-mono text-indigo-300">{it.code}</td>
                 <td className="p-3 text-zinc-200 break-all">{it.text}</td>
               </tr>

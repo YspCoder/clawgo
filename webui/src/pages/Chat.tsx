@@ -517,35 +517,35 @@ const Chat: React.FC = () => {
 
   return (
     <div className="flex h-full min-w-0">
-      <div className="flex-1 flex flex-col bg-zinc-950/50">
-        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex-1 flex flex-col brand-card rounded-[30px] border border-zinc-800/80 overflow-hidden">
+        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-3 flex-wrap bg-zinc-900/15">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <button
               onClick={() => setChatTab('main')}
-              className={`px-3 py-1.5 rounded-lg text-xs ${chatTab === 'main' ? 'bg-indigo-600 text-white' : 'bg-zinc-900 border border-zinc-700 text-zinc-300'}`}
+              className={`px-3 py-1.5 rounded-xl text-xs ${chatTab === 'main' ? 'brand-button text-white' : 'bg-zinc-900/70 border border-zinc-700 text-zinc-300'}`}
             >
               {t('mainChat')}
             </button>
             <button
               onClick={() => setChatTab('subagents')}
-              className={`px-3 py-1.5 rounded-lg text-xs ${chatTab === 'subagents' ? 'bg-amber-600 text-white' : 'bg-zinc-900 border border-zinc-700 text-zinc-300'}`}
+              className={`px-3 py-1.5 rounded-xl text-xs ${chatTab === 'subagents' ? 'bg-amber-600 text-white' : 'bg-zinc-900/70 border border-zinc-700 text-zinc-300'}`}
             >
               {t('subagentGroup')}
             </button>
             {chatTab === 'main' && (
-              <select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="max-w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200">
+              <select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="max-w-full bg-zinc-900/70 border border-zinc-700 rounded-xl px-2.5 py-1.5 text-xs text-zinc-200">
                 {userSessions.map((s: any) => <option key={s.key} value={s.key}>{s.title || s.key}</option>)}
               </select>
             )}
           </div>
-          <button onClick={chatTab === 'main' ? loadHistory : loadSubagentGroup} className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3" />{t('reloadHistory')}</button>
+          <button onClick={chatTab === 'main' ? loadHistory : loadSubagentGroup} className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-xl bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3" />{t('reloadHistory')}</button>
         </div>
 
         {chatTab === 'subagents' && (
-          <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-950/40 flex flex-wrap gap-2">
+          <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-950/20 flex flex-wrap gap-2">
             <button
               onClick={() => setSelectedStreamAgents([])}
-              className={`px-2.5 py-1 rounded-full text-xs border ${selectedStreamAgents.length === 0 ? 'bg-amber-600 text-white border-amber-500' : 'bg-zinc-900 border-zinc-700 text-zinc-300'}`}
+              className={`px-2.5 py-1 rounded-full text-xs border ${selectedStreamAgents.length === 0 ? 'bg-amber-600 text-white border-amber-500' : 'bg-zinc-900/70 border-zinc-700 text-zinc-300'}`}
             >
               {t('allAgents')}
             </button>
@@ -553,7 +553,7 @@ const Chat: React.FC = () => {
               <button
                 key={agent}
                 onClick={() => toggleStreamAgent(agent)}
-                className={`px-2.5 py-1 rounded-full text-xs border ${selectedStreamAgents.includes(agent) ? 'bg-zinc-100 text-zinc-950 border-zinc-100' : 'bg-zinc-900 border-zinc-700 text-zinc-300'}`}
+                className={`px-2.5 py-1 rounded-full text-xs border ${selectedStreamAgents.includes(agent) ? 'bg-zinc-100 text-zinc-950 border-zinc-100' : 'bg-zinc-900/70 border-zinc-700 text-zinc-300'}`}
               >
                 {formatAgentName(agent)}
               </button>
@@ -563,7 +563,7 @@ const Chat: React.FC = () => {
 
         <div className="flex-1 min-h-0 flex flex-col xl:flex-row">
           {chatTab === 'subagents' && (
-            <div className="w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r border-zinc-800 bg-zinc-950/70 p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
+            <div className="w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r border-zinc-800 bg-zinc-950/28 p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
               <div>
                 <div className="text-xs uppercase tracking-wider text-zinc-500 mb-1">{t('subagentDispatch')}</div>
                 <div className="text-sm text-zinc-300">{t('subagentDispatchHint')}</div>
@@ -572,7 +572,7 @@ const Chat: React.FC = () => {
                 <select
                   value={dispatchAgentID}
                   onChange={(e) => setDispatchAgentID(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200"
+                  className="w-full bg-zinc-900/70 border border-zinc-800 rounded-2xl px-3 py-2.5 text-sm text-zinc-200"
                 >
                   {registryAgents.map((agent) => (
                     <option key={agent.agent_id} value={agent.agent_id}>
@@ -584,18 +584,18 @@ const Chat: React.FC = () => {
                   value={dispatchTask}
                   onChange={(e) => setDispatchTask(e.target.value)}
                   placeholder={t('subagentTaskPlaceholder')}
-                  className="w-full min-h-[180px] resize-none bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-3 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-amber-500"
+                  className="w-full min-h-[180px] resize-none bg-zinc-900/70 border border-zinc-800 rounded-2xl px-3 py-3 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                 />
                 <input
                   value={dispatchLabel}
                   onChange={(e) => setDispatchLabel(e.target.value)}
                   placeholder={t('subagentLabelPlaceholder')}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-amber-500"
+                  className="w-full bg-zinc-900/70 border border-zinc-800 rounded-2xl px-3 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                 />
                 <button
                   onClick={dispatchSubagentTask}
                   disabled={!dispatchAgentID.trim() || !dispatchTask.trim()}
-                  className="w-full px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm font-medium"
+                  className="w-full px-3 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm font-medium shadow-[0_12px_30px_rgba(217,119,6,0.22)]"
                 >
                   {t('dispatchToSubagent')}
                 </button>
@@ -619,7 +619,7 @@ const Chat: React.FC = () => {
                       <button
                         key={agent.agent_id}
                         onClick={() => setDispatchAgentID(String(agent.agent_id || ''))}
-                        className={`w-full text-left rounded-xl border px-3 py-2 ${active ? 'border-amber-500 bg-amber-500/10' : 'border-zinc-800 bg-zinc-900/70 hover:bg-zinc-900'}`}
+                        className={`w-full text-left rounded-2xl border px-3 py-2.5 ${active ? 'border-amber-500 bg-amber-500/10' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/70'}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-sm font-medium text-zinc-100">{formatAgentName(agent.display_name || agent.agent_id)}</div>
@@ -642,7 +642,7 @@ const Chat: React.FC = () => {
           >
             {displayedChat.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-zinc-500 space-y-4">
-                <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center border border-zinc-800">
+                <div className="w-16 h-16 rounded-[24px] brand-card-subtle flex items-center justify-center border border-zinc-800">
                   <MessageSquare className="w-8 h-8 text-zinc-600" />
                 </div>
                 <p className="text-sm font-medium">{chatTab === 'main' ? t('startConversation') : t('noSubagentStream')}</p>
@@ -671,7 +671,7 @@ const Chat: React.FC = () => {
                   >
                     <div className={`flex items-start gap-2 max-w-full sm:max-w-[96%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                       <div className={`w-9 h-9 mt-1 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 ${m.avatarClassName || (isUser ? 'bg-indigo-600/90 text-white' : 'bg-emerald-600/80 text-white')}`}>{m.avatarText || (isUser ? 'U' : 'A')}</div>
-                      <div className={`max-w-[calc(100vw-6rem)] sm:max-w-[92%] rounded-2xl px-4 py-3 shadow-sm ${bubbleClass}`}>
+                      <div className={`max-w-[calc(100vw-6rem)] sm:max-w-[92%] rounded-[24px] px-4 py-3 shadow-sm ${bubbleClass}`}>
                         <div className="flex items-center justify-between gap-3 mb-1">
                           <div className="text-[11px] opacity-85">{m.actorName || m.label || (isUser ? t('user') : isExec ? t('exec') : isSystem ? t('system') : t('agent'))}</div>
                           {m.metaLine && <div className="text-[11px] text-zinc-400">{m.metaLine}</div>}
@@ -690,7 +690,7 @@ const Chat: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-3 sm:p-4 bg-zinc-950 border-t border-zinc-800">
+        <div className="p-3 sm:p-4 bg-zinc-950/20 border-t border-zinc-800">
           <div className="w-full relative flex items-center">
             <input
               type="file"
@@ -700,7 +700,7 @@ const Chat: React.FC = () => {
             />
             <label
               htmlFor="file"
-              className={`absolute left-3 p-2 rounded-full cursor-pointer transition-colors ${fileSelected ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}
+              className={`absolute left-3 p-2 rounded-full cursor-pointer transition-colors ${fileSelected ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200'}`}
             >
               <Paperclip className="w-5 h-5" />
             </label>
@@ -710,12 +710,12 @@ const Chat: React.FC = () => {
               onKeyDown={(e) => chatTab === 'main' && e.key === 'Enter' && send()}
               placeholder={chatTab === 'main' ? t('typeMessage') : t('subagentGroupReadonly')}
               disabled={chatTab !== 'main'}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-14 pr-14 py-3.5 text-[15px] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-zinc-500 shadow-sm disabled:opacity-60"
+              className="w-full bg-zinc-900/75 border border-zinc-800 rounded-full pl-14 pr-14 py-3.5 text-[15px] focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-500 shadow-sm disabled:opacity-60"
             />
             <button
               onClick={send}
               disabled={chatTab !== 'main' || (!msg.trim() && !fileSelected)}
-              className="absolute right-2 p-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white rounded-full transition-colors shadow-sm"
+              className="absolute right-2 p-2.5 brand-button disabled:opacity-50 text-white rounded-full transition-colors"
             >
               <Send className="w-4 h-4 ml-0.5" />
             </button>

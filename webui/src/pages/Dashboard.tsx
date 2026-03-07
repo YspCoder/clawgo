@@ -74,7 +74,7 @@ const Dashboard: React.FC = () => {
             {t('webui')}: <span className="font-mono text-zinc-300">{webuiVersion}</span>
           </div>
         </div>
-        <button onClick={refreshAll} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors shrink-0">
+        <button onClick={refreshAll} className="brand-button flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors shrink-0 text-white">
           <RefreshCw className="w-4 h-4" /> {t('refreshAll')}
         </button>
       </div>
@@ -89,7 +89,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 min-h-[148px]">
+        <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
           <div className="flex items-center gap-2 text-zinc-200 mb-2">
             <AlertTriangle className="w-4 h-4 text-amber-400" />
             <div className="text-sm font-medium">{t('ekgEscalations')}</div>
@@ -97,7 +97,7 @@ const Dashboard: React.FC = () => {
           <div className="text-3xl font-semibold text-zinc-100">{ekgEscalationCount}</div>
           <div className="mt-2 text-xs text-zinc-500">{t('dashboardTopErrorSignature')}: {ekgTopErrSig}</div>
         </div>
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 min-h-[148px]">
+        <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
           <div className="flex items-center gap-2 text-zinc-200 mb-2">
             <Workflow className="w-4 h-4 text-sky-400" />
             <div className="text-sm font-medium">{t('ekgTopProvidersWorkload')}</div>
@@ -105,7 +105,7 @@ const Dashboard: React.FC = () => {
           <div className="text-2xl font-semibold text-zinc-100 truncate">{ekgTopProvider}</div>
           <div className="mt-2 text-xs text-zinc-500">{t('dashboardWorkloadSnapshot')}</div>
         </div>
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 min-h-[148px]">
+        <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
           <div className="flex items-center gap-2 text-zinc-200 mb-2">
             <Activity className="w-4 h-4 text-rose-400" />
             <div className="text-sm font-medium">{t('taskAudit')}</div>
@@ -116,17 +116,17 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-        <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-6 min-h-[340px] h-full">
+        <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6 min-h-[340px] h-full">
           <div className="flex items-center gap-2 mb-5 text-zinc-200">
             <Clock className="w-5 h-5 text-zinc-400" />
             <h2 className="text-lg font-medium">{t('recentCron')}</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 min-h-[104px]">
+            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4 min-h-[104px]">
               <div className="text-[11px] uppercase tracking-widest text-zinc-500">{t('active')}</div>
               <div className="mt-2 text-2xl font-semibold text-zinc-100">{enabledCron}</div>
             </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4 min-h-[104px]">
+            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4 min-h-[104px]">
               <div className="text-[11px] uppercase tracking-widest text-zinc-500">{t('paused')}</div>
               <div className="mt-2 text-2xl font-semibold text-zinc-100">{pausedCron}</div>
             </div>
@@ -138,7 +138,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-        <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-6 min-h-[340px] h-full">
+        <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6 min-h-[340px] h-full">
           <div className="flex items-center gap-2 mb-5 text-zinc-200">
             <Activity className="w-5 h-5 text-zinc-400" />
             <h2 className="text-lg font-medium">{t('taskAudit')}</h2>
@@ -147,7 +147,7 @@ const Dashboard: React.FC = () => {
             {recentTasks.length === 0 ? (
               <div className="text-sm text-zinc-500 text-center py-10">-</div>
             ) : recentTasks.map((task: any, index: number) => (
-              <div key={`${task.task_id || 'task'}-${index}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+              <div key={`${task.task_id || 'task'}-${index}`} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-zinc-200 truncate">{task.task_id || `task-${index + 1}`}</div>
@@ -162,7 +162,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-6 min-h-[340px] h-full">
+        <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6 min-h-[340px] h-full">
           <div className="flex items-center gap-2 mb-5 text-zinc-200">
             <AlertTriangle className="w-5 h-5 text-zinc-400" />
             <h2 className="text-lg font-medium">{t('statusError')}</h2>
@@ -171,7 +171,7 @@ const Dashboard: React.FC = () => {
             {recentFailures.length === 0 ? (
               <div className="text-sm text-zinc-500 text-center py-10">-</div>
             ) : recentFailures.map((task: any, index: number) => (
-              <div key={`${task.task_id || 'failed'}-${index}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+              <div key={`${task.task_id || 'failed'}-${index}`} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
                 <div className="text-sm font-medium text-zinc-200 truncate">{task.task_id || `task-${index + 1}`}</div>
                 <div className="text-xs text-zinc-500 truncate mt-1">{task.source || '-'} · {task.channel || '-'}</div>
                 <div className="text-xs text-rose-300 mt-2 break-all">{task.error || task.block_reason || '-'}</div>

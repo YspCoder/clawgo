@@ -189,8 +189,8 @@ const Skills: React.FC = () => {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold tracking-tight">{t('skills')}</h1>
         <div className="flex items-center gap-2 flex-wrap w-full xl:w-auto">
-          <input disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-lg text-sm disabled:opacity-60" />
-          <button disabled={installingSkill} onClick={installSkill} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium">{installingSkill ? t('loading') : t('install')}</button>
+          <input disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 px-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm disabled:opacity-60" />
+          <button disabled={installingSkill} onClick={installSkill} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-sm font-medium">{installingSkill ? t('loading') : t('install')}</button>
           <label className="flex items-center gap-2 text-xs text-zinc-400">
             <input
               type="checkbox"
@@ -208,15 +208,15 @@ const Skills: React.FC = () => {
           {!clawhubInstalled && (
             <button
               onClick={installClawHubIfNeeded}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
             >
               <Zap className="w-4 h-4" /> {t('skillsInstallNow')}
             </button>
           )}
-          <button onClick={() => refreshSkills()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => refreshSkills()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors">
             <RefreshCw className="w-4 h-4" /> {t('refresh')}
           </button>
-          <button onClick={onAddSkillClick} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
+          <button onClick={onAddSkillClick} className="brand-button flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">
             <Plus className="w-4 h-4" /> {t('skillsAdd')}
           </button>
         </div>
@@ -231,10 +231,10 @@ const Skills: React.FC = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
         {skills.map(s => (
-          <div key={s.id} className="bg-zinc-900/40 border border-zinc-800/80 rounded-2xl p-6 flex flex-col shadow-sm group hover:border-zinc-700/50 transition-colors">
+          <div key={s.id} className="brand-card rounded-[28px] border border-zinc-800/80 p-6 flex flex-col shadow-sm group hover:border-zinc-700/50 transition-colors">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50">
+                <div className="w-12 h-12 rounded-2xl bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50">
                   <Zap className="w-6 h-6 text-amber-400" />
                 </div>
                 <div>

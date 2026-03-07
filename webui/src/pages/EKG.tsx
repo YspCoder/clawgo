@@ -19,7 +19,7 @@ function StatCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+    <div className="brand-card rounded-[28px] border border-zinc-800 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] uppercase tracking-widest text-zinc-500">{title}</div>
@@ -45,7 +45,7 @@ function KVDistributionCard({
   const maxValue = entries.length > 0 ? Math.max(...entries.map(([, value]) => value)) : 0;
 
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+    <div className="brand-card rounded-[28px] border border-zinc-800 p-5">
       <div className="mb-4 text-sm font-medium text-zinc-200">{title}</div>
       <div className="space-y-3">
         {entries.length === 0 ? (
@@ -79,7 +79,7 @@ function RankingCard({
   valueMode: 'score' | 'count';
 }) {
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5">
+    <div className="brand-card rounded-[28px] border border-zinc-800 p-5">
       <div className="mb-4 text-sm font-medium text-zinc-200">{title}</div>
       <div className="space-y-2">
         {items.length === 0 ? (
@@ -159,12 +159,12 @@ const EKG: React.FC = () => {
           <div className="mt-1 text-sm text-zinc-500">{t('ekgOverviewHint')}</div>
         </div>
         <div className="flex items-center gap-2">
-          <select value={ekgWindow} onChange={(e) => setEkgWindow(e.target.value as '6h' | '24h' | '7d')} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+          <select value={ekgWindow} onChange={(e) => setEkgWindow(e.target.value as '6h' | '24h' | '7d')} className="bg-zinc-900/70 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
             <option value="6h">6h</option>
             <option value="24h">24h</option>
             <option value="7d">7d</option>
           </select>
-          <button onClick={fetchData} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">
+          <button onClick={fetchData} className="brand-button inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-white">
             <RefreshCw className="w-4 h-4" />
             {loading ? t('loading') : t('refresh')}
           </button>

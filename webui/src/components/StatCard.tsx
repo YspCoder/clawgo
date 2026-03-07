@@ -7,12 +7,12 @@ interface StatCardProps {
 }
 
 const StatCard: React.FC<StatCardProps> = ({ title, value, icon }) => (
-  <div className="h-full min-h-[124px] bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 flex items-center gap-4">
-    <div className="w-12 h-12 rounded-xl bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50">
+  <div className="brand-card h-full min-h-[124px] border border-zinc-800 rounded-[28px] p-6 flex items-center gap-4">
+    <div className="w-12 h-12 rounded-2xl bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] relative z-[1]">
       {icon}
     </div>
-    <div>
-      <div className="text-zinc-400 text-sm font-medium mb-1">{title}</div>
+    <div className="relative z-[1]">
+      <div className="text-zinc-500 text-[11px] uppercase tracking-[0.24em] font-semibold mb-1">{title}</div>
       <div className="text-2xl font-semibold text-zinc-100">{value}</div>
     </div>
   </div>
