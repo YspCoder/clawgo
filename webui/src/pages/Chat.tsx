@@ -5,12 +5,28 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { ChatItem } from '../types';
 
+type StreamItem = {
+  kind?: string;
+  at?: number;
+  task_id?: string;
+  label?: string;
+  agent_id?: string;
+  event_type?: string;
+  message?: string;
+  message_type?: string;
+  content?: string;
+  from_agent?: string;
+  to_agent?: string;
+  status?: string;
+};
+
 const Chat: React.FC = () => {
   const { t } = useTranslation();
   const { q, sessions } = useAppContext();
   const [chat, setChat] = useState<ChatItem[]>([]);
   const [msg, setMsg] = useState('');
   const [fileSelected, setFileSelected] = useState(false);
+  const [chatTab, setChatTab] = useState<'main' | 'subagents'>('main');
   const [sessionKey, setSessionKey] = useState('main');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -44,6 +60,34 @@ const Chat: React.FC = () => {
           text = `[${t('toolOutput')}]\n${text}`;
         }
         return { role, text, label };
+      });
+      setChat(mapped);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadSubagentGroup = async () => {
+    try {
+      const r = await fetch(`/webui/api/subagents_runtime${q}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stream_all', limit: 200, task_limit: 24 }),
+      });
+      if (!r.ok) return;
+      const j = await r.json();
+      const arr = Array.isArray(j?.result?.items) ? j.result.items : [];
+      const mapped: ChatItem[] = arr.map((item: StreamItem) => {
+        const isEvent = item.kind === 'event';
+        const label = isEvent
+          ? `${item.agent_id || 'subagent'} · ${item.event_type || 'event'}`
+          : `${item.from_agent || '-'} -> ${item.to_agent || '-'} · ${item.message_type || 'message'}`;
+        const body = isEvent ? (item.message || '') : (item.content || '');
+        return {
+          role: 'assistant',
+          label,
+          text: `${body}${item.status ? `\n\nstatus: ${item.status}` : ''}`,
+        };
       });
       setChat(mapped);
     } catch (e) {
@@ -111,27 +155,55 @@ const Chat: React.FC = () => {
   }
 
   useEffect(() => {
-    loadHistory();
-  }, [q, sessionKey]);
-
+    if (chatTab === 'main') {
+      loadHistory();
+      return;
+    }
+    loadSubagentGroup();
+  }, [q, chatTab, sessionKey]);
 
   useEffect(() => {
-    if (!sessions || sessions.length === 0) return;
-    if (!sessions.some(s => s.key === sessionKey)) {
-      setSessionKey(sessions[0].key);
+    if (chatTab !== 'subagents') return;
+    const timer = window.setInterval(() => {
+      loadSubagentGroup();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [q, chatTab]);
+
+  const userSessions = (sessions || []).filter((s: any) => !String(s?.key || '').startsWith('subagent:'));
+
+  useEffect(() => {
+    if (chatTab !== 'main') return;
+    if (!userSessions.length) return;
+    if (!userSessions.some((s: any) => s.key === sessionKey)) {
+      setSessionKey(userSessions[0].key);
     }
-  }, [sessions]);
+  }, [chatTab, sessionKey, userSessions]);
+
   return (
     <div className="flex h-full">
       <div className="flex-1 flex flex-col bg-zinc-950/50">
         <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm text-zinc-300 font-medium">{t('session')}</h2>
-            <select value={sessionKey} onChange={(e)=>setSessionKey(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200">
-              {(sessions || []).map((s:any)=> <option key={s.key} value={s.key}>{s.key}</option>)}
-            </select>
+            <button
+              onClick={() => setChatTab('main')}
+              className={`px-3 py-1.5 rounded-lg text-xs ${chatTab === 'main' ? 'bg-indigo-600 text-white' : 'bg-zinc-900 border border-zinc-700 text-zinc-300'}`}
+            >
+              Main Chat
+            </button>
+            <button
+              onClick={() => setChatTab('subagents')}
+              className={`px-3 py-1.5 rounded-lg text-xs ${chatTab === 'subagents' ? 'bg-amber-600 text-white' : 'bg-zinc-900 border border-zinc-700 text-zinc-300'}`}
+            >
+              {t('subagentGroup')}
+            </button>
+            {chatTab === 'main' && (
+              <select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200">
+                {userSessions.map((s: any) => <option key={s.key} value={s.key}>{s.title || s.key}</option>)}
+              </select>
+            )}
           </div>
-          <button onClick={loadHistory} className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3"/>{t('reloadHistory')}</button>
+          <button onClick={chatTab === 'main' ? loadHistory : loadSubagentGroup} className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3"/>{t('reloadHistory')}</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -140,7 +212,7 @@ const Chat: React.FC = () => {
               <div className="w-16 h-16 rounded-2xl bg-zinc-900 flex items-center justify-center border border-zinc-800">
                 <MessageSquare className="w-8 h-8 text-zinc-600" />
               </div>
-              <p className="text-sm font-medium">{t('startConversation')}</p>
+              <p className="text-sm font-medium">{chatTab === 'main' ? t('startConversation') : t('noSubagentStream')}</p>
             </div>
           ) : (
             chat.map((m, i) => {
@@ -203,13 +275,14 @@ const Chat: React.FC = () => {
             <input
               value={msg}
               onChange={(e) => setMsg(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && send()}
-              placeholder={t('typeMessage')}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-14 pr-14 py-3.5 text-[15px] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-zinc-500 shadow-sm"
+              onKeyDown={(e) => chatTab === 'main' && e.key === 'Enter' && send()}
+              placeholder={chatTab === 'main' ? t('typeMessage') : t('subagentGroupReadonly')}
+              disabled={chatTab !== 'main'}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-14 pr-14 py-3.5 text-[15px] focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-zinc-500 shadow-sm disabled:opacity-60"
             />
             <button
               onClick={send}
-              disabled={!msg.trim() && !fileSelected}
+              disabled={chatTab !== 'main' || (!msg.trim() && !fileSelected)}
               className="absolute right-2 p-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:hover:bg-indigo-600 text-white rounded-full transition-colors shadow-sm"
             >
               <Send className="w-4 h-4 ml-0.5" />

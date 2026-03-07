@@ -389,3 +389,48 @@ func TestHandleSubagentRuntimeStream(t *testing.T) {
 		t.Fatalf("expected merged event and message items, got %#v", items)
 	}
 }
+
+func TestHandleSubagentRuntimeStreamAll(t *testing.T) {
+	workspace := t.TempDir()
+	manager := tools.NewSubagentManager(nil, workspace, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
+		return "stream-all-result", nil
+	})
+	loop := &AgentLoop{
+		workspace:       workspace,
+		subagentManager: manager,
+		subagentRouter:  tools.NewSubagentRouter(manager),
+	}
+
+	if _, err := loop.HandleSubagentRuntime(context.Background(), "spawn", map[string]interface{}{
+		"task":     "prepare grouped stream task",
+		"agent_id": "coder",
+		"channel":  "webui",
+		"chat_id":  "webui",
+	}); err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+	for i := 0; i < 50; i++ {
+		tasks := manager.ListTasks()
+		if len(tasks) > 0 && tasks[0].Status == "completed" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	out, err := loop.HandleSubagentRuntime(context.Background(), "stream_all", map[string]interface{}{
+		"limit":      100,
+		"task_limit": 10,
+	})
+	if err != nil {
+		t.Fatalf("stream_all failed: %v", err)
+	}
+	payload, ok := out.(map[string]interface{})
+	if !ok || payload["found"] != true {
+		t.Fatalf("unexpected stream_all payload: %#v", out)
+	}
+	items, ok := payload["items"].([]map[string]interface{})
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected grouped stream items, got %#v", payload["items"])
+	}
+}
