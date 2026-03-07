@@ -326,10 +326,28 @@ type SandboxConfig struct {
 
 type FilesystemConfig struct{}
 
+type MCPServerConfig struct {
+	Enabled     bool              `json:"enabled"`
+	Transport   string            `json:"transport"`
+	Command     string            `json:"command"`
+	Args        []string          `json:"args,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	WorkingDir  string            `json:"working_dir,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Package     string            `json:"package,omitempty"`
+}
+
+type MCPToolsConfig struct {
+	Enabled           bool                       `json:"enabled"`
+	RequestTimeoutSec int                        `json:"request_timeout_sec"`
+	Servers           map[string]MCPServerConfig `json:"servers,omitempty"`
+}
+
 type ToolsConfig struct {
 	Web        WebToolsConfig   `json:"web"`
 	Shell      ShellConfig      `json:"shell"`
 	Filesystem FilesystemConfig `json:"filesystem"`
+	MCP        MCPToolsConfig   `json:"mcp"`
 }
 
 type LoggingConfig struct {
@@ -540,6 +558,11 @@ func DefaultConfig() *Config {
 				},
 			},
 			Filesystem: FilesystemConfig{},
+			MCP: MCPToolsConfig{
+				Enabled:           false,
+				RequestTimeoutSec: 20,
+				Servers:           map[string]MCPServerConfig{},
+			},
 		},
 		Logging: LoggingConfig{
 			Enabled:       true,

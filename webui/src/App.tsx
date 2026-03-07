@@ -9,6 +9,7 @@ import Config from './pages/Config';
 import Cron from './pages/Cron';
 import Logs from './pages/Logs';
 import Skills from './pages/Skills';
+import MCP from './pages/MCP';
 import Memory from './pages/Memory';
 import TaskAudit from './pages/TaskAudit';
 import EKG from './pages/EKG';
@@ -28,6 +29,7 @@ export default function App() {
               <Route path="logs" element={<Logs />} />
               <Route path="log-codes" element={<LogCodes />} />
               <Route path="skills" element={<Skills />} />
+              <Route path="mcp" element={<MCP />} />
               <Route path="config" element={<Config />} />
               <Route path="cron" element={<Cron />} />
               <Route path="memory" element={<Memory />} />

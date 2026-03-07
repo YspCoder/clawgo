@@ -253,6 +253,22 @@
         "api_key": "YOUR_BRAVE_API_KEY",
         "max_results": 5
       }
+    },
+    "mcp": {
+      "enabled": false,
+      "request_timeout_sec": 20,
+      "servers": {
+        "context7": {
+          "enabled": false,
+          "transport": "stdio",
+          "command": "npx",
+          "args": ["-y", "@upstash/context7-mcp"],
+          "env": {},
+          "working_dir": "/absolute/path/to/project",
+          "description": "Example MCP server",
+          "package": "@upstash/context7-mcp"
+        }
+      }
     }
   },
   "gateway": {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquare, Settings, Clock, Terminal, Zap, FolderOpen, ClipboardList, BrainCircuit, Hash, Bot, Boxes, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Settings, Clock, Terminal, Zap, FolderOpen, ClipboardList, BrainCircuit, Hash, Bot, Boxes, PanelLeftClose, PanelLeftOpen, Plug } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import NavItem from './NavItem';
@@ -29,6 +29,7 @@ const Sidebar: React.FC = () => {
       title: t('sidebarConfig'),
       items: [
         { icon: <Settings className="w-5 h-5" />, label: t('config'), to: '/config' },
+        { icon: <Plug className="w-5 h-5" />, label: t('mcpServices'), to: '/mcp' },
         { icon: <Bot className="w-5 h-5" />, label: t('subagentProfiles'), to: '/subagent-profiles' },
         { icon: <Clock className="w-5 h-5" />, label: t('cronJobs'), to: '/cron' },
       ],

@@ -23,6 +23,10 @@ type ResourceScopedTool interface {
 	ResourceKeys(args map[string]interface{}) []string
 }
 
+type CatalogTool interface {
+	CatalogEntry() map[string]interface{}
+}
+
 func ToolToSchema(tool Tool) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "function",

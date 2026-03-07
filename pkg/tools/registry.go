@@ -87,6 +87,25 @@ func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
 	return definitions
 }
 
+func (r *ToolRegistry) Catalog() []map[string]interface{} {
+	cur, _ := r.snapshot.Load().(map[string]Tool)
+	items := make([]map[string]interface{}, 0, len(cur))
+	for _, tool := range cur {
+		item := map[string]interface{}{
+			"name":        tool.Name(),
+			"description": tool.Description(),
+			"parameters":  tool.Parameters(),
+		}
+		if ct, ok := tool.(CatalogTool); ok {
+			for k, v := range ct.CatalogEntry() {
+				item[k] = v
+			}
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
 // List returns a list of all registered tool names.
 func (r *ToolRegistry) List() []string {
 	cur, _ := r.snapshot.Load().(map[string]Tool)

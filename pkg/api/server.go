@@ -46,6 +46,7 @@ type Server struct {
 	onConfigAfter  func()
 	onCron         func(action string, args map[string]interface{}) (interface{}, error)
 	onSubagents    func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
+	onToolsCatalog func() interface{}
 	webUIDir       string
 	ekgCacheMu     sync.Mutex
 	ekgCachePath   string
@@ -81,9 +82,10 @@ func (s *Server) SetCronHandler(fn func(action string, args map[string]interface
 func (s *Server) SetSubagentHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
 	s.onSubagents = fn
 }
-func (s *Server) SetWebUIDir(dir string)     { s.webUIDir = strings.TrimSpace(dir) }
-func (s *Server) SetGatewayVersion(v string) { s.gatewayVersion = strings.TrimSpace(v) }
-func (s *Server) SetWebUIVersion(v string)   { s.webuiVersion = strings.TrimSpace(v) }
+func (s *Server) SetToolsCatalogHandler(fn func() interface{}) { s.onToolsCatalog = fn }
+func (s *Server) SetWebUIDir(dir string)                       { s.webUIDir = strings.TrimSpace(dir) }
+func (s *Server) SetGatewayVersion(v string)                   { s.gatewayVersion = strings.TrimSpace(v) }
+func (s *Server) SetWebUIVersion(v string)                     { s.webuiVersion = strings.TrimSpace(v) }
 
 func (s *Server) Start(ctx context.Context) error {
 	if s.mgr == nil {
@@ -112,6 +114,8 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/subagent_profiles", s.handleWebUISubagentProfiles)
 	mux.HandleFunc("/webui/api/subagents_runtime", s.handleWebUISubagentsRuntime)
 	mux.HandleFunc("/webui/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
+	mux.HandleFunc("/webui/api/tools", s.handleWebUITools)
+	mux.HandleFunc("/webui/api/mcp/install", s.handleWebUIMCPInstall)
 	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
 	mux.HandleFunc("/webui/api/task_queue", s.handleWebUITaskQueue)
 	mux.HandleFunc("/webui/api/ekg_stats", s.handleWebUIEKGStats)
@@ -589,6 +593,73 @@ func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 		"ok":              true,
 		"gateway_version": firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
 		"webui_version":   firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
+	})
+}
+
+func (s *Server) handleWebUITools(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	toolsList := []map[string]interface{}{}
+	if s.onToolsCatalog != nil {
+		if items, ok := s.onToolsCatalog().([]map[string]interface{}); ok && items != nil {
+			toolsList = items
+		}
+	}
+	mcpItems := make([]map[string]interface{}, 0)
+	for _, item := range toolsList {
+		if strings.TrimSpace(fmt.Sprint(item["source"])) == "mcp" {
+			mcpItems = append(mcpItems, item)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"tools":     toolsList,
+		"mcp_tools": mcpItems,
+	})
+}
+
+func (s *Server) handleWebUIMCPInstall(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Package string `json:"package"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	pkgName := strings.TrimSpace(body.Package)
+	if pkgName == "" {
+		http.Error(w, "package required", http.StatusBadRequest)
+		return
+	}
+	out, binName, binPath, err := ensureMCPPackageInstalled(r.Context(), pkgName)
+	if err != nil {
+		msg := err.Error()
+		if strings.TrimSpace(out) != "" {
+			msg = strings.TrimSpace(out) + "\n" + msg
+		}
+		http.Error(w, strings.TrimSpace(msg), http.StatusInternalServerError)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":       true,
+		"package":  pkgName,
+		"output":   out,
+		"bin_name": binName,
+		"bin_path": binPath,
 	})
 }
 
@@ -1692,6 +1763,102 @@ func ensureClawHubReady(ctx context.Context) (string, error) {
 		return strings.Join(outs, "\n"), nil
 	}
 	return strings.Join(outs, "\n"), fmt.Errorf("installed clawhub but executable still not found in PATH")
+}
+
+func ensureMCPPackageInstalled(ctx context.Context, pkgName string) (output string, binName string, binPath string, err error) {
+	pkgName = strings.TrimSpace(pkgName)
+	if pkgName == "" {
+		return "", "", "", fmt.Errorf("package empty")
+	}
+	outs := make([]string, 0, 4)
+	nodeOut, err := ensureNodeRuntime(ctx)
+	if nodeOut != "" {
+		outs = append(outs, nodeOut)
+	}
+	if err != nil {
+		return strings.Join(outs, "\n"), "", "", err
+	}
+	installOut, err := runInstallCommand(ctx, "npm i -g "+shellEscapeArg(pkgName))
+	if installOut != "" {
+		outs = append(outs, installOut)
+	}
+	if err != nil {
+		return strings.Join(outs, "\n"), "", "", err
+	}
+	binName, err = resolveNpmPackageBin(ctx, pkgName)
+	if err != nil {
+		return strings.Join(outs, "\n"), "", "", err
+	}
+	binPath = resolveInstalledBinary(ctx, binName)
+	if strings.TrimSpace(binPath) == "" {
+		return strings.Join(outs, "\n"), binName, "", fmt.Errorf("installed %s but binary %q not found in PATH", pkgName, binName)
+	}
+	outs = append(outs, fmt.Sprintf("installed %s", pkgName))
+	outs = append(outs, fmt.Sprintf("resolved binary: %s", binPath))
+	return strings.Join(outs, "\n"), binName, binPath, nil
+}
+
+func resolveNpmPackageBin(ctx context.Context, pkgName string) (string, error) {
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "npm", "view", pkgName, "bin", "--json")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to query npm bin for %s: %w", pkgName, err)
+	}
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" || trimmed == "null" {
+		return "", fmt.Errorf("npm package %s does not expose a bin", pkgName)
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(out, &obj); err == nil && len(obj) > 0 {
+		keys := make([]string, 0, len(obj))
+		for key := range obj {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		return keys[0], nil
+	}
+	var text string
+	if err := json.Unmarshal(out, &text); err == nil && strings.TrimSpace(text) != "" {
+		return strings.TrimSpace(text), nil
+	}
+	return "", fmt.Errorf("unable to resolve bin for npm package %s", pkgName)
+}
+
+func resolveInstalledBinary(ctx context.Context, binName string) string {
+	binName = strings.TrimSpace(binName)
+	if binName == "" {
+		return ""
+	}
+	if p, err := exec.LookPath(binName); err == nil {
+		return p
+	}
+	prefix := strings.TrimSpace(npmGlobalPrefix(ctx))
+	if prefix != "" {
+		cand := filepath.Join(prefix, "bin", binName)
+		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
+			return cand
+		}
+	}
+	cands := []string{
+		filepath.Join("/usr/local/bin", binName),
+		filepath.Join("/opt/homebrew/bin", binName),
+		filepath.Join(os.Getenv("HOME"), ".npm-global", "bin", binName),
+	}
+	for _, cand := range cands {
+		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
+			return cand
+		}
+	}
+	return ""
+}
+
+func shellEscapeArg(in string) string {
+	if strings.TrimSpace(in) == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(in, "'", `'\''`) + "'"
 }
 
 func importSkillArchiveFromMultipart(r *http.Request, skillsDir string) ([]string, error) {

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -165,6 +166,15 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	webFetchTool := tools.NewWebFetchTool(50000)
 	toolsRegistry.Register(webFetchTool)
 	toolsRegistry.Register(tools.NewParallelFetchTool(webFetchTool, maxParallelCalls, parallelSafe))
+	if cfg.Tools.MCP.Enabled {
+		mcpTool := tools.NewMCPTool(workspace, cfg.Tools.MCP)
+		toolsRegistry.Register(mcpTool)
+		discoveryCtx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Tools.MCP.RequestTimeoutSec)*time.Second)
+		for _, remoteTool := range mcpTool.DiscoverTools(discoveryCtx) {
+			toolsRegistry.Register(remoteTool)
+		}
+		cancel()
+	}
 
 	// Register message tool
 	messageTool := tools.NewMessageTool()
@@ -1678,6 +1688,22 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	info["skills"] = al.contextBuilder.GetSkillsInfo()
 
 	return info
+}
+
+func (al *AgentLoop) GetToolCatalog() []map[string]interface{} {
+	if al == nil || al.tools == nil {
+		return nil
+	}
+	items := al.tools.Catalog()
+	sort.Slice(items, func(i, j int) bool {
+		return fmt.Sprint(items[i]["name"]) < fmt.Sprint(items[j]["name"])
+	})
+	for _, item := range items {
+		if fmt.Sprint(item["source"]) != "mcp" {
+			item["source"] = "local"
+		}
+	}
+	return items
 }
 
 // formatMessagesForLog formats messages for logging

@@ -165,6 +165,7 @@ func Validate(cfg *Config) []error {
 	if cfg.Memory.RecentDays <= 0 {
 		errs = append(errs, fmt.Errorf("memory.recent_days must be > 0"))
 	}
+	errs = append(errs, validateMCPTools(cfg)...)
 
 	if cfg.Channels.InboundMessageIDDedupeTTLSeconds <= 0 {
 		errs = append(errs, fmt.Errorf("channels.inbound_message_id_dedupe_ttl_seconds must be > 0"))
@@ -209,6 +210,40 @@ func Validate(cfg *Config) []error {
 		}
 	}
 
+	return errs
+}
+
+func validateMCPTools(cfg *Config) []error {
+	var errs []error
+	mcp := cfg.Tools.MCP
+	if !mcp.Enabled {
+		return errs
+	}
+	if mcp.RequestTimeoutSec <= 0 {
+		errs = append(errs, fmt.Errorf("tools.mcp.request_timeout_sec must be > 0 when tools.mcp.enabled=true"))
+	}
+	for name, server := range mcp.Servers {
+		if strings.TrimSpace(name) == "" {
+			errs = append(errs, fmt.Errorf("tools.mcp.servers contains an empty server name"))
+			continue
+		}
+		if !server.Enabled {
+			continue
+		}
+		transport := strings.ToLower(strings.TrimSpace(server.Transport))
+		if transport == "" {
+			transport = "stdio"
+		}
+		if transport != "stdio" {
+			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.transport must be 'stdio'", name))
+		}
+		if strings.TrimSpace(server.Command) == "" {
+			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.command is required when enabled=true", name))
+		}
+		if wd := strings.TrimSpace(server.WorkingDir); wd != "" && !filepath.IsAbs(wd) {
+			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.working_dir must be an absolute path", name))
+		}
+	}
 	return errs
 }
 

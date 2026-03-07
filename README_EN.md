@@ -200,6 +200,16 @@ Notes:
 
 See [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json) for a full example.
 
+## MCP Server Support
+
+ClawGo now supports `stdio` MCP servers through `tools.mcp`.
+
+- declare each server under `config.json -> tools.mcp.servers`
+- the bridge supports `list_servers`, `list_tools`, `call_tool`, `list_resources`, `read_resource`, `list_prompts`, and `get_prompt`
+- on startup, ClawGo discovers remote MCP tools and registers them as local tools using the `mcp__<server>__<tool>` naming pattern
+
+See the `tools.mcp` section in [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json).
+
 ## Prompt File Convention
 
 Keep agent prompts in dedicated files:
