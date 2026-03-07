@@ -3,64 +3,162 @@
 @theme {
   --font-sans: "Manrope", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --color-zinc-50: #472018;
-  --color-zinc-100: #51261a;
-  --color-zinc-200: #653424;
-  --color-zinc-300: #7e4734;
-  --color-zinc-400: #99563f;
-  --color-zinc-500: #b16b51;
-  --color-zinc-600: #d08b6a;
-  --color-zinc-700: #eeb79d;
-  --color-zinc-800: #f7d5c2;
-  --color-zinc-900: #ffeadc;
-  --color-zinc-950: #fff3e9;
-  --color-indigo-300: #ffb36b;
-  --color-indigo-400: #ff8552;
-  --color-indigo-500: #f05a28;
-  --color-indigo-600: #d9481c;
-  --color-indigo-700: #a43a18;
-  --color-indigo-800: #7a2915;
+  --color-zinc-50: #111827;
+  --color-zinc-100: #1f2937;
+  --color-zinc-200: #334155;
+  --color-zinc-300: #334155;
+  --color-zinc-400: #475569;
+  --color-zinc-500: #64748b;
+  --color-zinc-600: #94a3b8;
+  --color-zinc-700: #cbd5e1;
+  --color-zinc-800: #e2e8f0;
+  --color-zinc-900: #f8fafc;
+  --color-zinc-950: #fcfdff;
+  --color-indigo-300: #fdba74;
+  --color-indigo-400: #fb923c;
+  --color-indigo-500: #f97316;
+  --color-indigo-600: #ea580c;
+  --color-indigo-700: #c2410c;
+  --color-indigo-800: #9a3412;
 }
 
 html {
   background: var(--color-zinc-950);
+  --app-bg-spot-a: rgb(249 115 22 / 0.025);
+  --app-bg-spot-b: rgb(15 23 42 / 0.025);
+  --app-bg-base-top: rgb(248 250 252 / 0.985);
+  --app-bg-base-bottom: rgb(241 245 249 / 0.98);
+  --shell-spot-a: rgb(249 115 22 / 0.03);
+  --shell-spot-b: rgb(148 163 184 / 0.05);
+  --main-surface-top: rgb(255 255 255 / 0.5);
+  --main-surface-mid: rgb(255 255 255 / 0.22);
+  --main-surface-bottom: rgb(255 255 255 / 0.08);
+  --header-bg-a: rgb(255 255 255 / 0.92);
+  --header-bg-b: rgb(248 250 252 / 0.88);
+  --header-overlay-a: rgb(255 255 255 / 0.18);
+  --header-overlay-b: rgb(255 255 255 / 0.06);
+  --sidebar-bg-a: rgb(255 255 255 / 0.9);
+  --sidebar-bg-b: rgb(248 250 252 / 0.86);
+  --sidebar-overlay-a: rgb(255 255 255 / 0.14);
+  --sidebar-overlay-b: rgb(255 255 255 / 0.04);
+  --sidebar-edge: rgb(226 232 240 / 0.9);
+  --sidebar-section-a: rgb(255 255 255 / 0.62);
+  --sidebar-section-b: rgb(248 250 252 / 0.44);
+  --active-bg: rgb(249 115 22 / 0.08);
+  --active-ring: rgb(249 115 22 / 0.18);
+  --card-bg-a: rgb(255 255 255 / 0.82);
+  --card-bg-b: rgb(248 250 252 / 0.7);
+  --card-topline: rgb(255 255 255 / 0.72);
+  --card-inner-highlight: rgb(255 255 255 / 0.9);
+  --card-shadow: rgb(15 23 42 / 0.045);
+  --card-subtle-a: rgb(255 255 255 / 0.6);
+  --card-subtle-b: rgb(248 250 252 / 0.4);
+  --button-start: #fb923c;
+  --button-end: #f97316;
+  --button-shadow: rgb(249 115 22 / 0.16);
+  --chip-bg: rgb(226 232 240 / 0.82);
+  --chip-bg-hover: rgb(203 213 225 / 0.92);
+  --chip-border: rgb(203 213 225 / 0.96);
+  --chip-text: rgb(51 65 85 / 0.96);
+  --chip-active-bg: rgb(255 237 213 / 0.96);
+  --chip-active-border: rgb(251 146 60 / 0.45);
+  --chip-active-text: rgb(154 52 18 / 0.98);
+  --chip-group-bg: rgb(255 255 255 / 0.55);
+  --chip-group-border: rgb(226 232 240 / 0.95);
+  --radius-card: 18px;
+  --radius-subtle: 12px;
+  --radius-panel: 16px;
+  --radius-canvas: 12px;
+  --radius-button: 14px;
+  --radius-chip: 14px;
+  --radius-section: 20px;
+  --radius-badge: 14px;
 }
 
 html.theme-dark {
-  --color-zinc-50: #fff4ee;
-  --color-zinc-100: #ffe6d8;
-  --color-zinc-200: #ffc9a7;
-  --color-zinc-300: #ffb36b;
-  --color-zinc-400: #ff9a66;
-  --color-zinc-500: #ff8552;
-  --color-zinc-600: #d56a42;
-  --color-zinc-700: #8b472f;
-  --color-zinc-800: #5d2a1d;
-  --color-zinc-900: #341711;
-  --color-zinc-950: #1c0c08;
-  --color-indigo-300: #ffd1ad;
-  --color-indigo-400: #ffb36b;
-  --color-indigo-500: #ff8552;
-  --color-indigo-600: #f05a28;
-  --color-indigo-700: #d9481c;
-  --color-indigo-800: #a43a18;
+  --color-zinc-50: #f8fafc;
+  --color-zinc-100: #e2e8f0;
+  --color-zinc-200: #cbd5e1;
+  --color-zinc-300: #94a3b8;
+  --color-zinc-400: #64748b;
+  --color-zinc-500: #475569;
+  --color-zinc-600: #334155;
+  --color-zinc-700: #1e293b;
+  --color-zinc-800: #111827;
+  --color-zinc-900: #0b1220;
+  --color-zinc-950: #070b13;
+  --color-indigo-300: #fdba74;
+  --color-indigo-400: #fb923c;
+  --color-indigo-500: #f97316;
+  --color-indigo-600: #ea580c;
+  --color-indigo-700: #c2410c;
+  --color-indigo-800: #9a3412;
+  --app-bg-spot-a: rgb(249 115 22 / 0.02);
+  --app-bg-spot-b: rgb(96 165 250 / 0.02);
+  --app-bg-base-top: rgb(3 7 12 / 0.998);
+  --app-bg-base-bottom: rgb(8 12 18 / 0.995);
+  --shell-spot-a: rgb(249 115 22 / 0.018);
+  --shell-spot-b: rgb(148 163 184 / 0.025);
+  --main-surface-top: rgb(255 255 255 / 0.012);
+  --main-surface-mid: rgb(255 255 255 / 0.008);
+  --main-surface-bottom: rgb(255 255 255 / 0.002);
+  --header-bg-a: rgb(10 14 20 / 0.86);
+  --header-bg-b: rgb(6 10 15 / 0.82);
+  --header-overlay-a: rgb(255 255 255 / 0.018);
+  --header-overlay-b: rgb(255 255 255 / 0.005);
+  --sidebar-bg-a: rgb(10 14 20 / 0.9);
+  --sidebar-bg-b: rgb(6 10 15 / 0.88);
+  --sidebar-overlay-a: rgb(255 255 255 / 0.012);
+  --sidebar-overlay-b: rgb(255 255 255 / 0.003);
+  --sidebar-edge: rgb(30 41 59 / 0.58);
+  --sidebar-section-a: rgb(15 23 42 / 0.52);
+  --sidebar-section-b: rgb(9 14 23 / 0.34);
+  --active-bg: rgb(249 115 22 / 0.09);
+  --active-ring: rgb(249 115 22 / 0.16);
+  --card-bg-a: rgb(15 23 42 / 0.56);
+  --card-bg-b: rgb(9 14 23 / 0.44);
+  --card-topline: rgb(255 255 255 / 0.035);
+  --card-inner-highlight: rgb(255 255 255 / 0.03);
+  --card-shadow: rgb(0 0 0 / 0.16);
+  --card-subtle-a: rgb(17 24 39 / 0.4);
+  --card-subtle-b: rgb(9 14 23 / 0.24);
+  --button-start: #fb923c;
+  --button-end: #ea580c;
+  --button-shadow: rgb(0 0 0 / 0.14);
+  --chip-bg: rgb(30 41 59 / 0.82);
+  --chip-bg-hover: rgb(51 65 85 / 0.92);
+  --chip-border: rgb(71 85 105 / 0.85);
+  --chip-text: rgb(226 232 240 / 0.96);
+  --chip-active-bg: rgb(124 45 18 / 0.36);
+  --chip-active-border: rgb(251 146 60 / 0.35);
+  --chip-active-text: rgb(255 237 213 / 0.96);
+  --chip-group-bg: rgb(15 23 42 / 0.5);
+  --chip-group-border: rgb(51 65 85 / 0.7);
+  --radius-card: 18px;
+  --radius-subtle: 12px;
+  --radius-panel: 16px;
+  --radius-canvas: 12px;
+  --radius-button: 14px;
+  --radius-chip: 14px;
+  --radius-section: 20px;
+  --radius-badge: 14px;
 }
 
 body {
   @apply bg-zinc-950 text-zinc-50 antialiased selection:bg-indigo-500/30;
   background-image:
-    radial-gradient(circle at top left, rgb(255 179 107 / 0.18), transparent 26%),
-    radial-gradient(circle at 85% 18%, rgb(240 90 40 / 0.12), transparent 24%),
-    linear-gradient(180deg, rgb(255 243 233 / 0.96), rgb(255 234 220 / 0.88));
+    radial-gradient(circle at top left, var(--app-bg-spot-a), transparent 24%),
+    radial-gradient(circle at 100% 0%, var(--app-bg-spot-b), transparent 22%),
+    linear-gradient(180deg, var(--app-bg-base-top), var(--app-bg-base-bottom));
   min-height: 100vh;
   transition: background-color 180ms ease, color 180ms ease;
 }
 
 html.theme-dark body {
   background-image:
-    radial-gradient(circle at top left, rgb(255 133 82 / 0.18), transparent 28%),
-    radial-gradient(circle at 82% 16%, rgb(255 179 107 / 0.08), transparent 24%),
-    linear-gradient(180deg, rgb(28 12 8 / 0.98), rgb(38 16 11 / 0.96));
+    radial-gradient(circle at top left, var(--app-bg-spot-a), transparent 22%),
+    radial-gradient(circle at 100% 0%, var(--app-bg-spot-b), transparent 20%),
+    linear-gradient(180deg, var(--app-bg-base-top), var(--app-bg-base-bottom));
 }
 
 ::-webkit-scrollbar {
@@ -79,120 +177,204 @@ html.theme-dark body {
 
 .app-shell {
   background:
-    radial-gradient(circle at top, rgb(255 179 107 / 0.22), transparent 22%),
-    radial-gradient(circle at bottom right, rgb(217 72 28 / 0.12), transparent 24%);
+    radial-gradient(circle at top, var(--shell-spot-a), transparent 18%),
+    radial-gradient(circle at bottom right, var(--shell-spot-b), transparent 26%);
 }
 
 .app-main-surface {
   background:
-    linear-gradient(180deg, rgb(255 243 233 / 0.16), transparent 22%),
-    linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.04));
+    linear-gradient(180deg, var(--main-surface-top), transparent 18%),
+    linear-gradient(180deg, var(--main-surface-mid), var(--main-surface-bottom));
 }
 
 html.theme-dark .app-main-surface {
   background:
-    linear-gradient(180deg, rgb(255 133 82 / 0.06), transparent 24%),
-    linear-gradient(180deg, rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.12));
+    linear-gradient(180deg, var(--main-surface-top), transparent 24%),
+    linear-gradient(180deg, var(--main-surface-mid), var(--main-surface-bottom));
 }
 
 .app-header {
   background:
-    linear-gradient(90deg, rgb(255 243 233 / 0.84), rgb(255 234 220 / 0.62)),
-    linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.06));
+    linear-gradient(90deg, var(--header-bg-a), var(--header-bg-b)),
+    linear-gradient(180deg, var(--header-overlay-a), var(--header-overlay-b));
   backdrop-filter: blur(18px);
 }
 
 html.theme-dark .app-header {
   background:
-    linear-gradient(90deg, rgb(52 23 17 / 0.86), rgb(28 12 8 / 0.72)),
-    linear-gradient(180deg, rgb(255 133 82 / 0.05), rgb(0 0 0 / 0.08));
+    linear-gradient(90deg, var(--header-bg-a), var(--header-bg-b)),
+    linear-gradient(180deg, var(--header-overlay-a), var(--header-overlay-b));
 }
 
 .brand-badge {
   background: linear-gradient(135deg, #ffb36b 0%, #ff8552 48%, #d9481c 100%);
-  box-shadow: 0 18px 40px rgb(217 72 28 / 0.24);
+  box-shadow: 0 12px 28px rgb(234 88 12 / 0.2);
+  border-radius: var(--radius-badge);
 }
 
 .sidebar-shell {
   background:
-    linear-gradient(180deg, rgb(255 250 245 / 0.88), rgb(255 234 220 / 0.78)),
-    linear-gradient(180deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.04));
-  box-shadow: inset -1px 0 0 rgb(247 176 138 / 0.26);
+    linear-gradient(180deg, var(--sidebar-bg-a), var(--sidebar-bg-b)),
+    linear-gradient(180deg, var(--sidebar-overlay-a), var(--sidebar-overlay-b));
+  box-shadow: inset -1px 0 0 var(--sidebar-edge);
 }
 
 html.theme-dark .sidebar-shell {
   background:
-    linear-gradient(180deg, rgb(52 23 17 / 0.92), rgb(28 12 8 / 0.84)),
-    linear-gradient(180deg, rgb(255 133 82 / 0.04), rgb(0 0 0 / 0.08));
-  box-shadow: inset -1px 0 0 rgb(255 133 82 / 0.12);
+    linear-gradient(180deg, var(--sidebar-bg-a), var(--sidebar-bg-b)),
+    linear-gradient(180deg, var(--sidebar-overlay-a), var(--sidebar-overlay-b));
+  box-shadow: inset -1px 0 0 var(--sidebar-edge);
 }
 
 .sidebar-section {
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.34), rgb(255 243 233 / 0.2));
+    linear-gradient(180deg, var(--sidebar-section-a), var(--sidebar-section-b));
+  border-radius: var(--radius-section);
 }
 
 html.theme-dark .sidebar-section {
   background:
-    linear-gradient(180deg, rgb(93 42 29 / 0.42), rgb(52 23 17 / 0.2));
+    linear-gradient(180deg, var(--sidebar-section-a), var(--sidebar-section-b));
 }
 
 .nav-item-active {
-  background:
-    linear-gradient(135deg, rgb(255 179 107 / 0.28), rgb(240 90 40 / 0.18));
-  box-shadow: 0 10px 24px rgb(240 90 40 / 0.14);
+  background: var(--active-bg);
+  box-shadow: inset 0 0 0 1px var(--active-ring);
+  border-radius: var(--radius-chip);
 }
 
 html.theme-dark .nav-item-active {
-  background:
-    linear-gradient(135deg, rgb(255 179 107 / 0.18), rgb(240 90 40 / 0.22));
-  box-shadow: 0 12px 30px rgb(0 0 0 / 0.24);
+  background: var(--active-bg);
+  box-shadow: inset 0 0 0 1px var(--active-ring);
 }
 
 .brand-card {
   position: relative;
   overflow: hidden;
+  border-radius: var(--radius-card);
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.34), rgb(255 243 233 / 0.14));
+    linear-gradient(180deg, var(--card-bg-a), var(--card-bg-b));
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.26),
-    0 20px 48px rgb(169 82 48 / 0.08);
+    inset 0 1px 0 var(--card-inner-highlight),
+    0 8px 30px var(--card-shadow);
 }
 
 .brand-card::before {
   content: "";
   position: absolute;
-  inset: -30% auto auto -15%;
-  width: 160px;
-  height: 160px;
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: 1px;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgb(255 179 107 / 0.22), transparent 72%);
+  background: linear-gradient(90deg, transparent, var(--card-topline), transparent);
   pointer-events: none;
 }
 
 html.theme-dark .brand-card {
   background:
-    linear-gradient(180deg, rgb(93 42 29 / 0.36), rgb(28 12 8 / 0.3));
+    linear-gradient(180deg, var(--card-bg-a), var(--card-bg-b));
   box-shadow:
-    inset 0 1px 0 rgb(255 179 107 / 0.06),
-    0 22px 54px rgb(0 0 0 / 0.2);
+    inset 0 1px 0 var(--card-inner-highlight),
+    0 12px 36px var(--card-shadow);
 }
 
 .brand-card-subtle {
+  border-radius: var(--radius-subtle);
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.22), rgb(255 243 233 / 0.12));
+    linear-gradient(180deg, var(--card-subtle-a), var(--card-subtle-b));
 }
 
 html.theme-dark .brand-card-subtle {
   background:
-    linear-gradient(180deg, rgb(93 42 29 / 0.22), rgb(28 12 8 / 0.14));
+    linear-gradient(180deg, var(--card-subtle-a), var(--card-subtle-b));
 }
 
 .brand-button {
-  background: linear-gradient(135deg, #ffb36b 0%, #ff8552 40%, #d9481c 100%);
-  box-shadow: 0 14px 32px rgb(217 72 28 / 0.2);
+  border-radius: var(--radius-button);
+  background: linear-gradient(135deg, var(--button-start) 0%, var(--button-end) 100%);
+  box-shadow: 0 8px 20px var(--button-shadow);
 }
 
 html.theme-dark .brand-button {
-  box-shadow: 0 16px 36px rgb(0 0 0 / 0.26);
+  box-shadow: 0 10px 24px var(--button-shadow);
+}
+
+.control-chip {
+  border-radius: var(--radius-chip);
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
+  color: var(--chip-text);
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.control-chip:hover {
+  background: var(--chip-bg-hover);
+}
+
+.control-chip-active {
+  border-radius: var(--radius-chip);
+  background: var(--chip-active-bg);
+  border: 1px solid var(--chip-active-border);
+  color: var(--chip-active-text);
+}
+
+.control-chip-group {
+  border-radius: var(--radius-chip);
+  background: var(--chip-group-bg);
+  border: 1px solid var(--chip-group-border);
+}
+
+.radius-canvas {
+  border-radius: var(--radius-canvas);
+}
+
+.radius-panel {
+  border-radius: var(--radius-panel);
+}
+
+.topology-stream-panel {
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  height: 48vh;
+}
+
+@media (min-width: 768px) {
+  .topology-stream-panel {
+    left: auto;
+    right: 1rem;
+    top: 1rem;
+    bottom: 1rem;
+    width: 360px;
+    max-width: calc(100% - 2rem);
+    height: auto;
+  }
+}
+
+.rounded-xl {
+  border-radius: var(--radius-button) !important;
+}
+
+.rounded-2xl {
+  border-radius: var(--radius-subtle) !important;
+}
+
+.rounded-3xl {
+  border-radius: var(--radius-card) !important;
+}
+
+.rounded-\[19px\],
+.rounded-\[24px\] {
+  border-radius: var(--radius-canvas) !important;
+}
+
+.rounded-\[23px\],
+.rounded-\[28px\] {
+  border-radius: var(--radius-panel) !important;
+}
+
+.rounded-\[25px\],
+.rounded-\[30px\],
+.rounded-\[32px\] {
+  border-radius: var(--radius-card) !important;
 }

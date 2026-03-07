@@ -34,7 +34,7 @@ export const GlobalDialog: React.FC<{
       {open && (
         <motion.div className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <motion.div className="brand-card w-full max-w-md rounded-[28px] border border-zinc-700 shadow-2xl"
+          <motion.div className="brand-card w-full max-w-md border border-zinc-700 shadow-2xl"
             initial={{ scale: 0.95, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 8 }}>
             <div className="px-5 py-4 border-b border-zinc-800 relative z-[1]">
               <h3 className="text-sm font-semibold text-zinc-100">{options.title || (kind === 'confirm' ? t('dialogPleaseConfirm') : kind === 'prompt' ? t('dialogInputTitle') : t('dialogNotice'))}</h3>
