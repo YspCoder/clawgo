@@ -178,7 +178,16 @@ type TopologyTooltipState = {
   meta: string[];
   x: number;
   y: number;
+  agentID?: string;
+  transportType?: 'local' | 'remote';
 } | null;
+
+type StreamPreviewState = {
+  task: SubagentTask | null;
+  items: StreamItem[];
+  taskID: string;
+  loading?: boolean;
+};
 
 type TopologyDragState = {
   active: boolean;
@@ -209,6 +218,12 @@ function summarizeTask(task?: string, label?: string): string {
 function formatStreamTime(ts?: number): string {
   if (!ts) return '--:--:--';
   return new Date(ts).toLocaleTimeString([], { hour12: false });
+}
+
+function summarizePreviewText(value?: string, limit = 180): string {
+  const compact = `${value || ''}`.replace(/\s+/g, ' ').trim();
+  if (!compact) return '(empty)';
+  return compact.length > limit ? `${compact.slice(0, limit - 3)}...` : compact;
 }
 
 function bezierCurve(x1: number, y1: number, x2: number, y2: number): string {
@@ -336,7 +351,6 @@ const Subagents: React.FC = () => {
   const [items, setItems] = useState<SubagentTask[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [selectedAgentID, setSelectedAgentID] = useState<string>('');
-  const [streamPanelDismissed, setStreamPanelDismissed] = useState(false);
   const [spawnTask, setSpawnTask] = useState('');
   const [spawnAgentID, setSpawnAgentID] = useState('');
   const [spawnRole, setSpawnRole] = useState('');
@@ -362,8 +376,7 @@ const Subagents: React.FC = () => {
   const [registryItems, setRegistryItems] = useState<RegistrySubagent[]>([]);
   const [promptFileContent, setPromptFileContent] = useState('');
   const [promptFileFound, setPromptFileFound] = useState(false);
-  const [streamItems, setStreamItems] = useState<StreamItem[]>([]);
-  const [streamTask, setStreamTask] = useState<SubagentTask | null>(null);
+  const [streamPreviewByAgent, setStreamPreviewByAgent] = useState<Record<string, StreamPreviewState>>({});
   const [selectedTopologyBranch, setSelectedTopologyBranch] = useState('');
   const [topologyFilter, setTopologyFilter] = useState<'all' | 'running' | 'failed' | 'local' | 'remote'>('all');
   const [topologyZoom, setTopologyZoom] = useState(0.9);
@@ -393,23 +406,15 @@ const Subagents: React.FC = () => {
     initialNodeY: number;
   }>({ startX: 0, startY: 0, initialNodeX: 0, initialNodeY: 0 });
   const hasFittedRef = useRef(false);
+  const streamPreviewLoadingRef = useRef<Record<string, string>>({});
 
   const apiPath = '/webui/api/subagents_runtime';
   const withAction = (action: string) => `${apiPath}${q}${q ? '&' : '?'}action=${encodeURIComponent(action)}`;
 
   const openAgentStream = (agentID: string, taskID = '', branch = '') => {
-    setStreamPanelDismissed(false);
     if (branch) setSelectedTopologyBranch(branch);
     setSelectedAgentID(agentID);
     setSelectedId(taskID);
-  };
-
-  const closeAgentStream = () => {
-    setStreamPanelDismissed(true);
-    setSelectedAgentID('');
-    setSelectedId('');
-    setStreamTask(null);
-    setStreamItems([]);
   };
 
   const load = async () => {
@@ -432,7 +437,7 @@ const Subagents: React.FC = () => {
       } else {
         const nextAgentID = selectedAgentID && registryItems.find((x: RegistrySubagent) => x.agent_id === selectedAgentID)
           ? selectedAgentID
-          : (streamPanelDismissed ? '' : (registryItems[0]?.agent_id || ''));
+          : (registryItems[0]?.agent_id || '');
         setSelectedAgentID(nextAgentID);
         const nextTask = arr.find((x: SubagentTask) => x.agent_id === nextAgentID);
         setSelectedId(nextTask?.id || '');
@@ -447,33 +452,16 @@ const Subagents: React.FC = () => {
 
   useEffect(() => {
     load().catch(() => { });
-  }, [q, selectedAgentID, streamPanelDismissed]);
+  }, [q, selectedAgentID]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       load().catch(() => { });
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [q, selectedAgentID, streamPanelDismissed]);
+  }, [q, selectedAgentID]);
 
   const selected = useMemo(() => items.find((x) => x.id === selectedId) || null, [items, selectedId]);
-  const selectedRegistryItem = useMemo(
-    () => registryItems.find((x) => x.agent_id === selectedAgentID) || null,
-    [registryItems, selectedAgentID]
-  );
-  const selectedAgentTasks = useMemo(
-    () => items.filter((x) => x.agent_id === selectedAgentID),
-    [items, selectedAgentID]
-  );
-  const selectedAgentLatestTask = useMemo(
-    () =>
-      [...selectedAgentTasks].sort((a, b) => Math.max(b.updated || 0, b.created || 0) - Math.max(a.updated || 0, a.created || 0))[0] || null,
-    [selectedAgentTasks]
-  );
-  const selectedAgentDisplayName = useMemo(
-    () => selectedRegistryItem?.display_name || selectedRegistryItem?.agent_id || selectedAgentID || '',
-    [selectedRegistryItem, selectedAgentID]
-  );
   const parsedNodeTrees = useMemo<NodeTree[]>(() => {
     try {
       const parsed = JSON.parse(nodeTrees);
@@ -826,8 +814,8 @@ const Subagents: React.FC = () => {
   }, []);
 
   const handleTopologyHover = (card: GraphCardSpec, event: React.MouseEvent<HTMLDivElement>) => {
-    const tooltipWidth = 280;
-    const tooltipHeight = 160;
+    const tooltipWidth = 360;
+    const tooltipHeight = 420;
     let x = event.clientX + 14;
     let y = event.clientY + 14;
 
@@ -844,6 +832,8 @@ const Subagents: React.FC = () => {
       meta: card.meta,
       x,
       y,
+      agentID: card.agentID,
+      transportType: card.transportType,
     });
   };
 
@@ -948,25 +938,59 @@ const Subagents: React.FC = () => {
     loadThreadAndInbox(selected).catch(() => { });
   }, [selectedId, q, items]);
 
-  const loadStream = async (task: SubagentTask | null) => {
-    if (!task?.id) {
-      setStreamTask(null);
-      setStreamItems([]);
+  const loadStreamPreview = async (agentID: string, task: SubagentTask | null) => {
+    const taskID = task?.id || '';
+    if (!agentID) return;
+    if (streamPreviewLoadingRef.current[agentID] === taskID) return;
+    const existing = streamPreviewByAgent[agentID];
+    if (existing && existing.taskID === taskID && !existing.loading) return;
+
+    streamPreviewLoadingRef.current[agentID] = taskID;
+    setStreamPreviewByAgent((prev) => ({
+      ...prev,
+      [agentID]: {
+        task: task || null,
+        items: prev[agentID]?.items || [],
+        taskID,
+        loading: !!taskID,
+      },
+    }));
+
+    if (!taskID) {
+      delete streamPreviewLoadingRef.current[agentID];
+      setStreamPreviewByAgent((prev) => ({
+        ...prev,
+        [agentID]: { task: null, items: [], taskID: '', loading: false },
+      }));
       return;
     }
+
     try {
-      const streamRes = await callAction({ action: 'stream', id: task.id, limit: 100 });
-      setStreamTask(streamRes?.result?.task || task);
-      setStreamItems(Array.isArray(streamRes?.result?.items) ? streamRes.result.items : []);
+      const streamRes = await callAction({ action: 'stream', id: taskID, limit: 12 });
+      delete streamPreviewLoadingRef.current[agentID];
+      setStreamPreviewByAgent((prev) => ({
+        ...prev,
+        [agentID]: {
+          task: streamRes?.result?.task || task,
+          items: Array.isArray(streamRes?.result?.items) ? streamRes.result.items : [],
+          taskID,
+          loading: false,
+        },
+      }));
     } catch {
-      setStreamTask(task);
-      setStreamItems([]);
+      delete streamPreviewLoadingRef.current[agentID];
+      setStreamPreviewByAgent((prev) => ({
+        ...prev,
+        [agentID]: { task: task || null, items: [], taskID, loading: false },
+      }));
     }
   };
 
   useEffect(() => {
-    loadStream(selectedAgentLatestTask).catch(() => { });
-  }, [selectedAgentLatestTask?.id, q, items.length]);
+    if (!topologyTooltip?.agentID || topologyTooltip.transportType !== 'local') return;
+    const latestTask = recentTaskByAgent[topologyTooltip.agentID] || null;
+    loadStreamPreview(topologyTooltip.agentID, latestTask).catch(() => { });
+  }, [topologyTooltip?.agentID, topologyTooltip?.transportType, recentTaskByAgent, q]);
 
   return (
     <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
@@ -1150,7 +1174,7 @@ const Subagents: React.FC = () => {
           </div>
           {topologyTooltip && (
             <div
-              className="pointer-events-none fixed z-50 w-[280px] brand-card-subtle border border-zinc-700/80 p-4 shadow-2xl shadow-black/50 backdrop-blur-md transition-opacity duration-200"
+              className="pointer-events-none fixed z-50 w-[360px] max-w-[min(360px,calc(100vw-24px))] max-h-[min(70vh,560px)] overflow-y-auto brand-card-subtle border border-zinc-700/80 p-4 shadow-2xl shadow-black/50 backdrop-blur-md transition-opacity duration-200"
               style={{ left: topologyTooltip.x, top: topologyTooltip.y }}
             >
               <div className="flex items-center gap-2 mb-2">
@@ -1170,69 +1194,51 @@ const Subagents: React.FC = () => {
                   const [key, ...rest] = line.split('=');
                   const value = rest.join('=');
                   return (
-                    <div key={idx} className="flex justify-between text-xs">
+                    <div key={idx} className="flex justify-between gap-3 text-xs">
                       <span className="text-zinc-500">{key}</span>
-                      <span className="text-zinc-300 font-medium">{value || '-'}</span>
+                      <span className="text-zinc-300 font-medium text-right">{value || '-'}</span>
                     </div>
                   );
                 })}
               </div>
-            </div>
-          )}
-          {selectedAgentID && (
-            <div
-              onWheelCapture={(event) => event.stopPropagation()}
-              className="absolute bottom-4 left-4 right-4 z-20 flex h-[46vh] flex-col overflow-hidden border border-zinc-800 brand-card radius-panel shadow-2xl shadow-black/40 backdrop-blur-md md:left-auto md:top-4 md:right-4 md:bottom-4 md:h-auto md:w-[360px] md:max-w-[calc(100%-2rem)] xl:w-[380px]"
-            >
-              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-                <div className="min-w-0">
-                  <div className="text-xs text-zinc-500 uppercase tracking-wider">{t('internalStream')}</div>
-                  <div className="text-sm font-semibold text-zinc-100 truncate">{selectedAgentDisplayName}</div>
-                  <div className="text-[11px] text-zinc-500 truncate">{selectedAgentID}</div>
-                </div>
-                <button
-                  onClick={() => {
-                    closeAgentStream();
-                  }}
-                  className="px-2 py-1 rounded-xl text-[11px] control-chip"
-                >
-                  {t('close')}
-                </button>
-              </div>
-              <div className="px-4 py-3 border-b border-zinc-800 text-xs text-zinc-400">
-                {streamTask?.id ? (
-                  <div className="space-y-1">
-                    <div>run={streamTask.id}</div>
-                    <div>status={streamTask.status || '-'} · thread={streamTask.thread_id || '-'}</div>
-                  </div>
-                ) : (
-                  <div>No persisted run for this agent yet.</div>
-                )}
-              </div>
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-                {streamItems.length === 0 ? (
-                  <div className="text-sm text-zinc-500">No internal stream events yet.</div>
-                ) : streamItems.map((item, idx) => (
-                  <div key={`${item.kind || 'item'}-${item.at || 0}-${idx}`} className="brand-card-subtle rounded-2xl border border-zinc-800 p-3">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="text-xs font-medium text-zinc-200">
-                        {item.kind === 'event'
-                          ? `${item.event_type || 'event'}${item.status ? ` · ${item.status}` : ''}`
-                          : `${item.from_agent || '-'} -> ${item.to_agent || '-'} · ${item.message_type || 'message'}`}
+              {topologyTooltip.transportType === 'local' && topologyTooltip.agentID && (
+                <div className="mt-4 pt-4 border-t border-zinc-800/60 space-y-3">
+                  <div className="text-[11px] text-zinc-500 uppercase tracking-wider">{t('internalStream')}</div>
+                  {streamPreviewByAgent[topologyTooltip.agentID]?.loading ? (
+                    <div className="text-xs text-zinc-400">Loading internal stream...</div>
+                  ) : streamPreviewByAgent[topologyTooltip.agentID]?.task ? (
+                    <>
+                      <div className="brand-card-subtle border border-zinc-800 p-3 space-y-1.5">
+                        <div className="text-xs text-zinc-300">run={streamPreviewByAgent[topologyTooltip.agentID]?.task?.id || '-'}</div>
+                        <div className="text-xs text-zinc-400">
+                          status={streamPreviewByAgent[topologyTooltip.agentID]?.task?.status || '-'} · thread={streamPreviewByAgent[topologyTooltip.agentID]?.task?.thread_id || '-'}
+                        </div>
                       </div>
-                      <div className="text-[11px] text-zinc-500">{formatStreamTime(item.at)}</div>
-                    </div>
-                    <div className="text-xs text-zinc-300 whitespace-pre-wrap break-words">
-                      {item.kind === 'event' ? (item.message || '(no event message)') : (item.content || '(empty message)')}
-                    </div>
-                    <div className="mt-2 text-[11px] text-zinc-500">
-                      {item.kind === 'event'
-                        ? `run=${item.run_id || '-'}${item.retry_count ? ` · retry=${item.retry_count}` : ''}`
-                        : `status=${item.status || '-'}${item.reply_to ? ` · reply_to=${item.reply_to}` : ''}`}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                      {streamPreviewByAgent[topologyTooltip.agentID]?.items?.length ? (
+                        streamPreviewByAgent[topologyTooltip.agentID].items.slice(-3).reverse().map((item, idx) => (
+                          <div key={`${item.kind || 'item'}-${item.at || 0}-${idx}`} className="brand-card-subtle border border-zinc-800 p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-xs font-medium text-zinc-200">
+                                {item.kind === 'event'
+                                  ? `${item.event_type || 'event'}${item.status ? ` · ${item.status}` : ''}`
+                                  : `${item.from_agent || '-'} -> ${item.to_agent || '-'} · ${item.message_type || 'message'}`}
+                              </div>
+                              <div className="text-[11px] text-zinc-500">{formatStreamTime(item.at)}</div>
+                            </div>
+                            <div className="text-xs text-zinc-300 leading-5">
+                              {summarizePreviewText(item.kind === 'event' ? (item.message || '(no event message)') : (item.content || '(empty message)'))}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-xs text-zinc-400">No internal stream events yet.</div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-xs text-zinc-400">No persisted run for this agent yet.</div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
