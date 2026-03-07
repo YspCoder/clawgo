@@ -5,6 +5,8 @@ interface AppContextType {
   token: string;
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
+  sidebarCollapsed: boolean;
+  setSidebarCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   setToken: (token: string) => void;
   isGatewayOnline: boolean;
   setIsGatewayOnline: (online: boolean) => void;
@@ -12,6 +14,8 @@ interface AppContextType {
   setCfg: React.Dispatch<React.SetStateAction<Cfg>>;
   cfgRaw: string;
   setCfgRaw: (raw: string) => void;
+  configEditing: boolean;
+  setConfigEditing: React.Dispatch<React.SetStateAction<boolean>>;
   nodes: string;
   setNodes: (nodes: string) => void;
   nodeTrees: string;
@@ -24,13 +28,19 @@ interface AppContextType {
   clawhubPath: string;
   sessions: Session[];
   setSessions: React.Dispatch<React.SetStateAction<Session[]>>;
+  taskQueueItems: any[];
+  setTaskQueueItems: React.Dispatch<React.SetStateAction<any[]>>;
+  ekgSummary: Record<string, any>;
+  setEkgSummary: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   refreshAll: () => Promise<void>;
   refreshCron: () => Promise<void>;
   refreshNodes: () => Promise<void>;
   refreshSkills: () => Promise<void>;
   refreshSessions: () => Promise<void>;
+  refreshTaskQueue: () => Promise<void>;
+  refreshEKGSummary: () => Promise<void>;
   refreshVersion: () => Promise<void>;
-  loadConfig: () => Promise<void>;
+  loadConfig: (force?: boolean) => Promise<void>;
   gatewayVersion: string;
   webuiVersion: string;
   hotReloadFields: string[];
@@ -51,9 +61,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   })();
   const [token, setToken] = useState(initialToken);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('ui.sidebarCollapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [isGatewayOnline, setIsGatewayOnline] = useState(true);
   const [cfg, setCfg] = useState<Cfg>({});
   const [cfgRaw, setCfgRaw] = useState('{}');
+  const [configEditing, setConfigEditing] = useState(false);
   const [nodes, setNodes] = useState('[]');
   const [nodeTrees, setNodeTrees] = useState('[]');
   const [cron, setCron] = useState<CronJob[]>([]);
@@ -61,6 +79,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [clawhubInstalled, setClawhubInstalled] = useState(false);
   const [clawhubPath, setClawhubPath] = useState('');
   const [sessions, setSessions] = useState<Session[]>([{ key: 'main', title: 'main' }]);
+  const [taskQueueItems, setTaskQueueItems] = useState<any[]>([]);
+  const [ekgSummary, setEkgSummary] = useState<Record<string, any>>({});
   const [gatewayVersion, setGatewayVersion] = useState('unknown');
   const [webuiVersion, setWebuiVersion] = useState('unknown');
   const [hotReloadFields, setHotReloadFields] = useState<string[]>([]);
@@ -68,7 +88,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
 
-  const loadConfig = useCallback(async () => {
+  const loadConfig = useCallback(async (force = false) => {
     try {
       const hotQ = q ? `${q}&include_hot_reload_fields=1` : '?include_hot_reload_fields=1';
       const r = await fetch(`/webui/api/config${hotQ}`);
@@ -77,24 +97,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(txt);
         if (parsed && parsed.config) {
-          setCfg(parsed.config);
-          setCfgRaw(JSON.stringify(parsed.config, null, 2));
+          if (!configEditing || force) {
+            setCfg(parsed.config);
+            setCfgRaw(JSON.stringify(parsed.config, null, 2));
+          }
           setHotReloadFields(Array.isArray(parsed.hot_reload_fields) ? parsed.hot_reload_fields : []);
           setHotReloadFieldDetails(Array.isArray(parsed.hot_reload_field_details) ? parsed.hot_reload_field_details : []);
         } else {
-          setCfg(parsed || {});
-          setCfgRaw(txt);
+          if (!configEditing || force) {
+            setCfg(parsed || {});
+            setCfgRaw(txt);
+          }
         }
       } catch {
-        setCfgRaw(txt);
-        try { setCfg(JSON.parse(txt)); } catch { setCfg({}); }
+        if (!configEditing || force) {
+          setCfgRaw(txt);
+          try { setCfg(JSON.parse(txt)); } catch { setCfg({}); }
+        }
       }
       setIsGatewayOnline(true);
     } catch (e) {
       setIsGatewayOnline(false);
       console.error(e);
     }
-  }, [q]);
+  }, [q, configEditing]);
 
   const refreshNodes = useCallback(async () => {
     try {
@@ -164,9 +190,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [q]);
 
+  const refreshTaskQueue = useCallback(async () => {
+    try {
+      const r = await fetch(`/webui/api/task_queue${q ? `${q}&limit=30` : '?limit=30'}`);
+      if (!r.ok) throw new Error('Failed to load task queue');
+      const j = await r.json();
+      setTaskQueueItems(Array.isArray(j.items) ? j.items : []);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [q]);
+
+  const refreshEKGSummary = useCallback(async () => {
+    try {
+      const r = await fetch(`/webui/api/ekg_stats${q ? `${q}&window=24h` : '?window=24h'}`);
+      if (!r.ok) throw new Error('Failed to load ekg summary');
+      const j = await r.json();
+      setEkgSummary(j && typeof j === 'object' ? j : {});
+    } catch (e) {
+      console.error(e);
+    }
+  }, [q]);
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadConfig(), refreshCron(), refreshNodes(), refreshSkills(), refreshSessions(), refreshVersion()]);
-  }, [loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion]);
+    await Promise.all([loadConfig(), refreshCron(), refreshNodes(), refreshSkills(), refreshSessions(), refreshVersion(), refreshTaskQueue(), refreshEKGSummary()]);
+  }, [loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion, refreshTaskQueue, refreshEKGSummary]);
 
   useEffect(() => {
     refreshAll();
@@ -177,17 +225,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       refreshSkills();
       refreshSessions();
       refreshVersion();
+      refreshTaskQueue();
+      refreshEKGSummary();
     }, 10000);
     return () => clearInterval(interval);
-  }, [token, refreshAll, loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion]);
+  }, [token, refreshAll, loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion, refreshTaskQueue, refreshEKGSummary]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('ui.sidebarCollapsed', sidebarCollapsed ? '1' : '0');
+    } catch {
+      // ignore persistence failures
+    }
+  }, [sidebarCollapsed]);
 
   return (
     <AppContext.Provider value={{
-      token, setToken, sidebarOpen, setSidebarOpen, isGatewayOnline, setIsGatewayOnline,
-      cfg, setCfg, cfgRaw, setCfgRaw, nodes, setNodes, nodeTrees, setNodeTrees,
+      token, setToken, sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed, isGatewayOnline, setIsGatewayOnline,
+      cfg, setCfg, cfgRaw, setCfgRaw, configEditing, setConfigEditing, nodes, setNodes, nodeTrees, setNodeTrees,
       cron, setCron, skills, setSkills, clawhubInstalled, clawhubPath,
       sessions, setSessions,
-      refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion, loadConfig,
+      taskQueueItems, setTaskQueueItems, ekgSummary, setEkgSummary,
+      refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshTaskQueue, refreshEKGSummary, refreshVersion, loadConfig,
       gatewayVersion, webuiVersion, hotReloadFields, hotReloadFieldDetails, q
     }}>
       {children}

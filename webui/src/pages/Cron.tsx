@@ -168,10 +168,10 @@ const Cron: React.FC = () => {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{t('cronJobs')}</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => refreshCron()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
             <RefreshCw className="w-4 h-4" /> {t('refresh')}
           </button>
@@ -181,7 +181,7 @@ const Cron: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-6">
         {cron.map((j) => {
           const schedule = formatSchedule(j, t);
           return (

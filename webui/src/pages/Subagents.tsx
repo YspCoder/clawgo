@@ -17,7 +17,6 @@ type SubagentTask = {
   max_retries?: number;
   retry_count?: number;
   retry_backoff?: number;
-  timeout_sec?: number;
   max_task_chars?: number;
   max_result_chars?: number;
   created?: number;
@@ -345,7 +344,6 @@ const Subagents: React.FC = () => {
   const [dispatchTask, setDispatchTask] = useState('');
   const [dispatchAgentID, setDispatchAgentID] = useState('');
   const [dispatchRole, setDispatchRole] = useState('');
-  const [dispatchWaitTimeout, setDispatchWaitTimeout] = useState('120');
   const [dispatchReply, setDispatchReply] = useState<RouterReply | null>(null);
   const [dispatchMerged, setDispatchMerged] = useState('');
   const [threadDetail, setThreadDetail] = useState<AgentThread | null>(null);
@@ -790,6 +788,9 @@ const Subagents: React.FC = () => {
     if (!viewport) return;
 
     const handleWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) {
+        return;
+      }
       e.preventDefault();
 
       const rect = viewport.getBoundingClientRect();
@@ -960,14 +961,14 @@ const Subagents: React.FC = () => {
   }, [selectedAgentLatestTask?.id, q, items.length]);
 
   return (
-    <div className="h-full p-4 md:p-6 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+    <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentsRuntime')}</h1>
         <button onClick={() => load()} className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">{t('refresh')}</button>
       </div>
 
       <div className="flex-1 min-h-0 border border-zinc-800 rounded-2xl bg-zinc-900/40 p-4 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('agentTopology')}</div>
             <div className="text-sm text-zinc-500">{t('agentTopologyHint')}</div>
@@ -1073,7 +1074,7 @@ const Subagents: React.FC = () => {
             stopTopologyDrag();
             clearTopologyTooltip();
           }}
-          className="relative flex-1 min-h-[620px] xl:min-h-[760px] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
+          className="relative flex-1 min-h-[420px] sm:min-h-[560px] xl:min-h-[760px] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950"
           style={{ cursor: topologyDragging ? 'grabbing' : 'grab' }}
         >
           <SpaceParticles />
@@ -1171,10 +1172,13 @@ const Subagents: React.FC = () => {
             </div>
           )}
           {selectedAgentID && (
-            <div className="absolute top-4 right-4 bottom-4 z-20 w-[360px] rounded-2xl border border-zinc-800 bg-zinc-950/92 shadow-2xl shadow-black/40 backdrop-blur-md overflow-hidden flex flex-col">
+            <div
+              onWheelCapture={(event) => event.stopPropagation()}
+              className="absolute left-4 right-4 bottom-4 z-20 h-[48vh] xl:left-auto xl:right-4 xl:top-4 xl:bottom-4 xl:h-auto xl:w-[360px] rounded-2xl border border-zinc-800 bg-zinc-950/92 shadow-2xl shadow-black/40 backdrop-blur-md overflow-hidden flex flex-col"
+            >
               <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
                 <div className="min-w-0">
-                  <div className="text-xs text-zinc-500 uppercase tracking-wider">Internal Stream</div>
+                  <div className="text-xs text-zinc-500 uppercase tracking-wider">{t('internalStream')}</div>
                   <div className="text-sm font-semibold text-zinc-100 truncate">{selectedAgentDisplayName}</div>
                   <div className="text-[11px] text-zinc-500 truncate">{selectedAgentID}</div>
                 </div>
@@ -1187,7 +1191,7 @@ const Subagents: React.FC = () => {
                   }}
                   className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
                 >
-                  Close
+                  {t('close')}
                 </button>
               </div>
               <div className="px-4 py-3 border-b border-zinc-800 text-xs text-zinc-400">

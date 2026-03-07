@@ -21,7 +21,7 @@ function setPath(obj: any, path: string, value: any) {
 const Config: React.FC = () => {
   const { t } = useTranslation();
   const ui = useUI();
-  const { cfg, setCfg, cfgRaw, setCfgRaw, loadConfig, hotReloadFieldDetails, q } = useAppContext();
+  const { cfg, setCfg, cfgRaw, setCfgRaw, loadConfig, hotReloadFieldDetails, q, setConfigEditing } = useAppContext();
   const [showRaw, setShowRaw] = useState(false);
   const [basicMode, setBasicMode] = useState(true);
   const [hotOnly, setHotOnly] = useState(false);
@@ -87,11 +87,21 @@ const Config: React.FC = () => {
     return out;
   }, [baseline, currentPayload]);
 
+  const isDirty = useMemo(() => {
+    if (baseline == null) return false;
+    return JSON.stringify(baseline) !== JSON.stringify(currentPayload || {});
+  }, [baseline, currentPayload]);
+
   useEffect(() => {
     if (baseline == null && cfg && Object.keys(cfg).length > 0) {
       setBaseline(JSON.parse(JSON.stringify(cfg)));
     }
   }, [cfg, baseline]);
+
+  useEffect(() => {
+    setConfigEditing(isDirty);
+    return () => setConfigEditing(false);
+  }, [isDirty, setConfigEditing]);
 
   function updateProxyField(name: string, field: string, value: any) {
     setCfg((v) => setPath(v, `providers.proxies.${name}.${field}`, value));
@@ -187,6 +197,7 @@ const Config: React.FC = () => {
 
       await ui.notify({ title: t('saved'), message: t('configSaved') });
       setBaseline(JSON.parse(JSON.stringify(payload)));
+      setConfigEditing(false);
       setShowDiff(false);
     } catch (e) {
       await ui.notify({ title: t('requestFailed'), message: `${t('saveConfigFailed')}: ${e}` });
@@ -205,7 +216,7 @@ const Config: React.FC = () => {
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={async () => { await loadConfig(); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
             <RefreshCw className="w-4 h-4" /> {t('reload')}
           </button>
           <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm">{t('configDiffPreview')}</button>

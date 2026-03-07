@@ -32,24 +32,26 @@ import (
 )
 
 type Server struct {
-	addr          string
-	token         string
-	mgr           *nodes.Manager
-	server        *http.Server
-	configPath    string
-	workspacePath string
-	logFilePath   string
-	onChat        func(ctx context.Context, sessionKey, content string) (string, error)
-	onChatHistory func(sessionKey string) []map[string]interface{}
-	onConfigAfter func()
-	onCron        func(action string, args map[string]interface{}) (interface{}, error)
-	onSubagents   func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
-	webUIDir      string
-	ekgCacheMu    sync.Mutex
-	ekgCachePath  string
-	ekgCacheStamp time.Time
-	ekgCacheSize  int64
-	ekgCacheRows  []map[string]interface{}
+	addr           string
+	token          string
+	mgr            *nodes.Manager
+	server         *http.Server
+	gatewayVersion string
+	webuiVersion   string
+	configPath     string
+	workspacePath  string
+	logFilePath    string
+	onChat         func(ctx context.Context, sessionKey, content string) (string, error)
+	onChatHistory  func(sessionKey string) []map[string]interface{}
+	onConfigAfter  func()
+	onCron         func(action string, args map[string]interface{}) (interface{}, error)
+	onSubagents    func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
+	webUIDir       string
+	ekgCacheMu     sync.Mutex
+	ekgCachePath   string
+	ekgCacheStamp  time.Time
+	ekgCacheSize   int64
+	ekgCacheRows   []map[string]interface{}
 }
 
 func NewServer(host string, port int, token string, mgr *nodes.Manager) *Server {
@@ -79,7 +81,9 @@ func (s *Server) SetCronHandler(fn func(action string, args map[string]interface
 func (s *Server) SetSubagentHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
 	s.onSubagents = fn
 }
-func (s *Server) SetWebUIDir(dir string) { s.webUIDir = strings.TrimSpace(dir) }
+func (s *Server) SetWebUIDir(dir string)     { s.webUIDir = strings.TrimSpace(dir) }
+func (s *Server) SetGatewayVersion(v string) { s.gatewayVersion = strings.TrimSpace(v) }
+func (s *Server) SetWebUIVersion(v string)   { s.webuiVersion = strings.TrimSpace(v) }
 
 func (s *Server) Start(ctx context.Context) error {
 	if s.mgr == nil {
@@ -583,8 +587,8 @@ func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":              true,
-		"gateway_version": gatewayBuildVersion(),
-		"webui_version":   detectWebUIVersion(strings.TrimSpace(s.webUIDir)),
+		"gateway_version": firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
+		"webui_version":   firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
 	})
 }
 
@@ -1334,24 +1338,17 @@ func gatewayBuildVersion() string {
 }
 
 func detectWebUIVersion(webUIDir string) string {
-	if strings.TrimSpace(webUIDir) == "" {
-		return "unknown"
-	}
-	assets := filepath.Join(webUIDir, "assets")
-	entries, err := os.ReadDir(assets)
-	if err != nil {
-		return "unknown"
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasPrefix(name, "index-") && strings.HasSuffix(name, ".js") {
-			mid := strings.TrimSuffix(strings.TrimPrefix(name, "index-"), ".js")
-			if mid != "" {
-				return mid
-			}
+	_ = webUIDir
+	return "dev"
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
 		}
 	}
-	return "unknown"
+	return ""
 }
 
 func detectLocalIP() string {
@@ -2715,6 +2712,9 @@ func (s *Server) handleWebUIEKGStats(w http.ResponseWriter, r *http.Request) {
 		errSig := strings.TrimSpace(fmt.Sprintf("%v", row["errsig"]))
 		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
 		channel := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["channel"])))
+		if source == "heartbeat" {
+			continue
+		}
 		if source == "" {
 			source = "unknown"
 		}
@@ -2723,33 +2723,22 @@ func (s *Server) handleWebUIEKGStats(w http.ResponseWriter, r *http.Request) {
 		}
 		sourceStats[source]++
 		channelStats[channel]++
-		isHeartbeat := source == "heartbeat"
 		if provider != "" {
 			switch status {
 			case "success":
 				providerScore[provider] += 1
-				if !isHeartbeat {
-					providerScoreWorkload[provider] += 1
-				}
+				providerScoreWorkload[provider] += 1
 			case "suppressed":
 				providerScore[provider] += 0.2
-				if !isHeartbeat {
-					providerScoreWorkload[provider] += 0.2
-				}
+				providerScoreWorkload[provider] += 0.2
 			case "error":
 				providerScore[provider] -= 1
-				if !isHeartbeat {
-					providerScoreWorkload[provider] -= 1
-				}
+				providerScoreWorkload[provider] -= 1
 			}
 		}
 		if errSig != "" && status == "error" {
 			errSigCount[errSig]++
-			if isHeartbeat {
-				errSigHeartbeat[errSig]++
-			} else {
-				errSigWorkload[errSig]++
-			}
+			errSigWorkload[errSig]++
 		}
 	}
 	toTopScore := func(m map[string]float64, n int) []kv {

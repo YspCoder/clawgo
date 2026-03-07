@@ -67,7 +67,7 @@ const TaskAudit: React.FC = () => {
   const selectedPretty = useMemo(() => selected ? JSON.stringify(selected, null, 2) : '', [selected]);
 
   return (
-    <div className="h-full p-4 md:p-6 flex flex-col gap-4">
+    <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl md:text-2xl font-semibold">{t('taskAudit')}</h1>
         <div className="flex items-center gap-2">

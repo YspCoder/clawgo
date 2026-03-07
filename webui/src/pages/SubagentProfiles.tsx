@@ -14,7 +14,6 @@ type SubagentProfile = {
   memory_namespace?: string;
   max_retries?: number;
   retry_backoff_ms?: number;
-  timeout_sec?: number;
   max_task_chars?: number;
   max_result_chars?: number;
   status?: 'active' | 'disabled' | string;
@@ -41,7 +40,6 @@ const emptyDraft: SubagentProfile = {
   tool_allowlist: [],
   max_retries: 0,
   retry_backoff_ms: 1000,
-  timeout_sec: 0,
   max_task_chars: 0,
   max_result_chars: 0,
 };
@@ -90,7 +88,6 @@ const SubagentProfiles: React.FC = () => {
       tool_allowlist: Array.isArray(next.tool_allowlist) ? next.tool_allowlist : [],
       max_retries: Number(next.max_retries || 0),
       retry_backoff_ms: Number(next.retry_backoff_ms || 1000),
-      timeout_sec: Number(next.timeout_sec || 0),
       max_task_chars: Number(next.max_task_chars || 0),
       max_result_chars: Number(next.max_result_chars || 0),
     });
@@ -152,7 +149,6 @@ const SubagentProfiles: React.FC = () => {
       tool_allowlist: Array.isArray(p.tool_allowlist) ? p.tool_allowlist : [],
       max_retries: Number(p.max_retries || 0),
       retry_backoff_ms: Number(p.retry_backoff_ms || 1000),
-      timeout_sec: Number(p.timeout_sec || 0),
       max_task_chars: Number(p.max_task_chars || 0),
       max_result_chars: Number(p.max_result_chars || 0),
     });
@@ -206,7 +202,6 @@ const SubagentProfiles: React.FC = () => {
           tool_allowlist: draft.tool_allowlist || [],
           max_retries: Number(draft.max_retries || 0),
           retry_backoff_ms: Number(draft.retry_backoff_ms || 0),
-          timeout_sec: Number(draft.timeout_sec || 0),
           max_task_chars: Number(draft.max_task_chars || 0),
           max_result_chars: Number(draft.max_result_chars || 0),
         }),
@@ -277,7 +272,7 @@ const SubagentProfiles: React.FC = () => {
   };
 
   return (
-    <div className="h-full p-4 md:p-6 flex flex-col gap-4">
+    <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentProfiles')}</h1>
         <div className="flex items-center gap-2">
@@ -429,7 +424,7 @@ const SubagentProfiles: React.FC = () => {
                 value={promptFileContent}
                 onChange={(e) => setPromptFileContent(e.target.value)}
                 className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[220px]"
-                placeholder="AGENT.md content..."
+                placeholder={t('agentPromptContentPlaceholder')}
               />
               <div className="mt-2 flex items-center gap-2">
                 <button
@@ -443,7 +438,7 @@ const SubagentProfiles: React.FC = () => {
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">Max Retries</div>
+              <div className="text-xs text-zinc-400 mb-1">{t('maxRetries')}</div>
               <input
                 type="number"
                 min={0}
@@ -453,22 +448,12 @@ const SubagentProfiles: React.FC = () => {
               />
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">Retry Backoff (ms)</div>
+              <div className="text-xs text-zinc-400 mb-1">{t('retryBackoffMs')}</div>
               <input
                 type="number"
                 min={0}
                 value={Number(draft.retry_backoff_ms || 0)}
                 onChange={(e) => setDraft({ ...draft, retry_backoff_ms: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
-              />
-            </div>
-            <div>
-              <div className="text-xs text-zinc-400 mb-1">Timeout (sec)</div>
-              <input
-                type="number"
-                min={0}
-                value={Number(draft.timeout_sec || 0)}
-                onChange={(e) => setDraft({ ...draft, timeout_sec: Number(e.target.value) || 0 })}
                 className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
               />
             </div>
@@ -507,14 +492,14 @@ const SubagentProfiles: React.FC = () => {
               disabled={!draft.agent_id}
               className="px-3 py-1.5 text-xs rounded bg-emerald-700/70 hover:bg-emerald-600 disabled:opacity-50"
             >
-              Enable
+              {t('enable')}
             </button>
             <button
               onClick={() => setStatus('disabled')}
               disabled={!draft.agent_id}
               className="px-3 py-1.5 text-xs rounded bg-amber-700/70 hover:bg-amber-600 disabled:opacity-50"
             >
-              Disable
+              {t('disable')}
             </button>
             <button
               onClick={remove}

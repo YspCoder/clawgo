@@ -165,8 +165,8 @@ const Logs: React.FC = () => {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 h-full flex flex-col">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 h-full flex flex-col">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{t('logs')}</h1>
           <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
@@ -176,7 +176,7 @@ const Logs: React.FC = () => {
             {isStreaming ? t('live') : t('paused')}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowRaw(!showRaw)}
             className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors text-zinc-300"

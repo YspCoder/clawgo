@@ -5,7 +5,7 @@ import { useAppContext } from '../context/AppContext';
 
 const Header: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { isGatewayOnline, setSidebarOpen } = useAppContext();
+  const { isGatewayOnline, setSidebarOpen, sidebarCollapsed } = useAppContext();
 
   const toggleLang = () => {
     const nextLang = i18n.language === 'en' ? 'zh' : 'en';
@@ -18,10 +18,18 @@ const Header: React.FC = () => {
         <button className="md:hidden p-2 rounded-lg hover:bg-zinc-800 text-zinc-300" onClick={() => setSidebarOpen(true)}>
           <Menu className="w-5 h-5" />
         </button>
-        <div className="w-8 h-8 md:w-9 md:h-9 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
-          <Terminal className="w-4 h-4 md:w-5 md:h-5 text-white" />
+        <div className="hidden md:flex items-center gap-3 rounded-xl px-2 py-1.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
+            <Terminal className="w-5 h-5 text-white" />
+          </div>
+          {!sidebarCollapsed && (
+            <span className="font-semibold text-lg md:text-xl tracking-tight truncate">{t('appName')}</span>
+          )}
         </div>
-        <span className="hidden md:inline font-semibold text-lg md:text-xl tracking-tight truncate">{t('appName')}</span>
+        <div className="md:hidden w-8 h-8 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
+          <Terminal className="w-4 h-4 text-white" />
+        </div>
+        <span className="md:hidden font-semibold text-lg tracking-tight truncate">{t('appName')}</span>
       </div>
       
       <div className="flex items-center gap-2 md:gap-6">

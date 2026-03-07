@@ -73,6 +73,7 @@
       "main": {
         "enabled": true,
         "type": "router",
+        "notify_main_policy": "final_only",
         "display_name": "Main Agent",
         "role": "orchestrator",
         "system_prompt_file": "agents/main/AGENT.md",
@@ -85,7 +86,6 @@
         "runtime": {
           "proxy": "proxy",
           "temperature": 0.2,
-          "timeout_sec": 900,
           "max_retries": 1,
           "retry_backoff_ms": 1000,
           "max_parallel_runs": 4
@@ -94,6 +94,7 @@
       "coder": {
         "enabled": true,
         "type": "worker",
+        "notify_main_policy": "final_only",
         "display_name": "Code Agent",
         "role": "code",
         "system_prompt_file": "agents/coder/AGENT.md",
@@ -106,7 +107,6 @@
         "runtime": {
           "proxy": "proxy",
           "temperature": 0.2,
-          "timeout_sec": 1200,
           "max_retries": 1,
           "retry_backoff_ms": 1000,
           "max_task_chars": 20000,
@@ -117,6 +117,7 @@
       "tester": {
         "enabled": true,
         "type": "worker",
+        "notify_main_policy": "on_blocked",
         "display_name": "Test Agent",
         "role": "test",
         "system_prompt_file": "agents/tester/AGENT.md",
@@ -129,7 +130,6 @@
         "runtime": {
           "proxy": "proxy",
           "temperature": 0.1,
-          "timeout_sec": 1200,
           "max_retries": 1,
           "retry_backoff_ms": 1000,
           "max_parallel_runs": 2
@@ -141,11 +141,11 @@
         "transport": "node",
         "node_id": "edge-dev",
         "parent_agent_id": "main",
+        "notify_main_policy": "internal_only",
         "display_name": "Edge Dev Main Agent",
         "role": "remote_main",
         "memory_namespace": "node.edge-dev.main",
         "runtime": {
-          "timeout_sec": 1200,
           "max_retries": 1,
           "retry_backoff_ms": 1000,
           "max_parallel_runs": 1

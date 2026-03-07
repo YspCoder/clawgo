@@ -40,14 +40,14 @@ const LogCodes: React.FC = () => {
   }, [items, kw]);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-3">
+    <div className="p-4 md:p-6 xl:p-8 w-full space-y-6">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold tracking-tight">{t('logCodes')}</h1>
         <input
           value={kw}
           onChange={(e) => setKw(e.target.value)}
           placeholder={t('logCodesSearchPlaceholder')}
-          className="w-72 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+          className="w-full sm:w-80 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
         />
       </div>
 

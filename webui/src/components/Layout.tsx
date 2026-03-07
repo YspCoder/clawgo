@@ -25,7 +25,7 @@ const Layout: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="absolute inset-0 overflow-y-auto"
+              className="absolute inset-0 overflow-y-auto overflow-x-hidden"
             >
               <Outlet />
             </motion.div>

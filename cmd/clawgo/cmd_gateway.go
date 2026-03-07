@@ -129,6 +129,8 @@ func gatewayCmd() {
 	}
 
 	registryServer := api.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
+	registryServer.SetGatewayVersion(version)
+	registryServer.SetWebUIVersion(version)
 	registryServer.SetConfigPath(getConfigPath())
 	registryServer.SetWorkspacePath(cfg.WorkspacePath())
 	registryServer.SetLogFilePath(cfg.LogFilePath())
