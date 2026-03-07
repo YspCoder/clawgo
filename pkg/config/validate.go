@@ -309,6 +309,13 @@ func validateSubagents(cfg *Config) []error {
 				errs = append(errs, fmt.Errorf("agents.subagents.%s.transport must be one of: local, node", id))
 			}
 		}
+		if policy := strings.TrimSpace(raw.NotifyMainPolicy); policy != "" {
+			switch policy {
+			case "final_only", "milestone", "on_blocked", "always", "internal_only":
+			default:
+				errs = append(errs, fmt.Errorf("agents.subagents.%s.notify_main_policy must be one of: final_only, milestone, on_blocked, always, internal_only", id))
+			}
+		}
 		if transport == "node" && strings.TrimSpace(raw.NodeID) == "" {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.node_id is required when transport=node", id))
 		}

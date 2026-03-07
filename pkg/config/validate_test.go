@@ -110,3 +110,21 @@ func TestValidateNodeBackedSubagentAllowsMissingPromptFile(t *testing.T) {
 		t.Fatalf("expected node-backed config to be valid, got %v", errs)
 	}
 }
+
+func TestValidateSubagentsRejectsInvalidNotifyMainPolicy(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Agents.Subagents["coder"] = SubagentConfig{
+		Enabled:          true,
+		SystemPromptFile: "agents/coder/AGENT.md",
+		NotifyMainPolicy: "loud",
+		Runtime: SubagentRuntimeConfig{
+			Proxy: "proxy",
+		},
+	}
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}

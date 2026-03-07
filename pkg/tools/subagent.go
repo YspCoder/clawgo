@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"clawgo/pkg/bus"
+	"clawgo/pkg/ekg"
 	"clawgo/pkg/providers"
 )
 
@@ -22,6 +24,7 @@ type SubagentTask struct {
 	Transport        string                 `json:"transport,omitempty"`
 	NodeID           string                 `json:"node_id,omitempty"`
 	ParentAgentID    string                 `json:"parent_agent_id,omitempty"`
+	NotifyMainPolicy string                 `json:"notify_main_policy,omitempty"`
 	SessionKey       string                 `json:"session_key"`
 	MemoryNS         string                 `json:"memory_ns"`
 	SystemPrompt     string                 `json:"system_prompt,omitempty"`
@@ -62,23 +65,25 @@ type SubagentManager struct {
 	profileStore       *SubagentProfileStore
 	runStore           *SubagentRunStore
 	mailboxStore       *AgentMailboxStore
+	ekg                *ekg.Engine
 }
 
 type SubagentSpawnOptions struct {
-	Task           string
-	Label          string
-	Role           string
-	AgentID        string
-	MaxRetries     int
-	RetryBackoff   int
-	TimeoutSec     int
-	MaxTaskChars   int
-	MaxResultChars int
-	OriginChannel  string
-	OriginChatID   string
-	ThreadID       string
-	CorrelationID  string
-	ParentRunID    string
+	Task             string
+	Label            string
+	Role             string
+	AgentID          string
+	NotifyMainPolicy string
+	MaxRetries       int
+	RetryBackoff     int
+	TimeoutSec       int
+	MaxTaskChars     int
+	MaxResultChars   int
+	OriginChannel    string
+	OriginChatID     string
+	ThreadID         string
+	CorrelationID    string
+	ParentRunID      string
 }
 
 func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *bus.MessageBus) *SubagentManager {
@@ -96,6 +101,7 @@ func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *b
 		profileStore:       store,
 		runStore:           runStore,
 		mailboxStore:       mailboxStore,
+		ekg:                ekg.New(workspace),
 	}
 	if runStore != nil {
 		for _, task := range runStore.List() {
@@ -167,6 +173,7 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 	transport := "local"
 	nodeID := ""
 	parentAgentID := ""
+	notifyMainPolicy := "final_only"
 	toolAllowlist := []string(nil)
 	maxRetries := 0
 	retryBackoff := 1000
@@ -199,6 +206,7 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		}
 		nodeID = strings.TrimSpace(profile.NodeID)
 		parentAgentID = strings.TrimSpace(profile.ParentAgentID)
+		notifyMainPolicy = normalizeNotifyMainPolicy(profile.NotifyMainPolicy)
 		systemPrompt = strings.TrimSpace(profile.SystemPrompt)
 		systemPromptFile = strings.TrimSpace(profile.SystemPromptFile)
 		toolAllowlist = append([]string(nil), profile.ToolAllowlist...)
@@ -236,6 +244,9 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 	}
 	originChannel := strings.TrimSpace(opts.OriginChannel)
 	originChatID := strings.TrimSpace(opts.OriginChatID)
+	if raw := strings.TrimSpace(opts.NotifyMainPolicy); raw != "" {
+		notifyMainPolicy = normalizeNotifyMainPolicy(raw)
+	}
 	threadID := strings.TrimSpace(opts.ThreadID)
 	correlationID := strings.TrimSpace(opts.CorrelationID)
 	parentRunID := strings.TrimSpace(opts.ParentRunID)
@@ -274,6 +285,7 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		Transport:        transport,
 		NodeID:           nodeID,
 		ParentAgentID:    parentAgentID,
+		NotifyMainPolicy: notifyMainPolicy,
 		SessionKey:       sessionKey,
 		MemoryNS:         memoryNS,
 		SystemPrompt:     systemPrompt,
@@ -368,20 +380,11 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 	}
 	sm.mu.Unlock()
 
-	// 2. Result broadcast (keep existing behavior)
-	if sm.bus != nil {
-		prefix := "Task completed"
-		if runErr != nil {
-			prefix = "Task failed"
-		}
-		if task.Label != "" {
-			if runErr != nil {
-				prefix = fmt.Sprintf("Task '%s' failed", task.Label)
-			} else {
-				prefix = fmt.Sprintf("Task '%s' completed", task.Label)
-			}
-		}
-		announceContent := fmt.Sprintf("%s.\n\nResult:\n%s", prefix, task.Result)
+	sm.recordEKG(task, runErr)
+
+	// 2. Result broadcast
+	if sm.bus != nil && shouldNotifyMainOnFinal(task.NotifyMainPolicy, runErr, task) {
+		announceContent, notifyReason := buildSubagentMainNotification(task, runErr)
 		sm.bus.PublishInbound(bus.InboundMessage{
 			Channel:    "system",
 			SenderID:   fmt.Sprintf("subagent:%s", task.ID),
@@ -389,18 +392,140 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			SessionKey: task.SessionKey,
 			Content:    announceContent,
 			Metadata: map[string]string{
-				"trigger":     "subagent",
-				"subagent_id": task.ID,
-				"agent_id":    task.AgentID,
-				"role":        task.Role,
-				"session_key": task.SessionKey,
-				"memory_ns":   task.MemoryNS,
-				"retry_count": fmt.Sprintf("%d", task.RetryCount),
-				"timeout_sec": fmt.Sprintf("%d", task.TimeoutSec),
-				"status":      task.Status,
+				"trigger":       "subagent",
+				"subagent_id":   task.ID,
+				"agent_id":      task.AgentID,
+				"role":          task.Role,
+				"session_key":   task.SessionKey,
+				"memory_ns":     task.MemoryNS,
+				"retry_count":   fmt.Sprintf("%d", task.RetryCount),
+				"timeout_sec":   fmt.Sprintf("%d", task.TimeoutSec),
+				"status":        task.Status,
+				"notify_reason": notifyReason,
 			},
 		})
 	}
+}
+
+func (sm *SubagentManager) recordEKG(task *SubagentTask, runErr error) {
+	if sm == nil || sm.ekg == nil || task == nil {
+		return
+	}
+	status := "success"
+	logText := strings.TrimSpace(task.Result)
+	if runErr != nil {
+		status = "error"
+		if isBlockedSubagentError(runErr) {
+			logText = "blocked: " + strings.TrimSpace(task.Result)
+		}
+	}
+	sm.ekg.Record(ekg.Event{
+		TaskID:  task.ID,
+		Session: task.SessionKey,
+		Channel: task.OriginChannel,
+		Source:  "subagent",
+		Status:  status,
+		Log:     logText,
+	})
+}
+
+func normalizeNotifyMainPolicy(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "final_only":
+		return "final_only"
+	case "milestone", "on_blocked", "always", "internal_only":
+		return strings.ToLower(strings.TrimSpace(v))
+	default:
+		return "final_only"
+	}
+}
+
+func shouldNotifyMainOnFinal(policy string, runErr error, task *SubagentTask) bool {
+	switch normalizeNotifyMainPolicy(policy) {
+	case "internal_only":
+		return false
+	case "always", "final_only":
+		return true
+	case "on_blocked":
+		return isBlockedSubagentError(runErr)
+	case "milestone":
+		return false
+	default:
+		return true
+	}
+}
+
+func buildSubagentMainNotification(task *SubagentTask, runErr error) (string, string) {
+	status := "completed"
+	reason := "final"
+	if runErr != nil {
+		status = "failed"
+		if isBlockedSubagentError(runErr) {
+			status = "blocked"
+			reason = "blocked"
+		}
+	}
+	return fmt.Sprintf(
+		"Subagent update\nagent: %s\nrun: %s\nstatus: %s\nreason: %s\ntask: %s\nsummary: %s",
+		strings.TrimSpace(task.AgentID),
+		strings.TrimSpace(task.ID),
+		status,
+		reason,
+		summarizeSubagentText(firstNonEmpty(task.Label, task.Task), 120),
+		summarizeSubagentText(task.Result, 280),
+	), reason
+}
+
+func isBlockedSubagentError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	if msg == "" {
+		return false
+	}
+	blockedHints := []string{
+		"timeout",
+		"deadline exceeded",
+		"quota",
+		"rate limit",
+		"too many requests",
+		"permission denied",
+		"requires input",
+		"waiting for reply",
+		"blocked",
+	}
+	for _, hint := range blockedHints {
+		if strings.Contains(msg, hint) {
+			return true
+		}
+	}
+	return false
+}
+
+func summarizeSubagentText(s string, max int) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n"))
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return "(empty)"
+	}
+	if max > 0 && len(s) > max {
+		return strings.TrimSpace(s[:max-3]) + "..."
+	}
+	return s
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
 }
 
 func (sm *SubagentManager) runWithRetry(ctx context.Context, task *SubagentTask) (string, error) {

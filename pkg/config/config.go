@@ -73,6 +73,7 @@ type SubagentConfig struct {
 	Transport             string                `json:"transport,omitempty"`
 	NodeID                string                `json:"node_id,omitempty"`
 	ParentAgentID         string                `json:"parent_agent_id,omitempty"`
+	NotifyMainPolicy      string                `json:"notify_main_policy,omitempty"`
 	DisplayName           string                `json:"display_name,omitempty"`
 	Role                  string                `json:"role,omitempty"`
 	Description           string                `json:"description,omitempty"`

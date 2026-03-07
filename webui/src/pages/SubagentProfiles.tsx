@@ -6,6 +6,7 @@ import { useUI } from '../context/UIContext';
 type SubagentProfile = {
   agent_id: string;
   name?: string;
+  notify_main_policy?: string;
   role?: string;
   system_prompt?: string;
   system_prompt_file?: string;
@@ -31,6 +32,7 @@ type ToolAllowlistGroup = {
 const emptyDraft: SubagentProfile = {
   agent_id: '',
   name: '',
+  notify_main_policy: 'final_only',
   role: '',
   system_prompt: '',
   system_prompt_file: '',
@@ -79,6 +81,7 @@ const SubagentProfiles: React.FC = () => {
     setDraft({
       agent_id: next.agent_id || '',
       name: next.name || '',
+      notify_main_policy: next.notify_main_policy || 'final_only',
       role: next.role || '',
       system_prompt: next.system_prompt || '',
       system_prompt_file: next.system_prompt_file || '',
@@ -140,6 +143,7 @@ const SubagentProfiles: React.FC = () => {
     setDraft({
       agent_id: p.agent_id || '',
       name: p.name || '',
+      notify_main_policy: p.notify_main_policy || 'final_only',
       role: p.role || '',
       system_prompt: p.system_prompt || '',
       system_prompt_file: p.system_prompt_file || '',
@@ -193,6 +197,7 @@ const SubagentProfiles: React.FC = () => {
           action,
           agent_id: agentId,
           name: draft.name || '',
+          notify_main_policy: draft.notify_main_policy || 'final_only',
           role: draft.role || '',
           system_prompt: draft.system_prompt || '',
           system_prompt_file: draft.system_prompt_file || '',
@@ -348,6 +353,20 @@ const SubagentProfiles: React.FC = () => {
               >
                 <option value="active">active</option>
                 <option value="disabled">disabled</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-xs text-zinc-400 mb-1">notify_main_policy</div>
+              <select
+                value={draft.notify_main_policy || 'final_only'}
+                onChange={(e) => setDraft({ ...draft, notify_main_policy: e.target.value })}
+                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+              >
+                <option value="final_only">final_only</option>
+                <option value="internal_only">internal_only</option>
+                <option value="milestone">milestone</option>
+                <option value="on_blocked">on_blocked</option>
+                <option value="always">always</option>
               </select>
             </div>
             <div className="md:col-span-2">

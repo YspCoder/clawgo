@@ -32,6 +32,7 @@ func TestSubagentConfigToolUpsert(t *testing.T) {
 		"action":             "upsert",
 		"agent_id":           "reviewer",
 		"role":               "testing",
+		"notify_main_policy": "internal_only",
 		"display_name":       "Review Agent",
 		"description":        "负责回归与评审",
 		"system_prompt":      "review changes",
@@ -55,6 +56,9 @@ func TestSubagentConfigToolUpsert(t *testing.T) {
 	}
 	if reloaded.Agents.Subagents["reviewer"].DisplayName != "Review Agent" {
 		t.Fatalf("expected config to persist reviewer, got %+v", reloaded.Agents.Subagents["reviewer"])
+	}
+	if reloaded.Agents.Subagents["reviewer"].NotifyMainPolicy != "internal_only" {
+		t.Fatalf("expected notify_main_policy to persist, got %+v", reloaded.Agents.Subagents["reviewer"])
 	}
 	if len(reloaded.Agents.Router.Rules) == 0 {
 		t.Fatalf("expected router rules to persist")

@@ -27,6 +27,7 @@ func DraftConfigSubagent(description, agentIDHint string) map[string]interface{}
 		"role":               role,
 		"display_name":       displayName,
 		"description":        desc,
+		"notify_main_policy": "final_only",
 		"system_prompt":      systemPrompt,
 		"system_prompt_file": "agents/" + agentID + "/AGENT.md",
 		"memory_namespace":   agentID,
@@ -79,6 +80,9 @@ func UpsertConfigSubagent(configPath string, args map[string]interface{}) (map[s
 	}
 	if v := stringArgFromMap(args, "display_name"); v != "" {
 		subcfg.DisplayName = v
+	}
+	if v := stringArgFromMap(args, "notify_main_policy"); v != "" {
+		subcfg.NotifyMainPolicy = v
 	}
 	if v := stringArgFromMap(args, "description"); v != "" {
 		subcfg.Description = v

@@ -60,6 +60,26 @@ type AgentMessage = {
   created_at?: number;
 };
 
+type StreamItem = {
+  kind?: 'event' | 'message' | string;
+  at?: number;
+  run_id?: string;
+  agent_id?: string;
+  event_type?: string;
+  message?: string;
+  retry_count?: number;
+  message_id?: string;
+  thread_id?: string;
+  from_agent?: string;
+  to_agent?: string;
+  reply_to?: string;
+  correlation_id?: string;
+  message_type?: string;
+  content?: string;
+  status?: string;
+  requires_reply?: boolean;
+};
+
 type RegistrySubagent = {
   agent_id?: string;
   enabled?: boolean;
@@ -68,6 +88,7 @@ type RegistrySubagent = {
   node_id?: string;
   parent_agent_id?: string;
   managed_by?: string;
+  notify_main_policy?: string;
   display_name?: string;
   role?: string;
   description?: string;
@@ -184,6 +205,11 @@ function normalizeTitle(value?: string, fallback = '-'): string {
 function summarizeTask(task?: string, label?: string): string {
   const text = normalizeTitle(label || task, '-');
   return text.length > 52 ? `${text.slice(0, 49)}...` : text;
+}
+
+function formatStreamTime(ts?: number): string {
+  if (!ts) return '--:--:--';
+  return new Date(ts).toLocaleTimeString([], { hour12: false });
 }
 
 function bezierCurve(x1: number, y1: number, x2: number, y2: number): string {
@@ -337,6 +363,8 @@ const Subagents: React.FC = () => {
   const [registryItems, setRegistryItems] = useState<RegistrySubagent[]>([]);
   const [promptFileContent, setPromptFileContent] = useState('');
   const [promptFileFound, setPromptFileFound] = useState(false);
+  const [streamItems, setStreamItems] = useState<StreamItem[]>([]);
+  const [streamTask, setStreamTask] = useState<SubagentTask | null>(null);
   const [selectedTopologyBranch, setSelectedTopologyBranch] = useState('');
   const [topologyFilter, setTopologyFilter] = useState<'all' | 'running' | 'failed' | 'local' | 'remote'>('all');
   const [topologyZoom, setTopologyZoom] = useState(0.9);
@@ -427,6 +455,10 @@ const Subagents: React.FC = () => {
     () =>
       [...selectedAgentTasks].sort((a, b) => Math.max(b.updated || 0, b.created || 0) - Math.max(a.updated || 0, a.created || 0))[0] || null,
     [selectedAgentTasks]
+  );
+  const selectedAgentDisplayName = useMemo(
+    () => selectedRegistryItem?.display_name || selectedRegistryItem?.agent_id || selectedAgentID || '',
+    [selectedRegistryItem, selectedAgentID]
   );
   const parsedNodeTrees = useMemo<NodeTree[]>(() => {
     try {
@@ -523,6 +555,7 @@ const Subagents: React.FC = () => {
         `children=${localChildren.length + remoteClusters.length}`,
         `total=${localMainStats.total} running=${localMainStats.running}`,
         `waiting=${localMainStats.waiting} failed=${localMainStats.failed}`,
+        `notify=${normalizeTitle(registryItems.find((item) => item.agent_id === localRoot.agent_id)?.notify_main_policy, 'final_only')}`,
         `transport=${normalizeTitle(localRoot.transport, 'local')} type=${normalizeTitle(localRoot.type, 'router')}`,
         localMainStats.active[0] ? `task: ${localMainStats.active[0].title}` : t('noLiveTasks'),
       ],
@@ -531,6 +564,7 @@ const Subagents: React.FC = () => {
       scale,
       onClick: () => {
         setSelectedTopologyBranch(localBranch);
+        setSelectedAgentID(normalizeTitle(localRoot.agent_id, 'main'));
         if (localMainTask?.id) setSelectedId(localMainTask.id);
       },
     };
@@ -558,6 +592,7 @@ const Subagents: React.FC = () => {
         meta: [
           `total=${stats.total} running=${stats.running}`,
           `waiting=${stats.waiting} failed=${stats.failed}`,
+          `notify=${normalizeTitle(registryItems.find((item) => item.agent_id === child.agent_id)?.notify_main_policy, 'final_only')}`,
           `transport=${normalizeTitle(child.transport, 'local')} type=${normalizeTitle(child.type, 'worker')}`,
           stats.active[0] ? `task: ${stats.active[0].title}` : task ? `last: ${summarizeTask(task.task, task.label)}` : t('noLiveTasks'),
         ],
@@ -566,6 +601,7 @@ const Subagents: React.FC = () => {
         scale,
         onClick: () => {
           setSelectedTopologyBranch(localBranch);
+          setSelectedAgentID(normalizeTitle(child.agent_id, ''));
           if (task?.id) setSelectedId(task.id);
         },
       });
@@ -602,7 +638,11 @@ const Subagents: React.FC = () => {
         accent: tree.online ? 'bg-fuchsia-400' : 'bg-zinc-500',
         clickable: true,
         scale,
-        onClick: () => setSelectedTopologyBranch(branch),
+        onClick: () => {
+          setSelectedTopologyBranch(branch);
+          setSelectedAgentID(normalizeTitle(treeRoot.agent_id, ''));
+          setSelectedId('');
+        },
       };
       cards.push(rootCard);
       lines.push({
@@ -633,7 +673,11 @@ const Subagents: React.FC = () => {
           accent: 'bg-violet-400',
           clickable: true,
           scale,
-          onClick: () => setSelectedTopologyBranch(branch),
+          onClick: () => {
+            setSelectedTopologyBranch(branch);
+            setSelectedAgentID(normalizeTitle(child.agent_id, ''));
+            setSelectedId('');
+          },
         });
         lines.push({
           path: bezierCurve(rootCard.x + cardWidth / 2, rootCard.y + cardHeight / 2, childX + cardWidth / 2, childY + cardHeight / 2),
@@ -895,6 +939,26 @@ const Subagents: React.FC = () => {
     loadThreadAndInbox(selected).catch(() => { });
   }, [selectedId, q, items]);
 
+  const loadStream = async (task: SubagentTask | null) => {
+    if (!task?.id) {
+      setStreamTask(null);
+      setStreamItems([]);
+      return;
+    }
+    try {
+      const streamRes = await callAction({ action: 'stream', id: task.id, limit: 100 });
+      setStreamTask(streamRes?.result?.task || task);
+      setStreamItems(Array.isArray(streamRes?.result?.items) ? streamRes.result.items : []);
+    } catch {
+      setStreamTask(task);
+      setStreamItems([]);
+    }
+  };
+
+  useEffect(() => {
+    loadStream(selectedAgentLatestTask).catch(() => { });
+  }, [selectedAgentLatestTask?.id, q, items.length]);
+
   return (
     <div className="h-full p-4 md:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -1103,6 +1167,62 @@ const Subagents: React.FC = () => {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+          {selectedAgentID && (
+            <div className="absolute top-4 right-4 bottom-4 z-20 w-[360px] rounded-2xl border border-zinc-800 bg-zinc-950/92 shadow-2xl shadow-black/40 backdrop-blur-md overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+                <div className="min-w-0">
+                  <div className="text-xs text-zinc-500 uppercase tracking-wider">Internal Stream</div>
+                  <div className="text-sm font-semibold text-zinc-100 truncate">{selectedAgentDisplayName}</div>
+                  <div className="text-[11px] text-zinc-500 truncate">{selectedAgentID}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedAgentID('');
+                    setSelectedId('');
+                    setStreamTask(null);
+                    setStreamItems([]);
+                  }}
+                  className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] text-zinc-200"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="px-4 py-3 border-b border-zinc-800 text-xs text-zinc-400">
+                {streamTask?.id ? (
+                  <div className="space-y-1">
+                    <div>run={streamTask.id}</div>
+                    <div>status={streamTask.status || '-'} · thread={streamTask.thread_id || '-'}</div>
+                  </div>
+                ) : (
+                  <div>No persisted run for this agent yet.</div>
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                {streamItems.length === 0 ? (
+                  <div className="text-sm text-zinc-500">No internal stream events yet.</div>
+                ) : streamItems.map((item, idx) => (
+                  <div key={`${item.kind || 'item'}-${item.at || 0}-${idx}`} className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="text-xs font-medium text-zinc-200">
+                        {item.kind === 'event'
+                          ? `${item.event_type || 'event'}${item.status ? ` · ${item.status}` : ''}`
+                          : `${item.from_agent || '-'} -> ${item.to_agent || '-'} · ${item.message_type || 'message'}`}
+                      </div>
+                      <div className="text-[11px] text-zinc-500">{formatStreamTime(item.at)}</div>
+                    </div>
+                    <div className="text-xs text-zinc-300 whitespace-pre-wrap break-words">
+                      {item.kind === 'event' ? (item.message || '(no event message)') : (item.content || '(empty message)')}
+                    </div>
+                    <div className="mt-2 text-[11px] text-zinc-500">
+                      {item.kind === 'event'
+                        ? `run=${item.run_id || '-'}${item.retry_count ? ` · retry=${item.retry_count}` : ''}`
+                        : `status=${item.status || '-'}${item.reply_to ? ` · reply_to=${item.reply_to}` : ''}`}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

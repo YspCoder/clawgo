@@ -131,6 +131,7 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 					"transport":          fallbackString(strings.TrimSpace(subcfg.Transport), "local"),
 					"node_id":            strings.TrimSpace(subcfg.NodeID),
 					"parent_agent_id":    strings.TrimSpace(subcfg.ParentAgentID),
+					"notify_main_policy": fallbackString(strings.TrimSpace(subcfg.NotifyMainPolicy), "final_only"),
 					"display_name":       subcfg.DisplayName,
 					"role":               subcfg.Role,
 					"description":        subcfg.Description,
@@ -157,6 +158,7 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 						"transport":          profile.Transport,
 						"node_id":            profile.NodeID,
 						"parent_agent_id":    profile.ParentAgentID,
+						"notify_main_policy": fallbackString(strings.TrimSpace(profile.NotifyMainPolicy), "final_only"),
 						"display_name":       profile.Name,
 						"role":               profile.Role,
 						"description":        "Node-registered remote main agent branch",
@@ -360,6 +362,37 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 			return nil, err
 		}
 		return map[string]interface{}{"found": true, "thread": thread, "messages": items}, nil
+	case "stream":
+		taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
+		if err != nil {
+			return nil, err
+		}
+		task, ok := sm.GetTask(taskID)
+		if !ok {
+			return map[string]interface{}{"found": false}, nil
+		}
+		events, err := sm.Events(taskID, runtimeIntArg(args, "limit", 100))
+		if err != nil {
+			return nil, err
+		}
+		var thread *tools.AgentThread
+		var messages []tools.AgentMessage
+		if strings.TrimSpace(task.ThreadID) != "" {
+			if th, ok := sm.Thread(task.ThreadID); ok {
+				thread = th
+			}
+			messages, err = sm.ThreadMessages(task.ThreadID, runtimeIntArg(args, "limit", 100))
+			if err != nil {
+				return nil, err
+			}
+		}
+		stream := mergeSubagentStream(events, messages)
+		return map[string]interface{}{
+			"found":  true,
+			"task":   cloneSubagentTask(task),
+			"thread": thread,
+			"items":  stream,
+		}, nil
 	case "inbox":
 		agentID := runtimeStringArg(args, "agent_id")
 		if agentID == "" {
@@ -384,6 +417,47 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 	default:
 		return nil, fmt.Errorf("unsupported action: %s", action)
 	}
+}
+
+func mergeSubagentStream(events []tools.SubagentRunEvent, messages []tools.AgentMessage) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(events)+len(messages))
+	for _, evt := range events {
+		items = append(items, map[string]interface{}{
+			"kind":        "event",
+			"at":          evt.At,
+			"run_id":      evt.RunID,
+			"agent_id":    evt.AgentID,
+			"event_type":  evt.Type,
+			"status":      evt.Status,
+			"message":     evt.Message,
+			"retry_count": evt.RetryCount,
+		})
+	}
+	for _, msg := range messages {
+		items = append(items, map[string]interface{}{
+			"kind":           "message",
+			"at":             msg.CreatedAt,
+			"message_id":     msg.MessageID,
+			"thread_id":      msg.ThreadID,
+			"from_agent":     msg.FromAgent,
+			"to_agent":       msg.ToAgent,
+			"reply_to":       msg.ReplyTo,
+			"correlation_id": msg.CorrelationID,
+			"message_type":   msg.Type,
+			"content":        msg.Content,
+			"status":         msg.Status,
+			"requires_reply": msg.RequiresReply,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		left, _ := items[i]["at"].(int64)
+		right, _ := items[j]["at"].(int64)
+		if left != right {
+			return left < right
+		}
+		return fmt.Sprintf("%v", items[i]["kind"]) < fmt.Sprintf("%v", items[j]["kind"])
+	})
+	return items
 }
 
 func cloneSubagentTask(in *tools.SubagentTask) *tools.SubagentTask {

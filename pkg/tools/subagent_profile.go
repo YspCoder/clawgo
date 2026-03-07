@@ -22,6 +22,7 @@ type SubagentProfile struct {
 	Transport        string   `json:"transport,omitempty"`
 	NodeID           string   `json:"node_id,omitempty"`
 	ParentAgentID    string   `json:"parent_agent_id,omitempty"`
+	NotifyMainPolicy string   `json:"notify_main_policy,omitempty"`
 	Role             string   `json:"role,omitempty"`
 	SystemPrompt     string   `json:"system_prompt,omitempty"`
 	SystemPromptFile string   `json:"system_prompt_file,omitempty"`
@@ -188,6 +189,7 @@ func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
 	p.Transport = normalizeProfileTransport(p.Transport)
 	p.NodeID = strings.TrimSpace(p.NodeID)
 	p.ParentAgentID = normalizeSubagentIdentifier(p.ParentAgentID)
+	p.NotifyMainPolicy = normalizeNotifyMainPolicy(p.NotifyMainPolicy)
 	p.Role = strings.TrimSpace(p.Role)
 	p.SystemPrompt = strings.TrimSpace(p.SystemPrompt)
 	p.SystemPromptFile = strings.TrimSpace(p.SystemPromptFile)
@@ -404,6 +406,7 @@ func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentPro
 		Transport:        strings.TrimSpace(subcfg.Transport),
 		NodeID:           strings.TrimSpace(subcfg.NodeID),
 		ParentAgentID:    strings.TrimSpace(subcfg.ParentAgentID),
+		NotifyMainPolicy: strings.TrimSpace(subcfg.NotifyMainPolicy),
 		Role:             strings.TrimSpace(subcfg.Role),
 		SystemPrompt:     strings.TrimSpace(subcfg.SystemPrompt),
 		SystemPromptFile: strings.TrimSpace(subcfg.SystemPromptFile),
@@ -507,6 +510,7 @@ func (t *SubagentProfileTool) Parameters() map[string]interface{} {
 				"description": "Unique subagent id, e.g. coder/writer/tester",
 			},
 			"name":               map[string]interface{}{"type": "string"},
+			"notify_main_policy": map[string]interface{}{"type": "string", "description": "final_only|internal_only|milestone|on_blocked|always"},
 			"role":               map[string]interface{}{"type": "string"},
 			"system_prompt":      map[string]interface{}{"type": "string"},
 			"system_prompt_file": map[string]interface{}{"type": "string"},
@@ -577,6 +581,7 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 		p := SubagentProfile{
 			AgentID:          agentID,
 			Name:             stringArg(args, "name"),
+			NotifyMainPolicy: stringArg(args, "notify_main_policy"),
 			Role:             stringArg(args, "role"),
 			SystemPrompt:     stringArg(args, "system_prompt"),
 			SystemPromptFile: stringArg(args, "system_prompt_file"),
@@ -611,6 +616,9 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 		}
 		if _, ok := args["role"]; ok {
 			next.Role = stringArg(args, "role")
+		}
+		if _, ok := args["notify_main_policy"]; ok {
+			next.NotifyMainPolicy = stringArg(args, "notify_main_policy")
 		}
 		if _, ok := args["system_prompt"]; ok {
 			next.SystemPrompt = stringArg(args, "system_prompt")

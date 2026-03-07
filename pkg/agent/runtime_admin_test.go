@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"clawgo/pkg/config"
 	"clawgo/pkg/runtimecfg"
@@ -75,6 +76,7 @@ func TestHandleSubagentRuntimeUpsertConfigSubagent(t *testing.T) {
 	out, err := loop.HandleSubagentRuntime(context.Background(), "upsert_config_subagent", map[string]interface{}{
 		"agent_id":           "reviewer",
 		"role":               "testing",
+		"notify_main_policy": "internal_only",
 		"display_name":       "Review Agent",
 		"system_prompt":      "review changes",
 		"system_prompt_file": "agents/reviewer/AGENT.md",
@@ -98,6 +100,9 @@ func TestHandleSubagentRuntimeUpsertConfigSubagent(t *testing.T) {
 	}
 	if subcfg.SystemPromptFile != "agents/reviewer/AGENT.md" {
 		t.Fatalf("expected system_prompt_file to persist, got %+v", subcfg)
+	}
+	if subcfg.NotifyMainPolicy != "internal_only" {
+		t.Fatalf("expected notify_main_policy to persist, got %+v", subcfg)
 	}
 	if len(reloaded.Agents.Router.Rules) == 0 {
 		t.Fatalf("expected router rules to be persisted")
@@ -314,5 +319,73 @@ func TestHandleSubagentRuntimeProtectsMainAgent(t *testing.T) {
 		"agent_id": "main",
 	}); err == nil {
 		t.Fatalf("expected deleting main agent to fail")
+	}
+}
+
+func TestHandleSubagentRuntimeStream(t *testing.T) {
+	workspace := t.TempDir()
+	manager := tools.NewSubagentManager(nil, workspace, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
+		return "stream-result", nil
+	})
+	loop := &AgentLoop{
+		workspace:       workspace,
+		subagentManager: manager,
+		subagentRouter:  tools.NewSubagentRouter(manager),
+	}
+
+	out, err := loop.HandleSubagentRuntime(context.Background(), "spawn", map[string]interface{}{
+		"task":     "prepare streamable task",
+		"agent_id": "coder",
+		"channel":  "webui",
+		"chat_id":  "webui",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+	payload, ok := out.(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected spawn payload: %T", out)
+	}
+	_ = payload
+	var task *tools.SubagentTask
+	for i := 0; i < 50; i++ {
+		tasks := manager.ListTasks()
+		if len(tasks) > 0 && tasks[0].Status == "completed" {
+			task = tasks[0]
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if task == nil {
+		t.Fatalf("expected completed task")
+	}
+
+	out, err = loop.HandleSubagentRuntime(context.Background(), "stream", map[string]interface{}{
+		"id": task.ID,
+	})
+	if err != nil {
+		t.Fatalf("stream failed: %v", err)
+	}
+	streamPayload, ok := out.(map[string]interface{})
+	if !ok || streamPayload["found"] != true {
+		t.Fatalf("unexpected stream payload: %#v", out)
+	}
+	items, ok := streamPayload["items"].([]map[string]interface{})
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected merged stream items, got %#v", streamPayload["items"])
+	}
+	foundEvent := false
+	foundMessage := false
+	for _, item := range items {
+		switch item["kind"] {
+		case "event":
+			foundEvent = true
+		case "message":
+			foundMessage = true
+		}
+	}
+	if !foundEvent || !foundMessage {
+		t.Fatalf("expected merged event and message items, got %#v", items)
 	}
 }

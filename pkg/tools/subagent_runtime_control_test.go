@@ -145,8 +145,11 @@ func TestSubagentBroadcastIncludesFailureStatus(t *testing.T) {
 	if got := strings.TrimSpace(msg.Metadata["status"]); got != "failed" {
 		t.Fatalf("expected metadata status=failed, got %q", got)
 	}
-	if !strings.Contains(strings.ToLower(msg.Content), "failed") {
-		t.Fatalf("expected failure wording in content, got %q", msg.Content)
+	if !strings.Contains(strings.ToLower(msg.Content), "status: failed") {
+		t.Fatalf("expected structured failure status in content, got %q", msg.Content)
+	}
+	if got := strings.TrimSpace(msg.Metadata["notify_reason"]); got != "final" {
+		t.Fatalf("expected notify_reason=final, got %q", got)
 	}
 }
 
@@ -203,6 +206,150 @@ func TestSubagentManagerRestoresPersistedRuns(t *testing.T) {
 	}
 	_ = waitSubagentDone(t, reloaded, 4*time.Second)
 	time.Sleep(100 * time.Millisecond)
+}
+
+func TestSubagentManagerInternalOnlySuppressesMainNotification(t *testing.T) {
+	workspace := t.TempDir()
+	msgBus := bus.NewMessageBus()
+	manager := NewSubagentManager(nil, workspace, msgBus)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		return "silent-result", nil
+	})
+	store := manager.ProfileStore()
+	if store == nil {
+		t.Fatalf("expected profile store")
+	}
+	if _, err := store.Upsert(SubagentProfile{
+		AgentID:          "coder",
+		Name:             "Code Agent",
+		NotifyMainPolicy: "internal_only",
+		SystemPromptFile: "agents/coder/AGENT.md",
+		Status:           "active",
+	}); err != nil {
+		t.Fatalf("profile upsert failed: %v", err)
+	}
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "internal-only task",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+	task := waitSubagentDone(t, manager, 4*time.Second)
+	if task.Status != "completed" {
+		t.Fatalf("expected completed task, got %s", task.Status)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if msg, ok := msgBus.ConsumeInbound(ctx); ok {
+		t.Fatalf("did not expect main notification, got %+v", msg)
+	}
+}
+
+func TestSubagentManagerOnBlockedNotifiesOnlyBlockedFailures(t *testing.T) {
+	workspace := t.TempDir()
+	msgBus := bus.NewMessageBus()
+	manager := NewSubagentManager(nil, workspace, msgBus)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		switch task.Task {
+		case "blocked-task":
+			return "", errors.New("command tick timeout exceeded: 600s")
+		default:
+			return "done", nil
+		}
+	})
+	store := manager.ProfileStore()
+	if store == nil {
+		t.Fatalf("expected profile store")
+	}
+	if _, err := store.Upsert(SubagentProfile{
+		AgentID:          "pm",
+		Name:             "Product Manager",
+		NotifyMainPolicy: "on_blocked",
+		SystemPromptFile: "agents/pm/AGENT.md",
+		Status:           "active",
+	}); err != nil {
+		t.Fatalf("profile upsert failed: %v", err)
+	}
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "successful-task",
+		AgentID:       "pm",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn success case failed: %v", err)
+	}
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+
+	ctxSilent, cancelSilent := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancelSilent()
+	if msg, ok := msgBus.ConsumeInbound(ctxSilent); ok {
+		t.Fatalf("did not expect success notification for on_blocked, got %+v", msg)
+	}
+
+	_, err = manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "blocked-task",
+		AgentID:       "pm",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn blocked case failed: %v", err)
+	}
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+
+	ctxBlocked, cancelBlocked := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelBlocked()
+	msg, ok := msgBus.ConsumeInbound(ctxBlocked)
+	if !ok {
+		t.Fatalf("expected blocked notification")
+	}
+	if got := strings.TrimSpace(msg.Metadata["notify_reason"]); got != "blocked" {
+		t.Fatalf("expected notify_reason=blocked, got %q", got)
+	}
+	if !strings.Contains(strings.ToLower(msg.Content), "blocked") {
+		t.Fatalf("expected blocked wording in content, got %q", msg.Content)
+	}
+}
+
+func TestSubagentManagerRecordsFailuresToEKG(t *testing.T) {
+	workspace := t.TempDir()
+	manager := NewSubagentManager(nil, workspace, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		return "", errors.New("rate limit exceeded")
+	})
+
+	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+		Task:          "ekg failure",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("spawn failed: %v", err)
+	}
+	_ = waitSubagentDone(t, manager, 4*time.Second)
+
+	data, err := os.ReadFile(filepath.Join(workspace, "memory", "ekg-events.jsonl"))
+	if err != nil {
+		t.Fatalf("expected ekg events to be written: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "\"source\":\"subagent\"") {
+		t.Fatalf("expected subagent source in ekg log, got %s", text)
+	}
+	if !strings.Contains(text, "\"status\":\"error\"") {
+		t.Fatalf("expected error status in ekg log, got %s", text)
+	}
+	if !strings.Contains(strings.ToLower(text), "rate limit exceeded") {
+		t.Fatalf("expected failure text in ekg log, got %s", text)
+	}
 }
 
 func TestSubagentManagerAutoRecoversRunningTaskAfterRestart(t *testing.T) {
