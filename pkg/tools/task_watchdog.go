@@ -26,7 +26,7 @@ const (
 )
 
 var ErrCommandNoProgress = errors.New("command no progress across tick rounds")
-var ErrCommandTickTimeout = errors.New("command tick timeout exceeded")
+var ErrTaskWatchdogTimeout = errors.New("task watchdog timeout exceeded")
 
 type commandRuntimePolicy struct {
 	BaseTick        time.Duration
@@ -600,13 +600,19 @@ type stringTaskResult struct {
 	err    error
 }
 
-// runStringTaskWithCommandTickTimeout executes a string-returning task with a
-// command-tick-based timeout loop so timeout behavior stays consistent with the
-// command watchdog pacing policy.
-func runStringTaskWithCommandTickTimeout(
+type stringTaskWatchdogOptions struct {
+	ProgressFn func() int
+	CanExtend  func() bool
+}
+
+// runStringTaskWithTaskWatchdog executes a string-returning task with the same
+// tick pacing as the command watchdog, but only times out after a full timeout
+// window without observable progress or an allowed extension signal.
+func runStringTaskWithTaskWatchdog(
 	ctx context.Context,
 	timeoutSec int,
 	baseTick time.Duration,
+	opts stringTaskWatchdogOptions,
 	run func(context.Context) (string, error),
 ) (string, error) {
 	if run == nil {
@@ -620,7 +626,8 @@ func runStringTaskWithCommandTickTimeout(
 	}
 
 	timeout := time.Duration(timeoutSec) * time.Second
-	started := time.Now()
+	lastProgressAt := time.Now()
+	lastProgress := safeProgress(opts.ProgressFn)
 	tick := normalizeCommandTick(baseTick)
 	if tick <= 0 {
 		tick = 2 * time.Second
@@ -646,19 +653,31 @@ func runStringTaskWithCommandTickTimeout(
 		case res := <-done:
 			return res.output, res.err
 		case <-timer.C:
-			elapsed := time.Since(started)
-			if elapsed >= timeout {
-				cancel()
-				select {
-				case res := <-done:
-					if res.err != nil {
-						return "", fmt.Errorf("%w: %v", ErrCommandTickTimeout, res.err)
-					}
-				case <-time.After(2 * time.Second):
-				}
-				return "", fmt.Errorf("%w: %ds", ErrCommandTickTimeout, timeoutSec)
+			if cur := safeProgress(opts.ProgressFn); cur > lastProgress {
+				lastProgress = cur
+				lastProgressAt = time.Now()
 			}
-			next := nextCommandTick(tick, elapsed)
+			stalledFor := time.Since(lastProgressAt)
+			if stalledFor >= timeout {
+				if opts.CanExtend != nil && opts.CanExtend() {
+					lastProgressAt = time.Now()
+					stalledFor = 0
+				} else {
+					cancel()
+					select {
+					case res := <-done:
+						if res.err != nil {
+							return "", fmt.Errorf("%w: %v", ErrTaskWatchdogTimeout, res.err)
+						}
+					case <-time.After(2 * time.Second):
+					}
+					return "", fmt.Errorf("%w: %ds", ErrTaskWatchdogTimeout, timeoutSec)
+				}
+			}
+			next := nextCommandTick(tick, stalledFor)
+			if next <= 0 {
+				next = tick
+			}
 			timer.Reset(next)
 		}
 	}

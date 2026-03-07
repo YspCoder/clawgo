@@ -535,10 +535,18 @@ func (sm *SubagentManager) runWithRetry(ctx context.Context, task *SubagentTask)
 
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		result, err := runStringTaskWithCommandTickTimeout(
+		result, err := runStringTaskWithTaskWatchdog(
 			ctx,
 			timeoutSec,
 			2*time.Second,
+			stringTaskWatchdogOptions{
+				ProgressFn: func() int {
+					return sm.taskWatchdogProgress(task)
+				},
+				CanExtend: func() bool {
+					return sm.taskCanAutoExtend(task)
+				},
+			},
 			func(runCtx context.Context) (string, error) {
 				return sm.executeTaskOnce(runCtx, task)
 			},
@@ -570,6 +578,35 @@ func (sm *SubagentManager) runWithRetry(ctx context.Context, task *SubagentTask)
 		lastErr = fmt.Errorf("subagent task failed with unknown error")
 	}
 	return "", lastErr
+}
+
+func (sm *SubagentManager) taskWatchdogProgress(task *SubagentTask) int {
+	if sm == nil || task == nil {
+		return 0
+	}
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	current, ok := sm.tasks[task.ID]
+	if !ok || current == nil {
+		current = task
+	}
+	if current.Updated <= 0 {
+		return 0
+	}
+	return int(current.Updated)
+}
+
+func (sm *SubagentManager) taskCanAutoExtend(task *SubagentTask) bool {
+	if sm == nil || task == nil {
+		return false
+	}
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	current, ok := sm.tasks[task.ID]
+	if !ok || current == nil {
+		current = task
+	}
+	return strings.EqualFold(strings.TrimSpace(current.Status), "running")
 }
 
 func (sm *SubagentManager) executeTaskOnce(ctx context.Context, task *SubagentTask) (string, error) {

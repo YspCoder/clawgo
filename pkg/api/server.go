@@ -2535,13 +2535,13 @@ func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
 					label := fmt.Sprintf("%v", row["label"])
 					source := strings.TrimSpace(fmt.Sprintf("%v", row["source"]))
 					if source == "" {
-						source = "command_watchdog"
+						source = "task_watchdog"
 					}
 					rec := map[string]interface{}{
 						"task_id":       "cmd:" + id,
 						"time":          fmt.Sprintf("%v", row["started_at"]),
 						"status":        "running",
-						"source":        "command_watchdog",
+						"source":        "task_watchdog",
 						"channel":       source,
 						"session":       "watchdog:" + id,
 						"input_preview": label,
@@ -2571,13 +2571,13 @@ func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
 					label := fmt.Sprintf("%v", row["label"])
 					source := strings.TrimSpace(fmt.Sprintf("%v", row["source"]))
 					if source == "" {
-						source = "command_watchdog"
+						source = "task_watchdog"
 					}
 					rec := map[string]interface{}{
 						"task_id":       "cmd:" + id,
 						"time":          fmt.Sprintf("%v", row["enqueued_at"]),
 						"status":        "waiting",
-						"source":        "command_watchdog",
+						"source":        "task_watchdog",
 						"channel":       source,
 						"session":       "watchdog:" + id,
 						"input_preview": label,
@@ -2598,10 +2598,10 @@ func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
 					"task_id":       "cmd:watchdog",
 					"time":          fmt.Sprintf("%v", q["time"]),
 					"status":        "running",
-					"source":        "command_watchdog",
+					"source":        "task_watchdog",
 					"channel":       "watchdog",
 					"session":       "watchdog:stats",
-					"input_preview": "command watchdog capacity snapshot",
+					"input_preview": "task watchdog capacity snapshot",
 					"duration_ms":   0,
 					"attempts":      1,
 					"retry_count":   0,

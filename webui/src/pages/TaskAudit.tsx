@@ -75,7 +75,7 @@ const TaskAudit: React.FC = () => {
             <option value="all">{t('allSources')}</option>
             <option value="direct">{t('sourceDirect')}</option>
             <option value="memory_todo">{t('sourceMemoryTodo')}</option>
-            <option value="command_watchdog">command_watchdog</option>
+            <option value="task_watchdog">task_watchdog</option>
             <option value="-">-</option>
           </select>
           <select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs">

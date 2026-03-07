@@ -79,7 +79,7 @@ func TestSubagentRunWithRetryEventuallySucceeds(t *testing.T) {
 	}
 }
 
-func TestSubagentRunWithTimeoutFails(t *testing.T) {
+func TestSubagentRunAutoExtendsWhileStillRunning(t *testing.T) {
 	workspace := t.TempDir()
 	manager := NewSubagentManager(nil, workspace, nil)
 	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
@@ -87,7 +87,7 @@ func TestSubagentRunWithTimeoutFails(t *testing.T) {
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case <-time.After(2 * time.Second):
-			return "unexpected", nil
+			return "completed after extension", nil
 		}
 	})
 
@@ -103,11 +103,14 @@ func TestSubagentRunWithTimeoutFails(t *testing.T) {
 	}
 
 	task := waitSubagentDone(t, manager, 4*time.Second)
-	if task.Status != "failed" {
-		t.Fatalf("expected failed task on timeout, got %s", task.Status)
+	if task.Status != "completed" {
+		t.Fatalf("expected completed task after watchdog extension, got %s", task.Status)
 	}
 	if task.RetryCount != 0 {
 		t.Fatalf("expected retry_count=0, got %d", task.RetryCount)
+	}
+	if !strings.Contains(task.Result, "completed after extension") {
+		t.Fatalf("expected extended result, got %q", task.Result)
 	}
 }
 
