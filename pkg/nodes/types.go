@@ -51,9 +51,13 @@ type Response struct {
 
 // WireMessage is the websocket envelope for node lifecycle messages.
 type WireMessage struct {
-	Type string    `json:"type"`
-	ID   string    `json:"id,omitempty"`
-	Node *NodeInfo `json:"node,omitempty"`
+	Type    string                 `json:"type"`
+	ID      string                 `json:"id,omitempty"`
+	From    string                 `json:"from,omitempty"`
+	To      string                 `json:"to,omitempty"`
+	Session string                 `json:"session,omitempty"`
+	Node    *NodeInfo              `json:"node,omitempty"`
+	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 
 // WireAck is the websocket response envelope for node lifecycle messages.

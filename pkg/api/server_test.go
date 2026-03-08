@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -209,6 +210,71 @@ func TestHandleNodeConnectReconnectKeepsNewestSessionOnline(t *testing.T) {
 	}
 
 	_ = second.Close()
+}
+
+func TestHandleNodeConnectRelaysSignalMessages(t *testing.T) {
+	t.Parallel()
+
+	mgr := nodes.NewManager()
+	srv := NewServer("127.0.0.1", 0, "", mgr)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/nodes/connect", srv.handleNodeConnect)
+	httpSrv := httptest.NewServer(mux)
+	defer httpSrv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/nodes/connect"
+	connect := func(id string) *websocket.Conn {
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		if err != nil {
+			t.Fatalf("dial websocket: %v", err)
+		}
+		if err := conn.WriteJSON(nodes.WireMessage{Type: "register", Node: &nodes.NodeInfo{ID: id, Name: id}}); err != nil {
+			t.Fatalf("write register: %v", err)
+		}
+		var ack nodes.WireAck
+		if err := conn.ReadJSON(&ack); err != nil {
+			t.Fatalf("read register ack: %v", err)
+		}
+		if !ack.OK {
+			t.Fatalf("unexpected register ack: %+v", ack)
+		}
+		return conn
+	}
+
+	offerer := connect("edge-a")
+	defer offerer.Close()
+	answerer := connect("edge-b")
+	defer answerer.Close()
+
+	signal := nodes.WireMessage{
+		Type:    "signal_offer",
+		ID:      "sig-1",
+		To:      "edge-b",
+		Session: "sess-1",
+		Payload: map[string]interface{}{"sdp": "offer-sdp"},
+	}
+	if err := offerer.WriteJSON(signal); err != nil {
+		t.Fatalf("write signal offer: %v", err)
+	}
+
+	var relayAck nodes.WireAck
+	if err := offerer.ReadJSON(&relayAck); err != nil {
+		t.Fatalf("read relay ack: %v", err)
+	}
+	if !relayAck.OK || relayAck.Type != "relayed" || relayAck.ID != "sig-1" {
+		t.Fatalf("unexpected relay ack: %+v", relayAck)
+	}
+
+	var forwarded nodes.WireMessage
+	if err := answerer.ReadJSON(&forwarded); err != nil {
+		t.Fatalf("read forwarded signal: %v", err)
+	}
+	if forwarded.Type != "signal_offer" || forwarded.From != "edge-a" || forwarded.To != "edge-b" || forwarded.Session != "sess-1" {
+		t.Fatalf("unexpected forwarded signal envelope: %+v", forwarded)
+	}
+	if fmt.Sprintf("%v", forwarded.Payload["sdp"]) != "offer-sdp" {
+		t.Fatalf("unexpected forwarded payload: %+v", forwarded.Payload)
+	}
 }
 
 func TestHandleWebUISubagentsRuntimeLive(t *testing.T) {
