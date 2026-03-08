@@ -804,8 +804,7 @@ func (c *mcpHTTPClient) initialize(ctx context.Context) error {
 	if _, ok := result["protocolVersion"]; !ok {
 		return fmt.Errorf("mcp server %q initialize missing protocolVersion", c.serverName)
 	}
-	_, _ = c.request(ctx, "notifications/initialized", map[string]interface{}{})
-	return nil
+	return c.notify(ctx, "notifications/initialized", map[string]interface{}{})
 }
 
 func (c *mcpHTTPClient) listAll(ctx context.Context, method, field string) (map[string]interface{}, error) {
@@ -871,6 +870,33 @@ func (c *mcpHTTPClient) request(ctx context.Context, method string, params map[s
 		return nil, fmt.Errorf("decode mcp %s %s result: %w", c.serverName, method, err)
 	}
 	return out, nil
+}
+
+func (c *mcpHTTPClient) notify(ctx context.Context, method string, params map[string]interface{}) error {
+	payload := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  method,
+		"params":  params,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("mcp %s %s failed: %w", c.serverName, method, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("mcp %s %s failed: http %d %s", c.serverName, method, resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
 }
 
 func (c *mcpClient) Close() error {

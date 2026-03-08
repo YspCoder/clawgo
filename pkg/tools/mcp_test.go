@@ -373,6 +373,7 @@ func TestMCPToolListTools(t *testing.T) {
 }
 
 func TestMCPToolHTTPTransport(t *testing.T) {
+	initializedNotified := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		var req map[string]interface{}
@@ -393,11 +394,13 @@ func TestMCPToolHTTPTransport(t *testing.T) {
 				},
 			}
 		case "notifications/initialized":
-			resp = map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      id,
-				"result":  map[string]interface{}{},
+			if _, hasID := req["id"]; hasID {
+				http.Error(w, "notification must not include id", http.StatusBadRequest)
+				return
 			}
+			initializedNotified = true
+			w.WriteHeader(http.StatusAccepted)
+			return
 		case "tools/list":
 			resp = map[string]interface{}{
 				"jsonrpc": "2.0",
@@ -454,6 +457,9 @@ func TestMCPToolHTTPTransport(t *testing.T) {
 	}
 	if !strings.Contains(out, `"name": "echo"`) {
 		t.Fatalf("expected http tool listing, got: %s", out)
+	}
+	if !initializedNotified {
+		t.Fatal("expected initialized notification to be sent")
 	}
 }
 
