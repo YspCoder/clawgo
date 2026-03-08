@@ -352,10 +352,15 @@ func (al *AgentLoop) dispatchNodeSubagentTask(ctx context.Context, task *tools.S
 		return "", fmt.Errorf("node-backed subagent %q missing node_id", task.AgentID)
 	}
 	taskInput := loopTaskInputForNode(task)
+	reqArgs := map[string]interface{}{}
+	if remoteAgentID := remoteAgentIDForNodeBranch(task.AgentID, nodeID); remoteAgentID != "" {
+		reqArgs["remote_agent_id"] = remoteAgentID
+	}
 	resp, err := al.nodeRouter.Dispatch(ctx, nodes.Request{
 		Action: "agent_task",
 		Node:   nodeID,
 		Task:   taskInput,
+		Args:   reqArgs,
 	}, "auto")
 	if err != nil {
 		return "", err
@@ -370,6 +375,23 @@ func (al *AgentLoop) dispatchNodeSubagentTask(ctx context.Context, task *tools.S
 		return result, nil
 	}
 	return fmt.Sprintf("node %s completed agent_task", nodeID), nil
+}
+
+func remoteAgentIDForNodeBranch(agentID, nodeID string) string {
+	agentID = strings.TrimSpace(agentID)
+	nodeID = strings.TrimSpace(nodeID)
+	if agentID == "" || nodeID == "" {
+		return ""
+	}
+	prefix := "node." + nodeID + "."
+	if !strings.HasPrefix(agentID, prefix) {
+		return ""
+	}
+	remote := strings.TrimPrefix(agentID, prefix)
+	if strings.TrimSpace(remote) == "" {
+		return ""
+	}
+	return remote
 }
 
 func loopTaskInputForNode(task *tools.SubagentTask) string {

@@ -208,6 +208,10 @@ func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
 		ID:     "edge-dev",
 		Name:   "Edge Dev",
 		Online: true,
+		Agents: []nodes.AgentInfo{
+			{ID: "main", DisplayName: "Main Agent", Role: "orchestrator", Type: "router"},
+			{ID: "coder", DisplayName: "Code Agent", Role: "code", Type: "worker"},
+		},
 		Capabilities: nodes.Capabilities{
 			Model: true,
 		},
@@ -226,6 +230,19 @@ func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
 	}
 	if profile.ParentAgentID != "main" {
 		t.Fatalf("expected main parent agent, got %+v", profile)
+	}
+	childProfile, ok, err := store.Get("node.edge-dev.coder")
+	if err != nil {
+		t.Fatalf("get child profile failed: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected child node-backed profile")
+	}
+	if childProfile.ManagedBy != "node_registry" || childProfile.Transport != "node" || childProfile.NodeID != "edge-dev" {
+		t.Fatalf("unexpected child node profile: %+v", childProfile)
+	}
+	if childProfile.ParentAgentID != "node.edge-dev.main" {
+		t.Fatalf("expected child profile to attach to remote main, got %+v", childProfile)
 	}
 	if _, err := store.Upsert(SubagentProfile{AgentID: profile.AgentID}); err == nil {
 		t.Fatalf("expected node-managed upsert to fail")

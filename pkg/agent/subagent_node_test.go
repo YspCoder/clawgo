@@ -23,6 +23,9 @@ func TestDispatchNodeSubagentTaskUsesNodeAgentTask(t *testing.T) {
 		if req.Action != "agent_task" {
 			t.Fatalf("unexpected action: %s", req.Action)
 		}
+		if got, _ := req.Args["remote_agent_id"].(string); got != "coder" {
+			t.Fatalf("expected remote_agent_id=coder, got %+v", req.Args)
+		}
 		if !strings.Contains(req.Task, "Parent Agent: main") {
 			t.Fatalf("expected parent-agent context in task, got %q", req.Task)
 		}
@@ -43,7 +46,7 @@ func TestDispatchNodeSubagentTaskUsesNodeAgentTask(t *testing.T) {
 	}
 	out, err := loop.dispatchNodeSubagentTask(context.Background(), &tools.SubagentTask{
 		ID:            "subagent-1",
-		AgentID:       "node.edge-dev.main",
+		AgentID:       "node.edge-dev.coder",
 		Transport:     "node",
 		NodeID:        "edge-dev",
 		ParentAgentID: "main",

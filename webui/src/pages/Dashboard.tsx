@@ -79,6 +79,8 @@ const Dashboard: React.FC = () => {
         usedTransport: String(item?.used_transport || '-'),
         fallbackFrom: String(item?.fallback_from || '').trim(),
         durationMs: Number(item?.duration_ms || 0),
+        artifactCount: Number(item?.artifact_count || 0),
+        artifactKinds: Array.isArray(item?.artifact_kinds) ? item.artifact_kinds.map((kind: any) => String(kind || '').trim()).filter(Boolean) : [],
         ok: Boolean(item?.ok),
         error: String(item?.error || '').trim(),
       }));
@@ -286,6 +288,12 @@ const Dashboard: React.FC = () => {
                   <div>
                     <div className="text-zinc-400">{t('dashboardNodeDispatchDuration')}</div>
                     <div className="text-zinc-200 mt-1">{`${item.durationMs}ms`}</div>
+                  </div>
+                  <div>
+                    <div className="text-zinc-400">{t('dashboardNodeDispatchArtifacts')}</div>
+                    <div className="text-zinc-200 mt-1">
+                      {item.artifactCount > 0 ? `${item.artifactCount}${item.artifactKinds.length ? ` · ${item.artifactKinds.join(', ')}` : ''}` : '-'}
+                    </div>
                   </div>
                   <div>
                     <div className="text-zinc-400">{t('dashboardNodeDispatchError')}</div>

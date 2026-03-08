@@ -387,9 +387,10 @@ func (s *SubagentProfileStore) nodeProfileLocked(agentID string) (SubagentProfil
 		if isLocalNode(node.ID) {
 			continue
 		}
-		profile := profileFromNode(node, parentAgentID)
-		if profile.AgentID == id {
-			return profile, true
+		for _, profile := range profilesFromNode(node, parentAgentID) {
+			if profile.AgentID == id {
+				return profile, true
+			}
 		}
 	}
 	return SubagentProfile{}, false
@@ -439,20 +440,18 @@ func (s *SubagentProfileStore) nodeProfilesLocked() []SubagentProfile {
 		if isLocalNode(node.ID) {
 			continue
 		}
-		profile := profileFromNode(node, parentAgentID)
-		if profile.AgentID == "" {
-			continue
+		profiles := profilesFromNode(node, parentAgentID)
+		for _, profile := range profiles {
+			if profile.AgentID == "" {
+				continue
+			}
+			out = append(out, profile)
 		}
-		out = append(out, profile)
 	}
 	return out
 }
 
-func profileFromNode(node nodes.NodeInfo, parentAgentID string) SubagentProfile {
-	agentID := nodeBranchAgentID(node.ID)
-	if agentID == "" {
-		return SubagentProfile{}
-	}
+func profilesFromNode(node nodes.NodeInfo, parentAgentID string) []SubagentProfile {
 	name := strings.TrimSpace(node.Name)
 	if name == "" {
 		name = strings.TrimSpace(node.ID)
@@ -461,17 +460,39 @@ func profileFromNode(node nodes.NodeInfo, parentAgentID string) SubagentProfile 
 	if !node.Online {
 		status = "disabled"
 	}
-	return normalizeSubagentProfile(SubagentProfile{
-		AgentID:         agentID,
+	rootAgentID := nodeBranchAgentID(node.ID)
+	if rootAgentID == "" {
+		return nil
+	}
+	out := []SubagentProfile{normalizeSubagentProfile(SubagentProfile{
+		AgentID:         rootAgentID,
 		Name:            name + " Main Agent",
 		Transport:       "node",
 		NodeID:          strings.TrimSpace(node.ID),
 		ParentAgentID:   parentAgentID,
 		Role:            "remote_main",
-		MemoryNamespace: agentID,
+		MemoryNamespace: rootAgentID,
 		Status:          status,
 		ManagedBy:       "node_registry",
-	})
+	})}
+	for _, agent := range node.Agents {
+		agentID := normalizeSubagentIdentifier(agent.ID)
+		if agentID == "" || agentID == "main" {
+			continue
+		}
+		out = append(out, normalizeSubagentProfile(SubagentProfile{
+			AgentID:         nodeChildAgentID(node.ID, agentID),
+			Name:            nodeChildAgentDisplayName(name, agent),
+			Transport:       "node",
+			NodeID:          strings.TrimSpace(node.ID),
+			ParentAgentID:   rootAgentID,
+			Role:            strings.TrimSpace(agent.Role),
+			MemoryNamespace: nodeChildAgentID(node.ID, agentID),
+			Status:          status,
+			ManagedBy:       "node_registry",
+		}))
+	}
+	return out
 }
 
 func nodeBranchAgentID(nodeID string) string {
@@ -480,6 +501,27 @@ func nodeBranchAgentID(nodeID string) string {
 		return ""
 	}
 	return "node." + id + ".main"
+}
+
+func nodeChildAgentID(nodeID, agentID string) string {
+	nodeID = normalizeSubagentIdentifier(nodeID)
+	agentID = normalizeSubagentIdentifier(agentID)
+	if nodeID == "" || agentID == "" {
+		return ""
+	}
+	return "node." + nodeID + "." + agentID
+}
+
+func nodeChildAgentDisplayName(nodeName string, agent nodes.AgentInfo) string {
+	base := strings.TrimSpace(agent.DisplayName)
+	if base == "" {
+		base = strings.TrimSpace(agent.ID)
+	}
+	nodeName = strings.TrimSpace(nodeName)
+	if nodeName == "" {
+		return base
+	}
+	return nodeName + " / " + base
 }
 
 func isLocalNode(nodeID string) bool {

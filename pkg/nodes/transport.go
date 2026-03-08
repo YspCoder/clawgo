@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -211,5 +212,101 @@ func normalizeDevicePayload(action string, payload map[string]interface{}) map[s
 	if _, ok := payload["meta"]; !ok {
 		payload["meta"] = map[string]interface{}{}
 	}
+	payload["artifacts"] = normalizeArtifacts(payload, a)
 	return payload
+}
+
+func normalizeArtifacts(payload map[string]interface{}, action string) []map[string]interface{} {
+	if payload == nil {
+		return []map[string]interface{}{}
+	}
+	if raw, ok := payload["artifacts"]; ok {
+		items := normalizeArtifactList(raw)
+		if len(items) > 0 {
+			return items
+		}
+	}
+
+	artifact := map[string]interface{}{}
+	if mediaType, _ := payload["media_type"].(string); strings.TrimSpace(mediaType) != "" {
+		artifact["kind"] = strings.TrimSpace(mediaType)
+	}
+	if mimeType, _ := payload["mime_type"].(string); strings.TrimSpace(mimeType) != "" {
+		artifact["mime_type"] = strings.TrimSpace(mimeType)
+	}
+	if storage, _ := payload["storage"].(string); strings.TrimSpace(storage) != "" {
+		artifact["storage"] = strings.TrimSpace(storage)
+	}
+	if path, _ := payload["path"].(string); strings.TrimSpace(path) != "" {
+		artifact["path"] = filepath.Clean(strings.TrimSpace(path))
+	}
+	if url, _ := payload["url"].(string); strings.TrimSpace(url) != "" {
+		artifact["url"] = strings.TrimSpace(url)
+	}
+	if image, _ := payload["image"].(string); strings.TrimSpace(image) != "" {
+		artifact["content_base64"] = strings.TrimSpace(image)
+	}
+	if text, _ := payload["content_text"].(string); strings.TrimSpace(text) != "" {
+		artifact["content_text"] = text
+	}
+	if name, _ := payload["name"].(string); strings.TrimSpace(name) != "" {
+		artifact["name"] = strings.TrimSpace(name)
+	}
+	if size := int64FromPayload(payload["size_bytes"]); size > 0 {
+		artifact["size_bytes"] = size
+	}
+	if len(artifact) == 0 {
+		return []map[string]interface{}{}
+	}
+	if _, ok := artifact["kind"]; !ok && strings.TrimSpace(action) != "" {
+		artifact["kind"] = strings.ToLower(strings.TrimSpace(action))
+	}
+	return []map[string]interface{}{artifact}
+}
+
+func normalizeArtifactList(raw interface{}) []map[string]interface{} {
+	items, ok := raw.([]interface{})
+	if !ok {
+		return []map[string]interface{}{}
+	}
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		row, ok := item.(map[string]interface{})
+		if !ok || len(row) == 0 {
+			continue
+		}
+		normalized := map[string]interface{}{}
+		for _, key := range []string{"id", "name", "kind", "mime_type", "storage", "path", "url", "content_text", "content_base64", "source_path"} {
+			if value, ok := row[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
+				normalized[key] = value
+			}
+		}
+		if truncated, ok := row["truncated"].(bool); ok && truncated {
+			normalized["truncated"] = true
+		}
+		if size := int64FromPayload(row["size_bytes"]); size > 0 {
+			normalized["size_bytes"] = size
+		}
+		if len(normalized) == 0 {
+			continue
+		}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func int64FromPayload(v interface{}) int64 {
+	switch value := v.(type) {
+	case int:
+		return int64(value)
+	case int64:
+		return value
+	case float64:
+		return int64(value)
+	case json.Number:
+		n, _ := value.Int64()
+		return n
+	default:
+		return 0
+	}
 }

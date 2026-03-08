@@ -251,7 +251,19 @@ func (m *Manager) SupportsAction(nodeID, action string) bool {
 	if !ok || !n.Online {
 		return false
 	}
-	action = strings.ToLower(strings.TrimSpace(action))
+	return nodeSupportsRequest(n, Request{Action: action})
+}
+
+func (m *Manager) SupportsRequest(nodeID string, req Request) bool {
+	n, ok := m.Get(nodeID)
+	if !ok || !n.Online {
+		return false
+	}
+	return nodeSupportsRequest(n, req)
+}
+
+func nodeSupportsRequest(n NodeInfo, req Request) bool {
+	action := strings.ToLower(strings.TrimSpace(req.Action))
 	if len(n.Actions) > 0 {
 		allowed := false
 		for _, a := range n.Actions {
@@ -283,44 +295,112 @@ func (m *Manager) SupportsAction(nodeID, action string) bool {
 }
 
 func (m *Manager) PickFor(action string) (NodeInfo, bool) {
+	return m.PickRequest(Request{Action: action}, "auto")
+}
+
+func (m *Manager) PickRequest(req Request, mode string) (NodeInfo, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	bestScore := -1
+	bestNode := NodeInfo{}
 	for _, n := range m.nodes {
-		if !n.Online {
+		score, ok := scoreNodeCandidate(n, req, mode, m.senders[strings.TrimSpace(n.ID)] != nil)
+		if !ok {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(action)) {
-		case "run":
-			if n.Capabilities.Run {
-				return n, true
-			}
-		case "agent_task":
-			if n.Capabilities.Model {
-				return n, true
-			}
-		case "camera_snap", "camera_clip":
-			if n.Capabilities.Camera {
-				return n, true
-			}
-		case "screen_record", "screen_snapshot":
-			if n.Capabilities.Screen {
-				return n, true
-			}
-		case "location_get":
-			if n.Capabilities.Location {
-				return n, true
-			}
-		case "canvas_snapshot", "canvas_action":
-			if n.Capabilities.Canvas {
-				return n, true
-			}
-		default:
-			if n.Capabilities.Invoke {
-				return n, true
-			}
+		if score > bestScore || (score == bestScore && bestNode.ID != "" && n.LastSeenAt.After(bestNode.LastSeenAt)) {
+			bestScore = score
+			bestNode = n
 		}
 	}
-	return NodeInfo{}, false
+	if bestScore < 0 || strings.TrimSpace(bestNode.ID) == "" {
+		return NodeInfo{}, false
+	}
+	return bestNode, true
+}
+
+func scoreNodeCandidate(n NodeInfo, req Request, mode string, hasWireSender bool) (int, bool) {
+	if !n.Online {
+		return 0, false
+	}
+	if !nodeSupportsRequest(n, req) {
+		return 0, false
+	}
+
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "p2p" && !hasWireSender {
+		return 0, false
+	}
+
+	score := 100
+	if hasWireSender {
+		score += 30
+	}
+	if prefersRealtimeTransport(req.Action) && hasWireSender {
+		score += 40
+	}
+	if mode == "relay" && hasWireSender {
+		score -= 10
+	}
+	if mode == "p2p" && hasWireSender {
+		score += 80
+	}
+	if strings.EqualFold(strings.TrimSpace(req.Action), "agent_task") {
+		remoteAgentID := requestedRemoteAgentID(req.Args)
+		switch {
+		case remoteAgentID == "", remoteAgentID == "main":
+			score += 20
+		case nodeHasAgent(n, remoteAgentID):
+			score += 80
+		default:
+			return 0, false
+		}
+	}
+	if !n.LastSeenAt.IsZero() {
+		ageSeconds := int(time.Since(n.LastSeenAt).Seconds())
+		if ageSeconds < 0 {
+			ageSeconds = 0
+		}
+		if ageSeconds < 60 {
+			score += 20
+		} else if ageSeconds < 300 {
+			score += 5
+		}
+	}
+	return score, true
+}
+
+func requestedRemoteAgentID(args map[string]interface{}) string {
+	if len(args) == 0 {
+		return ""
+	}
+	value, ok := args["remote_agent_id"]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+}
+
+func nodeHasAgent(n NodeInfo, agentID string) bool {
+	agentID = strings.ToLower(strings.TrimSpace(agentID))
+	if agentID == "" {
+		return false
+	}
+	for _, agent := range n.Agents {
+		if strings.ToLower(strings.TrimSpace(agent.ID)) == agentID {
+			return true
+		}
+	}
+	return false
+}
+
+func prefersRealtimeTransport(action string) bool {
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "camera_snap", "camera_clip", "screen_record", "screen_snapshot", "canvas_snapshot", "canvas_action":
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Manager) reaperLoop() {

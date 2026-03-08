@@ -74,6 +74,24 @@ func TestWebsocketP2PTransportSend(t *testing.T) {
 	}
 }
 
+func TestNormalizeDevicePayloadBuildsArtifacts(t *testing.T) {
+	t.Parallel()
+
+	payload := normalizeDevicePayload("screen_snapshot", map[string]interface{}{
+		"media_type": "image",
+		"storage":    "path",
+		"path":       "/tmp/screen.png",
+		"mime_type":  "image/png",
+	})
+	artifacts, ok := payload["artifacts"].([]map[string]interface{})
+	if !ok || len(artifacts) != 1 {
+		t.Fatalf("expected one artifact, got %+v", payload["artifacts"])
+	}
+	if artifacts[0]["kind"] != "image" || artifacts[0]["path"] != "/tmp/screen.png" {
+		t.Fatalf("unexpected artifact payload: %+v", artifacts[0])
+	}
+}
+
 func TestWebRTCTransportSendEndToEnd(t *testing.T) {
 	t.Parallel()
 

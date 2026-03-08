@@ -13,6 +13,31 @@ type Capabilities struct {
 	Canvas   bool `json:"canvas"`
 }
 
+// AgentInfo describes an enabled agent exposed by a remote clawgo node.
+type AgentInfo struct {
+	ID            string `json:"id"`
+	DisplayName   string `json:"display_name,omitempty"`
+	Role          string `json:"role,omitempty"`
+	Type          string `json:"type,omitempty"`
+	Transport     string `json:"transport,omitempty"`
+	ParentAgentID string `json:"parent_agent_id,omitempty"`
+}
+
+// Artifact describes a file/media payload returned from a node action.
+type Artifact struct {
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	MIMEType    string `json:"mime_type,omitempty"`
+	Storage     string `json:"storage,omitempty"`
+	Path        string `json:"path,omitempty"`
+	URL         string `json:"url,omitempty"`
+	ContentText string `json:"content_text,omitempty"`
+	ContentB64  string `json:"content_base64,omitempty"`
+	SizeBytes   int64  `json:"size_bytes,omitempty"`
+	SourcePath  string `json:"source_path,omitempty"`
+}
+
 // NodeInfo is the runtime descriptor for cross-device scheduling.
 type NodeInfo struct {
 	ID           string       `json:"id"`
@@ -25,6 +50,7 @@ type NodeInfo struct {
 	Capabilities Capabilities `json:"capabilities"`
 	Actions      []string     `json:"actions,omitempty"`
 	Models       []string     `json:"models,omitempty"`
+	Agents       []AgentInfo  `json:"agents,omitempty"`
 	RegisteredAt time.Time    `json:"registered_at,omitempty"`
 	LastSeenAt   time.Time    `json:"last_seen_at"`
 	Online       bool         `json:"online"`
@@ -51,15 +77,15 @@ type Response struct {
 
 // WireMessage is the websocket envelope for node lifecycle messages.
 type WireMessage struct {
-	Type    string                 `json:"type"`
-	ID      string                 `json:"id,omitempty"`
-	From    string                 `json:"from,omitempty"`
-	To      string                 `json:"to,omitempty"`
-	Session string                 `json:"session,omitempty"`
-	Node    *NodeInfo              `json:"node,omitempty"`
-	Request *Request               `json:"request,omitempty"`
-	Response *Response             `json:"response,omitempty"`
-	Payload map[string]interface{} `json:"payload,omitempty"`
+	Type     string                 `json:"type"`
+	ID       string                 `json:"id,omitempty"`
+	From     string                 `json:"from,omitempty"`
+	To       string                 `json:"to,omitempty"`
+	Session  string                 `json:"session,omitempty"`
+	Node     *NodeInfo              `json:"node,omitempty"`
+	Request  *Request               `json:"request,omitempty"`
+	Response *Response              `json:"response,omitempty"`
+	Payload  map[string]interface{} `json:"payload,omitempty"`
 }
 
 // WireAck is the websocket response envelope for node lifecycle messages.

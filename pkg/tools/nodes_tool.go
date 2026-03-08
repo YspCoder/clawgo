@@ -28,15 +28,16 @@ func (t *NodesTool) Description() string {
 }
 func (t *NodesTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
-		"action":      map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|agent_task|camera_snap|camera_clip|screen_record|screen_snapshot|location_get|canvas_snapshot|canvas_action"},
-		"node":        map[string]interface{}{"type": "string", "description": "target node id"},
-		"mode":        map[string]interface{}{"type": "string", "description": "auto|p2p|relay (default auto)"},
-		"args":        map[string]interface{}{"type": "object", "description": "action args"},
-		"task":        map[string]interface{}{"type": "string", "description": "agent_task content for child node model"},
-		"model":       map[string]interface{}{"type": "string", "description": "optional model for agent_task"},
-		"command":     map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "run command array shortcut"},
-		"facing":      map[string]interface{}{"type": "string", "description": "camera facing: front|back|both"},
-		"duration_ms": map[string]interface{}{"type": "integer", "description": "clip/record duration"},
+		"action":         map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|agent_task|camera_snap|camera_clip|screen_record|screen_snapshot|location_get|canvas_snapshot|canvas_action"},
+		"node":           map[string]interface{}{"type": "string", "description": "target node id"},
+		"mode":           map[string]interface{}{"type": "string", "description": "auto|p2p|relay (default auto)"},
+		"args":           map[string]interface{}{"type": "object", "description": "action args"},
+		"artifact_paths": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "optional workspace-relative file paths to bring back as artifacts for agent_task"},
+		"task":           map[string]interface{}{"type": "string", "description": "agent_task content for child node model"},
+		"model":          map[string]interface{}{"type": "string", "description": "optional model for agent_task"},
+		"command":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "run command array shortcut"},
+		"facing":         map[string]interface{}{"type": "string", "description": "camera facing: front|back|both"},
+		"duration_ms":    map[string]interface{}{"type": "integer", "description": "clip/record duration"},
 	}, "required": []string{"action"}}
 }
 
@@ -66,25 +67,14 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		b, _ := json.Marshal(t.manager.List())
 		return string(b), nil
 	default:
-		if nodeID == "" {
-			if picked, ok := t.manager.PickFor(action); ok {
-				nodeID = picked.ID
-			}
-		}
-		if nodeID == "" {
-			return "", fmt.Errorf("no eligible node found for action=%s", action)
-		}
-		if !t.manager.SupportsAction(nodeID, action) {
-			return "", fmt.Errorf("node %s does not support action=%s", nodeID, action)
-		}
-		if t.router == nil {
-			return "", fmt.Errorf("nodes transport router not configured")
-		}
 		reqArgs := map[string]interface{}{}
 		if raw, ok := args["args"].(map[string]interface{}); ok {
 			for k, v := range raw {
 				reqArgs[k] = v
 			}
+		}
+		if rawPaths, ok := args["artifact_paths"].([]interface{}); ok && len(rawPaths) > 0 {
+			reqArgs["artifact_paths"] = rawPaths
 		}
 		if cmd, ok := args["command"].([]interface{}); ok && len(cmd) > 0 {
 			reqArgs["command"] = cmd
@@ -113,7 +103,21 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 				return "", fmt.Errorf("invalid_args: canvas_action requires args.action")
 			}
 		}
+		if nodeID == "" {
+			if picked, ok := t.manager.PickRequest(nodes.Request{Action: action, Task: task, Model: model, Args: reqArgs}, mode); ok {
+				nodeID = picked.ID
+			}
+		}
+		if nodeID == "" {
+			return "", fmt.Errorf("no eligible node found for action=%s", action)
+		}
 		req := nodes.Request{Action: action, Node: nodeID, Task: task, Model: model, Args: reqArgs}
+		if !t.manager.SupportsRequest(nodeID, req) {
+			return "", fmt.Errorf("node %s does not support action=%s", nodeID, action)
+		}
+		if t.router == nil {
+			return "", fmt.Errorf("nodes transport router not configured")
+		}
 		started := time.Now()
 		resp, err := t.router.Dispatch(ctx, req, mode)
 		durationMs := int(time.Since(started).Milliseconds())
@@ -150,6 +154,12 @@ func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode stri
 	if fallback, _ := resp.Payload["fallback_from"].(string); strings.TrimSpace(fallback) != "" {
 		row["fallback_from"] = strings.TrimSpace(fallback)
 	}
+	if count, kinds := artifactAuditSummary(resp.Payload["artifacts"]); count > 0 {
+		row["artifact_count"] = count
+		if len(kinds) > 0 {
+			row["artifact_kinds"] = kinds
+		}
+	}
 	b, _ := json.Marshal(row)
 	f, err := os.OpenFile(t.auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
@@ -157,4 +167,30 @@ func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode stri
 	}
 	defer f.Close()
 	_, _ = f.Write(append(b, '\n'))
+}
+
+func artifactAuditSummary(raw interface{}) (int, []string) {
+	items, ok := raw.([]interface{})
+	if !ok {
+		if typed, ok := raw.([]map[string]interface{}); ok {
+			items = make([]interface{}, 0, len(typed))
+			for _, item := range typed {
+				items = append(items, item)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return 0, nil
+	}
+	kinds := make([]string, 0, len(items))
+	for _, item := range items {
+		row, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if kind, _ := row["kind"].(string); strings.TrimSpace(kind) != "" {
+			kinds = append(kinds, strings.TrimSpace(kind))
+		}
+	}
+	return len(items), kinds
 }

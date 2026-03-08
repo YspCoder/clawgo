@@ -3,19 +3,30 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"clawgo/pkg/agent"
+	"clawgo/pkg/bus"
 	"clawgo/pkg/config"
+	"clawgo/pkg/cron"
 	"clawgo/pkg/nodes"
+	"clawgo/pkg/providers"
+	"clawgo/pkg/runtimecfg"
+	"clawgo/pkg/tools"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
@@ -32,6 +43,7 @@ type nodeRegisterOptions struct {
 	Version      string
 	Actions      []string
 	Models       []string
+	Agents       []nodes.AgentInfo
 	Capabilities nodes.Capabilities
 	Watch        bool
 	HeartbeatSec int
@@ -53,6 +65,26 @@ type nodeWebRTCSession struct {
 	pc *webrtc.PeerConnection
 	dc *webrtc.DataChannel
 }
+
+type nodeLocalExecutor struct {
+	configPath string
+	workspace  string
+	once       sync.Once
+	loop       *agent.AgentLoop
+	err        error
+}
+
+var (
+	nodeLocalExecutorMu      sync.Mutex
+	nodeLocalExecutors       = map[string]*nodeLocalExecutor{}
+	nodeProviderFactory      = providers.CreateProvider
+	nodeAgentLoopFactory     = agent.NewAgentLoop
+	nodeLocalExecutorFactory = newNodeLocalExecutor
+	nodeCameraSnapFunc       = captureNodeCameraSnapshot
+	nodeScreenSnapFunc       = captureNodeScreenSnapshot
+)
+
+const nodeArtifactInlineLimit = 512 * 1024
 
 func nodeCmd() {
 	args := os.Args[2:]
@@ -159,6 +191,7 @@ func parseNodeRegisterArgs(args []string, cfg *config.Config) (nodeRegisterOptio
 		HeartbeatSec: 30,
 		Capabilities: capabilitiesFromCSV("run,invoke,model"),
 	}
+	opts.Agents = nodeAgentsFromConfig(cfg)
 	for i := 0; i < len(args); i++ {
 		arg := strings.TrimSpace(args[i])
 		next := func() (string, error) {
@@ -332,7 +365,31 @@ func buildNodeInfo(opts nodeRegisterOptions) nodes.NodeInfo {
 		Capabilities: opts.Capabilities,
 		Actions:      append([]string(nil), opts.Actions...),
 		Models:       append([]string(nil), opts.Models...),
+		Agents:       append([]nodes.AgentInfo(nil), opts.Agents...),
 	}
+}
+
+func nodeAgentsFromConfig(cfg *config.Config) []nodes.AgentInfo {
+	if cfg == nil {
+		return nil
+	}
+	items := make([]nodes.AgentInfo, 0, len(cfg.Agents.Subagents))
+	for agentID, subcfg := range cfg.Agents.Subagents {
+		id := strings.TrimSpace(agentID)
+		if id == "" || !subcfg.Enabled {
+			continue
+		}
+		items = append(items, nodes.AgentInfo{
+			ID:            id,
+			DisplayName:   strings.TrimSpace(subcfg.DisplayName),
+			Role:          strings.TrimSpace(subcfg.Role),
+			Type:          strings.TrimSpace(subcfg.Type),
+			Transport:     strings.TrimSpace(subcfg.Transport),
+			ParentAgentID: strings.TrimSpace(subcfg.ParentAgentID),
+		})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	return items
 }
 
 func runNodeHeartbeatLoop(client *http.Client, opts nodeRegisterOptions, info nodes.NodeInfo) error {
@@ -654,6 +711,38 @@ func executeNodeRequest(ctx context.Context, client *http.Client, info nodes.Nod
 	}
 	next := *req
 	resp.Action = next.Action
+	switch strings.ToLower(strings.TrimSpace(next.Action)) {
+	case "agent_task":
+		execResp, err := executeNodeAgentTask(ctx, info, next)
+		if err == nil {
+			return execResp
+		}
+		if strings.TrimSpace(opts.Endpoint) == "" {
+			resp.Error = err.Error()
+			resp.Code = "local_runtime_error"
+			return resp
+		}
+	case "camera_snap":
+		execResp, err := executeNodeCameraSnap(ctx, info, next)
+		if err == nil {
+			return execResp
+		}
+		if strings.TrimSpace(opts.Endpoint) == "" {
+			resp.Error = err.Error()
+			resp.Code = "local_runtime_error"
+			return resp
+		}
+	case "screen_snapshot":
+		execResp, err := executeNodeScreenSnapshot(ctx, info, next)
+		if err == nil {
+			return execResp
+		}
+		if strings.TrimSpace(opts.Endpoint) == "" {
+			resp.Error = err.Error()
+			resp.Code = "local_runtime_error"
+			return resp
+		}
+	}
 	if strings.TrimSpace(opts.Endpoint) == "" {
 		resp.Error = "node endpoint not configured"
 		resp.Code = "endpoint_missing"
@@ -676,6 +765,444 @@ func executeNodeRequest(ctx context.Context, client *http.Client, info nodes.Nod
 		execResp.Node = info.ID
 	}
 	return execResp
+}
+
+func executeNodeAgentTask(ctx context.Context, info nodes.NodeInfo, req nodes.Request) (nodes.Response, error) {
+	executor, err := getNodeLocalExecutor()
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	loop, err := executor.Loop()
+	if err != nil {
+		return nodes.Response{}, err
+	}
+
+	remoteAgentID := strings.TrimSpace(stringArg(req.Args, "remote_agent_id"))
+	if remoteAgentID == "" || strings.EqualFold(remoteAgentID, "main") {
+		sessionKey := fmt.Sprintf("node:%s:main", info.ID)
+		result, err := loop.ProcessDirectWithOptions(ctx, strings.TrimSpace(req.Task), sessionKey, "node", info.ID, "main", nil)
+		if err != nil {
+			return nodes.Response{}, err
+		}
+		artifacts, err := collectNodeArtifacts(executor.workspace, req.Args)
+		if err != nil {
+			return nodes.Response{}, err
+		}
+		return nodes.Response{
+			OK:     true,
+			Code:   "ok",
+			Node:   info.ID,
+			Action: req.Action,
+			Payload: map[string]interface{}{
+				"transport": "clawgo-local",
+				"agent_id":  "main",
+				"result":    strings.TrimSpace(result),
+				"artifacts": artifacts,
+			},
+		}, nil
+	}
+
+	out, err := loop.HandleSubagentRuntime(ctx, "dispatch_and_wait", map[string]interface{}{
+		"task":             strings.TrimSpace(req.Task),
+		"agent_id":         remoteAgentID,
+		"channel":          "node",
+		"chat_id":          info.ID,
+		"wait_timeout_sec": float64(120),
+	})
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	payload, _ := out.(map[string]interface{})
+	result := strings.TrimSpace(fmt.Sprint(payload["merged"]))
+	if result == "" {
+		if reply, ok := payload["reply"].(*tools.RouterReply); ok {
+			result = strings.TrimSpace(reply.Result)
+		}
+	}
+	artifacts, err := collectNodeArtifacts(executor.workspace, req.Args)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	return nodes.Response{
+		OK:     true,
+		Code:   "ok",
+		Node:   info.ID,
+		Action: req.Action,
+		Payload: map[string]interface{}{
+			"transport": "clawgo-local",
+			"agent_id":  remoteAgentID,
+			"result":    result,
+			"artifacts": artifacts,
+		},
+	}, nil
+}
+
+func executeNodeCameraSnap(ctx context.Context, info nodes.NodeInfo, req nodes.Request) (nodes.Response, error) {
+	executor, err := getNodeLocalExecutor()
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	outputPath, err := nodeCameraSnapFunc(ctx, executor.workspace, req.Args)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	artifact, err := buildNodeArtifact(executor.workspace, outputPath)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	return nodes.Response{
+		OK:     true,
+		Code:   "ok",
+		Node:   info.ID,
+		Action: req.Action,
+		Payload: map[string]interface{}{
+			"transport":  "clawgo-local",
+			"media_type": "image",
+			"storage":    artifact["storage"],
+			"artifacts":  []map[string]interface{}{artifact},
+			"meta": map[string]interface{}{
+				"facing": stringArg(req.Args, "facing"),
+			},
+		},
+	}, nil
+}
+
+func executeNodeScreenSnapshot(ctx context.Context, info nodes.NodeInfo, req nodes.Request) (nodes.Response, error) {
+	executor, err := getNodeLocalExecutor()
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	outputPath, err := nodeScreenSnapFunc(ctx, executor.workspace, req.Args)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	artifact, err := buildNodeArtifact(executor.workspace, outputPath)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	return nodes.Response{
+		OK:     true,
+		Code:   "ok",
+		Node:   info.ID,
+		Action: req.Action,
+		Payload: map[string]interface{}{
+			"transport":  "clawgo-local",
+			"media_type": "image",
+			"storage":    artifact["storage"],
+			"artifacts":  []map[string]interface{}{artifact},
+		},
+	}, nil
+}
+
+func getNodeLocalExecutor() (*nodeLocalExecutor, error) {
+	key := strings.TrimSpace(getConfigPath())
+	if key == "" {
+		return nil, fmt.Errorf("config path is required")
+	}
+	nodeLocalExecutorMu.Lock()
+	defer nodeLocalExecutorMu.Unlock()
+	if existing := nodeLocalExecutors[key]; existing != nil {
+		return existing, nil
+	}
+	exec, err := nodeLocalExecutorFactory(key)
+	if err != nil {
+		return nil, err
+	}
+	nodeLocalExecutors[key] = exec
+	return exec, nil
+}
+
+func newNodeLocalExecutor(configPath string) (*nodeLocalExecutor, error) {
+	configPath = strings.TrimSpace(configPath)
+	if configPath == "" {
+		return nil, fmt.Errorf("config path is required")
+	}
+	return &nodeLocalExecutor{configPath: configPath}, nil
+}
+
+func (e *nodeLocalExecutor) Loop() (*agent.AgentLoop, error) {
+	if e == nil {
+		return nil, fmt.Errorf("node local executor is nil")
+	}
+	e.once.Do(func() {
+		prev := globalConfigPathOverride
+		globalConfigPathOverride = e.configPath
+		defer func() { globalConfigPathOverride = prev }()
+
+		cfg, err := loadConfig()
+		if err != nil {
+			e.err = err
+			return
+		}
+		runtimecfg.Set(cfg)
+		msgBus := bus.NewMessageBus()
+		cronStorePath := filepath.Join(filepath.Dir(e.configPath), "cron", "jobs.json")
+		cronService := cron.NewCronService(cronStorePath, nil)
+		configureCronServiceRuntime(cronService, cfg)
+		provider, err := nodeProviderFactory(cfg)
+		if err != nil {
+			e.err = err
+			return
+		}
+		e.workspace = cfg.WorkspacePath()
+		loop := nodeAgentLoopFactory(cfg, msgBus, provider, cronService)
+		loop.SetConfigPath(e.configPath)
+		e.loop = loop
+	})
+	if e.err != nil {
+		return nil, e.err
+	}
+	if e.loop == nil {
+		return nil, fmt.Errorf("node local executor unavailable")
+	}
+	return e.loop, nil
+}
+
+func stringArg(args map[string]interface{}, key string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	value, ok := args[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func collectNodeArtifacts(workspace string, args map[string]interface{}) ([]map[string]interface{}, error) {
+	paths := stringListArg(args, "artifact_paths")
+	if len(paths) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+	root := strings.TrimSpace(workspace)
+	if root == "" {
+		return nil, fmt.Errorf("workspace path not configured")
+	}
+	out := make([]map[string]interface{}, 0, len(paths))
+	for _, raw := range paths {
+		artifact, err := buildNodeArtifact(root, raw)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, artifact)
+	}
+	return out, nil
+}
+
+func buildNodeArtifact(workspace, rawPath string) (map[string]interface{}, error) {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" {
+		return nil, fmt.Errorf("artifact path is required")
+	}
+	clean := filepath.Clean(rawPath)
+	fullPath := clean
+	if !filepath.IsAbs(clean) {
+		fullPath = filepath.Join(workspace, clean)
+	}
+	fullPath = filepath.Clean(fullPath)
+	rel, err := filepath.Rel(workspace, fullPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return nil, fmt.Errorf("artifact path escapes workspace: %s", rawPath)
+	}
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("artifact path must be file: %s", rawPath)
+	}
+	artifact := map[string]interface{}{
+		"name":        filepath.Base(fullPath),
+		"kind":        nodeArtifactKindFromPath(fullPath),
+		"source_path": filepath.ToSlash(rel),
+		"size_bytes":  info.Size(),
+	}
+	if mimeType := mimeTypeForPath(fullPath); mimeType != "" {
+		artifact["mime_type"] = mimeType
+	}
+	data, err := os.ReadFile(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	if shouldInlineAsText(fullPath, data, info.Mode()) {
+		artifact["storage"] = "inline"
+		artifact["content_text"] = string(data)
+		return artifact, nil
+	}
+	artifact["storage"] = "inline"
+	if len(data) > nodeArtifactInlineLimit {
+		data = data[:nodeArtifactInlineLimit]
+		artifact["truncated"] = true
+	}
+	artifact["content_base64"] = base64.StdEncoding.EncodeToString(data)
+	return artifact, nil
+}
+
+func stringListArg(args map[string]interface{}, key string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	items, ok := args[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		value := strings.TrimSpace(fmt.Sprint(item))
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
+}
+
+func mimeTypeForPath(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md":
+		return "text/markdown"
+	case ".txt", ".log", ".json", ".yaml", ".yml", ".xml", ".csv":
+		return "text/plain"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".mp4":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".pdf":
+		return "application/pdf"
+	default:
+		return ""
+	}
+}
+
+func nodeArtifactKindFromPath(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp":
+		return "image"
+	case ".mp4", ".mov", ".webm":
+		return "video"
+	case ".pdf":
+		return "document"
+	default:
+		return "file"
+	}
+}
+
+func shouldInlineAsText(path string, data []byte, mode fs.FileMode) bool {
+	if mode&fs.ModeType != 0 {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".txt", ".log", ".json", ".yaml", ".yml", ".xml", ".csv", ".go", ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".sh":
+		return len(data) <= nodeArtifactInlineLimit
+	default:
+		return false
+	}
+}
+
+func captureNodeCameraSnapshot(ctx context.Context, workspace string, args map[string]interface{}) (string, error) {
+	outputPath, err := nodeMediaOutputPath(workspace, "camera", ".jpg", stringArg(args, "filename"))
+	if err != nil {
+		return "", err
+	}
+	switch runtime.GOOS {
+	case "linux":
+		if _, err := os.Stat("/dev/video0"); err != nil {
+			return "", fmt.Errorf("camera device /dev/video0 not found")
+		}
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return "", fmt.Errorf("ffmpeg not installed")
+		}
+		cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-f", "video4linux2", "-i", "/dev/video0", "-vframes", "1", "-q:v", "2", outputPath)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("camera capture failed: %v, output=%s", err, strings.TrimSpace(string(out)))
+		}
+		return outputPath, nil
+	case "darwin":
+		if _, err := exec.LookPath("imagesnap"); err != nil {
+			return "", fmt.Errorf("imagesnap not installed")
+		}
+		cmd := exec.CommandContext(ctx, "imagesnap", "-q", outputPath)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("camera capture failed: %v, output=%s", err, strings.TrimSpace(string(out)))
+		}
+		return outputPath, nil
+	default:
+		return "", fmt.Errorf("camera_snap not supported on %s", runtime.GOOS)
+	}
+}
+
+func captureNodeScreenSnapshot(ctx context.Context, workspace string, args map[string]interface{}) (string, error) {
+	outputPath, err := nodeMediaOutputPath(workspace, "screen", ".png", stringArg(args, "filename"))
+	if err != nil {
+		return "", err
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		cmd := exec.CommandContext(ctx, "screencapture", "-x", outputPath)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("screen capture failed: %v, output=%s", err, strings.TrimSpace(string(out)))
+		}
+		return outputPath, nil
+	case "linux":
+		candidates := [][]string{
+			{"grim", outputPath},
+			{"gnome-screenshot", "-f", outputPath},
+			{"scrot", outputPath},
+			{"import", "-window", "root", outputPath},
+		}
+		for _, candidate := range candidates {
+			if _, err := exec.LookPath(candidate[0]); err != nil {
+				continue
+			}
+			cmd := exec.CommandContext(ctx, candidate[0], candidate[1:]...)
+			if out, err := cmd.CombinedOutput(); err == nil {
+				return outputPath, nil
+			} else if strings.TrimSpace(string(out)) != "" {
+				continue
+			}
+		}
+		return "", fmt.Errorf("no supported screen capture command found (grim, gnome-screenshot, scrot, import)")
+	default:
+		return "", fmt.Errorf("screen_snapshot not supported on %s", runtime.GOOS)
+	}
+}
+
+func nodeMediaOutputPath(workspace, kind, ext, requested string) (string, error) {
+	root := strings.TrimSpace(workspace)
+	if root == "" {
+		return "", fmt.Errorf("workspace path not configured")
+	}
+	baseDir := filepath.Join(root, "artifacts", "node")
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return "", err
+	}
+	filename := strings.TrimSpace(requested)
+	if filename == "" {
+		filename = fmt.Sprintf("%s_%d%s", kind, time.Now().UnixNano(), ext)
+	}
+	filename = filepath.Clean(filename)
+	if filepath.IsAbs(filename) {
+		return "", fmt.Errorf("filename must be relative to workspace")
+	}
+	fullPath := filepath.Join(baseDir, filename)
+	fullPath = filepath.Clean(fullPath)
+	rel, err := filepath.Rel(root, fullPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("capture path escapes workspace")
+	}
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return "", err
+	}
+	return fullPath, nil
 }
 
 func structToWirePayload(v interface{}) map[string]interface{} {
