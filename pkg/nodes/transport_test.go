@@ -209,4 +209,16 @@ func TestWebRTCTransportSendEndToEnd(t *testing.T) {
 	if resp.Payload["used_transport"] != nil {
 		t.Fatalf("transport annotations should not be added at transport layer: %+v", resp.Payload)
 	}
+
+	snapshot := transport.Snapshot()
+	if snapshot["active_sessions"] != 1 {
+		t.Fatalf("expected one active session, got %+v", snapshot)
+	}
+	nodesRaw, _ := snapshot["nodes"].([]map[string]interface{})
+	if len(nodesRaw) == 0 {
+		t.Fatalf("expected node snapshots, got %+v", snapshot)
+	}
+	if nodesRaw[0]["status"] != "open" {
+		t.Fatalf("expected open status, got %+v", nodesRaw[0])
+	}
 }
