@@ -10,6 +10,7 @@ type RuntimeSnapshot = {
     nodes?: any[];
     trees?: any[];
     p2p?: Record<string, any>;
+    dispatches?: any[];
   };
   sessions?: {
     sessions?: Array<{ key: string; title?: string; channel?: string }>;
@@ -46,6 +47,8 @@ interface AppContextType {
   setNodeTrees: (trees: string) => void;
   nodeP2P: Record<string, any>;
   setNodeP2P: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+  nodeDispatchItems: any[];
+  setNodeDispatchItems: React.Dispatch<React.SetStateAction<any[]>>;
   cron: CronJob[];
   setCron: (cron: CronJob[]) => void;
   skills: Skill[];
@@ -107,6 +110,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [nodes, setNodes] = useState('[]');
   const [nodeTrees, setNodeTrees] = useState('[]');
   const [nodeP2P, setNodeP2P] = useState<Record<string, any>>({});
+  const [nodeDispatchItems, setNodeDispatchItems] = useState<any[]>([]);
   const [cron, setCron] = useState<CronJob[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [clawhubInstalled, setClawhubInstalled] = useState(false);
@@ -166,6 +170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setNodes(JSON.stringify(j.nodes || [], null, 2));
       setNodeTrees(JSON.stringify(j.trees || [], null, 2));
       setNodeP2P(j.p2p || {});
+      setNodeDispatchItems(Array.isArray(j.dispatches) ? j.dispatches : []);
       setIsGatewayOnline(true);
     } catch (e) {
       setIsGatewayOnline(false);
@@ -271,6 +276,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setNodes(JSON.stringify(Array.isArray(snapshot.nodes.nodes) ? snapshot.nodes.nodes : [], null, 2));
         setNodeTrees(JSON.stringify(Array.isArray(snapshot.nodes.trees) ? snapshot.nodes.trees : [], null, 2));
         setNodeP2P(snapshot.nodes.p2p || {});
+        setNodeDispatchItems(Array.isArray(snapshot.nodes.dispatches) ? snapshot.nodes.dispatches : []);
       }
       if (snapshot.sessions) {
         const arr = Array.isArray(snapshot.sessions.sessions) ? snapshot.sessions.sessions : [];
@@ -349,7 +355,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       token, setToken, sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed, isGatewayOnline, setIsGatewayOnline,
-      cfg, setCfg, cfgRaw, setCfgRaw, configEditing, setConfigEditing, nodes, setNodes, nodeTrees, setNodeTrees, nodeP2P, setNodeP2P,
+      cfg, setCfg, cfgRaw, setCfgRaw, configEditing, setConfigEditing, nodes, setNodes, nodeTrees, setNodeTrees, nodeP2P, setNodeP2P, nodeDispatchItems, setNodeDispatchItems,
       cron, setCron, skills, setSkills, clawhubInstalled, clawhubPath,
       sessions, setSessions,
       taskQueueItems, setTaskQueueItems, ekgSummary, setEkgSummary,

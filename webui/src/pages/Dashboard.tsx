@@ -4,6 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import StatCard from '../components/StatCard';
 
+function formatRuntimeTime(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === '0001-01-01T00:00:00Z') return '-';
+  const ts = Date.parse(raw);
+  if (Number.isNaN(ts)) return raw;
+  return new Date(ts).toLocaleString();
+}
+
 const Dashboard: React.FC = () => {
   const { t } = useTranslation();
   const {
@@ -15,6 +23,7 @@ const Dashboard: React.FC = () => {
     skills,
     cfg,
     nodeP2P,
+    nodeDispatchItems,
     taskQueueItems,
     ekgSummary,
   } = useAppContext();
@@ -45,6 +54,35 @@ const Dashboard: React.FC = () => {
   const p2pRetryCount = Array.isArray(nodeP2P?.nodes)
     ? nodeP2P.nodes.reduce((sum: number, session: any) => sum + Number(session?.retry_count || 0), 0)
     : 0;
+  const p2pNodeSessions = useMemo(() => {
+    if (!Array.isArray(nodeP2P?.nodes)) return [];
+    return [...nodeP2P.nodes]
+      .map((session: any) => ({
+        node: String(session?.node || '-'),
+        status: String(session?.status || 'unknown'),
+        retryCount: Number(session?.retry_count || 0),
+        lastError: String(session?.last_error || '').trim(),
+        lastReadyAt: formatRuntimeTime(session?.last_ready_at),
+        lastAttempt: formatRuntimeTime(session?.last_attempt),
+        createdAt: formatRuntimeTime(session?.created_at),
+      }))
+      .sort((a, b) => a.node.localeCompare(b.node));
+  }, [nodeP2P]);
+  const recentNodeDispatches = useMemo(() => {
+    return [...nodeDispatchItems]
+      .slice(0, 8)
+      .map((item: any, index: number) => ({
+        id: `${item?.time || 'dispatch'}-${index}`,
+        time: formatRuntimeTime(item?.time),
+        node: String(item?.node || '-'),
+        action: String(item?.action || '-'),
+        usedTransport: String(item?.used_transport || '-'),
+        fallbackFrom: String(item?.fallback_from || '').trim(),
+        durationMs: Number(item?.duration_ms || 0),
+        ok: Boolean(item?.ok),
+        error: String(item?.error || '').trim(),
+      }));
+  }, [nodeDispatchItems]);
 
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
@@ -147,6 +185,119 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6">
+        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 text-zinc-200">
+              <Workflow className="w-5 h-5 text-zinc-400" />
+              <h2 className="text-lg font-medium">{t('dashboardNodeP2PSessions')}</h2>
+            </div>
+            <div className="text-xs text-zinc-500 mt-1">
+              {t('dashboardNodeP2PDetail', { transport: p2pTransport, sessions: p2pSessions, retries: p2pRetryCount })}
+            </div>
+          </div>
+          <div className="text-xs text-zinc-500">
+            {`${p2pConfiguredIce} ICE · ${p2pConfiguredStun} STUN`}
+          </div>
+        </div>
+        {p2pNodeSessions.length === 0 ? (
+          <div className="text-sm text-zinc-500 text-center py-8">{t('dashboardNodeP2PSessionsEmpty')}</div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {p2pNodeSessions.map((session) => {
+              const isOpen = session.status.toLowerCase() === 'open';
+              const isConnecting = session.status.toLowerCase() === 'connecting';
+              return (
+                <div key={session.node} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-zinc-100 truncate">{session.node}</div>
+                      <div className="text-xs text-zinc-500 mt-1">
+                        {t('dashboardNodeP2PSessionCreated')}: {session.createdAt}
+                      </div>
+                    </div>
+                    <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${isOpen ? 'bg-emerald-500/10 text-emerald-300' : isConnecting ? 'bg-amber-500/10 text-amber-300' : 'bg-rose-500/10 text-rose-300'}`}>
+                      {session.status}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 text-xs">
+                    <div>
+                      <div className="text-zinc-400">{t('dashboardNodeP2PSessionRetries')}</div>
+                      <div className="text-zinc-200 mt-1">{session.retryCount}</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-400">{t('dashboardNodeP2PSessionReady')}</div>
+                      <div className="text-zinc-200 mt-1">{session.lastReadyAt}</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-400">{t('dashboardNodeP2PSessionAttempt')}</div>
+                      <div className="text-zinc-200 mt-1">{session.lastAttempt}</div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-400">{t('dashboardNodeP2PSessionError')}</div>
+                      <div className={`mt-1 break-all ${session.lastError ? 'text-rose-300' : 'text-zinc-500'}`}>
+                        {session.lastError || '-'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6">
+        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 text-zinc-200">
+              <Activity className="w-5 h-5 text-zinc-400" />
+              <h2 className="text-lg font-medium">{t('dashboardNodeDispatches')}</h2>
+            </div>
+            <div className="text-xs text-zinc-500 mt-1">{t('dashboardNodeDispatchesHint')}</div>
+          </div>
+        </div>
+        {recentNodeDispatches.length === 0 ? (
+          <div className="text-sm text-zinc-500 text-center py-8">{t('dashboardNodeDispatchesEmpty')}</div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {recentNodeDispatches.map((item) => (
+              <div key={item.id} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-zinc-100 truncate">{`${item.node} · ${item.action}`}</div>
+                    <div className="text-xs text-zinc-500 mt-1">{item.time}</div>
+                  </div>
+                  <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${item.ok ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
+                    {item.ok ? 'ok' : 'error'}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 text-xs">
+                  <div>
+                    <div className="text-zinc-400">{t('dashboardNodeDispatchTransport')}</div>
+                    <div className="text-zinc-200 mt-1">{item.usedTransport}</div>
+                  </div>
+                  <div>
+                    <div className="text-zinc-400">{t('dashboardNodeDispatchFallback')}</div>
+                    <div className="text-zinc-200 mt-1">{item.fallbackFrom || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-zinc-400">{t('dashboardNodeDispatchDuration')}</div>
+                    <div className="text-zinc-200 mt-1">{`${item.durationMs}ms`}</div>
+                  </div>
+                  <div>
+                    <div className="text-zinc-400">{t('dashboardNodeDispatchError')}</div>
+                    <div className={`mt-1 break-all ${item.error ? 'text-rose-300' : 'text-zinc-500'}`}>
+                      {item.error || '-'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

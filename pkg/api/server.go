@@ -1075,10 +1075,43 @@ func (s *Server) webUINodesPayload(ctx context.Context) map[string]interface{} {
 		p2p = s.nodeP2PStatus()
 	}
 	return map[string]interface{}{
-		"nodes": list,
-		"trees": s.buildNodeAgentTrees(ctx, list),
-		"p2p":   p2p,
+		"nodes":      list,
+		"trees":      s.buildNodeAgentTrees(ctx, list),
+		"p2p":        p2p,
+		"dispatches": s.webUINodesDispatchPayload(12),
 	}
+}
+
+func (s *Server) webUINodesDispatchPayload(limit int) []map[string]interface{} {
+	workspace := strings.TrimSpace(s.workspacePath)
+	if workspace == "" {
+		return []map[string]interface{}{}
+	}
+	path := filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []map[string]interface{}{}
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) == 1 && strings.TrimSpace(lines[0]) == "" {
+		return []map[string]interface{}{}
+	}
+	out := make([]map[string]interface{}, 0, limit)
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		row := map[string]interface{}{}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			continue
+		}
+		out = append(out, row)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 func (s *Server) webUISessionsPayload() map[string]interface{} {
@@ -1520,48 +1553,9 @@ func (s *Server) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		list := []nodes.NodeInfo{}
-		if s.mgr != nil {
-			list = s.mgr.List()
-		}
-		host, _ := os.Hostname()
-		local := nodes.NodeInfo{ID: "local", Name: "local", Endpoint: "gateway", Version: gatewayBuildVersion(), LastSeenAt: time.Now(), Online: true}
-		if strings.TrimSpace(host) != "" {
-			local.Name = host
-		}
-		if ip := detectLocalIP(); ip != "" {
-			local.Endpoint = ip
-		}
-		hostLower := strings.ToLower(strings.TrimSpace(host))
-		matched := false
-		for i := range list {
-			id := strings.ToLower(strings.TrimSpace(list[i].ID))
-			name := strings.ToLower(strings.TrimSpace(list[i].Name))
-			if id == "local" || name == "local" || (hostLower != "" && name == hostLower) {
-				// Always keep local node green/alive with latest ip+version
-				list[i].ID = "local"
-				list[i].Online = true
-				list[i].Version = local.Version
-				if strings.TrimSpace(local.Endpoint) != "" {
-					list[i].Endpoint = local.Endpoint
-				}
-				if strings.TrimSpace(local.Name) != "" {
-					list[i].Name = local.Name
-				}
-				list[i].LastSeenAt = time.Now()
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			list = append([]nodes.NodeInfo{local}, list...)
-		}
-		trees := s.buildNodeAgentTrees(r.Context(), list)
-		p2p := map[string]interface{}{}
-		if s.nodeP2PStatus != nil {
-			p2p = s.nodeP2PStatus()
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list, "trees": trees, "p2p": p2p})
+		payload := s.webUINodesPayload(r.Context())
+		payload["ok"] = true
+		_ = json.NewEncoder(w).Encode(payload)
 	case http.MethodPost:
 		var body struct {
 			Action string `json:"action"`

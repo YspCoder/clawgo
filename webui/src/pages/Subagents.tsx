@@ -227,6 +227,14 @@ function formatStreamTime(ts?: number): string {
   return new Date(ts).toLocaleTimeString([], { hour12: false });
 }
 
+function formatRuntimeTimestamp(value?: string): string {
+  const raw = `${value || ''}`.trim();
+  if (!raw || raw === '0001-01-01T00:00:00Z') return '-';
+  const ts = Date.parse(raw);
+  if (Number.isNaN(ts)) return raw;
+  return new Date(ts).toLocaleString();
+}
+
 function summarizePreviewText(value?: string, limit = 180): string {
   const compact = `${value || ''}`.replace(/\s+/g, ' ').trim();
   if (!compact) return '(empty)';
@@ -360,7 +368,7 @@ function GraphCard({
 
 const Subagents: React.FC = () => {
   const { t } = useTranslation();
-  const { q, nodeTrees, subagentRuntimeItems, subagentRegistryItems } = useAppContext();
+  const { q, nodeTrees, nodeP2P, nodeDispatchItems, subagentRuntimeItems, subagentRegistryItems } = useAppContext();
   const ui = useUI();
 
   const [items, setItems] = useState<SubagentTask[]>([]);
@@ -510,6 +518,26 @@ const Subagents: React.FC = () => {
       return acc;
     }, {});
   }, [items]);
+  const p2pSessionByNode = useMemo(() => {
+    const out: Record<string, any> = {};
+    const sessions = Array.isArray(nodeP2P?.nodes) ? nodeP2P.nodes : [];
+    sessions.forEach((session: any) => {
+      const nodeID = normalizeTitle(session?.node, '');
+      if (!nodeID) return;
+      out[nodeID] = session;
+    });
+    return out;
+  }, [nodeP2P]);
+  const recentDispatchByNode = useMemo(() => {
+    const out: Record<string, any> = {};
+    const rows = Array.isArray(nodeDispatchItems) ? nodeDispatchItems : [];
+    rows.forEach((row: any) => {
+      const nodeID = normalizeTitle(row?.node, '');
+      if (!nodeID || out[nodeID]) return;
+      out[nodeID] = row;
+    });
+    return out;
+  }, [nodeDispatchItems]);
   const topologyGraph = useMemo(() => {
     const scale = topologyZoom;
     const originX = 56;
@@ -645,6 +673,9 @@ const Subagents: React.FC = () => {
     remoteClusters.forEach((cluster, treeIndex) => {
       const { tree, root: treeRoot, children } = cluster;
       const branch = `node:${normalizeTitle(tree.node_id, `remote-${treeIndex}`)}`;
+      const nodeID = normalizeTitle(tree.node_id, '');
+      const p2pSession = p2pSessionByNode[nodeID];
+      const recentDispatch = recentDispatchByNode[nodeID];
       const rootX = remoteOffsetX + Math.max(0, (cluster.width - cardWidth) / 2);
       if (!treeRoot) return;
       const rootCard: GraphCardSpec = {
@@ -662,10 +693,15 @@ const Subagents: React.FC = () => {
         meta: [
           `status=${tree.online ? t('online') : t('offline')}`,
           `transport=${normalizeTitle(treeRoot.transport, 'node')} type=${normalizeTitle(treeRoot.type, 'router')}`,
+          `p2p=${normalizeTitle(nodeP2P?.transport, 'disabled')} session=${normalizeTitle(p2pSession?.status, 'unknown')}`,
+          `last_transport=${normalizeTitle(recentDispatch?.used_transport, '-')}${recentDispatch?.fallback_from ? ` fallback=${normalizeTitle(recentDispatch?.fallback_from, '-')}` : ''}`,
+          `last_ready=${formatRuntimeTimestamp(p2pSession?.last_ready_at)}`,
+          `retry=${Number(p2pSession?.retry_count || 0)}`,
+          `${t('error')}=${normalizeTitle(p2pSession?.last_error, '-')}`,
           `source=${normalizeTitle(treeRoot.managed_by, tree.source || '-')}`,
           t('remoteTasksUnavailable'),
         ],
-        accent: tree.online ? 'bg-fuchsia-400' : 'bg-zinc-500',
+        accent: !tree.online ? 'bg-zinc-500' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'open' ? 'bg-emerald-400' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'connecting' ? 'bg-amber-400' : 'bg-fuchsia-400',
         clickable: true,
         scale,
         onClick: () => {
@@ -695,10 +731,15 @@ const Subagents: React.FC = () => {
           subtitle: `${normalizeTitle(child.agent_id, '-')} · ${normalizeTitle(child.role, '-')}`,
           meta: [
             `transport=${normalizeTitle(child.transport, 'node')} type=${normalizeTitle(child.type, 'worker')}`,
+            `p2p=${normalizeTitle(nodeP2P?.transport, 'disabled')} session=${normalizeTitle(p2pSession?.status, 'unknown')}`,
+            `last_transport=${normalizeTitle(recentDispatch?.used_transport, '-')}${recentDispatch?.fallback_from ? ` fallback=${normalizeTitle(recentDispatch?.fallback_from, '-')}` : ''}`,
+            `last_ready=${formatRuntimeTimestamp(p2pSession?.last_ready_at)}`,
+            `retry=${Number(p2pSession?.retry_count || 0)}`,
+            `${t('error')}=${normalizeTitle(p2pSession?.last_error, '-')}`,
             `source=${normalizeTitle(child.managed_by, 'remote_webui')}`,
             t('remoteTasksUnavailable'),
           ],
-          accent: 'bg-violet-400',
+          accent: normalizeTitle(p2pSession?.status, '').toLowerCase() === 'open' ? 'bg-emerald-400' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'connecting' ? 'bg-amber-400' : 'bg-violet-400',
           clickable: true,
           scale,
           onClick: () => {
@@ -787,7 +828,7 @@ const Subagents: React.FC = () => {
     }));
 
     return { width, height, cards: decoratedCards, lines: decoratedLines };
-  }, [parsedNodeTrees, registryItems, taskStats, recentTaskByAgent, selectedTopologyBranch, topologyFilter, t, topologyZoom, nodeOverrides]);
+  }, [parsedNodeTrees, registryItems, taskStats, recentTaskByAgent, selectedTopologyBranch, topologyFilter, t, topologyZoom, nodeOverrides, nodeP2P, p2pSessionByNode, recentDispatchByNode]);
 
   const fitView = () => {
     const viewport = topologyViewportRef.current;

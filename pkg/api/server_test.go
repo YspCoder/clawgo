@@ -433,6 +433,14 @@ func TestHandleWebUINodesIncludesP2PSummary(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
+	workspace := t.TempDir()
+	srv.SetWorkspacePath(workspace)
+	if err := os.MkdirAll(filepath.Join(workspace, "memory"), 0755); err != nil {
+		t.Fatalf("mkdir memory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), []byte("{\"node\":\"edge-b\",\"used_transport\":\"webrtc\",\"fallback_from\":\"\",\"duration_ms\":12}\n"), 0644); err != nil {
+		t.Fatalf("write audit: %v", err)
+	}
 	srv.SetNodeP2PStatusHandler(func() map[string]interface{} {
 		return map[string]interface{}{
 			"enabled":         true,
@@ -454,5 +462,9 @@ func TestHandleWebUINodesIncludesP2PSummary(t *testing.T) {
 	p2p, _ := body["p2p"].(map[string]interface{})
 	if p2p == nil || p2p["transport"] != "webrtc" {
 		t.Fatalf("expected p2p summary, got %+v", body)
+	}
+	dispatches, _ := body["dispatches"].([]interface{})
+	if len(dispatches) != 1 {
+		t.Fatalf("expected dispatch audit rows, got %+v", body["dispatches"])
 	}
 }

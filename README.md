@@ -245,6 +245,7 @@ user -> main -> worker -> main -> user
 
 - `webrtc` 建连失败时，调度层仍会回退到现有 relay / tunnel 路径
 - Dashboard、`status`、`/webui/api/nodes` 会显示当前 Node P2P 状态和会话摘要
+- 两台公网机器的实网验证流程见 [docs/node-p2p-e2e.md](/Users/lpf/Desktop/project/clawgo/docs/node-p2p-e2e.md)
 
 ## MCP 服务支持
 
