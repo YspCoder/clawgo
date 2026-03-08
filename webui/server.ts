@@ -3,10 +3,14 @@ import { createServer as createViteServer } from "vite";
 import { EventEmitter } from "events";
 import multer from "multer";
 import fs from "fs";
+import http from "http";
+import { WebSocketServer } from "ws";
 
 const app = express();
 const PORT = 3000;
 const logEmitter = new EventEmitter();
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 
 // In-memory only for local dev fallback (no sqlite persistence)
 const mem = {
@@ -118,6 +122,8 @@ app.post("/webui/api/skills", (req, res) => {
 });
 
 app.get("/webui/api/logs/stream", (req, res) => {
+  res.setHeader("Deprecation", "true");
+  res.setHeader("X-Clawgo-Replaced-By", "/webui/api/logs/live");
   res.setHeader("Content-Type", "application/x-ndjson");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -130,6 +136,8 @@ app.get("/webui/api/logs/stream", (req, res) => {
 });
 
 app.post("/webui/api/chat/stream", async (req, res) => {
+  res.setHeader("Deprecation", "true");
+  res.setHeader("X-Clawgo-Replaced-By", "/webui/api/chat/live");
   const { message } = req.body || {};
   res.setHeader("Content-Type", "text/plain");
   res.setHeader("Transfer-Encoding", "chunked");
@@ -139,6 +147,48 @@ app.post("/webui/api/chat/stream", async (req, res) => {
     await new Promise((r) => setTimeout(r, 40));
   }
   res.end();
+});
+
+wss.on("connection", (socket, req) => {
+  if (!req.url) return;
+
+  if (req.url.startsWith("/webui/api/logs/live")) {
+    const onLog = (entry: any) => {
+      if (socket.readyState === socket.OPEN) {
+        socket.send(JSON.stringify({ ok: true, type: "log_entry", entry }));
+      }
+    };
+    logEmitter.on("log", onLog);
+    onLog({ time: new Date().toISOString(), level: "INFO", msg: "Log stream connected" });
+    socket.on("close", () => {
+      logEmitter.off("log", onLog);
+    });
+    return;
+  }
+
+  if (req.url.startsWith("/webui/api/chat/live")) {
+    socket.on("message", async (payload) => {
+      let message = "";
+      try {
+        const body = JSON.parse(String(payload || "{}"));
+        message = String(body?.message || "");
+      } catch {
+        if (socket.readyState === socket.OPEN) {
+          socket.send(JSON.stringify({ ok: false, type: "chat_error", error: "invalid json" }));
+        }
+        return;
+      }
+      const words = `Simulated streaming response: ${message}`.split(" ");
+      for (const word of words) {
+        if (socket.readyState !== socket.OPEN) return;
+        socket.send(JSON.stringify({ ok: true, type: "chat_chunk", delta: `${word} ` }));
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      if (socket.readyState === socket.OPEN) {
+        socket.send(JSON.stringify({ ok: true, type: "chat_done" }));
+      }
+    });
+  }
 });
 
 if (process.env.NODE_ENV !== "production") {
@@ -151,7 +201,7 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
-app.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
   addLog("INFO", "Gateway WebUI Server started");
 });

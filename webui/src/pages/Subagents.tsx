@@ -233,6 +233,14 @@ function summarizePreviewText(value?: string, limit = 180): string {
   return compact.length > limit ? `${compact.slice(0, limit - 3)}...` : compact;
 }
 
+function tokenFromQuery(q: string): string {
+  const raw = String(q || '').trim();
+  if (!raw) return '';
+  const search = raw.startsWith('?') ? raw.slice(1) : raw;
+  const params = new URLSearchParams(search);
+  return params.get('token') || '';
+}
+
 function bezierCurve(x1: number, y1: number, x2: number, y2: number): string {
   const offset = Math.max(Math.abs(y2 - y1) * 0.5, 60);
   return `M ${x1} ${y1} C ${x1} ${y1 + offset} ${x2} ${y2 - offset} ${x2} ${y2}`;
@@ -352,7 +360,7 @@ function GraphCard({
 
 const Subagents: React.FC = () => {
   const { t } = useTranslation();
-  const { q, nodeTrees } = useAppContext();
+  const { q, nodeTrees, subagentRuntimeItems, subagentRegistryItems } = useAppContext();
   const ui = useUI();
 
   const [items, setItems] = useState<SubagentTask[]>([]);
@@ -426,6 +434,24 @@ const Subagents: React.FC = () => {
 
   const load = async () => {
     try {
+      if (subagentRuntimeItems.length > 0 || subagentRegistryItems.length > 0) {
+        const arr = Array.isArray(subagentRuntimeItems) ? subagentRuntimeItems : [];
+        const registry = Array.isArray(subagentRegistryItems) ? subagentRegistryItems : [];
+        setItems(arr);
+        setRegistryItems(registry);
+        if (registry.length === 0) {
+          setSelectedAgentID('');
+          setSelectedId('');
+        } else {
+          const nextAgentID = selectedAgentID && registry.find((x: RegistrySubagent) => x.agent_id === selectedAgentID)
+            ? selectedAgentID
+            : (registry[0]?.agent_id || '');
+          setSelectedAgentID(nextAgentID);
+          const nextTask = arr.find((x: SubagentTask) => x.agent_id === nextAgentID);
+          setSelectedId(nextTask?.id || '');
+        }
+        return;
+      }
       const [tasksRes, registryRes] = await Promise.all([
         fetch(withAction('list')),
         fetch(withAction('registry')),
@@ -459,14 +485,7 @@ const Subagents: React.FC = () => {
 
   useEffect(() => {
     load().catch(() => { });
-  }, [q, selectedAgentID]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      load().catch(() => { });
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [q, selectedAgentID]);
+  }, [q, selectedAgentID, subagentRuntimeItems, subagentRegistryItems]);
 
   const selected = useMemo(() => items.find((x) => x.id === selectedId) || null, [items, selectedId]);
   const parsedNodeTrees = useMemo<NodeTree[]>(() => {
@@ -947,10 +966,6 @@ const Subagents: React.FC = () => {
     } catch (e) { }
   };
 
-  useEffect(() => {
-    loadThreadAndInbox(selected).catch(() => { });
-  }, [selectedId, q, items]);
-
   const loadStreamPreview = async (agentID: string, task: SubagentTask | null) => {
     const taskID = task?.id || '';
     if (!agentID) return;
@@ -1000,10 +1015,81 @@ const Subagents: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!topologyTooltip?.agentID || topologyTooltip.transportType !== 'local') return;
-    const latestTask = recentTaskByAgent[topologyTooltip.agentID] || null;
-    loadStreamPreview(topologyTooltip.agentID, latestTask).catch(() => { });
-  }, [topologyTooltip?.agentID, topologyTooltip?.transportType, recentTaskByAgent, q]);
+    const selectedTaskID = String(selected?.id || '').trim();
+    const previewAgentID = topologyTooltip?.transportType === 'local' ? String(topologyTooltip.agentID || '').trim() : '';
+    const previewTask = previewAgentID ? recentTaskByAgent[previewAgentID] || null : null;
+    const previewTaskID = String(previewTask?.id || '').trim();
+
+    if (!selectedTaskID) {
+      setThreadDetail(null);
+      setThreadMessages([]);
+      setInboxMessages([]);
+    }
+    if (!previewAgentID) {
+      return;
+    }
+    setStreamPreviewByAgent((prev) => ({
+      ...prev,
+      [previewAgentID]: {
+        task: previewTask,
+        items: prev[previewAgentID]?.items || [],
+        taskID: previewTaskID,
+        loading: !!previewTaskID,
+      },
+    }));
+
+    if (!selectedTaskID && !previewTaskID) return;
+
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = new URL(`${proto}//${window.location.host}/webui/api/subagents_runtime/live`);
+    if (tokenFromQuery(q)) url.searchParams.set('token', tokenFromQuery(q));
+    if (selectedTaskID) url.searchParams.set('task_id', selectedTaskID);
+    if (previewTaskID) url.searchParams.set('preview_task_id', previewTaskID);
+
+    const ws = new WebSocket(url.toString());
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        const payload = msg?.payload || {};
+        if (payload.thread) {
+          setThreadDetail(payload.thread.thread || null);
+          setThreadMessages(Array.isArray(payload.thread.messages) ? payload.thread.messages : []);
+        }
+        if (payload.inbox) {
+          setInboxMessages(Array.isArray(payload.inbox.messages) ? payload.inbox.messages : []);
+        }
+        if (previewAgentID && payload.preview) {
+          setStreamPreviewByAgent((prev) => ({
+            ...prev,
+            [previewAgentID]: {
+              task: payload.preview.task || previewTask,
+              items: Array.isArray(payload.preview.items) ? payload.preview.items : [],
+              taskID: previewTaskID,
+              loading: false,
+            },
+          }));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    ws.onerror = () => {
+      if (previewAgentID) {
+        setStreamPreviewByAgent((prev) => ({
+          ...prev,
+          [previewAgentID]: {
+            task: previewTask,
+            items: prev[previewAgentID]?.items || [],
+            taskID: previewTaskID,
+            loading: false,
+          },
+        }));
+      }
+    };
+    return () => {
+      ws.close();
+    };
+  }, [selected?.id, topologyTooltip?.agentID, topologyTooltip?.transportType, recentTaskByAgent, q]);
 
   return (
     <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">

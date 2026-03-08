@@ -391,6 +391,7 @@ func TestSubagentManagerAutoRecoversRunningTaskAfterRestart(t *testing.T) {
 		t.Fatalf("expected running task to auto-recover after restart")
 	}
 
+	_ = waitSubagentDone(t, reloaded, 4*time.Second)
 	got, ok := reloaded.GetTask("subagent-1")
 	if !ok {
 		t.Fatalf("expected recovered task to exist")

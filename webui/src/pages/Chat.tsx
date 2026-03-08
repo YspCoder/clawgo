@@ -110,7 +110,7 @@ function collectActors(items: StreamItem[]): string[] {
 
 const Chat: React.FC = () => {
   const { t } = useTranslation();
-  const { q, sessions } = useAppContext();
+  const { q, sessions, subagentRuntimeItems, subagentRegistryItems, subagentStreamItems } = useAppContext();
   const ui = useUI();
   const [mainChat, setMainChat] = useState<RenderedChatItem[]>([]);
   const [subagentStream, setSubagentStream] = useState<StreamItem[]>([]);
@@ -204,6 +204,10 @@ const Chat: React.FC = () => {
 
   const loadSubagentGroup = async () => {
     try {
+      if (subagentStreamItems.length > 0) {
+        setSubagentStream(subagentStreamItems);
+        return;
+      }
       shouldAutoScrollRef.current = isNearBottom() || chatTab !== 'subagents';
       const r = await fetch(`/webui/api/subagents_runtime${q}`, {
         method: 'POST',
@@ -221,6 +225,14 @@ const Chat: React.FC = () => {
 
   const loadRegistryAgents = async () => {
     try {
+      if (subagentRegistryItems.length > 0) {
+        const filtered = subagentRegistryItems.filter((item: RegistryAgent) => item?.agent_id && item.enabled !== false);
+        setRegistryAgents(filtered);
+        if (!dispatchAgentID && filtered.length > 0) {
+          setDispatchAgentID(String(filtered[0].agent_id || ''));
+        }
+        return;
+      }
       const r = await fetch(`/webui/api/subagents_runtime${q}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -241,6 +253,10 @@ const Chat: React.FC = () => {
 
   const loadRuntimeTasks = async () => {
     try {
+      if (subagentRuntimeItems.length > 0) {
+        setRuntimeTasks(subagentRuntimeItems);
+        return;
+      }
       const r = await fetch(`/webui/api/subagents_runtime${q}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -292,16 +308,10 @@ const Chat: React.FC = () => {
     if (input) input.value = '';
 
     try {
-      const response = await fetch(`/webui/api/chat/stream${q}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session: sessionKey, message: currentMsg, media }),
-      });
-
-      if (!response.ok || !response.body) throw new Error('Chat request failed');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = new URL(`${proto}//${window.location.host}/webui/api/chat/live`);
+      const token = new URLSearchParams(q.startsWith('?') ? q.slice(1) : q).get('token');
+      if (token) url.searchParams.set('token', token);
       let assistantText = '';
 
       setMainChat((prev) => [...prev, {
@@ -314,20 +324,55 @@ const Chat: React.FC = () => {
         avatarClassName: 'bg-emerald-600/80 text-white',
       }]);
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        assistantText += chunk;
-        setMainChat((prev) => {
-          const next = [...prev];
-          next[next.length - 1] = {
-            ...next[next.length - 1],
-            text: assistantText,
-          };
-          return next;
-        });
-      }
+      await new Promise<void>((resolve, reject) => {
+        const ws = new WebSocket(url.toString());
+        let settled = false;
+        ws.onopen = () => {
+          ws.send(JSON.stringify({ session: sessionKey, message: currentMsg, media }));
+        };
+        ws.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload?.type === 'chat_chunk' && typeof payload?.delta === 'string') {
+              assistantText += payload.delta;
+              setMainChat((prev) => {
+                const next = [...prev];
+                next[next.length - 1] = {
+                  ...next[next.length - 1],
+                  text: assistantText,
+                };
+                return next;
+              });
+              return;
+            }
+            if (payload?.type === 'chat_done') {
+              settled = true;
+              ws.close();
+              resolve();
+              return;
+            }
+            if (payload?.type === 'chat_error') {
+              settled = true;
+              ws.close();
+              reject(new Error(payload?.error || 'Chat request failed'));
+            }
+          } catch (e) {
+            settled = true;
+            ws.close();
+            reject(e);
+          }
+        };
+        ws.onerror = () => {
+          settled = true;
+          ws.close();
+          reject(new Error('Chat request failed'));
+        };
+        ws.onclose = () => {
+          if (!settled && !assistantText) {
+            reject(new Error('Chat request failed'));
+          }
+        };
+      });
 
       loadHistory();
     } catch (e) {
@@ -354,16 +399,7 @@ const Chat: React.FC = () => {
     loadSubagentGroup();
     loadRegistryAgents();
     loadRuntimeTasks();
-  }, [q, chatTab, sessionKey]);
-
-  useEffect(() => {
-    if (chatTab !== 'subagents') return;
-    const timer = window.setInterval(() => {
-      loadSubagentGroup();
-      loadRuntimeTasks();
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [q, chatTab]);
+  }, [q, chatTab, sessionKey, subagentRuntimeItems, subagentRegistryItems, subagentStreamItems]);
 
   const userSessions = (sessions || []).filter((s: any) => !String(s?.key || '').startsWith('subagent:'));
 
@@ -538,7 +574,7 @@ const Chat: React.FC = () => {
               </select>
             )}
           </div>
-          <button onClick={chatTab === 'main' ? loadHistory : loadSubagentGroup} className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-xl bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3" />{t('reloadHistory')}</button>
+          <button onClick={() => { if (chatTab === 'main') { void loadHistory(); } else { void loadSubagentGroup(); } }} className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-xl bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3" />{t('reloadHistory')}</button>
         </div>
 
         {chatTab === 'subagents' && (

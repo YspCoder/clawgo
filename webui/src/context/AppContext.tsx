@@ -1,6 +1,29 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { CronJob, Cfg, Session, Skill } from '../types';
 
+type RuntimeSnapshot = {
+  version?: {
+    gateway_version?: string;
+    webui_version?: string;
+  };
+  nodes?: {
+    nodes?: any[];
+    trees?: any[];
+  };
+  sessions?: {
+    sessions?: Array<{ key: string; title?: string; channel?: string }>;
+  };
+  task_queue?: {
+    items?: any[];
+  };
+  ekg?: Record<string, any>;
+  subagents?: {
+    items?: any[];
+    registry?: any[];
+    stream?: any[];
+  };
+};
+
 interface AppContextType {
   token: string;
   sidebarOpen: boolean;
@@ -32,6 +55,12 @@ interface AppContextType {
   setTaskQueueItems: React.Dispatch<React.SetStateAction<any[]>>;
   ekgSummary: Record<string, any>;
   setEkgSummary: React.Dispatch<React.SetStateAction<Record<string, any>>>;
+  subagentRuntimeItems: any[];
+  setSubagentRuntimeItems: React.Dispatch<React.SetStateAction<any[]>>;
+  subagentRegistryItems: any[];
+  setSubagentRegistryItems: React.Dispatch<React.SetStateAction<any[]>>;
+  subagentStreamItems: any[];
+  setSubagentStreamItems: React.Dispatch<React.SetStateAction<any[]>>;
   refreshAll: () => Promise<void>;
   refreshCron: () => Promise<void>;
   refreshNodes: () => Promise<void>;
@@ -81,6 +110,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [sessions, setSessions] = useState<Session[]>([{ key: 'main', title: 'main' }]);
   const [taskQueueItems, setTaskQueueItems] = useState<any[]>([]);
   const [ekgSummary, setEkgSummary] = useState<Record<string, any>>({});
+  const [subagentRuntimeItems, setSubagentRuntimeItems] = useState<any[]>([]);
+  const [subagentRegistryItems, setSubagentRegistryItems] = useState<any[]>([]);
+  const [subagentStreamItems, setSubagentStreamItems] = useState<any[]>([]);
   const [gatewayVersion, setGatewayVersion] = useState('unknown');
   const [webuiVersion, setWebuiVersion] = useState('unknown');
   const [hotReloadFields, setHotReloadFields] = useState<string[]>([]);
@@ -218,17 +250,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     refreshAll();
-    const interval = setInterval(() => {
-      loadConfig();
-      refreshCron();
-      refreshNodes();
-      refreshSkills();
-      refreshSessions();
-      refreshVersion();
-      refreshTaskQueue();
-      refreshEKGSummary();
-    }, 10000);
-    return () => clearInterval(interval);
+  }, [token, refreshAll]);
+
+  useEffect(() => {
+    let disposed = false;
+    let socket: WebSocket | null = null;
+    let retryTimer: number | null = null;
+
+    const applySnapshot = (snapshot: RuntimeSnapshot) => {
+      if (snapshot.version) {
+        setGatewayVersion(snapshot.version.gateway_version || 'unknown');
+        setWebuiVersion(snapshot.version.webui_version || 'unknown');
+      }
+      if (snapshot.nodes) {
+        setNodes(JSON.stringify(Array.isArray(snapshot.nodes.nodes) ? snapshot.nodes.nodes : [], null, 2));
+        setNodeTrees(JSON.stringify(Array.isArray(snapshot.nodes.trees) ? snapshot.nodes.trees : [], null, 2));
+      }
+      if (snapshot.sessions) {
+        const arr = Array.isArray(snapshot.sessions.sessions) ? snapshot.sessions.sessions : [];
+        setSessions(arr.map((s) => ({ key: s.key, title: s.title || s.key })));
+      }
+      if (snapshot.task_queue) {
+        setTaskQueueItems(Array.isArray(snapshot.task_queue.items) ? snapshot.task_queue.items : []);
+      }
+      if (snapshot.ekg && typeof snapshot.ekg === 'object') {
+        setEkgSummary(snapshot.ekg);
+      }
+      if (snapshot.subagents) {
+        setSubagentRuntimeItems(Array.isArray(snapshot.subagents.items) ? snapshot.subagents.items : []);
+        setSubagentRegistryItems(Array.isArray(snapshot.subagents.registry) ? snapshot.subagents.registry : []);
+        setSubagentStreamItems(Array.isArray(snapshot.subagents.stream) ? snapshot.subagents.stream : []);
+      }
+    };
+
+    const connect = () => {
+      try {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = new URL(`${proto}//${window.location.host}/webui/api/runtime`);
+        if (token) url.searchParams.set('token', token);
+        socket = new WebSocket(url.toString());
+        socket.onopen = () => {
+          setIsGatewayOnline(true);
+        };
+        socket.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg?.type === 'runtime_snapshot' && msg.snapshot) {
+              applySnapshot(msg.snapshot as RuntimeSnapshot);
+              setIsGatewayOnline(true);
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        };
+        socket.onerror = () => {
+          setIsGatewayOnline(false);
+        };
+        socket.onclose = () => {
+          socket = null;
+          if (disposed) return;
+          setIsGatewayOnline(false);
+          retryTimer = window.setTimeout(connect, 3000);
+        };
+      } catch (err) {
+        console.error(err);
+        setIsGatewayOnline(false);
+        retryTimer = window.setTimeout(connect, 3000);
+      }
+    };
+
+    connect();
+
+    return () => {
+      disposed = true;
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+      if (socket) {
+        socket.close();
+      }
+    };
   }, [token, refreshAll, loadConfig, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshVersion, refreshTaskQueue, refreshEKGSummary]);
 
   useEffect(() => {
@@ -246,6 +347,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cron, setCron, skills, setSkills, clawhubInstalled, clawhubPath,
       sessions, setSessions,
       taskQueueItems, setTaskQueueItems, ekgSummary, setEkgSummary,
+      subagentRuntimeItems, setSubagentRuntimeItems, subagentRegistryItems, setSubagentRegistryItems, subagentStreamItems, setSubagentStreamItems,
       refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshTaskQueue, refreshEKGSummary, refreshVersion, loadConfig,
       gatewayVersion, webuiVersion, hotReloadFields, hotReloadFieldDetails, q
     }}>

@@ -15,7 +15,7 @@ const Logs: React.FC = () => {
   const [isStreaming, setIsStreaming] = useState(true);
   const [showRaw, setShowRaw] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
 
   const loadRecent = async () => {
     try {
@@ -30,42 +30,39 @@ const Logs: React.FC = () => {
     }
   };
 
-  const startStreaming = async () => {
-    if (abortControllerRef.current) abortControllerRef.current.abort();
-    abortControllerRef.current = new AbortController();
+  const closeSocket = () => {
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  };
 
-    try {
-      const response = await fetch(`/webui/api/logs/stream${q}`, {
-        signal: abortControllerRef.current.signal,
-      });
+  const startStreaming = () => {
+    closeSocket();
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = new URL(`${proto}//${window.location.host}/webui/api/logs/live`);
+    const token = new URLSearchParams(q.startsWith('?') ? q.slice(1) : q).get('token');
+    if (token) url.searchParams.set('token', token);
 
-      if (!response.body) return;
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter(line => line.trim());
-
-        lines.forEach(line => {
-          try {
-            const log = normalizeLog(JSON.parse(line));
-            setLogs(prev => [...prev.slice(-1000), log]);
-          } catch (e) {
-            // Fallback for non-JSON logs
-            setLogs(prev => [...prev.slice(-1000), normalizeLog({ time: new Date().toISOString(), level: 'INFO', msg: line })]);
-          }
-        });
-      }
-    } catch (e: any) {
-      if (e.name !== 'AbortError') {
+    const ws = new WebSocket(url.toString());
+    socketRef.current = ws;
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        const log = normalizeLog(payload?.entry ?? payload);
+        setLogs(prev => [...prev.slice(-1000), log]);
+      } catch (e) {
         console.error('L0097', e);
       }
-    }
+    };
+    ws.onerror = (e) => {
+      console.error('L0097', e);
+    };
+    ws.onclose = () => {
+      if (socketRef.current === ws) {
+        socketRef.current = null;
+      }
+    };
   };
 
   const loadCodeMap = async () => {
@@ -100,11 +97,11 @@ const Logs: React.FC = () => {
     if (isStreaming) {
       startStreaming();
     } else {
-      if (abortControllerRef.current) abortControllerRef.current.abort();
+      closeSocket();
     }
 
     return () => {
-      if (abortControllerRef.current) abortControllerRef.current.abort();
+      closeSocket();
     };
   }, [isStreaming, q]);
 

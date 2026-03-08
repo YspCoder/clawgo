@@ -29,6 +29,7 @@ import (
 	cfgpkg "clawgo/pkg/config"
 	"clawgo/pkg/nodes"
 	"clawgo/pkg/tools"
+	"github.com/gorilla/websocket"
 )
 
 type Server struct {
@@ -36,6 +37,8 @@ type Server struct {
 	token          string
 	mgr            *nodes.Manager
 	server         *http.Server
+	nodeConnMu     sync.Mutex
+	nodeConnIDs    map[string]string
 	gatewayVersion string
 	webuiVersion   string
 	configPath     string
@@ -55,6 +58,10 @@ type Server struct {
 	ekgCacheRows   []map[string]interface{}
 }
 
+var nodesWebsocketUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
 func NewServer(host string, port int, token string, mgr *nodes.Manager) *Server {
 	addr := strings.TrimSpace(host)
 	if addr == "" {
@@ -63,7 +70,12 @@ func NewServer(host string, port int, token string, mgr *nodes.Manager) *Server 
 	if port <= 0 {
 		port = 7788
 	}
-	return &Server{addr: fmt.Sprintf("%s:%d", addr, port), token: strings.TrimSpace(token), mgr: mgr}
+	return &Server{
+		addr:        fmt.Sprintf("%s:%d", addr, port),
+		token:       strings.TrimSpace(token),
+		mgr:         mgr,
+		nodeConnIDs: map[string]string{},
+	}
 }
 
 func (s *Server) SetConfigPath(path string)    { s.configPath = strings.TrimSpace(path) }
@@ -87,6 +99,32 @@ func (s *Server) SetWebUIDir(dir string)                       { s.webUIDir = st
 func (s *Server) SetGatewayVersion(v string)                   { s.gatewayVersion = strings.TrimSpace(v) }
 func (s *Server) SetWebUIVersion(v string)                     { s.webuiVersion = strings.TrimSpace(v) }
 
+func (s *Server) rememberNodeConnection(nodeID, connID string) {
+	nodeID = strings.TrimSpace(nodeID)
+	connID = strings.TrimSpace(connID)
+	if nodeID == "" || connID == "" {
+		return
+	}
+	s.nodeConnMu.Lock()
+	defer s.nodeConnMu.Unlock()
+	s.nodeConnIDs[nodeID] = connID
+}
+
+func (s *Server) releaseNodeConnection(nodeID, connID string) bool {
+	nodeID = strings.TrimSpace(nodeID)
+	connID = strings.TrimSpace(connID)
+	if nodeID == "" || connID == "" {
+		return false
+	}
+	s.nodeConnMu.Lock()
+	defer s.nodeConnMu.Unlock()
+	if s.nodeConnIDs[nodeID] != connID {
+		return false
+	}
+	delete(s.nodeConnIDs, nodeID)
+	return true
+}
+
 func (s *Server) Start(ctx context.Context) error {
 	if s.mgr == nil {
 		return nil
@@ -98,12 +136,15 @@ func (s *Server) Start(ctx context.Context) error {
 	})
 	mux.HandleFunc("/nodes/register", s.handleRegister)
 	mux.HandleFunc("/nodes/heartbeat", s.handleHeartbeat)
+	mux.HandleFunc("/nodes/connect", s.handleNodeConnect)
 	mux.HandleFunc("/webui", s.handleWebUI)
 	mux.HandleFunc("/webui/", s.handleWebUIAsset)
 	mux.HandleFunc("/webui/api/config", s.handleWebUIConfig)
 	mux.HandleFunc("/webui/api/chat", s.handleWebUIChat)
 	mux.HandleFunc("/webui/api/chat/history", s.handleWebUIChatHistory)
 	mux.HandleFunc("/webui/api/chat/stream", s.handleWebUIChatStream)
+	mux.HandleFunc("/webui/api/chat/live", s.handleWebUIChatLive)
+	mux.HandleFunc("/webui/api/runtime", s.handleWebUIRuntime)
 	mux.HandleFunc("/webui/api/version", s.handleWebUIVersion)
 	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
 	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
@@ -113,6 +154,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/webui/api/subagent_profiles", s.handleWebUISubagentProfiles)
 	mux.HandleFunc("/webui/api/subagents_runtime", s.handleWebUISubagentsRuntime)
+	mux.HandleFunc("/webui/api/subagents_runtime/live", s.handleWebUISubagentsRuntimeLive)
 	mux.HandleFunc("/webui/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
 	mux.HandleFunc("/webui/api/tools", s.handleWebUITools)
 	mux.HandleFunc("/webui/api/mcp/install", s.handleWebUIMCPInstall)
@@ -121,6 +163,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/ekg_stats", s.handleWebUIEKGStats)
 	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
+	mux.HandleFunc("/webui/api/logs/live", s.handleWebUILogsLive)
 	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
 	go func() {
@@ -182,6 +225,89 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	s.mgr.Upsert(n)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": body.ID})
+}
+
+func (s *Server) handleNodeConnect(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.mgr == nil {
+		http.Error(w, "nodes manager unavailable", http.StatusInternalServerError)
+		return
+	}
+	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	var connectedID string
+	connID := fmt.Sprintf("%d", time.Now().UnixNano())
+	_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+	})
+
+	writeAck := func(ack nodes.WireAck) error {
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteJSON(ack)
+	}
+
+	defer func() {
+		if strings.TrimSpace(connectedID) != "" && s.releaseNodeConnection(connectedID, connID) {
+			s.mgr.MarkOffline(connectedID)
+		}
+	}()
+
+	for {
+		var msg nodes.WireMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			return
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		switch strings.ToLower(strings.TrimSpace(msg.Type)) {
+		case "register":
+			if msg.Node == nil || strings.TrimSpace(msg.Node.ID) == "" {
+				_ = writeAck(nodes.WireAck{OK: false, Type: "register", Error: "node.id required"})
+				continue
+			}
+			s.mgr.Upsert(*msg.Node)
+			connectedID = strings.TrimSpace(msg.Node.ID)
+			s.rememberNodeConnection(connectedID, connID)
+			if err := writeAck(nodes.WireAck{OK: true, Type: "registered", ID: connectedID}); err != nil {
+				return
+			}
+		case "heartbeat":
+			id := strings.TrimSpace(msg.ID)
+			if id == "" {
+				id = connectedID
+			}
+			if id == "" {
+				_ = writeAck(nodes.WireAck{OK: false, Type: "heartbeat", Error: "id required"})
+				continue
+			}
+			if msg.Node != nil && strings.TrimSpace(msg.Node.ID) != "" {
+				s.mgr.Upsert(*msg.Node)
+				connectedID = strings.TrimSpace(msg.Node.ID)
+				s.rememberNodeConnection(connectedID, connID)
+			} else if n, ok := s.mgr.Get(id); ok {
+				s.mgr.Upsert(n)
+				connectedID = id
+				s.rememberNodeConnection(connectedID, connID)
+			} else {
+				_ = writeAck(nodes.WireAck{OK: false, Type: "heartbeat", ID: id, Error: "node not found"})
+				continue
+			}
+			if err := writeAck(nodes.WireAck{OK: true, Type: "heartbeat", ID: connectedID}); err != nil {
+				return
+			}
+		default:
+			if err := writeAck(nodes.WireAck{OK: false, Type: msg.Type, ID: msg.ID, Error: "unsupported message type"}); err != nil {
+				return
+			}
+		}
+	}
 }
 
 func (s *Server) handleWebUI(w http.ResponseWriter, r *http.Request) {
@@ -555,6 +681,8 @@ func (s *Server) handleWebUIChatHistory(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleWebUIChatStream(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Deprecation", "true")
+	w.Header().Set("X-Clawgo-Replaced-By", "/webui/api/chat/live")
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -616,6 +744,77 @@ func (s *Server) handleWebUIChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleWebUIChatLive(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.onChat == nil {
+		http.Error(w, "chat handler not configured", http.StatusInternalServerError)
+		return
+	}
+	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	var body struct {
+		Session string `json:"session"`
+		Message string `json:"message"`
+		Media   string `json:"media"`
+	}
+	if err := conn.ReadJSON(&body); err != nil {
+		_ = conn.WriteJSON(map[string]interface{}{"ok": false, "type": "chat_error", "error": "invalid json"})
+		return
+	}
+	session := body.Session
+	if session == "" {
+		session = r.URL.Query().Get("session")
+	}
+	if session == "" {
+		session = "main"
+	}
+	prompt := body.Message
+	if body.Media != "" {
+		if prompt != "" {
+			prompt += "\n"
+		}
+		prompt += "[file: " + body.Media + "]"
+	}
+	resp, err := s.onChat(r.Context(), session, prompt)
+	if err != nil {
+		_ = conn.WriteJSON(map[string]interface{}{"ok": false, "type": "chat_error", "error": err.Error(), "session": session})
+		return
+	}
+	chunk := 180
+	for i := 0; i < len(resp); i += chunk {
+		end := i + chunk
+		if end > len(resp) {
+			end = len(resp)
+		}
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err := conn.WriteJSON(map[string]interface{}{
+			"ok":      true,
+			"type":    "chat_chunk",
+			"session": session,
+			"delta":   resp[i:end],
+		}); err != nil {
+			return
+		}
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.WriteJSON(map[string]interface{}{
+		"ok":      true,
+		"type":    "chat_done",
+		"session": session,
+	})
+}
+
 func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -630,6 +829,378 @@ func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 		"gateway_version": firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
 		"webui_version":   firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
 	})
+}
+
+func (s *Server) handleWebUIRuntime(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ctx := r.Context()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	sendSnapshot := func() error {
+		payload := map[string]interface{}{
+			"ok":       true,
+			"type":     "runtime_snapshot",
+			"snapshot": s.buildWebUIRuntimeSnapshot(ctx),
+		}
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteJSON(payload)
+	}
+
+	if err := sendSnapshot(); err != nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := sendSnapshot(); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) buildWebUIRuntimeSnapshot(ctx context.Context) map[string]interface{} {
+	return map[string]interface{}{
+		"version":    s.webUIVersionPayload(),
+		"nodes":      s.webUINodesPayload(ctx),
+		"sessions":   s.webUISessionsPayload(),
+		"task_queue": s.webUITaskQueuePayload(false),
+		"ekg":        s.webUIEKGSummaryPayload("24h"),
+		"subagents":  s.webUISubagentsRuntimePayload(ctx),
+	}
+}
+
+func (s *Server) webUISubagentsRuntimePayload(ctx context.Context) map[string]interface{} {
+	if s.onSubagents == nil {
+		return map[string]interface{}{
+			"items":    []interface{}{},
+			"registry": []interface{}{},
+			"stream":   []interface{}{},
+		}
+	}
+	call := func(action string, args map[string]interface{}) interface{} {
+		res, err := s.onSubagents(ctx, action, args)
+		if err != nil {
+			return []interface{}{}
+		}
+		if m, ok := res.(map[string]interface{}); ok {
+			if items, ok := m["items"]; ok {
+				return items
+			}
+		}
+		return []interface{}{}
+	}
+	return map[string]interface{}{
+		"items":    call("list", map[string]interface{}{}),
+		"registry": call("registry", map[string]interface{}{}),
+		"stream":   call("stream_all", map[string]interface{}{"limit": 300, "task_limit": 36}),
+	}
+}
+
+func (s *Server) webUIVersionPayload() map[string]interface{} {
+	return map[string]interface{}{
+		"gateway_version": firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
+		"webui_version":   firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
+	}
+}
+
+func (s *Server) webUINodesPayload(ctx context.Context) map[string]interface{} {
+	list := []nodes.NodeInfo{}
+	if s.mgr != nil {
+		list = s.mgr.List()
+	}
+	host, _ := os.Hostname()
+	local := nodes.NodeInfo{ID: "local", Name: "local", Endpoint: "gateway", Version: gatewayBuildVersion(), LastSeenAt: time.Now(), Online: true}
+	if strings.TrimSpace(host) != "" {
+		local.Name = host
+	}
+	if ip := detectLocalIP(); ip != "" {
+		local.Endpoint = ip
+	}
+	hostLower := strings.ToLower(strings.TrimSpace(host))
+	matched := false
+	for i := range list {
+		id := strings.ToLower(strings.TrimSpace(list[i].ID))
+		name := strings.ToLower(strings.TrimSpace(list[i].Name))
+		if id == "local" || name == "local" || (hostLower != "" && name == hostLower) {
+			list[i].ID = "local"
+			list[i].Online = true
+			list[i].Version = local.Version
+			if strings.TrimSpace(local.Endpoint) != "" {
+				list[i].Endpoint = local.Endpoint
+			}
+			if strings.TrimSpace(local.Name) != "" {
+				list[i].Name = local.Name
+			}
+			list[i].LastSeenAt = time.Now()
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		list = append([]nodes.NodeInfo{local}, list...)
+	}
+	return map[string]interface{}{
+		"nodes": list,
+		"trees": s.buildNodeAgentTrees(ctx, list),
+	}
+}
+
+func (s *Server) webUISessionsPayload() map[string]interface{} {
+	sessionsDir := filepath.Join(filepath.Dir(s.workspacePath), "agents", "main", "sessions")
+	_ = os.MkdirAll(sessionsDir, 0755)
+	type item struct {
+		Key     string `json:"key"`
+		Channel string `json:"channel,omitempty"`
+	}
+	out := make([]item, 0, 16)
+	entries, err := os.ReadDir(sessionsDir)
+	if err == nil {
+		seen := map[string]struct{}{}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".deleted.") {
+				continue
+			}
+			key := strings.TrimSuffix(name, ".jsonl")
+			if strings.TrimSpace(key) == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			channel := ""
+			if i := strings.Index(key, ":"); i > 0 {
+				channel = key[:i]
+			}
+			out = append(out, item{Key: key, Channel: channel})
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, item{Key: "main", Channel: "main"})
+	}
+	return map[string]interface{}{"sessions": out}
+}
+
+func (s *Server) webUITaskQueuePayload(includeHeartbeat bool) map[string]interface{} {
+	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+	b, err := os.ReadFile(path)
+	lines := []string{}
+	if err == nil {
+		lines = strings.Split(string(b), "\n")
+	}
+	type agg struct {
+		Last     map[string]interface{}
+		Logs     []string
+		Attempts int
+	}
+	m := map[string]*agg{}
+	for _, ln := range lines {
+		if ln == "" {
+			continue
+		}
+		var row map[string]interface{}
+		if err := json.Unmarshal([]byte(ln), &row); err != nil {
+			continue
+		}
+		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
+		if !includeHeartbeat && source == "heartbeat" {
+			continue
+		}
+		id := fmt.Sprintf("%v", row["task_id"])
+		if id == "" {
+			continue
+		}
+		if _, ok := m[id]; !ok {
+			m[id] = &agg{Last: row, Logs: []string{}, Attempts: 0}
+		}
+		a := m[id]
+		a.Last = row
+		a.Attempts++
+		if lg := strings.TrimSpace(fmt.Sprintf("%v", row["log"])); lg != "" {
+			if len(a.Logs) == 0 || a.Logs[len(a.Logs)-1] != lg {
+				a.Logs = append(a.Logs, lg)
+				if len(a.Logs) > 20 {
+					a.Logs = a.Logs[len(a.Logs)-20:]
+				}
+			}
+		}
+	}
+	items := make([]map[string]interface{}, 0, len(m))
+	running := make([]map[string]interface{}, 0)
+	for _, a := range m {
+		row := a.Last
+		row["logs"] = a.Logs
+		row["attempts"] = a.Attempts
+		items = append(items, row)
+		if fmt.Sprintf("%v", row["status"]) == "running" {
+			running = append(running, row)
+		}
+	}
+	queuePath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task_queue.json")
+	if qb, qErr := os.ReadFile(queuePath); qErr == nil {
+		var q map[string]interface{}
+		if json.Unmarshal(qb, &q) == nil {
+			if arr, ok := q["running"].([]interface{}); ok {
+				for _, it := range arr {
+					if row, ok := it.(map[string]interface{}); ok {
+						running = append(running, row)
+					}
+				}
+			}
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return fmt.Sprintf("%v", items[i]["updated_at"]) > fmt.Sprintf("%v", items[j]["updated_at"])
+	})
+	sort.Slice(running, func(i, j int) bool {
+		return fmt.Sprintf("%v", running[i]["updated_at"]) > fmt.Sprintf("%v", running[j]["updated_at"])
+	})
+	if len(items) > 30 {
+		items = items[:30]
+	}
+	return map[string]interface{}{"items": items, "running": running}
+}
+
+func (s *Server) webUIEKGSummaryPayload(window string) map[string]interface{} {
+	workspace := strings.TrimSpace(s.workspacePath)
+	ekgPath := filepath.Join(workspace, "memory", "ekg-events.jsonl")
+	window = strings.ToLower(strings.TrimSpace(window))
+	windowDur := 24 * time.Hour
+	switch window {
+	case "6h":
+		windowDur = 6 * time.Hour
+	case "24h", "":
+		windowDur = 24 * time.Hour
+	case "7d":
+		windowDur = 7 * 24 * time.Hour
+	}
+	selectedWindow := window
+	if selectedWindow == "" {
+		selectedWindow = "24h"
+	}
+	cutoff := time.Now().UTC().Add(-windowDur)
+	rows := s.loadEKGRowsCached(ekgPath, 3000)
+	type kv struct {
+		Key   string  `json:"key"`
+		Score float64 `json:"score,omitempty"`
+		Count int     `json:"count,omitempty"`
+	}
+	providerScore := map[string]float64{}
+	providerScoreWorkload := map[string]float64{}
+	errSigCount := map[string]int{}
+	errSigHeartbeat := map[string]int{}
+	errSigWorkload := map[string]int{}
+	sourceStats := map[string]int{}
+	channelStats := map[string]int{}
+	for _, row := range rows {
+		ts := strings.TrimSpace(fmt.Sprintf("%v", row["time"]))
+		if ts != "" {
+			if tm, err := time.Parse(time.RFC3339, ts); err == nil && tm.Before(cutoff) {
+				continue
+			}
+		}
+		provider := strings.TrimSpace(fmt.Sprintf("%v", row["provider"]))
+		status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
+		errSig := strings.TrimSpace(fmt.Sprintf("%v", row["errsig"]))
+		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
+		channel := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["channel"])))
+		if source == "heartbeat" {
+			continue
+		}
+		if source == "" {
+			source = "unknown"
+		}
+		if channel == "" {
+			channel = "unknown"
+		}
+		sourceStats[source]++
+		channelStats[channel]++
+		if provider != "" {
+			providerScoreWorkload[provider] += 1
+			if status == "success" {
+				providerScore[provider] += 1
+			} else if status == "error" {
+				providerScore[provider] -= 2
+			}
+		}
+		if errSig != "" {
+			errSigWorkload[errSig]++
+			if source == "heartbeat" {
+				errSigHeartbeat[errSig]++
+			} else if status == "error" {
+				errSigCount[errSig]++
+			}
+		}
+	}
+	toTopScore := func(m map[string]float64, limit int) []kv {
+		out := make([]kv, 0, len(m))
+		for k, v := range m {
+			out = append(out, kv{Key: k, Score: v})
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Score == out[j].Score {
+				return out[i].Key < out[j].Key
+			}
+			return out[i].Score > out[j].Score
+		})
+		if len(out) > limit {
+			out = out[:limit]
+		}
+		return out
+	}
+	toTopCount := func(m map[string]int, limit int) []kv {
+		out := make([]kv, 0, len(m))
+		for k, v := range m {
+			out = append(out, kv{Key: k, Count: v})
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Count == out[j].Count {
+				return out[i].Key < out[j].Key
+			}
+			return out[i].Count > out[j].Count
+		})
+		if len(out) > limit {
+			out = out[:limit]
+		}
+		return out
+	}
+	return map[string]interface{}{
+		"ok":                    true,
+		"window":                selectedWindow,
+		"rows":                  len(rows),
+		"provider_top_score":    toTopScore(providerScore, 5),
+		"provider_top_workload": toTopCount(mapFromFloatCounts(providerScoreWorkload), 5),
+		"errsig_top":            toTopCount(errSigCount, 5),
+		"errsig_top_heartbeat":  toTopCount(errSigHeartbeat, 5),
+		"errsig_top_workload":   toTopCount(errSigWorkload, 5),
+		"source_top":            toTopCount(sourceStats, 5),
+		"channel_top":           toTopCount(channelStats, 5),
+	}
+}
+
+func mapFromFloatCounts(src map[string]float64) map[string]int {
+	out := make(map[string]int, len(src))
+	for k, v := range src {
+		out[k] = int(v)
+	}
+	return out
 }
 
 func (s *Server) handleWebUITools(w http.ResponseWriter, r *http.Request) {
@@ -2694,6 +3265,76 @@ func (s *Server) handleWebUISubagentsRuntime(w http.ResponseWriter, r *http.Requ
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "result": result})
 }
 
+func (s *Server) handleWebUISubagentsRuntimeLive(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.onSubagents == nil {
+		http.Error(w, "subagent runtime handler not configured", http.StatusServiceUnavailable)
+		return
+	}
+	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ctx := r.Context()
+	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
+	previewTaskID := strings.TrimSpace(r.URL.Query().Get("preview_task_id"))
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	sendSnapshot := func() error {
+		payload := map[string]interface{}{
+			"ok":      true,
+			"type":    "subagents_live",
+			"payload": s.buildSubagentsLivePayload(ctx, taskID, previewTaskID),
+		}
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteJSON(payload)
+	}
+
+	if err := sendSnapshot(); err != nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := sendSnapshot(); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) buildSubagentsLivePayload(ctx context.Context, taskID, previewTaskID string) map[string]interface{} {
+	call := func(action string, args map[string]interface{}) map[string]interface{} {
+		res, err := s.onSubagents(ctx, action, args)
+		if err != nil {
+			return map[string]interface{}{}
+		}
+		if m, ok := res.(map[string]interface{}); ok {
+			return m
+		}
+		return map[string]interface{}{}
+	}
+	payload := map[string]interface{}{}
+	taskID = strings.TrimSpace(taskID)
+	previewTaskID = strings.TrimSpace(previewTaskID)
+	if taskID != "" {
+		payload["thread"] = call("thread", map[string]interface{}{"id": taskID, "limit": 50})
+		payload["inbox"] = call("inbox", map[string]interface{}{"id": taskID, "limit": 50})
+	}
+	if previewTaskID != "" {
+		payload["preview"] = call("stream", map[string]interface{}{"id": previewTaskID, "limit": 12})
+	}
+	return payload
+}
+
 func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -3244,23 +3885,85 @@ func (s *Server) handleWebUILogsRecent(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]interface{}, 0, limit)
 	for _, ln := range lines[start:] {
-		ln = strings.TrimSpace(ln)
-		if ln == "" {
-			continue
+		if parsed, ok := parseLogLine(ln); ok {
+			out = append(out, parsed)
 		}
-		if json.Valid([]byte(ln)) {
-			var m map[string]interface{}
-			if err := json.Unmarshal([]byte(ln), &m); err == nil {
-				out = append(out, m)
-				continue
-			}
-		}
-		out = append(out, map[string]interface{}{"time": time.Now().UTC().Format(time.RFC3339), "level": "INFO", "msg": ln})
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "logs": out})
 }
 
+func parseLogLine(line string) (map[string]interface{}, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, false
+	}
+	if json.Valid([]byte(line)) {
+		var m map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &m); err == nil {
+			return m, true
+		}
+	}
+	return map[string]interface{}{
+		"time":  time.Now().UTC().Format(time.RFC3339),
+		"level": "INFO",
+		"msg":   line,
+	}, true
+}
+
+func (s *Server) handleWebUILogsLive(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	path := strings.TrimSpace(s.logFilePath)
+	if path == "" {
+		http.Error(w, "log path not configured", http.StatusInternalServerError)
+		return
+	}
+	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	f, err := os.Open(path)
+	if err != nil {
+		_ = conn.WriteJSON(map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	defer f.Close()
+	fi, _ := f.Stat()
+	if fi != nil {
+		_, _ = f.Seek(fi.Size(), io.SeekStart)
+	}
+	reader := bufio.NewReader(f)
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			line, err := reader.ReadString('\n')
+			if parsed, ok := parseLogLine(line); ok {
+				_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if writeErr := conn.WriteJSON(map[string]interface{}{"ok": true, "type": "log_entry", "entry": parsed}); writeErr != nil {
+					return
+				}
+			}
+			if err != nil {
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}
+}
+
 func (s *Server) handleWebUILogsStream(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Deprecation", "true")
+	w.Header().Set("X-Clawgo-Replaced-By", "/webui/api/logs/live")
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -3301,14 +4004,9 @@ func (s *Server) handleWebUILogsStream(w http.ResponseWriter, r *http.Request) {
 		default:
 			line, err := reader.ReadString('\n')
 			if len(line) > 0 {
-				trim := strings.TrimRight(line, "\r\n")
-				if trim != "" {
-					if json.Valid([]byte(trim)) {
-						_, _ = w.Write([]byte(trim + "\n"))
-					} else {
-						fallback, _ := json.Marshal(map[string]interface{}{"time": time.Now().UTC().Format(time.RFC3339), "level": "INFO", "msg": trim})
-						_, _ = w.Write(append(fallback, '\n'))
-					}
+				if parsed, ok := parseLogLine(line); ok {
+					b, _ := json.Marshal(parsed)
+					_, _ = w.Write(append(b, '\n'))
 					flusher.Flush()
 				}
 			}
