@@ -28,11 +28,43 @@ type TaskAuditItem = {
   [key: string]: any;
 };
 
+type NodeDispatchItem = {
+  time?: string;
+  node?: string;
+  action?: string;
+  ok?: boolean;
+  used_transport?: string;
+  fallback_from?: string;
+  duration_ms?: number;
+  error?: string;
+  artifact_count?: number;
+  artifact_kinds?: string[];
+  artifacts?: any[];
+  [key: string]: any;
+};
+
+function dataUrlForArtifact(artifact: any) {
+  const mime = String(artifact?.mime_type || '').trim() || 'application/octet-stream';
+  const content = String(artifact?.content_base64 || '').trim();
+  if (!content) return '';
+  return `data:${mime};base64,${content}`;
+}
+
+function formatBytes(value: unknown) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return '-';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 const TaskAudit: React.FC = () => {
   const { t } = useTranslation();
   const { q } = useAppContext();
   const [items, setItems] = useState<TaskAuditItem[]>([]);
   const [selected, setSelected] = useState<TaskAuditItem | null>(null);
+  const [nodeItems, setNodeItems] = useState<NodeDispatchItem[]>([]);
+  const [selectedNode, setSelectedNode] = useState<NodeDispatchItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -40,18 +72,26 @@ const TaskAudit: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const url = `/webui/api/task_queue${q ? `${q}&limit=300` : '?limit=300'}`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(await r.text());
-      const j = await r.json();
-      const arr = Array.isArray(j.items) ? j.items : [];
+      const taskURL = `/webui/api/task_queue${q ? `${q}&limit=300` : '?limit=300'}`;
+      const nodeURL = `/webui/api/node_dispatches${q ? `${q}&limit=150` : '?limit=150'}`;
+      const [taskResp, nodeResp] = await Promise.all([fetch(taskURL), fetch(nodeURL)]);
+      if (!taskResp.ok) throw new Error(await taskResp.text());
+      if (!nodeResp.ok) throw new Error(await nodeResp.text());
+      const taskJSON = await taskResp.json();
+      const nodeJSON = await nodeResp.json();
+      const arr = Array.isArray(taskJSON.items) ? taskJSON.items : [];
       const sorted = arr.sort((a: any, b: any) => String(b.time || '').localeCompare(String(a.time || '')));
       setItems(sorted);
       if (sorted.length > 0) setSelected(sorted[0]);
+      const nodeArr = Array.isArray(nodeJSON.items) ? nodeJSON.items : [];
+      setNodeItems(nodeArr);
+      if (nodeArr.length > 0) setSelectedNode(nodeArr[0]);
     } catch (e) {
       console.error(e);
       setItems([]);
       setSelected(null);
+      setNodeItems([]);
+      setSelectedNode(null);
     } finally {
       setLoading(false);
     }
@@ -91,7 +131,7 @@ const TaskAudit: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
+      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[320px_1fr_380px] gap-4">
         <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('taskQueue')}</div>
           <div className="overflow-y-auto min-h-0">
@@ -185,6 +225,89 @@ const TaskAudit: React.FC = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+
+        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
+          <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('dashboardNodeDispatches')}</div>
+          <div className="grid grid-cols-1 min-h-0 flex-1">
+            <div className="overflow-y-auto min-h-0 border-b border-zinc-800/60">
+              {nodeItems.length === 0 ? (
+                <div className="p-4 text-sm text-zinc-500">{t('dashboardNodeDispatchesEmpty')}</div>
+              ) : nodeItems.map((it, idx) => {
+                const active = selectedNode?.time === it.time && selectedNode?.node === it.node && selectedNode?.action === it.action;
+                return (
+                  <button
+                    key={`${it.time || idx}-${it.node || idx}-${it.action || idx}`}
+                    onClick={() => setSelectedNode(it)}
+                    className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/20 ${active ? 'bg-indigo-500/15' : ''}`}
+                  >
+                    <div className="text-sm font-medium text-zinc-100 truncate">{`${it.node || '-'} · ${it.action || '-'}`}</div>
+                    <div className="text-xs text-zinc-400 truncate">{it.used_transport || '-'} · {(it.duration_ms || 0)}ms · {(it.artifact_count || 0)} {t('dashboardNodeDispatchArtifacts')}</div>
+                    <div className="text-[11px] text-zinc-500 truncate">{formatLocalDateTime(it.time)}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
+              {!selectedNode ? (
+                <div className="text-zinc-500">{t('selectTask')}</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><div className="text-zinc-500 text-xs">{t('nodeP2P')}</div><div>{selectedNode.node || '-'}</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('action')}</div><div>{selectedNode.action || '-'}</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('dashboardNodeDispatchTransport')}</div><div>{selectedNode.used_transport || '-'}</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('dashboardNodeDispatchFallback')}</div><div>{selectedNode.fallback_from || '-'}</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('duration')}</div><div>{selectedNode.duration_ms || 0}ms</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('status')}</div><div>{selectedNode.ok ? 'ok' : 'error'}</div></div>
+                  </div>
+
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('error')}</div>
+                    <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-red-300">{selectedNode.error || '-'}</div>
+                  </div>
+
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('dashboardNodeDispatchArtifactPreview')}</div>
+                    <div className="space-y-3">
+                      {Array.isArray(selectedNode.artifacts) && selectedNode.artifacts.length > 0 ? selectedNode.artifacts.map((artifact, artifactIndex) => {
+                        const kind = String(artifact?.kind || '').trim().toLowerCase();
+                        const mime = String(artifact?.mime_type || '').trim().toLowerCase();
+                        const isImage = kind === 'image' || mime.startsWith('image/');
+                        const isVideo = kind === 'video' || mime.startsWith('video/');
+                        const dataUrl = dataUrlForArtifact(artifact);
+                        return (
+                          <div key={`artifact-${artifactIndex}`} className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3">
+                            <div className="text-xs font-medium text-zinc-200 truncate">{String(artifact?.name || artifact?.source_path || `artifact-${artifactIndex + 1}`)}</div>
+                            <div className="text-[11px] text-zinc-500 mt-1 truncate">
+                              {[artifact?.kind, artifact?.mime_type, formatBytes(artifact?.size_bytes)].filter(Boolean).join(' · ')}
+                            </div>
+                            <div className="mt-2">
+                              {isImage && dataUrl && <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="max-h-48 rounded-xl border border-zinc-800 object-contain bg-black/30" />}
+                              {isVideo && dataUrl && <video src={dataUrl} controls className="max-h-48 w-full rounded-xl border border-zinc-800 bg-black/30" />}
+                              {!isImage && !isVideo && String(artifact?.content_text || '').trim() !== '' && (
+                                <pre className="rounded-xl border border-zinc-800 bg-black/20 p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
+                              )}
+                              {!isImage && !isVideo && String(artifact?.content_text || '').trim() === '' && (
+                                <div className="text-[11px] text-zinc-500 break-all mt-2">{String(artifact?.source_path || artifact?.path || artifact?.url || '-')}</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }) : (
+                        <div className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 text-zinc-500">-</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('rawJson')}</div>
+                    <pre className="p-2 rounded-xl bg-zinc-950/60 border border-zinc-800 text-xs overflow-auto">{JSON.stringify(selectedNode, null, 2)}</pre>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

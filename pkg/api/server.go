@@ -226,6 +226,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/version", s.handleWebUIVersion)
 	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
 	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
+	mux.HandleFunc("/webui/api/node_dispatches", s.handleWebUINodeDispatches)
 	mux.HandleFunc("/webui/api/cron", s.handleWebUICron)
 	mux.HandleFunc("/webui/api/skills", s.handleWebUISkills)
 	mux.HandleFunc("/webui/api/sessions", s.handleWebUISessions)
@@ -1580,6 +1581,30 @@ func (s *Server) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleWebUINodeDispatches(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			if n > 500 {
+				n = 500
+			}
+			limit = n
+		}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":    true,
+		"items": s.webUINodesDispatchPayload(limit),
+	})
 }
 
 func (s *Server) buildNodeAgentTrees(ctx context.Context, nodeList []nodes.NodeInfo) []map[string]interface{} {
