@@ -428,3 +428,31 @@ func TestHandleWebUILogsLive(t *testing.T) {
 		t.Fatalf("expected tail-ok entry, got: %+v", entry)
 	}
 }
+
+func TestHandleWebUINodesIncludesP2PSummary(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
+	srv.SetNodeP2PStatusHandler(func() map[string]interface{} {
+		return map[string]interface{}{
+			"enabled":         true,
+			"transport":       "webrtc",
+			"active_sessions": 2,
+		}
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/webui/api/nodes", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUINodes(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	p2p, _ := body["p2p"].(map[string]interface{})
+	if p2p == nil || p2p["transport"] != "webrtc" {
+		t.Fatalf("expected p2p summary, got %+v", body)
+	}
+}

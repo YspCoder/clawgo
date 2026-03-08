@@ -22,20 +22,20 @@ type NodesTool struct {
 func NewNodesTool(m *nodes.Manager, r *nodes.Router, auditPath string) *NodesTool {
 	return &NodesTool{manager: m, router: r, auditPath: strings.TrimSpace(auditPath)}
 }
-func (t *NodesTool) Name() string              { return "nodes" }
+func (t *NodesTool) Name() string { return "nodes" }
 func (t *NodesTool) Description() string {
 	return "Manage paired nodes (status/describe/run/invoke/camera/screen/location/canvas)."
 }
 func (t *NodesTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{
-		"action": map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|agent_task|camera_snap|camera_clip|screen_record|screen_snapshot|location_get|canvas_snapshot|canvas_action"},
-		"node":   map[string]interface{}{"type": "string", "description": "target node id"},
-		"mode":   map[string]interface{}{"type": "string", "description": "auto|p2p|relay (default auto)"},
-		"args":   map[string]interface{}{"type": "object", "description": "action args"},
-		"task":   map[string]interface{}{"type": "string", "description": "agent_task content for child node model"},
-		"model":  map[string]interface{}{"type": "string", "description": "optional model for agent_task"},
-		"command": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "run command array shortcut"},
-		"facing":  map[string]interface{}{"type": "string", "description": "camera facing: front|back|both"},
+		"action":      map[string]interface{}{"type": "string", "description": "status|describe|run|invoke|agent_task|camera_snap|camera_clip|screen_record|screen_snapshot|location_get|canvas_snapshot|canvas_action"},
+		"node":        map[string]interface{}{"type": "string", "description": "target node id"},
+		"mode":        map[string]interface{}{"type": "string", "description": "auto|p2p|relay (default auto)"},
+		"args":        map[string]interface{}{"type": "object", "description": "action args"},
+		"task":        map[string]interface{}{"type": "string", "description": "agent_task content for child node model"},
+		"model":       map[string]interface{}{"type": "string", "description": "optional model for agent_task"},
+		"command":     map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "run command array shortcut"},
+		"facing":      map[string]interface{}{"type": "string", "description": "camera facing: front|back|both"},
 		"duration_ms": map[string]interface{}{"type": "integer", "description": "clip/record duration"},
 	}, "required": []string{"action"}}
 }
@@ -143,6 +143,12 @@ func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode stri
 		"code":        resp.Code,
 		"error":       resp.Error,
 		"duration_ms": durationMs,
+	}
+	if used, _ := resp.Payload["used_transport"].(string); strings.TrimSpace(used) != "" {
+		row["used_transport"] = strings.TrimSpace(used)
+	}
+	if fallback, _ := resp.Payload["fallback_from"].(string); strings.TrimSpace(fallback) != "" {
+		row["fallback_from"] = strings.TrimSpace(fallback)
 	}
 	b, _ := json.Marshal(row)
 	f, err := os.OpenFile(t.auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)

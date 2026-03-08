@@ -133,11 +133,25 @@ func gatewayCmd() {
 		if loop == nil || server == nil || runtimeCfg == nil {
 			return
 		}
+		server.SetNodeP2PStatusHandler(func() map[string]interface{} {
+			return map[string]interface{}{
+				"enabled":         runtimeCfg.Gateway.Nodes.P2P.Enabled,
+				"transport":       strings.TrimSpace(runtimeCfg.Gateway.Nodes.P2P.Transport),
+				"configured_stun": append([]string(nil), runtimeCfg.Gateway.Nodes.P2P.STUNServers...),
+			}
+		})
 		switch {
 		case runtimeCfg.Gateway.Nodes.P2P.Enabled && strings.EqualFold(strings.TrimSpace(runtimeCfg.Gateway.Nodes.P2P.Transport), "webrtc"):
 			webrtcTransport := nodes.NewWebRTCTransport(runtimeCfg.Gateway.Nodes.P2P.STUNServers)
 			loop.SetNodeP2PTransport(webrtcTransport)
 			server.SetNodeWebRTCTransport(webrtcTransport)
+			server.SetNodeP2PStatusHandler(func() map[string]interface{} {
+				snapshot := webrtcTransport.Snapshot()
+				snapshot["enabled"] = true
+				snapshot["transport"] = "webrtc"
+				snapshot["configured_stun"] = append([]string(nil), runtimeCfg.Gateway.Nodes.P2P.STUNServers...)
+				return snapshot
+			})
 		default:
 			server.SetNodeWebRTCTransport(nil)
 		}

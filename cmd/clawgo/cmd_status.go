@@ -163,10 +163,17 @@ func statusCmd() {
 			}
 			fmt.Printf("Nodes: total=%d online=%d\n", len(ns), online)
 			fmt.Printf("Nodes Capabilities: run=%d model=%d camera=%d screen=%d location=%d canvas=%d\n", caps["run"], caps["model"], caps["camera"], caps["screen"], caps["location"], caps["canvas"])
-			if total, okCnt, avgMs, actionTop, err := collectNodeDispatchStats(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")); err == nil && total > 0 {
+			fmt.Printf("Nodes P2P: enabled=%t transport=%s\n", cfg.Gateway.Nodes.P2P.Enabled, strings.TrimSpace(cfg.Gateway.Nodes.P2P.Transport))
+			if total, okCnt, avgMs, actionTop, transportTop, fallbackCnt, err := collectNodeDispatchStats(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")); err == nil && total > 0 {
 				fmt.Printf("Nodes Dispatch: total=%d ok=%d fail=%d avg_ms=%d\n", total, okCnt, total-okCnt, avgMs)
 				if actionTop != "" {
 					fmt.Printf("Nodes Dispatch Top Action: %s\n", actionTop)
+				}
+				if transportTop != "" {
+					fmt.Printf("Nodes Dispatch Top Transport: %s\n", transportTop)
+				}
+				if fallbackCnt > 0 {
+					fmt.Printf("Nodes Dispatch Fallbacks: %d\n", fallbackCnt)
 				}
 			}
 		}
@@ -261,23 +268,26 @@ func collectTriggerErrorCounts(path string) (map[string]int, error) {
 	return counts, nil
 }
 
-func collectNodeDispatchStats(path string) (int, int, int, string, error) {
+func collectNodeDispatchStats(path string) (int, int, int, string, string, int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, 0, 0, "", err
+		return 0, 0, 0, "", "", 0, err
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	total, okCnt, msSum := 0, 0, 0
+	total, okCnt, msSum, fallbackCnt := 0, 0, 0, 0
 	actionCnt := map[string]int{}
+	transportCnt := map[string]int{}
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		var row struct {
-			Action     string `json:"action"`
-			OK         bool   `json:"ok"`
-			DurationMS int    `json:"duration_ms"`
+			Action        string `json:"action"`
+			UsedTransport string `json:"used_transport"`
+			FallbackFrom  string `json:"fallback_from"`
+			OK            bool   `json:"ok"`
+			DurationMS    int    `json:"duration_ms"`
 		}
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
 			continue
@@ -294,6 +304,13 @@ func collectNodeDispatchStats(path string) (int, int, int, string, error) {
 			a = "unknown"
 		}
 		actionCnt[a]++
+		used := strings.TrimSpace(strings.ToLower(row.UsedTransport))
+		if used != "" {
+			transportCnt[used]++
+		}
+		if strings.TrimSpace(row.FallbackFrom) != "" {
+			fallbackCnt++
+		}
 	}
 	avg := 0
 	if total > 0 {
@@ -310,7 +327,18 @@ func collectNodeDispatchStats(path string) (int, int, int, string, error) {
 	if topAction != "" {
 		topAction = fmt.Sprintf("%s(%d)", topAction, topN)
 	}
-	return total, okCnt, avg, topAction, nil
+	topTransport := ""
+	topTN := 0
+	for k, v := range transportCnt {
+		if v > topTN {
+			topTN = v
+			topTransport = k
+		}
+	}
+	if topTransport != "" {
+		topTransport = fmt.Sprintf("%s(%d)", topTransport, topTN)
+	}
+	return total, okCnt, avg, topAction, topTransport, fallbackCnt, nil
 }
 
 func collectSkillExecStats(path string) (int, int, int, float64, string, error) {

@@ -33,23 +33,42 @@ func (r *Router) Dispatch(ctx context.Context, req Request, mode string) (Respon
 		if r.P2P == nil {
 			return Response{OK: false, Node: req.Node, Action: req.Action, Error: "p2p transport unavailable"}, nil
 		}
-		return r.P2P.Send(ctx, req)
+		resp, err := r.P2P.Send(ctx, req)
+		return annotateTransport(resp, "p2p", r.P2P.Name(), ""), err
 	case "relay":
 		if r.Relay == nil {
 			return Response{OK: false, Node: req.Node, Action: req.Action, Error: "relay transport unavailable"}, nil
 		}
-		return r.Relay.Send(ctx, req)
+		resp, err := r.Relay.Send(ctx, req)
+		return annotateTransport(resp, "relay", r.Relay.Name(), ""), err
 	default: // auto
 		if r.P2P != nil {
 			if resp, err := r.P2P.Send(ctx, req); err == nil && resp.OK {
-				return resp, nil
+				return annotateTransport(resp, "auto", r.P2P.Name(), ""), nil
 			}
 		}
 		if r.Relay != nil {
-			return r.Relay.Send(ctx, req)
+			resp, err := r.Relay.Send(ctx, req)
+			return annotateTransport(resp, "auto", r.Relay.Name(), "p2p"), err
 		}
 		return Response{}, fmt.Errorf("no transport available")
 	}
+}
+
+func annotateTransport(resp Response, mode, usedTransport, fallbackFrom string) Response {
+	if resp.Payload == nil {
+		resp.Payload = map[string]interface{}{}
+	}
+	if strings.TrimSpace(mode) != "" {
+		resp.Payload["dispatch_mode"] = strings.TrimSpace(mode)
+	}
+	if strings.TrimSpace(usedTransport) != "" {
+		resp.Payload["used_transport"] = strings.TrimSpace(usedTransport)
+	}
+	if strings.TrimSpace(fallbackFrom) != "" {
+		resp.Payload["fallback_from"] = strings.TrimSpace(fallbackFrom)
+	}
+	return resp
 }
 
 // WebsocketP2PTransport uses the persistent node websocket as a request/response tunnel

@@ -41,6 +41,7 @@ type Server struct {
 	nodeConnIDs    map[string]string
 	nodeSockets    map[string]*nodeSocketConn
 	nodeWebRTC     *nodes.WebRTCTransport
+	nodeP2PStatus  func() map[string]interface{}
 	gatewayVersion string
 	webuiVersion   string
 	configPath     string
@@ -119,6 +120,9 @@ func (s *Server) SetGatewayVersion(v string)                   { s.gatewayVersio
 func (s *Server) SetWebUIVersion(v string)                     { s.webuiVersion = strings.TrimSpace(v) }
 func (s *Server) SetNodeWebRTCTransport(t *nodes.WebRTCTransport) {
 	s.nodeWebRTC = t
+}
+func (s *Server) SetNodeP2PStatusHandler(fn func() map[string]interface{}) {
+	s.nodeP2PStatus = fn
 }
 
 func (s *Server) rememberNodeConnection(nodeID, connID string) {
@@ -1066,9 +1070,14 @@ func (s *Server) webUINodesPayload(ctx context.Context) map[string]interface{} {
 	if !matched {
 		list = append([]nodes.NodeInfo{local}, list...)
 	}
+	p2p := map[string]interface{}{}
+	if s.nodeP2PStatus != nil {
+		p2p = s.nodeP2PStatus()
+	}
 	return map[string]interface{}{
 		"nodes": list,
 		"trees": s.buildNodeAgentTrees(ctx, list),
+		"p2p":   p2p,
 	}
 }
 
@@ -1548,7 +1557,11 @@ func (s *Server) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
 			list = append([]nodes.NodeInfo{local}, list...)
 		}
 		trees := s.buildNodeAgentTrees(r.Context(), list)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list, "trees": trees})
+		p2p := map[string]interface{}{}
+		if s.nodeP2PStatus != nil {
+			p2p = s.nodeP2PStatus()
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "nodes": list, "trees": trees, "p2p": p2p})
 	case http.MethodPost:
 		var body struct {
 			Action string `json:"action"`

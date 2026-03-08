@@ -14,6 +14,7 @@ const Dashboard: React.FC = () => {
     webuiVersion,
     skills,
     cfg,
+    nodeP2P,
     taskQueueItems,
     ekgSummary,
   } = useAppContext();
@@ -36,6 +37,9 @@ const Dashboard: React.FC = () => {
   const ekgEscalationCount = Number(ekgSummary?.escalation_count || 0);
   const ekgTopProvider = (Array.isArray(ekgSummary?.provider_top_workload) ? ekgSummary.provider_top_workload[0]?.key : '') || '-';
   const ekgTopErrSig = (Array.isArray(ekgSummary?.errsig_top_workload) ? ekgSummary.errsig_top_workload[0]?.key : '') || '-';
+  const p2pEnabled = Boolean(nodeP2P?.enabled);
+  const p2pTransport = String(nodeP2P?.transport || (p2pEnabled ? 'enabled' : 'disabled'));
+  const p2pSessions = Number(nodeP2P?.active_sessions || 0);
 
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
@@ -53,12 +57,13 @@ const Dashboard: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
         <StatCard title={t('gatewayStatus')} value={isGatewayOnline ? t('online') : t('offline')} icon={<Activity className={`w-6 h-6 ${isGatewayOnline ? 'text-emerald-400' : 'text-red-400'}`} />} />
         <StatCard title={t('activeSessions')} value={sessions.length} icon={<MessageSquare className="w-6 h-6 text-blue-400" />} />
         <StatCard title={t('skills')} value={skills.length} icon={<Sparkles className="w-6 h-6 text-pink-400" />} />
         <StatCard title={t('subagentsRuntime')} value={subagentCount} icon={<Wrench className="w-6 h-6 text-cyan-400" />} />
         <StatCard title={t('taskAudit')} value={recentTasks.length} icon={<Activity className="w-6 h-6 text-amber-400" />} />
+        <StatCard title={t('nodeP2P')} value={p2pEnabled ? `${p2pSessions} · ${p2pTransport}` : t('disabled')} icon={<Workflow className="w-6 h-6 text-violet-400" />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -71,6 +71,29 @@ func NewWebRTCTransport(stunServers []string) *WebRTCTransport {
 
 func (t *WebRTCTransport) Name() string { return "p2p-webrtc" }
 
+func (t *WebRTCTransport) Snapshot() map[string]interface{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	nodes := make([]map[string]interface{}, 0, len(t.sessions))
+	active := 0
+	for nodeID, session := range t.sessions {
+		status := "connecting"
+		if session != nil && session.dc != nil && session.dc.ReadyState() == webrtc.DataChannelStateOpen {
+			status = "open"
+			active++
+		}
+		nodes = append(nodes, map[string]interface{}{
+			"node":   nodeID,
+			"status": status,
+		})
+	}
+	return map[string]interface{}{
+		"transport":       "webrtc",
+		"active_sessions": active,
+		"nodes":           nodes,
+	}
+}
+
 func (t *WebRTCTransport) BindSignaler(nodeID string, sender WireSender) {
 	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" {
