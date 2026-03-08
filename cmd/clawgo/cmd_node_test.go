@@ -386,3 +386,99 @@ func TestExecuteNodeRequestRunsLocalScreenSnapshot(t *testing.T) {
 		t.Fatalf("unexpected artifact: %+v", artifacts[0])
 	}
 }
+
+func TestExecuteNodeRequestRunsLocalCameraClip(t *testing.T) {
+	prevCfg := globalConfigPathOverride
+	prevExecutors := nodeLocalExecutors
+	prevClip := nodeCameraClipFunc
+	globalConfigPathOverride = filepath.Join(t.TempDir(), "config.json")
+	nodeLocalExecutors = map[string]*nodeLocalExecutor{}
+	defer func() {
+		globalConfigPathOverride = prevCfg
+		nodeLocalExecutors = prevExecutors
+		nodeCameraClipFunc = prevClip
+	}()
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
+	if err := config.SaveConfig(globalConfigPathOverride, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	nodeCameraClipFunc = func(ctx context.Context, workspace string, args map[string]interface{}) (string, error) {
+		out := filepath.Join(workspace, "artifacts", "node", "camera-test.mp4")
+		if err := os.MkdirAll(filepath.Dir(out), 0755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(out, []byte("video-bytes"), 0644); err != nil {
+			return "", err
+		}
+		return out, nil
+	}
+
+	info := nodes.NodeInfo{ID: "edge-clip", Name: "Edge Clip"}
+	resp := executeNodeRequest(context.Background(), &http.Client{Timeout: time.Second}, info, nodeRegisterOptions{}, &nodes.Request{
+		Action: "camera_clip",
+		Args:   map[string]interface{}{"duration_ms": 2500},
+	})
+	if !resp.OK {
+		t.Fatalf("expected ok response, got %+v", resp)
+	}
+	if got, _ := resp.Payload["duration_ms"].(int); got != 2500 {
+		t.Fatalf("unexpected duration payload: %+v", resp.Payload)
+	}
+	artifacts, ok := resp.Payload["artifacts"].([]map[string]interface{})
+	if !ok || len(artifacts) != 1 {
+		t.Fatalf("expected one artifact, got %+v", resp.Payload["artifacts"])
+	}
+	if artifacts[0]["name"] != "camera-test.mp4" {
+		t.Fatalf("unexpected artifact: %+v", artifacts[0])
+	}
+}
+
+func TestExecuteNodeRequestRunsLocalScreenRecord(t *testing.T) {
+	prevCfg := globalConfigPathOverride
+	prevExecutors := nodeLocalExecutors
+	prevRecord := nodeScreenRecordFunc
+	globalConfigPathOverride = filepath.Join(t.TempDir(), "config.json")
+	nodeLocalExecutors = map[string]*nodeLocalExecutor{}
+	defer func() {
+		globalConfigPathOverride = prevCfg
+		nodeLocalExecutors = prevExecutors
+		nodeScreenRecordFunc = prevRecord
+	}()
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
+	if err := config.SaveConfig(globalConfigPathOverride, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	nodeScreenRecordFunc = func(ctx context.Context, workspace string, args map[string]interface{}) (string, error) {
+		out := filepath.Join(workspace, "artifacts", "node", "screen-test.mp4")
+		if err := os.MkdirAll(filepath.Dir(out), 0755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(out, []byte("screen-video"), 0644); err != nil {
+			return "", err
+		}
+		return out, nil
+	}
+
+	info := nodes.NodeInfo{ID: "edge-record", Name: "Edge Record"}
+	resp := executeNodeRequest(context.Background(), &http.Client{Timeout: time.Second}, info, nodeRegisterOptions{}, &nodes.Request{
+		Action: "screen_record",
+		Args:   map[string]interface{}{"duration_ms": 1800},
+	})
+	if !resp.OK {
+		t.Fatalf("expected ok response, got %+v", resp)
+	}
+	if got, _ := resp.Payload["duration_ms"].(int); got != 1800 {
+		t.Fatalf("unexpected duration payload: %+v", resp.Payload)
+	}
+	artifacts, ok := resp.Payload["artifacts"].([]map[string]interface{})
+	if !ok || len(artifacts) != 1 {
+		t.Fatalf("expected one artifact, got %+v", resp.Payload["artifacts"])
+	}
+	if artifacts[0]["name"] != "screen-test.mp4" {
+		t.Fatalf("unexpected artifact: %+v", artifacts[0])
+	}
+}

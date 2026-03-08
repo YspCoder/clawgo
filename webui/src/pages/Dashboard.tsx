@@ -12,6 +12,21 @@ function formatRuntimeTime(value: unknown) {
   return new Date(ts).toLocaleString();
 }
 
+function dataUrlForArtifact(artifact: any) {
+  const mime = String(artifact?.mime_type || '').trim() || 'application/octet-stream';
+  const content = String(artifact?.content_base64 || '').trim();
+  if (!content) return '';
+  return `data:${mime};base64,${content}`;
+}
+
+function formatBytes(value: unknown) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return '-';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 const Dashboard: React.FC = () => {
   const { t } = useTranslation();
   const {
@@ -81,6 +96,7 @@ const Dashboard: React.FC = () => {
         durationMs: Number(item?.duration_ms || 0),
         artifactCount: Number(item?.artifact_count || 0),
         artifactKinds: Array.isArray(item?.artifact_kinds) ? item.artifact_kinds.map((kind: any) => String(kind || '').trim()).filter(Boolean) : [],
+        artifacts: Array.isArray(item?.artifacts) ? item.artifacts : [],
         ok: Boolean(item?.ok),
         error: String(item?.error || '').trim(),
       }));
@@ -302,6 +318,45 @@ const Dashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
+                {item.artifacts.length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    <div className="text-zinc-400 text-xs">{t('dashboardNodeDispatchArtifactPreview')}</div>
+                    {item.artifacts.slice(0, 2).map((artifact: any, artifactIndex: number) => {
+                      const kind = String(artifact?.kind || '').trim().toLowerCase();
+                      const mime = String(artifact?.mime_type || '').trim().toLowerCase();
+                      const isImage = kind === 'image' || mime.startsWith('image/');
+                      const isVideo = kind === 'video' || mime.startsWith('video/');
+                      const dataUrl = dataUrlForArtifact(artifact);
+                      return (
+                        <div key={`${item.id}-artifact-${artifactIndex}`} className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3">
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <div className="min-w-0">
+                              <div className="text-xs font-medium text-zinc-200 truncate">{String(artifact?.name || artifact?.source_path || `artifact-${artifactIndex + 1}`)}</div>
+                              <div className="text-[11px] text-zinc-500 truncate">
+                                {[artifact?.kind, artifact?.mime_type, formatBytes(artifact?.size_bytes)].filter(Boolean).join(' · ')}
+                              </div>
+                            </div>
+                            <div className="text-[11px] text-zinc-500">{String(artifact?.storage || '-')}</div>
+                          </div>
+                          {isImage && dataUrl && (
+                            <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="max-h-48 rounded-xl border border-zinc-800 object-contain bg-black/30" />
+                          )}
+                          {isVideo && dataUrl && (
+                            <video src={dataUrl} controls className="max-h-48 w-full rounded-xl border border-zinc-800 bg-black/30" />
+                          )}
+                          {!isImage && !isVideo && String(artifact?.content_text || '').trim() !== '' && (
+                            <pre className="rounded-xl border border-zinc-800 bg-black/20 p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
+                          )}
+                          {!isImage && !isVideo && String(artifact?.content_text || '').trim() === '' && (
+                            <div className="text-[11px] text-zinc-500 break-all">
+                              {String(artifact?.source_path || artifact?.path || artifact?.url || '-')}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -438,7 +438,7 @@ func TestHandleWebUINodesIncludesP2PSummary(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(workspace, "memory"), 0755); err != nil {
 		t.Fatalf("mkdir memory: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), []byte("{\"node\":\"edge-b\",\"used_transport\":\"webrtc\",\"fallback_from\":\"\",\"duration_ms\":12}\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), []byte("{\"node\":\"edge-b\",\"used_transport\":\"webrtc\",\"fallback_from\":\"\",\"duration_ms\":12,\"artifacts\":[{\"name\":\"snap.png\",\"kind\":\"image\",\"mime_type\":\"image/png\",\"storage\":\"inline\",\"content_base64\":\"iVBORw0KGgo=\"}]}\n"), 0644); err != nil {
 		t.Fatalf("write audit: %v", err)
 	}
 	srv.SetNodeP2PStatusHandler(func() map[string]interface{} {
@@ -466,5 +466,10 @@ func TestHandleWebUINodesIncludesP2PSummary(t *testing.T) {
 	dispatches, _ := body["dispatches"].([]interface{})
 	if len(dispatches) != 1 {
 		t.Fatalf("expected dispatch audit rows, got %+v", body["dispatches"])
+	}
+	first, _ := dispatches[0].(map[string]interface{})
+	artifacts, _ := first["artifacts"].([]interface{})
+	if len(artifacts) != 1 {
+		t.Fatalf("expected artifact previews in dispatch row, got %+v", first)
 	}
 }

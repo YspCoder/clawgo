@@ -19,6 +19,8 @@ type NodesTool struct {
 	auditPath string
 }
 
+const nodeAuditArtifactPreviewLimit = 32768
+
 func NewNodesTool(m *nodes.Manager, r *nodes.Router, auditPath string) *NodesTool {
 	return &NodesTool{manager: m, router: r, auditPath: strings.TrimSpace(auditPath)}
 }
@@ -159,6 +161,9 @@ func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode stri
 		if len(kinds) > 0 {
 			row["artifact_kinds"] = kinds
 		}
+		if previews := artifactAuditPreviews(resp.Payload["artifacts"]); len(previews) > 0 {
+			row["artifacts"] = previews
+		}
 	}
 	b, _ := json.Marshal(row)
 	f, err := os.OpenFile(t.auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -193,4 +198,57 @@ func artifactAuditSummary(raw interface{}) (int, []string) {
 		}
 	}
 	return len(items), kinds
+}
+
+func artifactAuditPreviews(raw interface{}) []map[string]interface{} {
+	items, ok := raw.([]interface{})
+	if !ok {
+		if typed, ok := raw.([]map[string]interface{}); ok {
+			items = make([]interface{}, 0, len(typed))
+			for _, item := range typed {
+				items = append(items, item)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		row, ok := item.(map[string]interface{})
+		if !ok || len(row) == 0 {
+			continue
+		}
+		entry := map[string]interface{}{}
+		for _, key := range []string{"name", "kind", "mime_type", "storage", "path", "url", "source_path"} {
+			if value, ok := row[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
+				entry[key] = value
+			}
+		}
+		if size, ok := row["size_bytes"]; ok {
+			entry["size_bytes"] = size
+		}
+		if text, _ := row["content_text"].(string); strings.TrimSpace(text) != "" {
+			entry["content_text"] = trimAuditContent(text)
+		}
+		if b64, _ := row["content_base64"].(string); strings.TrimSpace(b64) != "" {
+			entry["content_base64"] = trimAuditContent(b64)
+			entry["content_base64_truncated"] = len(b64) > nodeAuditArtifactPreviewLimit
+		}
+		if truncated, ok := row["truncated"].(bool); ok && truncated {
+			entry["truncated"] = true
+		}
+		if len(entry) > 0 {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+func trimAuditContent(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) <= nodeAuditArtifactPreviewLimit {
+		return raw
+	}
+	return raw[:nodeAuditArtifactPreviewLimit]
 }

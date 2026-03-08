@@ -81,7 +81,9 @@ var (
 	nodeAgentLoopFactory     = agent.NewAgentLoop
 	nodeLocalExecutorFactory = newNodeLocalExecutor
 	nodeCameraSnapFunc       = captureNodeCameraSnapshot
+	nodeCameraClipFunc       = captureNodeCameraClip
 	nodeScreenSnapFunc       = captureNodeScreenSnapshot
+	nodeScreenRecordFunc     = captureNodeScreenRecord
 )
 
 const nodeArtifactInlineLimit = 512 * 1024
@@ -742,6 +744,26 @@ func executeNodeRequest(ctx context.Context, client *http.Client, info nodes.Nod
 			resp.Code = "local_runtime_error"
 			return resp
 		}
+	case "camera_clip":
+		execResp, err := executeNodeCameraClip(ctx, info, next)
+		if err == nil {
+			return execResp
+		}
+		if strings.TrimSpace(opts.Endpoint) == "" {
+			resp.Error = err.Error()
+			resp.Code = "local_runtime_error"
+			return resp
+		}
+	case "screen_record":
+		execResp, err := executeNodeScreenRecord(ctx, info, next)
+		if err == nil {
+			return execResp
+		}
+		if strings.TrimSpace(opts.Endpoint) == "" {
+			resp.Error = err.Error()
+			resp.Code = "local_runtime_error"
+			return resp
+		}
 	}
 	if strings.TrimSpace(opts.Endpoint) == "" {
 		resp.Error = "node endpoint not configured"
@@ -890,6 +912,67 @@ func executeNodeScreenSnapshot(ctx context.Context, info nodes.NodeInfo, req nod
 			"media_type": "image",
 			"storage":    artifact["storage"],
 			"artifacts":  []map[string]interface{}{artifact},
+		},
+	}, nil
+}
+
+func executeNodeCameraClip(ctx context.Context, info nodes.NodeInfo, req nodes.Request) (nodes.Response, error) {
+	executor, err := getNodeLocalExecutor()
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	durationMs := durationArg(req.Args, "duration_ms", 3000)
+	outputPath, err := nodeCameraClipFunc(ctx, executor.workspace, req.Args)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	artifact, err := buildNodeArtifact(executor.workspace, outputPath)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	return nodes.Response{
+		OK:     true,
+		Code:   "ok",
+		Node:   info.ID,
+		Action: req.Action,
+		Payload: map[string]interface{}{
+			"transport":   "clawgo-local",
+			"media_type":  "video",
+			"storage":     artifact["storage"],
+			"duration_ms": durationMs,
+			"artifacts":   []map[string]interface{}{artifact},
+			"meta": map[string]interface{}{
+				"facing": stringArg(req.Args, "facing"),
+			},
+		},
+	}, nil
+}
+
+func executeNodeScreenRecord(ctx context.Context, info nodes.NodeInfo, req nodes.Request) (nodes.Response, error) {
+	executor, err := getNodeLocalExecutor()
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	durationMs := durationArg(req.Args, "duration_ms", 3000)
+	outputPath, err := nodeScreenRecordFunc(ctx, executor.workspace, req.Args)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	artifact, err := buildNodeArtifact(executor.workspace, outputPath)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	return nodes.Response{
+		OK:     true,
+		Code:   "ok",
+		Node:   info.ID,
+		Action: req.Action,
+		Payload: map[string]interface{}{
+			"transport":   "clawgo-local",
+			"media_type":  "video",
+			"storage":     artifact["storage"],
+			"duration_ms": durationMs,
+			"artifacts":   []map[string]interface{}{artifact},
 		},
 	}, nil
 }
@@ -1176,6 +1259,83 @@ func captureNodeScreenSnapshot(ctx context.Context, workspace string, args map[s
 	}
 }
 
+func captureNodeCameraClip(ctx context.Context, workspace string, args map[string]interface{}) (string, error) {
+	outputPath, err := nodeMediaOutputPath(workspace, "camera", ".mp4", stringArg(args, "filename"))
+	if err != nil {
+		return "", err
+	}
+	durationSec := fmt.Sprintf("%.3f", float64(durationArg(args, "duration_ms", 3000))/1000.0)
+	switch runtime.GOOS {
+	case "linux":
+		if _, err := os.Stat("/dev/video0"); err != nil {
+			return "", fmt.Errorf("camera device /dev/video0 not found")
+		}
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return "", fmt.Errorf("ffmpeg not installed")
+		}
+		cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-f", "video4linux2", "-t", durationSec, "-i", "/dev/video0", "-pix_fmt", "yuv420p", outputPath)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("camera clip failed: %v, output=%s", err, strings.TrimSpace(string(out)))
+		}
+		return outputPath, nil
+	case "darwin":
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
+			return "", fmt.Errorf("ffmpeg not installed")
+		}
+		cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-f", "avfoundation", "-t", durationSec, "-i", "0:none", "-pix_fmt", "yuv420p", outputPath)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("camera clip failed: %v, output=%s", err, strings.TrimSpace(string(out)))
+		}
+		return outputPath, nil
+	default:
+		return "", fmt.Errorf("camera_clip not supported on %s", runtime.GOOS)
+	}
+}
+
+func captureNodeScreenRecord(ctx context.Context, workspace string, args map[string]interface{}) (string, error) {
+	outputPath, err := nodeMediaOutputPath(workspace, "screen", ".mp4", stringArg(args, "filename"))
+	if err != nil {
+		return "", err
+	}
+	durationMs := durationArg(args, "duration_ms", 3000)
+	durationSec := fmt.Sprintf("%.3f", float64(durationMs)/1000.0)
+	durationWholeSec := strconv.Itoa((durationMs + 999) / 1000)
+	switch runtime.GOOS {
+	case "darwin":
+		if _, err := exec.LookPath("ffmpeg"); err == nil {
+			cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-f", "avfoundation", "-t", durationSec, "-i", "1:none", "-pix_fmt", "yuv420p", outputPath)
+			if out, err := cmd.CombinedOutput(); err == nil {
+				return outputPath, nil
+			} else if strings.TrimSpace(string(out)) != "" {
+				return "", fmt.Errorf("screen record failed: %v, output=%s", err, strings.TrimSpace(string(out)))
+			}
+		}
+		return "", fmt.Errorf("ffmpeg not installed")
+	case "linux":
+		candidates := [][]string{
+			{"ffmpeg", "-y", "-f", "x11grab", "-t", durationSec, "-i", os.Getenv("DISPLAY"), "-pix_fmt", "yuv420p", outputPath},
+			{"wf-recorder", "-f", outputPath, "-d", durationWholeSec},
+		}
+		for _, candidate := range candidates {
+			if candidate[0] == "ffmpeg" && strings.TrimSpace(os.Getenv("DISPLAY")) == "" {
+				continue
+			}
+			if _, err := exec.LookPath(candidate[0]); err != nil {
+				continue
+			}
+			cmd := exec.CommandContext(ctx, candidate[0], candidate[1:]...)
+			if out, err := cmd.CombinedOutput(); err == nil {
+				return outputPath, nil
+			} else if strings.TrimSpace(string(out)) != "" && candidate[0] == "ffmpeg" {
+				continue
+			}
+		}
+		return "", fmt.Errorf("no supported screen recorder found (ffmpeg x11grab or wf-recorder)")
+	default:
+		return "", fmt.Errorf("screen_record not supported on %s", runtime.GOOS)
+	}
+}
+
 func nodeMediaOutputPath(workspace, kind, ext, requested string) (string, error) {
 	root := strings.TrimSpace(workspace)
 	if root == "" {
@@ -1203,6 +1363,31 @@ func nodeMediaOutputPath(workspace, kind, ext, requested string) (string, error)
 		return "", err
 	}
 	return fullPath, nil
+}
+
+func durationArg(args map[string]interface{}, key string, fallback int) int {
+	if len(args) == 0 {
+		return fallback
+	}
+	switch v := args[key].(type) {
+	case int:
+		if v > 0 {
+			return v
+		}
+	case int64:
+		if v > 0 {
+			return int(v)
+		}
+	case float64:
+		if v > 0 {
+			return int(v)
+		}
+	case json.Number:
+		if n, err := v.Int64(); err == nil && n > 0 {
+			return int(n)
+		}
+	}
+	return fallback
 }
 
 func structToWirePayload(v interface{}) map[string]interface{} {
