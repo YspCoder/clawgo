@@ -119,6 +119,11 @@ func Validate(cfg *Config) []error {
 	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
 		errs = append(errs, fmt.Errorf("gateway.port must be in 1..65535"))
 	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Gateway.Nodes.P2P.Transport)) {
+	case "", "websocket_tunnel", "webrtc":
+	default:
+		errs = append(errs, fmt.Errorf("gateway.nodes.p2p.transport must be one of: websocket_tunnel, webrtc"))
+	}
 	if cfg.Cron.MinSleepSec <= 0 {
 		errs = append(errs, fmt.Errorf("cron.min_sleep_sec must be > 0"))
 	}

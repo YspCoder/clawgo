@@ -128,3 +128,26 @@ func TestValidateSubagentsRejectsInvalidNotifyMainPolicy(t *testing.T) {
 		t.Fatalf("expected validation errors")
 	}
 }
+
+func TestDefaultConfigDisablesGatewayNodeP2P(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	if cfg.Gateway.Nodes.P2P.Enabled {
+		t.Fatalf("expected gateway node p2p to be disabled by default")
+	}
+	if cfg.Gateway.Nodes.P2P.Transport != "websocket_tunnel" {
+		t.Fatalf("unexpected default gateway node p2p transport: %s", cfg.Gateway.Nodes.P2P.Transport)
+	}
+}
+
+func TestValidateRejectsUnknownGatewayNodeP2PTransport(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Gateway.Nodes.P2P.Transport = "udp"
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}

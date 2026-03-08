@@ -275,7 +275,13 @@
   "gateway": {
     "host": "0.0.0.0",
     "port": 18790,
-    "token": ""
+    "token": "",
+    "nodes": {
+      "p2p": {
+        "enabled": false,
+        "transport": "websocket_tunnel"
+      }
+    }
   },
   "cron": {
     "min_sleep_sec": 1,

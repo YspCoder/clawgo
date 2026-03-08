@@ -288,9 +288,19 @@ type ProviderResponsesConfig struct {
 }
 
 type GatewayConfig struct {
-	Host  string `json:"host" env:"CLAWGO_GATEWAY_HOST"`
-	Port  int    `json:"port" env:"CLAWGO_GATEWAY_PORT"`
-	Token string `json:"token" env:"CLAWGO_GATEWAY_TOKEN"`
+	Host  string             `json:"host" env:"CLAWGO_GATEWAY_HOST"`
+	Port  int                `json:"port" env:"CLAWGO_GATEWAY_PORT"`
+	Token string             `json:"token" env:"CLAWGO_GATEWAY_TOKEN"`
+	Nodes GatewayNodesConfig `json:"nodes,omitempty"`
+}
+
+type GatewayNodesConfig struct {
+	P2P GatewayNodesP2PConfig `json:"p2p,omitempty"`
+}
+
+type GatewayNodesP2PConfig struct {
+	Enabled   bool   `json:"enabled"`
+	Transport string `json:"transport,omitempty"`
 }
 
 type CronConfig struct {
@@ -534,6 +544,12 @@ func DefaultConfig() *Config {
 			Host:  "0.0.0.0",
 			Port:  18790,
 			Token: generateGatewayToken(),
+			Nodes: GatewayNodesConfig{
+				P2P: GatewayNodesP2PConfig{
+					Enabled:   false,
+					Transport: "websocket_tunnel",
+				},
+			},
 		},
 		Cron: CronConfig{
 			MinSleepSec:                  1,
