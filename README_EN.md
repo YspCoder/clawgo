@@ -200,6 +200,52 @@ Notes:
 
 See [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json) for a full example.
 
+## Node P2P
+
+The remote node data plane supports:
+
+- `websocket_tunnel`
+- `webrtc`
+
+It remains disabled by default. Node P2P is only enabled when `gateway.nodes.p2p.enabled=true` is set explicitly. In practice, start with `websocket_tunnel`, then switch to `webrtc` after validating connectivity.
+
+For `webrtc`, these two fields matter:
+
+- `stun_servers`
+  - legacy-compatible STUN list
+- `ice_servers`
+  - the preferred structured format
+  - may include `stun:`, `turn:`, and `turns:` URLs
+  - `turn:` / `turns:` entries require both `username` and `credential`
+
+Example:
+
+```json
+{
+  "gateway": {
+    "nodes": {
+      "p2p": {
+        "enabled": true,
+        "transport": "webrtc",
+        "stun_servers": ["stun:stun.l.google.com:19302"],
+        "ice_servers": [
+          {
+            "urls": ["turn:turn.example.com:3478"],
+            "username": "demo",
+            "credential": "secret"
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+Notes:
+
+- when `webrtc` session setup fails, dispatch still falls back to the existing relay / tunnel path
+- Dashboard, `status`, and `/webui/api/nodes` expose the current Node P2P runtime summary
+
 ## MCP Server Support
 
 ClawGo now supports `stdio`, `http`, `streamable_http`, and `sse` MCP servers through `tools.mcp`.

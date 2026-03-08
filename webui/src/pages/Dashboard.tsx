@@ -40,6 +40,11 @@ const Dashboard: React.FC = () => {
   const p2pEnabled = Boolean(nodeP2P?.enabled);
   const p2pTransport = String(nodeP2P?.transport || (p2pEnabled ? 'enabled' : 'disabled'));
   const p2pSessions = Number(nodeP2P?.active_sessions || 0);
+  const p2pConfiguredStun = Array.isArray(nodeP2P?.configured_stun) ? nodeP2P.configured_stun.length : 0;
+  const p2pConfiguredIce = Number(nodeP2P?.configured_ice || nodeP2P?.ice_servers || 0);
+  const p2pRetryCount = Array.isArray(nodeP2P?.nodes)
+    ? nodeP2P.nodes.reduce((sum: number, session: any) => sum + Number(session?.retry_count || 0), 0)
+    : 0;
 
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
@@ -78,10 +83,14 @@ const Dashboard: React.FC = () => {
         <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
           <div className="flex items-center gap-2 text-zinc-200 mb-2">
             <Workflow className="w-4 h-4 text-sky-400" />
-            <div className="text-sm font-medium">{t('ekgTopProvidersWorkload')}</div>
+            <div className="text-sm font-medium">{t('nodeP2P')}</div>
           </div>
-          <div className="text-2xl font-semibold text-zinc-100 truncate">{ekgTopProvider}</div>
-          <div className="mt-2 text-xs text-zinc-500">{t('dashboardWorkloadSnapshot')}</div>
+          <div className="text-2xl font-semibold text-zinc-100 truncate">
+            {p2pEnabled ? `${p2pConfiguredIce} ICE · ${p2pConfiguredStun} STUN` : t('disabled')}
+          </div>
+          <div className="mt-2 text-xs text-zinc-500">
+            {t('dashboardNodeP2PDetail', { transport: p2pTransport, sessions: p2pSessions, retries: p2pRetryCount })}
+          </div>
         </div>
         <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
           <div className="flex items-center gap-2 text-zinc-200 mb-2">
@@ -120,19 +129,22 @@ const Dashboard: React.FC = () => {
 
         <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6 min-h-[340px] h-full">
           <div className="flex items-center gap-2 mb-5 text-zinc-200">
-            <AlertTriangle className="w-5 h-5 text-zinc-400" />
-            <h2 className="text-lg font-medium">{t('statusError')}</h2>
+            <Workflow className="w-5 h-5 text-zinc-400" />
+            <h2 className="text-lg font-medium">{t('nodeP2P')}</h2>
           </div>
           <div className="space-y-3">
-            {recentFailures.length === 0 ? (
-              <div className="text-sm text-zinc-500 text-center py-10">-</div>
-            ) : recentFailures.map((task: any, index: number) => (
-              <div key={`${task.task_id || 'failed'}-${index}`} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
-                <div className="text-sm font-medium text-zinc-200 truncate">{task.task_id || `task-${index + 1}`}</div>
-                <div className="text-xs text-zinc-500 truncate mt-1">{task.source || '-'} · {task.channel || '-'}</div>
-                <div className="text-xs text-rose-300 mt-2 break-all">{task.error || task.block_reason || '-'}</div>
-              </div>
-            ))}
+            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+              <div className="text-sm font-medium text-zinc-200">{t('dashboardNodeP2PTransport')}</div>
+              <div className="text-xs text-zinc-500 mt-1">{p2pTransport}</div>
+            </div>
+            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+              <div className="text-sm font-medium text-zinc-200">{t('dashboardNodeP2PIce')}</div>
+              <div className="text-xs text-zinc-500 mt-1">{`${p2pConfiguredIce} ICE · ${p2pConfiguredStun} STUN`}</div>
+            </div>
+            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+              <div className="text-sm font-medium text-zinc-200">{t('dashboardNodeP2PHealth')}</div>
+              <div className="text-xs text-zinc-500 mt-1">{t('dashboardNodeP2PDetail', { transport: p2pTransport, sessions: p2pSessions, retries: p2pRetryCount })}</div>
+            </div>
           </div>
         </div>
       </div>

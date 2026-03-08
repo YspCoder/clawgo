@@ -151,3 +151,29 @@ func TestValidateRejectsUnknownGatewayNodeP2PTransport(t *testing.T) {
 		t.Fatalf("expected validation errors")
 	}
 }
+
+func TestValidateGatewayNodeP2PIceServersAllowsStunOnly(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Gateway.Nodes.P2P.ICEServers = []GatewayICEConfig{
+		{URLs: []string{"stun:stun.l.google.com:19302"}},
+	}
+
+	if errs := Validate(cfg); len(errs) != 0 {
+		t.Fatalf("expected config to be valid, got %v", errs)
+	}
+}
+
+func TestValidateGatewayNodeP2PIceServersRequireTurnCredentials(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Gateway.Nodes.P2P.ICEServers = []GatewayICEConfig{
+		{URLs: []string{"turn:turn.example.com:3478?transport=udp"}},
+	}
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}

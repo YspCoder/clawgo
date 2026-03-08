@@ -125,6 +125,26 @@ func Validate(cfg *Config) []error {
 		errs = append(errs, fmt.Errorf("gateway.nodes.p2p.transport must be one of: websocket_tunnel, webrtc"))
 	}
 	errs = append(errs, validateNonEmptyStringList("gateway.nodes.p2p.stun_servers", cfg.Gateway.Nodes.P2P.STUNServers)...)
+	for i, server := range cfg.Gateway.Nodes.P2P.ICEServers {
+		prefix := fmt.Sprintf("gateway.nodes.p2p.ice_servers[%d]", i)
+		errs = append(errs, validateNonEmptyStringList(prefix+".urls", server.URLs)...)
+		needsAuth := false
+		for _, raw := range server.URLs {
+			u := strings.ToLower(strings.TrimSpace(raw))
+			if strings.HasPrefix(u, "turn:") || strings.HasPrefix(u, "turns:") {
+				needsAuth = true
+				break
+			}
+		}
+		if needsAuth {
+			if strings.TrimSpace(server.Username) == "" {
+				errs = append(errs, fmt.Errorf("%s.username is required for turn/turns urls", prefix))
+			}
+			if strings.TrimSpace(server.Credential) == "" {
+				errs = append(errs, fmt.Errorf("%s.credential is required for turn/turns urls", prefix))
+			}
+		}
+	}
 	if cfg.Cron.MinSleepSec <= 0 {
 		errs = append(errs, fmt.Errorf("cron.min_sleep_sec must be > 0"))
 	}

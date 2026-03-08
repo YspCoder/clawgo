@@ -107,6 +107,48 @@ const Config: React.FC = () => {
     setCfg((v) => setPath(v, `providers.proxies.${name}.${field}`, value));
   }
 
+  function updateGatewayP2PField(field: string, value: any) {
+    setCfg((v) => setPath(v, `gateway.nodes.p2p.${field}`, value));
+  }
+
+  function updateGatewayIceServer(index: number, field: string, value: any) {
+    setCfg((v) => {
+      const next = JSON.parse(JSON.stringify(v || {}));
+      if (!next.gateway || typeof next.gateway !== 'object') next.gateway = {};
+      if (!next.gateway.nodes || typeof next.gateway.nodes !== 'object') next.gateway.nodes = {};
+      if (!next.gateway.nodes.p2p || typeof next.gateway.nodes.p2p !== 'object') next.gateway.nodes.p2p = {};
+      if (!Array.isArray(next.gateway.nodes.p2p.ice_servers)) next.gateway.nodes.p2p.ice_servers = [];
+      if (!next.gateway.nodes.p2p.ice_servers[index] || typeof next.gateway.nodes.p2p.ice_servers[index] !== 'object') {
+        next.gateway.nodes.p2p.ice_servers[index] = { urls: [], username: '', credential: '' };
+      }
+      next.gateway.nodes.p2p.ice_servers[index][field] = value;
+      return next;
+    });
+  }
+
+  function addGatewayIceServer() {
+    setCfg((v) => {
+      const next = JSON.parse(JSON.stringify(v || {}));
+      if (!next.gateway || typeof next.gateway !== 'object') next.gateway = {};
+      if (!next.gateway.nodes || typeof next.gateway.nodes !== 'object') next.gateway.nodes = {};
+      if (!next.gateway.nodes.p2p || typeof next.gateway.nodes.p2p !== 'object') next.gateway.nodes.p2p = {};
+      if (!Array.isArray(next.gateway.nodes.p2p.ice_servers)) next.gateway.nodes.p2p.ice_servers = [];
+      next.gateway.nodes.p2p.ice_servers.push({ urls: [], username: '', credential: '' });
+      return next;
+    });
+  }
+
+  function removeGatewayIceServer(index: number) {
+    setCfg((v) => {
+      const next = JSON.parse(JSON.stringify(v || {}));
+      const iceServers = next?.gateway?.nodes?.p2p?.ice_servers;
+      if (Array.isArray(iceServers)) {
+        iceServers.splice(index, 1);
+      }
+      return next;
+    });
+  }
+
   async function removeProxy(name: string) {
     const ok = await ui.confirmDialog({
       title: t('configDeleteProviderConfirmTitle'),
@@ -287,6 +329,77 @@ const Config: React.FC = () => {
                     ))}
                     {Object.keys(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).length === 0 && (
                       <div className="text-xs text-zinc-500">{t('configNoCustomProviders')}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {activeTop === 'gateway' && !showRaw && (
+                <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-sm font-semibold text-zinc-200">{t('configNodeP2P')}</div>
+                    <div className="text-xs text-zinc-500">{t('configNodeP2PHint')}</div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                    <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                      <div className="text-zinc-300">{t('enable')}</div>
+                      <input
+                        type="checkbox"
+                        checked={Boolean((cfg as any)?.gateway?.nodes?.p2p?.enabled)}
+                        onChange={(e) => updateGatewayP2PField('enabled', e.target.checked)}
+                      />
+                    </label>
+                    <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                      <div className="text-zinc-300">{t('dashboardNodeP2PTransport')}</div>
+                      <select
+                        value={String((cfg as any)?.gateway?.nodes?.p2p?.transport || 'websocket_tunnel')}
+                        onChange={(e) => updateGatewayP2PField('transport', e.target.value)}
+                        className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
+                      >
+                        <option value="websocket_tunnel">websocket_tunnel</option>
+                        <option value="webrtc">webrtc</option>
+                      </select>
+                    </label>
+                    <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                      <div className="text-zinc-300">{t('dashboardNodeP2PIce')}</div>
+                      <input
+                        value={Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.stun_servers) ? (cfg as any).gateway.nodes.p2p.stun_servers.join(', ') : ''}
+                        onChange={(e) => updateGatewayP2PField('stun_servers', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
+                        placeholder={t('configNodeP2PStunPlaceholder')}
+                        className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
+                      />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="text-sm font-medium text-zinc-200">{t('configNodeP2PIceServers')}</div>
+                      <button onClick={addGatewayIceServer} className="brand-button px-2 py-1 rounded-lg text-xs text-white">{t('add')}</button>
+                    </div>
+                    {Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.ice_servers) && (cfg as any).gateway.nodes.p2p.ice_servers.length > 0 ? (
+                      ((cfg as any).gateway.nodes.p2p.ice_servers as Array<any>).map((server, index) => (
+                        <div key={`ice-${index}`} className="grid grid-cols-1 md:grid-cols-7 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
+                          <input
+                            value={Array.isArray(server?.urls) ? server.urls.join(', ') : ''}
+                            onChange={(e) => updateGatewayIceServer(index, 'urls', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
+                            placeholder={t('configNodeP2PIceUrlsPlaceholder')}
+                            className="md:col-span-3 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
+                          />
+                          <input
+                            value={String(server?.username || '')}
+                            onChange={(e) => updateGatewayIceServer(index, 'username', e.target.value)}
+                            placeholder={t('configNodeP2PIceUsername')}
+                            className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
+                          />
+                          <input
+                            value={String(server?.credential || '')}
+                            onChange={(e) => updateGatewayIceServer(index, 'credential', e.target.value)}
+                            placeholder={t('configNodeP2PIceCredential')}
+                            className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
+                          />
+                          <button onClick={() => removeGatewayIceServer(index)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-xs text-zinc-500">{t('configNodeP2PIceServersEmpty')}</div>
                     )}
                   </div>
                 </div>

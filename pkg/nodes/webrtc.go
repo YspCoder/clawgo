@@ -92,24 +92,40 @@ func (s *gatewayRTCSession) snapshot() map[string]interface{} {
 }
 
 type WebRTCTransport struct {
-	stunServers []string
+	iceServers []webrtc.ICEServer
 
 	mu       sync.Mutex
 	sessions map[string]*gatewayRTCSession
 	signal   map[string]WireSender
 }
 
-func NewWebRTCTransport(stunServers []string) *WebRTCTransport {
-	out := make([]string, 0, len(stunServers))
+func NewWebRTCTransport(stunServers []string, extraICEServers ...webrtc.ICEServer) *WebRTCTransport {
+	out := make([]webrtc.ICEServer, 0, len(stunServers)+len(extraICEServers))
 	for _, server := range stunServers {
 		if v := strings.TrimSpace(server); v != "" {
-			out = append(out, v)
+			out = append(out, webrtc.ICEServer{URLs: []string{v}})
 		}
 	}
+	for _, server := range extraICEServers {
+		urls := make([]string, 0, len(server.URLs))
+		for _, raw := range server.URLs {
+			if v := strings.TrimSpace(raw); v != "" {
+				urls = append(urls, v)
+			}
+		}
+		if len(urls) == 0 {
+			continue
+		}
+		out = append(out, webrtc.ICEServer{
+			URLs:       urls,
+			Username:   strings.TrimSpace(server.Username),
+			Credential: server.Credential,
+		})
+	}
 	return &WebRTCTransport{
-		stunServers: out,
-		sessions:    map[string]*gatewayRTCSession{},
-		signal:      map[string]WireSender{},
+		iceServers: out,
+		sessions:   map[string]*gatewayRTCSession{},
+		signal:     map[string]WireSender{},
 	}
 }
 
@@ -133,6 +149,7 @@ func (t *WebRTCTransport) Snapshot() map[string]interface{} {
 	return map[string]interface{}{
 		"transport":       "webrtc",
 		"active_sessions": active,
+		"ice_servers":     len(t.iceServers),
 		"nodes":           nodes,
 	}
 }
@@ -276,8 +293,8 @@ func (t *WebRTCTransport) ensureSession(nodeID string) (*gatewayRTCSession, erro
 	}
 
 	config := webrtc.Configuration{}
-	if len(t.stunServers) > 0 {
-		config.ICEServers = []webrtc.ICEServer{{URLs: append([]string(nil), t.stunServers...)}}
+	if len(t.iceServers) > 0 {
+		config.ICEServers = append([]webrtc.ICEServer(nil), t.iceServers...)
 	}
 	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {

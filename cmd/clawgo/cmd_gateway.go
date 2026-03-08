@@ -24,6 +24,7 @@ import (
 	"clawgo/pkg/providers"
 	"clawgo/pkg/runtimecfg"
 	"clawgo/pkg/sentinel"
+	"github.com/pion/webrtc/v4"
 )
 
 func gatewayCmd() {
@@ -133,16 +134,37 @@ func gatewayCmd() {
 		if loop == nil || server == nil || runtimeCfg == nil {
 			return
 		}
+		buildICEServers := func() []webrtc.ICEServer {
+			out := make([]webrtc.ICEServer, 0, len(runtimeCfg.Gateway.Nodes.P2P.ICEServers))
+			for _, serverCfg := range runtimeCfg.Gateway.Nodes.P2P.ICEServers {
+				urls := make([]string, 0, len(serverCfg.URLs))
+				for _, raw := range serverCfg.URLs {
+					if v := strings.TrimSpace(raw); v != "" {
+						urls = append(urls, v)
+					}
+				}
+				if len(urls) == 0 {
+					continue
+				}
+				out = append(out, webrtc.ICEServer{
+					URLs:       urls,
+					Username:   strings.TrimSpace(serverCfg.Username),
+					Credential: serverCfg.Credential,
+				})
+			}
+			return out
+		}
 		server.SetNodeP2PStatusHandler(func() map[string]interface{} {
 			return map[string]interface{}{
 				"enabled":         runtimeCfg.Gateway.Nodes.P2P.Enabled,
 				"transport":       strings.TrimSpace(runtimeCfg.Gateway.Nodes.P2P.Transport),
 				"configured_stun": append([]string(nil), runtimeCfg.Gateway.Nodes.P2P.STUNServers...),
+				"configured_ice":  len(runtimeCfg.Gateway.Nodes.P2P.ICEServers),
 			}
 		})
 		switch {
 		case runtimeCfg.Gateway.Nodes.P2P.Enabled && strings.EqualFold(strings.TrimSpace(runtimeCfg.Gateway.Nodes.P2P.Transport), "webrtc"):
-			webrtcTransport := nodes.NewWebRTCTransport(runtimeCfg.Gateway.Nodes.P2P.STUNServers)
+			webrtcTransport := nodes.NewWebRTCTransport(runtimeCfg.Gateway.Nodes.P2P.STUNServers, buildICEServers()...)
 			loop.SetNodeP2PTransport(webrtcTransport)
 			server.SetNodeWebRTCTransport(webrtcTransport)
 			server.SetNodeP2PStatusHandler(func() map[string]interface{} {
@@ -150,6 +172,7 @@ func gatewayCmd() {
 				snapshot["enabled"] = true
 				snapshot["transport"] = "webrtc"
 				snapshot["configured_stun"] = append([]string(nil), runtimeCfg.Gateway.Nodes.P2P.STUNServers...)
+				snapshot["configured_ice"] = len(runtimeCfg.Gateway.Nodes.P2P.ICEServers)
 				return snapshot
 			})
 		default:

@@ -280,7 +280,14 @@
       "p2p": {
         "enabled": false,
         "transport": "websocket_tunnel",
-        "stun_servers": []
+        "stun_servers": [],
+        "ice_servers": [
+          {
+            "urls": [
+              "stun:stun.l.google.com:19302"
+            ]
+          }
+        ]
       }
     }
   },

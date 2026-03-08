@@ -134,6 +134,8 @@ func statusCmd() {
 				fmt.Printf("  - %s\n", key)
 			}
 		}
+		fmt.Printf("Nodes P2P: enabled=%t transport=%s\n", cfg.Gateway.Nodes.P2P.Enabled, strings.TrimSpace(cfg.Gateway.Nodes.P2P.Transport))
+		fmt.Printf("Nodes P2P ICE: stun=%d ice=%d\n", len(cfg.Gateway.Nodes.P2P.STUNServers), len(cfg.Gateway.Nodes.P2P.ICEServers))
 		ns := nodes.DefaultManager().List()
 		if len(ns) > 0 {
 			online := 0
@@ -163,7 +165,6 @@ func statusCmd() {
 			}
 			fmt.Printf("Nodes: total=%d online=%d\n", len(ns), online)
 			fmt.Printf("Nodes Capabilities: run=%d model=%d camera=%d screen=%d location=%d canvas=%d\n", caps["run"], caps["model"], caps["camera"], caps["screen"], caps["location"], caps["canvas"])
-			fmt.Printf("Nodes P2P: enabled=%t transport=%s\n", cfg.Gateway.Nodes.P2P.Enabled, strings.TrimSpace(cfg.Gateway.Nodes.P2P.Transport))
 			if total, okCnt, avgMs, actionTop, transportTop, fallbackCnt, err := collectNodeDispatchStats(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")); err == nil && total > 0 {
 				fmt.Printf("Nodes Dispatch: total=%d ok=%d fail=%d avg_ms=%d\n", total, okCnt, total-okCnt, avgMs)
 				if actionTop != "" {

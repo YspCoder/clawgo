@@ -298,10 +298,17 @@ type GatewayNodesConfig struct {
 	P2P GatewayNodesP2PConfig `json:"p2p,omitempty"`
 }
 
+type GatewayICEConfig struct {
+	URLs       []string `json:"urls,omitempty"`
+	Username   string   `json:"username,omitempty"`
+	Credential string   `json:"credential,omitempty"`
+}
+
 type GatewayNodesP2PConfig struct {
-	Enabled     bool     `json:"enabled"`
-	Transport   string   `json:"transport,omitempty"`
-	STUNServers []string `json:"stun_servers,omitempty"`
+	Enabled     bool               `json:"enabled"`
+	Transport   string             `json:"transport,omitempty"`
+	STUNServers []string           `json:"stun_servers,omitempty"`
+	ICEServers  []GatewayICEConfig `json:"ice_servers,omitempty"`
 }
 
 type CronConfig struct {
@@ -550,6 +557,7 @@ func DefaultConfig() *Config {
 					Enabled:     false,
 					Transport:   "websocket_tunnel",
 					STUNServers: []string{},
+					ICEServers:  []GatewayICEConfig{},
 				},
 			},
 		},

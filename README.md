@@ -200,6 +200,52 @@ user -> main -> worker -> main -> user
 
 完整示例见 [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json)。
 
+## Node P2P
+
+远端 node 的调度数据面现在支持：
+
+- `websocket_tunnel`
+- `webrtc`
+
+默认仍然关闭，只有显式配置 `gateway.nodes.p2p.enabled=true` 才会启用。建议先用 `websocket_tunnel` 验证链路，再切到 `webrtc`。
+
+`webrtc` 建议同时理解这两个字段：
+
+- `stun_servers`
+  - 兼容旧式 STUN 列表
+- `ice_servers`
+  - 推荐的新结构
+  - 可以配置 `stun:`、`turn:`、`turns:` URL
+  - `turn:` / `turns:` 必须同时提供 `username` 和 `credential`
+
+示例：
+
+```json
+{
+  "gateway": {
+    "nodes": {
+      "p2p": {
+        "enabled": true,
+        "transport": "webrtc",
+        "stun_servers": ["stun:stun.l.google.com:19302"],
+        "ice_servers": [
+          {
+            "urls": ["turn:turn.example.com:3478"],
+            "username": "demo",
+            "credential": "secret"
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+说明：
+
+- `webrtc` 建连失败时，调度层仍会回退到现有 relay / tunnel 路径
+- Dashboard、`status`、`/webui/api/nodes` 会显示当前 Node P2P 状态和会话摘要
+
 ## MCP 服务支持
 
 ClawGo 现在支持通过 `tools.mcp` 接入 `stdio`、`http`、`streamable_http`、`sse` 型 MCP server。
