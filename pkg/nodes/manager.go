@@ -1,7 +1,9 @@
 package nodes
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,11 +16,17 @@ const defaultNodeTTL = 60 * time.Second
 
 // Manager keeps paired node metadata and basic routing helpers.
 type Handler func(req Request) Response
+type WireSender interface {
+	Send(msg WireMessage) error
+}
 
 type Manager struct {
 	mu        sync.RWMutex
 	nodes     map[string]NodeInfo
 	handlers  map[string]Handler
+	senders   map[string]WireSender
+	pending   map[string]chan WireMessage
+	nextWire  uint64
 	ttl       time.Duration
 	auditPath string
 	statePath string
@@ -29,7 +37,13 @@ var defaultManager = NewManager()
 func DefaultManager() *Manager { return defaultManager }
 
 func NewManager() *Manager {
-	m := &Manager{nodes: map[string]NodeInfo{}, handlers: map[string]Handler{}, ttl: defaultNodeTTL}
+	m := &Manager{
+		nodes:    map[string]NodeInfo{},
+		handlers: map[string]Handler{},
+		senders:  map[string]WireSender{},
+		pending:  map[string]chan WireMessage{},
+		ttl:      defaultNodeTTL,
+	}
 	go m.reaperLoop()
 	return m
 }
@@ -130,6 +144,89 @@ func (m *Manager) RegisterHandler(nodeID string, h Handler) {
 		return
 	}
 	m.handlers[nodeID] = h
+}
+
+func (m *Manager) RegisterWireSender(nodeID string, sender WireSender) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sender == nil {
+		delete(m.senders, nodeID)
+		return
+	}
+	m.senders[nodeID] = sender
+}
+
+func (m *Manager) HandleWireMessage(msg WireMessage) bool {
+	switch strings.ToLower(strings.TrimSpace(msg.Type)) {
+	case "node_response":
+		if strings.TrimSpace(msg.ID) == "" {
+			return false
+		}
+		m.mu.Lock()
+		ch := m.pending[msg.ID]
+		if ch != nil {
+			delete(m.pending, msg.ID)
+		}
+		m.mu.Unlock()
+		if ch == nil {
+			return false
+		}
+		select {
+		case ch <- msg:
+		default:
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Manager) SendWireRequest(ctx context.Context, nodeID string, req Request) (Response, error) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return Response{}, fmt.Errorf("node id required")
+	}
+	m.mu.Lock()
+	sender := m.senders[nodeID]
+	if sender == nil {
+		m.mu.Unlock()
+		return Response{}, fmt.Errorf("node %s websocket sender unavailable", nodeID)
+	}
+	m.nextWire++
+	wireID := fmt.Sprintf("wire-%d", m.nextWire)
+	ch := make(chan WireMessage, 1)
+	m.pending[wireID] = ch
+	m.mu.Unlock()
+
+	msg := WireMessage{
+		Type:    "node_request",
+		ID:      wireID,
+		To:      nodeID,
+		Request: &req,
+	}
+	if err := sender.Send(msg); err != nil {
+		m.mu.Lock()
+		delete(m.pending, wireID)
+		m.mu.Unlock()
+		return Response{}, err
+	}
+
+	select {
+	case <-ctx.Done():
+		m.mu.Lock()
+		delete(m.pending, wireID)
+		m.mu.Unlock()
+		return Response{}, ctx.Err()
+	case incoming := <-ch:
+		if incoming.Response == nil {
+			return Response{}, fmt.Errorf("node %s returned empty response", nodeID)
+		}
+		return *incoming.Response, nil
+	}
 }
 
 func (m *Manager) Invoke(req Request) (Response, bool) {

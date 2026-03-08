@@ -52,13 +52,23 @@ func (r *Router) Dispatch(ctx context.Context, req Request, mode string) (Respon
 	}
 }
 
-// StubP2PTransport provides phase-2 negotiation scaffold.
-type StubP2PTransport struct{}
+// WebsocketP2PTransport uses the persistent node websocket as a request/response tunnel
+// while the project evolves toward a true peer data channel.
+type WebsocketP2PTransport struct {
+	Manager *Manager
+}
 
-func (s *StubP2PTransport) Name() string { return "p2p" }
-func (s *StubP2PTransport) Send(ctx context.Context, req Request) (Response, error) {
-	_ = ctx
-	return Response{OK: false, Node: req.Node, Action: req.Action, Error: "p2p session not established yet"}, nil
+func (s *WebsocketP2PTransport) Name() string { return "p2p" }
+func (s *WebsocketP2PTransport) Send(ctx context.Context, req Request) (Response, error) {
+	if s == nil || s.Manager == nil {
+		return Response{OK: false, Node: req.Node, Action: req.Action, Error: "p2p manager unavailable"}, nil
+	}
+	resp, err := s.Manager.SendWireRequest(ctx, req.Node, req)
+	if err != nil {
+		return Response{OK: false, Code: "p2p_unavailable", Node: req.Node, Action: req.Action, Error: err.Error()}, nil
+	}
+	resp.Payload = normalizeDevicePayload(resp.Action, resp.Payload)
+	return resp, nil
 }
 
 // HTTPRelayTransport dispatches requests to node-agent endpoints over HTTP.
@@ -96,22 +106,11 @@ func actionHTTPPath(action string) string {
 	}
 }
 
-func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, error) {
-	if s.Manager == nil {
-		return Response{OK: false, Code: "relay_unavailable", Node: req.Node, Action: req.Action, Error: "relay manager not configured"}, nil
-	}
-	if resp, ok := s.Manager.Invoke(req); ok {
-		return resp, nil
-	}
-	n, ok := s.Manager.Get(req.Node)
-	if !ok {
-		return Response{OK: false, Code: "node_not_found", Node: req.Node, Action: req.Action, Error: "node not found"}, nil
-	}
-	endpoint := strings.TrimRight(strings.TrimSpace(n.Endpoint), "/")
+func DoEndpointRequest(ctx context.Context, client *http.Client, endpoint, token string, req Request) (Response, error) {
+	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
 	if endpoint == "" {
 		return Response{OK: false, Code: "endpoint_missing", Node: req.Node, Action: req.Action, Error: "node endpoint not configured"}, nil
 	}
-	client := s.Client
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
@@ -122,7 +121,7 @@ func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, e
 		return Response{}, err
 	}
 	hreq.Header.Set("Content-Type", "application/json")
-	if tok := strings.TrimSpace(n.Token); tok != "" {
+	if tok := strings.TrimSpace(token); tok != "" {
 		hreq.Header.Set("Authorization", "Bearer "+tok)
 	}
 	hresp, err := client.Do(hreq)
@@ -150,6 +149,20 @@ func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, e
 	}
 	resp.Payload = normalizeDevicePayload(resp.Action, resp.Payload)
 	return resp, nil
+}
+
+func (s *HTTPRelayTransport) Send(ctx context.Context, req Request) (Response, error) {
+	if s.Manager == nil {
+		return Response{OK: false, Code: "relay_unavailable", Node: req.Node, Action: req.Action, Error: "relay manager not configured"}, nil
+	}
+	if resp, ok := s.Manager.Invoke(req); ok {
+		return resp, nil
+	}
+	n, ok := s.Manager.Get(req.Node)
+	if !ok {
+		return Response{OK: false, Code: "node_not_found", Node: req.Node, Action: req.Action, Error: "node not found"}, nil
+	}
+	return DoEndpointRequest(ctx, s.Client, n.Endpoint, n.Token, req)
 }
 
 func normalizeDevicePayload(action string, payload map[string]interface{}) map[string]interface{} {

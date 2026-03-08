@@ -57,6 +57,8 @@ type WireMessage struct {
 	To      string                 `json:"to,omitempty"`
 	Session string                 `json:"session,omitempty"`
 	Node    *NodeInfo              `json:"node,omitempty"`
+	Request *Request               `json:"request,omitempty"`
+	Response *Response             `json:"response,omitempty"`
 	Payload map[string]interface{} `json:"payload,omitempty"`
 }
 

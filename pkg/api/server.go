@@ -86,6 +86,16 @@ type nodeSocketConn struct {
 	mu     sync.Mutex
 }
 
+func (c *nodeSocketConn) Send(msg nodes.WireMessage) error {
+	if c == nil || c.conn == nil {
+		return fmt.Errorf("node websocket unavailable")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	return c.conn.WriteJSON(msg)
+}
+
 func (s *Server) SetConfigPath(path string)    { s.configPath = strings.TrimSpace(path) }
 func (s *Server) SetWorkspacePath(path string) { s.workspacePath = strings.TrimSpace(path) }
 func (s *Server) SetLogFilePath(path string)   { s.logFilePath = strings.TrimSpace(path) }
@@ -124,10 +134,14 @@ func (s *Server) bindNodeSocket(nodeID, connID string, conn *websocket.Conn) {
 	if nodeID == "" || connID == "" || conn == nil {
 		return
 	}
+	next := &nodeSocketConn{connID: connID, conn: conn}
 	s.nodeConnMu.Lock()
 	prev := s.nodeSockets[nodeID]
-	s.nodeSockets[nodeID] = &nodeSocketConn{connID: connID, conn: conn}
+	s.nodeSockets[nodeID] = next
 	s.nodeConnMu.Unlock()
+	if s.mgr != nil {
+		s.mgr.RegisterWireSender(nodeID, next)
+	}
 	if prev != nil && prev.connID != connID {
 		_ = prev.conn.Close()
 	}
@@ -147,6 +161,9 @@ func (s *Server) releaseNodeConnection(nodeID, connID string) bool {
 	delete(s.nodeConnIDs, nodeID)
 	if sock := s.nodeSockets[nodeID]; sock != nil && sock.connID == connID {
 		delete(s.nodeSockets, nodeID)
+	}
+	if s.mgr != nil {
+		s.mgr.RegisterWireSender(nodeID, nil)
 	}
 	return true
 }
@@ -313,6 +330,9 @@ func (s *Server) handleNodeConnect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		if s.mgr != nil && s.mgr.HandleWireMessage(msg) {
+			continue
+		}
 		switch strings.ToLower(strings.TrimSpace(msg.Type)) {
 		case "register":
 			if msg.Node == nil || strings.TrimSpace(msg.Node.ID) == "" {

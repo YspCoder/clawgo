@@ -142,7 +142,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 			return nodes.Response{OK: false, Code: "unsupported_action", Node: "local", Action: req.Action, Error: "unsupported local simulated action"}
 		}
 	})
-	nodesRouter := &nodes.Router{P2P: &nodes.StubP2PTransport{}, Relay: &nodes.HTTPRelayTransport{Manager: nodesManager}}
+	nodesRouter := &nodes.Router{P2P: &nodes.WebsocketP2PTransport{Manager: nodesManager}, Relay: &nodes.HTTPRelayTransport{Manager: nodesManager}}
 	toolsRegistry.Register(tools.NewNodesTool(nodesManager, nodesRouter, filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")))
 
 	if cs != nil {
