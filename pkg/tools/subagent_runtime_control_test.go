@@ -673,7 +673,15 @@ func waitSubagentDone(t *testing.T, manager *SubagentManager, timeout time.Durat
 		tasks := manager.ListTasks()
 		if len(tasks) > 0 {
 			task := tasks[0]
-			if task.Status != "running" {
+			for _, candidate := range tasks[1:] {
+				if candidate.Created > task.Created || (candidate.Created == task.Created && candidate.ID > task.ID) {
+					task = candidate
+				}
+			}
+			manager.mu.RLock()
+			_, stillRunning := manager.cancelFuncs[task.ID]
+			manager.mu.RUnlock()
+			if task.Status != "running" && !stillRunning {
 				return task
 			}
 		}

@@ -54,14 +54,14 @@ func statusCmd() {
 		}
 		fmt.Printf("Model: %s\n", activeModel)
 		fmt.Printf("Proxy: %s\n", activeProxyName)
-		fmt.Printf("CLIProxyAPI Base: %s\n", cfg.Providers.Proxy.APIBase)
+		fmt.Printf("Provider API Base: %s\n", activeProvider.APIBase)
 		fmt.Printf("Supports /v1/responses/compact: %v\n", providers.ProviderSupportsResponsesCompact(cfg, activeProxyName))
-		hasKey := cfg.Providers.Proxy.APIKey != ""
+		hasKey := strings.TrimSpace(activeProvider.APIKey) != ""
 		status := "not set"
 		if hasKey {
 			status = "✓"
 		}
-		fmt.Printf("CLIProxyAPI Key: %s\n", status)
+		fmt.Printf("Provider API Key: %s\n", status)
 		fmt.Printf("Logging: %v\n", cfg.Logging.Enabled)
 		if cfg.Logging.Enabled {
 			fmt.Printf("Log File: %s\n", cfg.LogFilePath())

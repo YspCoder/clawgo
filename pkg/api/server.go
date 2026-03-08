@@ -311,15 +311,7 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 		var oldMap map[string]interface{}
 		_ = json.Unmarshal(oldCfgRaw, &oldMap)
 
-		riskyPaths := []string{
-			"channels.telegram.token",
-			"channels.telegram.allow_from",
-			"channels.telegram.allow_chats",
-			"providers.proxy.base_url",
-			"providers.proxy.api_key",
-			"gateway.token",
-			"gateway.port",
-		}
+		riskyPaths := collectRiskyConfigPaths(oldMap, body)
 		changedRisky := make([]string, 0)
 		for _, p := range riskyPaths {
 			if fmt.Sprintf("%v", getPathValue(oldMap, p)) != fmt.Sprintf("%v", getPathValue(body, p)) {
@@ -416,6 +408,50 @@ func getPathValue(m map[string]interface{}, path string) interface{} {
 		cur = node[p]
 	}
 	return cur
+}
+
+func collectRiskyConfigPaths(oldMap, newMap map[string]interface{}) []string {
+	paths := []string{
+		"channels.telegram.token",
+		"channels.telegram.allow_from",
+		"channels.telegram.allow_chats",
+		"providers.proxy.api_base",
+		"providers.proxy.api_key",
+		"gateway.token",
+		"gateway.port",
+	}
+	seen := map[string]bool{}
+	for _, path := range paths {
+		seen[path] = true
+	}
+	for _, name := range collectProviderProxyNames(oldMap, newMap) {
+		for _, field := range []string{"api_base", "api_key"} {
+			path := "providers.proxies." + name + "." + field
+			if !seen[path] {
+				paths = append(paths, path)
+				seen[path] = true
+			}
+		}
+	}
+	return paths
+}
+
+func collectProviderProxyNames(maps ...map[string]interface{}) []string {
+	seen := map[string]bool{}
+	names := make([]string, 0)
+	for _, root := range maps {
+		providers, _ := root["providers"].(map[string]interface{})
+		proxies, _ := providers["proxies"].(map[string]interface{})
+		for name := range proxies {
+			if strings.TrimSpace(name) == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (s *Server) handleWebUIUpload(w http.ResponseWriter, r *http.Request) {

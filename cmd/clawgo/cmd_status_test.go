@@ -1,0 +1,71 @@
+package main
+
+import (
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"clawgo/pkg/config"
+)
+
+func TestStatusCmdUsesActiveProviderDetails(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	workspace := filepath.Join(tmp, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Logging.Enabled = false
+	cfg.Agents.Defaults.Workspace = workspace
+	cfg.Agents.Defaults.Proxy = "backup"
+	cfg.Providers.Proxy.APIBase = "https://primary.example/v1"
+	cfg.Providers.Proxy.APIKey = ""
+	cfg.Providers.Proxies["backup"] = config.ProviderConfig{
+		APIBase:    "https://backup.example/v1",
+		APIKey:     "backup-key",
+		Models:     []string{"backup-model"},
+		Auth:       "bearer",
+		TimeoutSec: 30,
+	}
+	if err := config.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	prev := globalConfigPathOverride
+	globalConfigPathOverride = cfgPath
+	defer func() { globalConfigPathOverride = prev }()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	statusCmd()
+
+	_ = w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Proxy: backup") {
+		t.Fatalf("expected backup proxy in output, got: %s", out)
+	}
+	if !strings.Contains(out, "Provider API Base: https://backup.example/v1") {
+		t.Fatalf("expected active provider api base in output, got: %s", out)
+	}
+	if !strings.Contains(out, "Provider API Key: ✓") {
+		t.Fatalf("expected active provider api key status in output, got: %s", out)
+	}
+}
