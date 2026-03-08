@@ -40,6 +40,7 @@ type Server struct {
 	nodeConnMu     sync.Mutex
 	nodeConnIDs    map[string]string
 	nodeSockets    map[string]*nodeSocketConn
+	nodeWebRTC     *nodes.WebRTCTransport
 	gatewayVersion string
 	webuiVersion   string
 	configPath     string
@@ -116,6 +117,9 @@ func (s *Server) SetToolsCatalogHandler(fn func() interface{}) { s.onToolsCatalo
 func (s *Server) SetWebUIDir(dir string)                       { s.webUIDir = strings.TrimSpace(dir) }
 func (s *Server) SetGatewayVersion(v string)                   { s.gatewayVersion = strings.TrimSpace(v) }
 func (s *Server) SetWebUIVersion(v string)                     { s.webuiVersion = strings.TrimSpace(v) }
+func (s *Server) SetNodeWebRTCTransport(t *nodes.WebRTCTransport) {
+	s.nodeWebRTC = t
+}
 
 func (s *Server) rememberNodeConnection(nodeID, connID string) {
 	nodeID = strings.TrimSpace(nodeID)
@@ -142,6 +146,9 @@ func (s *Server) bindNodeSocket(nodeID, connID string, conn *websocket.Conn) {
 	if s.mgr != nil {
 		s.mgr.RegisterWireSender(nodeID, next)
 	}
+	if s.nodeWebRTC != nil {
+		s.nodeWebRTC.BindSignaler(nodeID, next)
+	}
 	if prev != nil && prev.connID != connID {
 		_ = prev.conn.Close()
 	}
@@ -164,6 +171,9 @@ func (s *Server) releaseNodeConnection(nodeID, connID string) bool {
 	}
 	if s.mgr != nil {
 		s.mgr.RegisterWireSender(nodeID, nil)
+	}
+	if s.nodeWebRTC != nil {
+		s.nodeWebRTC.UnbindSignaler(nodeID)
 	}
 	return true
 }
@@ -373,13 +383,23 @@ func (s *Server) handleNodeConnect(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case "signal_offer", "signal_answer", "signal_candidate":
+			targetID := strings.TrimSpace(msg.To)
+			if s.nodeWebRTC != nil && (targetID == "" || strings.EqualFold(targetID, "gateway")) {
+				if err := s.nodeWebRTC.HandleSignal(msg); err != nil {
+					if err := writeAck(nodes.WireAck{OK: false, Type: msg.Type, ID: msg.ID, Error: err.Error()}); err != nil {
+						return
+					}
+				} else if err := writeAck(nodes.WireAck{OK: true, Type: "signaled", ID: msg.ID}); err != nil {
+					return
+				}
+				continue
+			}
 			if strings.TrimSpace(connectedID) == "" {
 				if err := writeAck(nodes.WireAck{OK: false, Type: msg.Type, Error: "node not registered"}); err != nil {
 					return
 				}
 				continue
 			}
-			targetID := strings.TrimSpace(msg.To)
 			if targetID == "" {
 				if err := writeAck(nodes.WireAck{OK: false, Type: msg.Type, ID: msg.ID, Error: "target node required"}); err != nil {
 					return

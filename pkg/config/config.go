@@ -299,8 +299,9 @@ type GatewayNodesConfig struct {
 }
 
 type GatewayNodesP2PConfig struct {
-	Enabled   bool   `json:"enabled"`
-	Transport string `json:"transport,omitempty"`
+	Enabled     bool     `json:"enabled"`
+	Transport   string   `json:"transport,omitempty"`
+	STUNServers []string `json:"stun_servers,omitempty"`
 }
 
 type CronConfig struct {
@@ -546,8 +547,9 @@ func DefaultConfig() *Config {
 			Token: generateGatewayToken(),
 			Nodes: GatewayNodesConfig{
 				P2P: GatewayNodesP2PConfig{
-					Enabled:   false,
-					Transport: "websocket_tunnel",
+					Enabled:     false,
+					Transport:   "websocket_tunnel",
+					STUNServers: []string{},
 				},
 			},
 		},

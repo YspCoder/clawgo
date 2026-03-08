@@ -279,7 +279,8 @@
     "nodes": {
       "p2p": {
         "enabled": false,
-        "transport": "websocket_tunnel"
+        "transport": "websocket_tunnel",
+        "stun_servers": []
       }
     }
   },

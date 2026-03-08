@@ -79,6 +79,13 @@ func (al *AgentLoop) SetConfigPath(path string) {
 	}
 }
 
+func (al *AgentLoop) SetNodeP2PTransport(t nodes.Transport) {
+	if al == nil || al.nodeRouter == nil {
+		return
+	}
+	al.nodeRouter.P2P = t
+}
+
 // StartupCompactionReport provides startup memory/session maintenance stats.
 type StartupCompactionReport struct {
 	TotalSessions     int `json:"total_sessions"`

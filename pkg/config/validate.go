@@ -124,6 +124,7 @@ func Validate(cfg *Config) []error {
 	default:
 		errs = append(errs, fmt.Errorf("gateway.nodes.p2p.transport must be one of: websocket_tunnel, webrtc"))
 	}
+	errs = append(errs, validateNonEmptyStringList("gateway.nodes.p2p.stun_servers", cfg.Gateway.Nodes.P2P.STUNServers)...)
 	if cfg.Cron.MinSleepSec <= 0 {
 		errs = append(errs, fmt.Errorf("cron.min_sleep_sec must be > 0"))
 	}

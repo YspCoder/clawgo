@@ -129,6 +129,20 @@ func gatewayCmd() {
 	}
 
 	registryServer := api.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
+	configureGatewayNodeP2P := func(loop *agent.AgentLoop, server *api.Server, runtimeCfg *config.Config) {
+		if loop == nil || server == nil || runtimeCfg == nil {
+			return
+		}
+		switch {
+		case runtimeCfg.Gateway.Nodes.P2P.Enabled && strings.EqualFold(strings.TrimSpace(runtimeCfg.Gateway.Nodes.P2P.Transport), "webrtc"):
+			webrtcTransport := nodes.NewWebRTCTransport(runtimeCfg.Gateway.Nodes.P2P.STUNServers)
+			loop.SetNodeP2PTransport(webrtcTransport)
+			server.SetNodeWebRTCTransport(webrtcTransport)
+		default:
+			server.SetNodeWebRTCTransport(nil)
+		}
+	}
+	configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 	registryServer.SetGatewayVersion(version)
 	registryServer.SetWebUIVersion(version)
 	registryServer.SetConfigPath(getConfigPath())
@@ -343,7 +357,8 @@ func gatewayCmd() {
 		runtimeSame := reflect.DeepEqual(cfg.Agents, newCfg.Agents) &&
 			reflect.DeepEqual(cfg.Providers, newCfg.Providers) &&
 			reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
-			reflect.DeepEqual(cfg.Channels, newCfg.Channels)
+			reflect.DeepEqual(cfg.Channels, newCfg.Channels) &&
+			reflect.DeepEqual(cfg.Gateway.Nodes, newCfg.Gateway.Nodes)
 
 		if runtimeSame {
 			configureLogging(newCfg)
@@ -369,6 +384,7 @@ func gatewayCmd() {
 			}
 			cfg = newCfg
 			runtimecfg.Set(cfg)
+			configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 			fmt.Println("✓ Config hot-reload applied (logging/metadata only)")
 			return
 		}
@@ -386,6 +402,7 @@ func gatewayCmd() {
 		agentLoop = newAgentLoop
 		cfg = newCfg
 		runtimecfg.Set(cfg)
+		configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 		sentinelService.Stop()
 		sentinelService = sentinel.NewService(
 			getConfigPath(),
