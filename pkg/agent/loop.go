@@ -105,6 +105,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewAliasTool("edit", "Edit file content (OpenClaw-compatible alias of edit_file)", tools.NewEditFileTool(workspace), map[string]string{"file_path": "path", "old_string": "oldText", "new_string": "newText"}))
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
 	toolsRegistry.Register(tools.NewProcessTool(processManager))
+	toolsRegistry.Register(tools.NewSkillExecTool(workspace))
 	nodesManager := nodes.DefaultManager()
 	nodesManager.SetAuditPath(filepath.Join(workspace, "memory", "nodes-audit.jsonl"))
 	nodesManager.SetStatePath(filepath.Join(workspace, "memory", "nodes-state.json"))
@@ -935,7 +936,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 				"max":       al.maxIterations,
 			})
 
-		toolDefs := al.tools.GetDefinitions()
+		toolDefs := al.filteredToolDefinitionsForContext(ctx)
 		providerToolDefs := al.buildProviderToolDefs(toolDefs)
 
 		// Log LLM request details
@@ -1301,7 +1302,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	for iteration < al.maxIterations {
 		iteration++
 
-		toolDefs := al.tools.GetDefinitions()
+		toolDefs := al.filteredToolDefinitionsForContext(ctx)
 		providerToolDefs := al.buildProviderToolDefs(toolDefs)
 
 		// Log LLM request details
@@ -1457,6 +1458,37 @@ func (al *AgentLoop) buildProviderToolDefs(toolDefs []map[string]interface{}) []
 		})
 	}
 	return providerToolDefs
+}
+
+func (al *AgentLoop) filteredToolDefinitionsForContext(ctx context.Context) []map[string]interface{} {
+	if al == nil || al.tools == nil {
+		return nil
+	}
+	return filterToolDefinitionsByContext(ctx, al.tools.GetDefinitions())
+}
+
+func filterToolDefinitionsByContext(ctx context.Context, toolDefs []map[string]interface{}) []map[string]interface{} {
+	allow := toolAllowlistFromContext(ctx)
+	if len(allow) == 0 {
+		return toolDefs
+	}
+
+	filtered := make([]map[string]interface{}, 0, len(toolDefs))
+	for _, td := range toolDefs {
+		fnRaw, ok := td["function"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := fnRaw["name"].(string)
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		if isToolNameAllowed(allow, name) || isImplicitlyAllowedSubagentTool(name) {
+			filtered = append(filtered, td)
+		}
+	}
+	return filtered
 }
 
 func (al *AgentLoop) buildResponsesOptions(sessionKey string, maxTokens int64, temperature float64) map[string]interface{} {
@@ -1702,8 +1734,20 @@ func (al *AgentLoop) GetToolCatalog() []map[string]interface{} {
 		if fmt.Sprint(item["source"]) != "mcp" {
 			item["source"] = "local"
 		}
+		name := strings.TrimSpace(fmt.Sprint(item["name"]))
+		item["visibility"] = map[string]interface{}{
+			"main_agent": true,
+			"subagent":   subagentToolVisibilityMode(name),
+		}
 	}
 	return items
+}
+
+func subagentToolVisibilityMode(name string) string {
+	if isImplicitlyAllowedSubagentTool(name) {
+		return "inherited"
+	}
+	return "allowlist"
 }
 
 // formatMessagesForLog formats messages for logging
@@ -1804,11 +1848,32 @@ func withToolContextArgs(toolName string, args map[string]interface{}, channel, 
 	return next
 }
 
+func withToolRuntimeArgs(ctx context.Context, toolName string, args map[string]interface{}) map[string]interface{} {
+	if strings.TrimSpace(toolName) != "skill_exec" {
+		return args
+	}
+	ns := normalizeMemoryNamespace(memoryNamespaceFromContext(ctx))
+	callerAgent := ns
+	callerScope := "subagent"
+	if callerAgent == "" || callerAgent == "main" {
+		callerAgent = "main"
+		callerScope = "main_agent"
+	}
+	next := make(map[string]interface{}, len(args)+2)
+	for k, v := range args {
+		next[k] = v
+	}
+	next["caller_agent"] = callerAgent
+	next["caller_scope"] = callerScope
+	return next
+}
+
 func (al *AgentLoop) executeToolCall(ctx context.Context, toolName string, args map[string]interface{}, currentChannel, currentChatID string) (string, error) {
 	if err := ensureToolAllowedByContext(ctx, toolName, args); err != nil {
 		return "", err
 	}
 	args = withToolMemoryNamespaceArgs(toolName, args, memoryNamespaceFromContext(ctx))
+	args = withToolRuntimeArgs(ctx, toolName, args)
 	if shouldSuppressSelfMessageSend(toolName, args, currentChannel, currentChatID) {
 		return "Suppressed message tool self-send in current chat; assistant will reply via normal outbound.", nil
 	}
@@ -1887,7 +1952,7 @@ func ensureToolAllowedByContext(ctx context.Context, toolName string, args map[s
 	if name == "" {
 		return fmt.Errorf("tool name is empty")
 	}
-	if !isToolNameAllowed(allow, name) {
+	if !isToolNameAllowed(allow, name) && !isImplicitlyAllowedSubagentTool(name) {
 		return fmt.Errorf("tool '%s' is not allowed by subagent profile", toolName)
 	}
 
@@ -1914,11 +1979,20 @@ func validateParallelAllowlistArgs(allow map[string]struct{}, args map[string]in
 		if name == "" {
 			continue
 		}
-		if !isToolNameAllowed(allow, name) {
+		if !isToolNameAllowed(allow, name) && !isImplicitlyAllowedSubagentTool(name) {
 			return fmt.Errorf("tool 'parallel' contains disallowed call[%d]: %s", i, tool)
 		}
 	}
 	return nil
+}
+
+func isImplicitlyAllowedSubagentTool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "skill_exec":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeToolAllowlist(in []string) map[string]struct{} {

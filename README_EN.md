@@ -202,11 +202,13 @@ See [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json)
 
 ## MCP Server Support
 
-ClawGo now supports `stdio` MCP servers through `tools.mcp`.
+ClawGo now supports `stdio`, `http`, `streamable_http`, and `sse` MCP servers through `tools.mcp`.
 
 - declare each server under `config.json -> tools.mcp.servers`
 - the bridge supports `list_servers`, `list_tools`, `call_tool`, `list_resources`, `read_resource`, `list_prompts`, and `get_prompt`
 - on startup, ClawGo discovers remote MCP tools and registers them as local tools using the `mcp__<server>__<tool>` naming pattern
+- with `permission=workspace` (default), `working_dir` is resolved inside the workspace and must remain within it
+- with `permission=full`, `working_dir` may point to any absolute path including `/`, but access still inherits the permissions of the Linux user running `clawgo`
 
 See the `tools.mcp` section in [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json).
 

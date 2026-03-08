@@ -161,6 +161,27 @@ func TestHandleSubagentRuntimeRegistryAndToggleEnabled(t *testing.T) {
 	if !ok || len(items) < 2 {
 		t.Fatalf("expected registry items, got %#v", payload["items"])
 	}
+	var tester map[string]interface{}
+	for _, item := range items {
+		if item["agent_id"] == "tester" {
+			tester = item
+			break
+		}
+	}
+	if tester == nil {
+		t.Fatalf("expected tester registry item, got %#v", items)
+	}
+	toolVisibility, _ := tester["tool_visibility"].(map[string]interface{})
+	if toolVisibility == nil {
+		t.Fatalf("expected tool_visibility in tester registry item, got %#v", tester)
+	}
+	if toolVisibility["mode"] != "allowlist" {
+		t.Fatalf("expected tester tool mode allowlist, got %#v", toolVisibility)
+	}
+	inherited, _ := tester["inherited_tools"].([]string)
+	if len(inherited) != 1 || inherited[0] != "skill_exec" {
+		t.Fatalf("expected inherited skill_exec, got %#v", tester["inherited_tools"])
+	}
 
 	_, err = loop.HandleSubagentRuntime(context.Background(), "set_config_subagent_enabled", map[string]interface{}{
 		"agent_id": "tester",

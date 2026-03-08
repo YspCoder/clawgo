@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -290,9 +293,9 @@ func TestValidateMCPTools(t *testing.T) {
 	cfg.Tools.MCP.Servers = map[string]config.MCPServerConfig{
 		"bad": {
 			Enabled:    true,
-			Transport:  "http",
+			Transport:  "ws",
 			Command:    "",
-			WorkingDir: "relative",
+			WorkingDir: "/outside-workspace",
 		},
 	}
 	errs := config.Validate(cfg)
@@ -306,13 +309,36 @@ func TestValidateMCPTools(t *testing.T) {
 	joined := strings.Join(got, "\n")
 	for _, want := range []string{
 		"tools.mcp.request_timeout_sec must be > 0 when tools.mcp.enabled=true",
-		"tools.mcp.servers.bad.transport must be 'stdio'",
-		"tools.mcp.servers.bad.command is required when enabled=true",
-		"tools.mcp.servers.bad.working_dir must be an absolute path",
+		"tools.mcp.servers.bad.transport must be one of: stdio, http, streamable_http, sse",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("expected validation error %q in:\n%s", want, joined)
 		}
+	}
+}
+
+func TestValidateMCPToolsFullPermissionRequiresAbsolutePath(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.MCP.Enabled = true
+	cfg.Tools.MCP.Servers = map[string]config.MCPServerConfig{
+		"full": {
+			Enabled:    true,
+			Transport:  "stdio",
+			Command:    "demo",
+			Permission: "full",
+			WorkingDir: "relative",
+		},
+	}
+	errs := config.Validate(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+	joined := ""
+	for _, err := range errs {
+		joined += err.Error() + "\n"
+	}
+	if !strings.Contains(joined, "tools.mcp.servers.full.working_dir must be an absolute path when permission=full") {
+		t.Fatalf("unexpected validation errors:\n%s", joined)
 	}
 }
 
@@ -346,9 +372,219 @@ func TestMCPToolListTools(t *testing.T) {
 	}
 }
 
+func TestMCPToolHTTPTransport(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		method, _ := req["method"].(string)
+		id := req["id"]
+		var resp map[string]interface{}
+		switch method {
+		case "initialize":
+			resp = map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result": map[string]interface{}{
+					"protocolVersion": mcpProtocolVersion,
+				},
+			}
+		case "notifications/initialized":
+			resp = map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result":  map[string]interface{}{},
+			}
+		case "tools/list":
+			resp = map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result": map[string]interface{}{
+					"tools": []map[string]interface{}{
+						{
+							"name":        "echo",
+							"description": "Echo text",
+							"inputSchema": map[string]interface{}{"type": "object"},
+						},
+					},
+				},
+			}
+		case "tools/call":
+			resp = map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"result": map[string]interface{}{
+					"content": []map[string]interface{}{
+						{"type": "text", "text": "echo:http"},
+					},
+				},
+			}
+		default:
+			resp = map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      id,
+				"error":   map[string]interface{}{"code": -32601, "message": "unsupported"},
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	tool := NewMCPTool(t.TempDir(), config.MCPToolsConfig{
+		Enabled:           true,
+		RequestTimeoutSec: 5,
+		Servers: map[string]config.MCPServerConfig{
+			"httpdemo": {
+				Enabled:   true,
+				Transport: "http",
+				URL:       server.URL,
+			},
+		},
+	})
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "list_tools",
+		"server": "httpdemo",
+	})
+	if err != nil {
+		t.Fatalf("http list_tools returned error: %v", err)
+	}
+	if !strings.Contains(out, `"name": "echo"`) {
+		t.Fatalf("expected http tool listing, got: %s", out)
+	}
+}
+
+func TestMCPToolSSETransport(t *testing.T) {
+	messageCh := make(chan string, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/sse":
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "flush unsupported", http.StatusInternalServerError)
+				return
+			}
+			_, _ = fmt.Fprintf(w, "event: endpoint\n")
+			_, _ = fmt.Fprintf(w, "data: /messages\n\n")
+			flusher.Flush()
+			notify := r.Context().Done()
+			for {
+				select {
+				case payload := <-messageCh:
+					_, _ = fmt.Fprintf(w, "event: message\n")
+					_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+					flusher.Flush()
+				case <-notify:
+					return
+				}
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/messages":
+			defer r.Body.Close()
+			var req map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			method, _ := req["method"].(string)
+			id := req["id"]
+			switch method {
+			case "initialize":
+				payload, _ := json.Marshal(map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"protocolVersion": mcpProtocolVersion,
+					},
+				})
+				messageCh <- string(payload)
+			case "tools/list":
+				payload, _ := json.Marshal(map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"tools": []map[string]interface{}{
+							{"name": "echo", "description": "Echo text", "inputSchema": map[string]interface{}{"type": "object"}},
+						},
+					},
+				})
+				messageCh <- string(payload)
+			case "tools/call":
+				payload, _ := json.Marshal(map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      id,
+					"result": map[string]interface{}{
+						"content": []map[string]interface{}{{"type": "text", "text": "echo:sse"}},
+					},
+				})
+				messageCh <- string(payload)
+			}
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	tool := NewMCPTool(t.TempDir(), config.MCPToolsConfig{
+		Enabled:           true,
+		RequestTimeoutSec: 5,
+		Servers: map[string]config.MCPServerConfig{
+			"ssedemo": {
+				Enabled:   true,
+				Transport: "sse",
+				URL:       server.URL + "/sse",
+			},
+		},
+	})
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "list_tools",
+		"server": "ssedemo",
+	})
+	if err != nil {
+		t.Fatalf("sse list_tools returned error: %v", err)
+	}
+	if !strings.Contains(out, `"name": "echo"`) {
+		t.Fatalf("expected sse tool listing, got: %s", out)
+	}
+}
+
 func TestBuildMCPDynamicToolName(t *testing.T) {
 	got := buildMCPDynamicToolName("Context7 Server", "resolve-library.id")
 	if got != "mcp__context7_server__resolve_library_id" {
 		t.Fatalf("unexpected tool name: %s", got)
+	}
+}
+
+func TestResolveMCPWorkingDirWorkspaceScoped(t *testing.T) {
+	workspace := t.TempDir()
+	dir, err := resolveMCPWorkingDir(workspace, config.MCPServerConfig{WorkingDir: "tools/context7"})
+	if err != nil {
+		t.Fatalf("resolveMCPWorkingDir returned error: %v", err)
+	}
+	want := filepath.Join(workspace, "tools", "context7")
+	if dir != want {
+		t.Fatalf("unexpected working dir: got %q want %q", dir, want)
+	}
+}
+
+func TestResolveMCPWorkingDirRejectsOutsideWorkspaceWithoutFullPermission(t *testing.T) {
+	workspace := t.TempDir()
+	_, err := resolveMCPWorkingDir(workspace, config.MCPServerConfig{WorkingDir: "/"})
+	if err == nil {
+		t.Fatal("expected outside-workspace path to be rejected")
+	}
+}
+
+func TestResolveMCPWorkingDirAllowsAbsolutePathWithFullPermission(t *testing.T) {
+	dir, err := resolveMCPWorkingDir(t.TempDir(), config.MCPServerConfig{Permission: "full", WorkingDir: "/"})
+	if err != nil {
+		t.Fatalf("resolveMCPWorkingDir returned error: %v", err)
+	}
+	if dir != "/" {
+		t.Fatalf("unexpected working dir: %q", dir)
 	}
 }

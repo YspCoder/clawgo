@@ -264,7 +264,8 @@
           "command": "npx",
           "args": ["-y", "@upstash/context7-mcp"],
           "env": {},
-          "working_dir": "/absolute/path/to/project",
+          "permission": "workspace",
+          "working_dir": "tools/context7",
           "description": "Example MCP server",
           "package": "@upstash/context7-mcp"
         }

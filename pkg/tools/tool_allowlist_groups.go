@@ -49,6 +49,12 @@ var defaultToolAllowlistGroups = []ToolAllowlistGroup{
 		Aliases:     []string{"subagent", "agent_runtime"},
 		Tools:       []string{"spawn", "subagents", "subagent_profile"},
 	},
+	{
+		Name:        "skills",
+		Description: "Skill script execution tools",
+		Aliases:     []string{"skill", "skill_scripts"},
+		Tools:       []string{"skill_exec"},
+	},
 }
 
 func ToolAllowlistGroups() []ToolAllowlistGroup {

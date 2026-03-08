@@ -62,13 +62,23 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 	skill, _ := args["skill"].(string)
 	script, _ := args["script"].(string)
 	reason, _ := args["reason"].(string)
+	callerAgent, _ := args["caller_agent"].(string)
+	callerScope, _ := args["caller_scope"].(string)
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "unspecified"
 	}
+	callerAgent = strings.TrimSpace(callerAgent)
+	if callerAgent == "" {
+		callerAgent = "main"
+	}
+	callerScope = strings.TrimSpace(callerScope)
+	if callerScope == "" {
+		callerScope = "main_agent"
+	}
 	if strings.TrimSpace(skill) == "" || strings.TrimSpace(script) == "" {
 		err := fmt.Errorf("skill and script are required")
-		t.writeAudit(skill, script, reason, false, err.Error())
+		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
 		return "", err
 	}
 	if strings.TrimSpace(t.workspace) != "" {
@@ -77,31 +87,31 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 
 	skillDir, err := t.resolveSkillDir(skill)
 	if err != nil {
-		t.writeAudit(skill, script, reason, false, err.Error())
+		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
 		return "", err
 	}
 	if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); err != nil {
 		err = fmt.Errorf("SKILL.md missing for skill: %s", skill)
-		t.writeAudit(skill, script, reason, false, err.Error())
+		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
 		return "", err
 	}
 
 	relScript := filepath.Clean(script)
 	if strings.Contains(relScript, "..") || filepath.IsAbs(relScript) {
 		err := fmt.Errorf("script must be relative path inside skill directory")
-		t.writeAudit(skill, script, reason, false, err.Error())
+		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
 		return "", err
 	}
 	if !strings.HasPrefix(relScript, "scripts"+string(os.PathSeparator)) {
 		err := fmt.Errorf("script must be under scripts/ directory")
-		t.writeAudit(skill, script, reason, false, err.Error())
+		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
 		return "", err
 	}
 
 	scriptPath := filepath.Join(skillDir, relScript)
 	if _, err := os.Stat(scriptPath); err != nil {
 		err = fmt.Errorf("script not found: %s", scriptPath)
-		t.writeAudit(skill, script, reason, false, err.Error())
+		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
 		return "", err
 	}
 
@@ -124,7 +134,7 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 	for attempt := 0; attempt <= policy.MaxRestarts; attempt++ {
 		cmd, err := buildSkillCommand(ctx, scriptPath, cmdArgs)
 		if err != nil {
-			t.writeAudit(skill, script, reason, false, err.Error())
+			t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
 			return "", err
 		}
 		cmd.Dir = skillDir
@@ -158,7 +168,7 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 	}
 	output := merged.String()
 	if runErr != nil {
-		t.writeAudit(skill, script, reason, false, runErr.Error())
+		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, runErr.Error())
 		return "", fmt.Errorf("skill execution failed: %w\n%s", runErr, output)
 	}
 
@@ -166,21 +176,23 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 	if out == "" {
 		out = "(no output)"
 	}
-	t.writeAudit(skill, script, reason, true, "")
+	t.writeAudit(skill, script, reason, callerAgent, callerScope, true, "")
 	return out, nil
 }
 
-func (t *SkillExecTool) writeAudit(skill, script, reason string, ok bool, errText string) {
+func (t *SkillExecTool) writeAudit(skill, script, reason, callerAgent, callerScope string, ok bool, errText string) {
 	if strings.TrimSpace(t.workspace) == "" {
 		return
 	}
 	memDir := filepath.Join(t.workspace, "memory")
 	_ = os.MkdirAll(memDir, 0755)
-	row := fmt.Sprintf("{\"time\":%q,\"skill\":%q,\"script\":%q,\"reason\":%q,\"ok\":%t,\"error\":%q}\n",
+	row := fmt.Sprintf("{\"time\":%q,\"skill\":%q,\"script\":%q,\"reason\":%q,\"caller_agent\":%q,\"caller_scope\":%q,\"ok\":%t,\"error\":%q}\n",
 		time.Now().UTC().Format(time.RFC3339),
 		strings.TrimSpace(skill),
 		strings.TrimSpace(script),
 		strings.TrimSpace(reason),
+		strings.TrimSpace(callerAgent),
+		strings.TrimSpace(callerScope),
 		ok,
 		strings.TrimSpace(errText),
 	)

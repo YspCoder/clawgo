@@ -202,11 +202,13 @@ user -> main -> worker -> main -> user
 
 ## MCP 服务支持
 
-ClawGo 现在支持通过 `tools.mcp` 接入 `stdio` 型 MCP server。
+ClawGo 现在支持通过 `tools.mcp` 接入 `stdio`、`http`、`streamable_http`、`sse` 型 MCP server。
 
 - 先在 `config.json -> tools.mcp.servers` 里声明 server
 - 当前支持 `list_servers`、`list_tools`、`call_tool`、`list_resources`、`read_resource`、`list_prompts`、`get_prompt`
 - 启动时会自动发现远端 MCP tools，并注册为本地工具，命名格式为 `mcp__<server>__<tool>`
+- `permission=workspace`（默认）时，`working_dir` 会按 workspace 解析，并且必须留在 workspace 内
+- `permission=full` 时，`working_dir` 可指向 `/` 下任意绝对路径，但实际访问权限仍然继承运行 `clawgo` 的 Linux 用户权限
 
 示例配置可直接参考 [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json) 中的 `tools.mcp` 段落。
 

@@ -329,9 +329,11 @@ type FilesystemConfig struct{}
 type MCPServerConfig struct {
 	Enabled     bool              `json:"enabled"`
 	Transport   string            `json:"transport"`
+	URL         string            `json:"url,omitempty"`
 	Command     string            `json:"command"`
 	Args        []string          `json:"args,omitempty"`
 	Env         map[string]string `json:"env,omitempty"`
+	Permission  string            `json:"permission,omitempty"`
 	WorkingDir  string            `json:"working_dir,omitempty"`
 	Description string            `json:"description,omitempty"`
 	Package     string            `json:"package,omitempty"`

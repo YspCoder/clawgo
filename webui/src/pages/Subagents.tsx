@@ -96,6 +96,13 @@ type RegistrySubagent = {
   prompt_file_found?: boolean;
   memory_namespace?: string;
   tool_allowlist?: string[];
+  inherited_tools?: string[];
+  effective_tools?: string[];
+  tool_visibility?: {
+    mode?: string;
+    inherited_tool_count?: number;
+    effective_tool_count?: number;
+  };
   routing_keywords?: string[];
 };
 
@@ -539,6 +546,7 @@ const Subagents: React.FC = () => {
 
     const localMainStats = taskStats[normalizeTitle(localRoot.agent_id, 'main')] || { total: 0, running: 0, failed: 0, waiting: 0, latestStatus: '', latestUpdated: 0, active: [] };
     const localMainTask = recentTaskByAgent[normalizeTitle(localRoot.agent_id, 'main')];
+    const localMainRegistry = registryItems.find((item) => item.agent_id === localRoot.agent_id);
     localBranchStats.running += localMainStats.running;
     localBranchStats.failed += localMainStats.failed;
     const localMainCard: GraphCardSpec = {
@@ -557,8 +565,10 @@ const Subagents: React.FC = () => {
         `children=${localChildren.length + remoteClusters.length}`,
         `total=${localMainStats.total} running=${localMainStats.running}`,
         `waiting=${localMainStats.waiting} failed=${localMainStats.failed}`,
-        `notify=${normalizeTitle(registryItems.find((item) => item.agent_id === localRoot.agent_id)?.notify_main_policy, 'final_only')}`,
+        `notify=${normalizeTitle(localMainRegistry?.notify_main_policy, 'final_only')}`,
         `transport=${normalizeTitle(localRoot.transport, 'local')} type=${normalizeTitle(localRoot.type, 'router')}`,
+        `tools=${normalizeTitle(localMainRegistry?.tool_visibility?.mode, 'allowlist')} visible=${localMainRegistry?.tool_visibility?.effective_tool_count ?? 0} inherited=${localMainRegistry?.tool_visibility?.inherited_tool_count ?? 0}`,
+        (localMainRegistry?.inherited_tools || []).length ? `inherits: ${(localMainRegistry?.inherited_tools || []).join(', ')}` : 'inherits: -',
         localMainStats.active[0] ? `task: ${localMainStats.active[0].title}` : t('noLiveTasks'),
       ],
       accent: localMainStats.running > 0 ? 'bg-emerald-500' : localMainStats.latestStatus === 'failed' ? 'bg-red-500' : 'bg-amber-400',
@@ -575,6 +585,7 @@ const Subagents: React.FC = () => {
       const childY = childStartY;
       const stats = taskStats[normalizeTitle(child.agent_id, '')] || { total: 0, running: 0, failed: 0, waiting: 0, latestStatus: '', latestUpdated: 0, active: [] };
       const task = recentTaskByAgent[normalizeTitle(child.agent_id, '')];
+      const childRegistry = registryItems.find((item) => item.agent_id === child.agent_id);
       localBranchStats.running += stats.running;
       localBranchStats.failed += stats.failed;
       cards.push({
@@ -592,8 +603,10 @@ const Subagents: React.FC = () => {
         meta: [
           `total=${stats.total} running=${stats.running}`,
           `waiting=${stats.waiting} failed=${stats.failed}`,
-          `notify=${normalizeTitle(registryItems.find((item) => item.agent_id === child.agent_id)?.notify_main_policy, 'final_only')}`,
+          `notify=${normalizeTitle(childRegistry?.notify_main_policy, 'final_only')}`,
           `transport=${normalizeTitle(child.transport, 'local')} type=${normalizeTitle(child.type, 'worker')}`,
+          `tools=${normalizeTitle(childRegistry?.tool_visibility?.mode, 'allowlist')} visible=${childRegistry?.tool_visibility?.effective_tool_count ?? 0} inherited=${childRegistry?.tool_visibility?.inherited_tool_count ?? 0}`,
+          (childRegistry?.inherited_tools || []).length ? `inherits: ${(childRegistry?.inherited_tools || []).join(', ')}` : 'inherits: -',
           stats.active[0] ? `task: ${stats.active[0].title}` : task ? `last: ${summarizeTask(task.task, task.label)}` : t('noLiveTasks'),
         ],
         accent: stats.running > 0 ? 'bg-emerald-500' : stats.latestStatus === 'failed' ? 'bg-red-500' : 'bg-sky-400',

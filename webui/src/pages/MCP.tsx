@@ -23,6 +23,8 @@ const MCP: React.FC = () => {
   const ui = useUI();
   const [newMCPServerName, setNewMCPServerName] = useState('');
   const [mcpTools, setMcpTools] = useState<Array<{ name: string; description?: string; mcp?: { server?: string; remote_tool?: string } }>>([]);
+  const [mcpServerChecks, setMcpServerChecks] = useState<Array<{ name: string; status?: string; message?: string; package?: string; installer?: string; installable?: boolean; resolved?: string }>>([]);
+  const [argInputs, setArgInputs] = useState<Record<string, string>>({});
   const [baseline, setBaseline] = useState<any>(null);
 
   const currentPayload = useMemo(() => cfg || {}, [cfg]);
@@ -49,9 +51,13 @@ const MCP: React.FC = () => {
       const data = await r.json();
       if (!cancelled) {
         setMcpTools(Array.isArray(data?.mcp_tools) ? data.mcp_tools : []);
+        setMcpServerChecks(Array.isArray(data?.mcp_server_checks) ? data.mcp_server_checks : []);
       }
     } catch {
-      if (!cancelled) setMcpTools([]);
+      if (!cancelled) {
+        setMcpTools([]);
+        setMcpServerChecks([]);
+      }
     }
   }
 
@@ -65,6 +71,23 @@ const MCP: React.FC = () => {
 
   function updateMCPServerField(name: string, field: string, value: any) {
     setCfg((v) => setPath(v, `tools.mcp.servers.${name}.${field}`, value));
+  }
+
+  function addMCPArg(name: string, rawValue: string) {
+    const value = rawValue.trim();
+    if (!value) return;
+    const current = ((((cfg as any)?.tools?.mcp?.servers?.[name]?.args) || []) as any[])
+      .map((x) => String(x).trim())
+      .filter(Boolean);
+    updateMCPServerField(name, 'args', [...current, value]);
+    setArgInputs((prev) => ({ ...prev, [name]: '' }));
+  }
+
+  function removeMCPArg(name: string, index: number) {
+    const current = ((((cfg as any)?.tools?.mcp?.servers?.[name]?.args) || []) as any[])
+      .map((x) => String(x).trim())
+      .filter(Boolean);
+    updateMCPServerField(name, 'args', current.filter((_, i) => i !== index));
   }
 
   function addMCPServer() {
@@ -83,9 +106,11 @@ const MCP: React.FC = () => {
         next.tools.mcp.servers[name] = {
           enabled: true,
           transport: 'stdio',
+          url: '',
           command: '',
           args: [],
           env: {},
+          permission: 'workspace',
           working_dir: '',
           description: '',
           package: '',
@@ -94,6 +119,7 @@ const MCP: React.FC = () => {
       return next;
     });
     setNewMCPServerName('');
+    setArgInputs((prev) => ({ ...prev, [name]: '' }));
   }
 
   async function removeMCPServer(name: string) {
@@ -111,21 +137,32 @@ const MCP: React.FC = () => {
       }
       return next;
     });
+    setArgInputs((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
   }
 
-  function inferMCPPackage(server: any): string {
-    if (typeof server?.package === 'string' && server.package.trim()) return server.package.trim();
-    const command = String(server?.command || '').trim();
-    const args = Array.isArray(server?.args) ? server.args.map((x: any) => String(x).trim()).filter(Boolean) : [];
-    if (command === 'npx' || command.endsWith('/npx')) {
-      const pkg = args.find((arg: string) => !arg.startsWith('-'));
-      return pkg || '';
+  function inferMCPInstallSpec(server: any): { installer: string; packageName: string } {
+    if (typeof server?.installer === 'string' && server.installer.trim() && typeof server?.package === 'string' && server.package.trim()) {
+      return { installer: server.installer.trim(), packageName: server.package.trim() };
     }
-    return '';
+    if (typeof server?.package === 'string' && server.package.trim()) {
+      return { installer: 'npm', packageName: server.package.trim() };
+    }
+    const command = String(server?.command || '').trim().split('/').pop() || '';
+    const args = Array.isArray(server?.args) ? server.args.map((x: any) => String(x).trim()).filter(Boolean) : [];
+    const pkg = args.find((arg: string) => !arg.startsWith('-')) || '';
+    if (command === 'npx') return { installer: 'npm', packageName: pkg };
+    if (command === 'uvx') return { installer: 'uv', packageName: pkg };
+    if (command === 'bunx') return { installer: 'bun', packageName: pkg };
+    return { installer: 'npm', packageName: '' };
   }
 
   async function installMCPServerPackage(name: string, server: any) {
-    const defaultPkg = inferMCPPackage(server);
+    const inferred = inferMCPInstallSpec(server);
+    const defaultPkg = inferred.packageName;
     const pkg = await ui.promptDialog({
       title: t('configMCPInstallTitle'),
       message: t('configMCPInstallMessage', { name }),
@@ -141,7 +178,7 @@ const MCP: React.FC = () => {
       const r = await fetch(`/webui/api/mcp/install${q}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ package: packageName }),
+        body: JSON.stringify({ package: packageName, installer: inferred.installer }),
       });
       const text = await r.text();
       if (!r.ok) {
@@ -170,6 +207,14 @@ const MCP: React.FC = () => {
     } finally {
       ui.hideLoading();
     }
+  }
+
+  async function installMCPServerCheckPackage(check: { name: string; package?: string; installer?: string }) {
+    const server = (((cfg as any)?.tools?.mcp?.servers?.[check.name]) || {}) as any;
+    if (check.package && !String(server?.package || '').trim()) {
+      updateMCPServerField(check.name, 'package', check.package);
+    }
+    await installMCPServerPackage(check.name, { ...server, package: check.package || server?.package, installer: check.installer });
   }
 
   async function saveConfig() {
@@ -255,22 +300,86 @@ const MCP: React.FC = () => {
           </div>
         </div>
         <div className="space-y-2">
-          {Object.entries((((cfg as any)?.tools?.mcp?.servers) || {}) as Record<string, any>).map(([name, server]) => (
+          {Object.entries((((cfg as any)?.tools?.mcp?.servers) || {}) as Record<string, any>).map(([name, server]) => {
+            const transport = String(server?.transport || 'stdio');
+            const isStdio = transport === 'stdio';
+            const usesURL = transport === 'http' || transport === 'streamable_http' || transport === 'sse';
+            return (
             <div key={name} className="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
               <div className="md:col-span-2 font-mono text-zinc-300 flex items-center">{name}</div>
               <label className="md:col-span-1 flex items-center gap-2 text-zinc-300">
                 <input type="checkbox" checked={!!server?.enabled} onChange={(e)=>updateMCPServerField(name, 'enabled', e.target.checked)} />
                 {t('enable')}
               </label>
-              <input value={String(server?.command || '')} onChange={(e)=>updateMCPServerField(name, 'command', e.target.value)} placeholder={t('configLabels.command')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-              <input value={String(server?.working_dir || '')} onChange={(e)=>updateMCPServerField(name, 'working_dir', e.target.value)} placeholder={t('configLabels.working_dir')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-              <input value={Array.isArray(server?.args) ? server.args.join(',') : ''} onChange={(e)=>updateMCPServerField(name, 'args', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.args')}${t('configCommaSeparatedHint')}`} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-              <input value={String(server?.package || '')} onChange={(e)=>updateMCPServerField(name, 'package', e.target.value)} placeholder={t('configLabels.package')} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-              <input value={String(server?.description || '')} onChange={(e)=>updateMCPServerField(name, 'description', e.target.value)} placeholder={t('configLabels.description')} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-              <button onClick={()=>installMCPServerPackage(name, server)} className="md:col-span-1 px-2 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 text-emerald-100">{t('install')}</button>
+              <select value={transport} onChange={(e)=>updateMCPServerField(name, 'transport', e.target.value)} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800">
+                <option value="stdio">stdio</option>
+                <option value="http">http</option>
+                <option value="streamable_http">streamable_http</option>
+                <option value="sse">sse</option>
+              </select>
+              {isStdio && (
+                <>
+                  <input value={String(server?.command || '')} onChange={(e)=>updateMCPServerField(name, 'command', e.target.value)} placeholder={t('configLabels.command')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                  <select value={String(server?.permission || 'workspace')} onChange={(e)=>updateMCPServerField(name, 'permission', e.target.value)} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800">
+                    <option value="workspace">workspace</option>
+                    <option value="full">full</option>
+                  </select>
+                  <input value={String(server?.working_dir || '')} onChange={(e)=>updateMCPServerField(name, 'working_dir', e.target.value)} placeholder={t('configLabels.working_dir')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                  <div className="md:col-span-2 rounded-lg bg-zinc-950/70 border border-zinc-800 p-2 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {(Array.isArray(server?.args) ? server.args : []).map((arg: any, index: number) => (
+                        <span key={`${name}-arg-${index}`} className="inline-flex items-center gap-2 rounded-md bg-zinc-800 px-2 py-1 text-[11px] text-zinc-200">
+                          <span className="font-mono">{String(arg)}</span>
+                          <button type="button" onClick={() => removeMCPArg(name, index)} className="text-zinc-400 hover:text-zinc-100">x</button>
+                        </span>
+                      ))}
+                    </div>
+                    <input
+                      value={argInputs[name] || ''}
+                      onChange={(e) => setArgInputs((prev) => ({ ...prev, [name]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addMCPArg(name, argInputs[name] || '');
+                        }
+                      }}
+                      onBlur={() => addMCPArg(name, argInputs[name] || '')}
+                      placeholder={t('configMCPArgsEnterHint')}
+                      className="w-full px-2 py-1 rounded-lg bg-zinc-900/80 border border-zinc-800"
+                    />
+                  </div>
+                  <input value={String(server?.package || '')} onChange={(e)=>updateMCPServerField(name, 'package', e.target.value)} placeholder={t('configLabels.package')} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                </>
+              )}
+              {usesURL && (
+                <input value={String(server?.url || '')} onChange={(e)=>updateMCPServerField(name, 'url', e.target.value)} placeholder={t('configLabels.url')} className="md:col-span-5 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+              )}
+              <input value={String(server?.description || '')} onChange={(e)=>updateMCPServerField(name, 'description', e.target.value)} placeholder={t('configLabels.description')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+              {isStdio && (
+                <button onClick={()=>installMCPServerPackage(name, server)} className="md:col-span-1 px-2 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 text-emerald-100">{t('install')}</button>
+              )}
               <button onClick={()=>removeMCPServer(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
+              {(() => {
+                const check = mcpServerChecks.find((item) => item.name === name);
+                if (!check || check.status === 'ok' || check.status === 'disabled' || check.status === 'not_applicable') return null;
+                return (
+                  <div className="md:col-span-12 rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100 flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <div>{check.message || t('configMCPCommandMissing')}</div>
+                      {check.package && (
+                        <div className="text-amber-300/80">{t('configMCPInstallSuggested', { pkg: check.package })} {check.installer ? `(${check.installer})` : ''}</div>
+                      )}
+                    </div>
+                    {check.installable && (
+                      <button onClick={() => installMCPServerCheckPackage(check)} className="px-2 py-1 rounded bg-amber-700 hover:bg-amber-600 text-white">
+                        {t('install')}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
-          ))}
+          )})}
           {Object.keys((((cfg as any)?.tools?.mcp?.servers) || {}) as Record<string, any>).length === 0 && (
             <div className="text-xs text-zinc-500">{t('configNoMCPServers')}</div>
           )}

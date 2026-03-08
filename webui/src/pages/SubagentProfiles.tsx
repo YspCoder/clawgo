@@ -390,6 +390,9 @@ const SubagentProfiles: React.FC = () => {
                 className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
                 placeholder="read_file, list_files, memory_search"
               />
+              <div className="mt-1 text-[11px] text-zinc-500">
+                <span className="font-mono text-zinc-400">skill_exec</span> is inherited automatically and does not need to be listed here.
+              </div>
               {groups.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {groups.map((g) => (

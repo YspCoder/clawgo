@@ -234,14 +234,36 @@ func validateMCPTools(cfg *Config) []error {
 		if transport == "" {
 			transport = "stdio"
 		}
-		if transport != "stdio" {
-			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.transport must be 'stdio'", name))
+		if transport != "stdio" && transport != "http" && transport != "streamable_http" && transport != "sse" {
+			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.transport must be one of: stdio, http, streamable_http, sse", name))
 		}
-		if strings.TrimSpace(server.Command) == "" {
-			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.command is required when enabled=true", name))
+		if transport == "stdio" && strings.TrimSpace(server.Command) == "" {
+			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.command is required when transport=stdio", name))
 		}
-		if wd := strings.TrimSpace(server.WorkingDir); wd != "" && !filepath.IsAbs(wd) {
-			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.working_dir must be an absolute path", name))
+		if (transport == "http" || transport == "streamable_http" || transport == "sse") && strings.TrimSpace(server.URL) == "" {
+			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.url is required when transport=%s", name, transport))
+		}
+		permission := strings.ToLower(strings.TrimSpace(server.Permission))
+		if permission == "" {
+			permission = "workspace"
+		}
+		if permission != "workspace" && permission != "full" {
+			errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.permission must be one of: workspace, full", name))
+		}
+		if transport == "stdio" {
+			if wd := strings.TrimSpace(server.WorkingDir); wd != "" {
+				if permission == "full" {
+					if !filepath.IsAbs(wd) {
+						errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.working_dir must be an absolute path when permission=full", name))
+					}
+				} else if filepath.IsAbs(wd) {
+					workspace := cfg.WorkspacePath()
+					rel, err := filepath.Rel(workspace, wd)
+					if err != nil || strings.HasPrefix(rel, "..") {
+						errs = append(errs, fmt.Errorf("tools.mcp.servers.%s.working_dir must stay within workspace unless permission=full", name))
+					}
+				}
+			}
 		}
 	}
 	return errs

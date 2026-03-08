@@ -124,6 +124,7 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 						}
 					}
 				}
+				toolInfo := al.describeSubagentTools(subcfg.Tools.Allowlist)
 				items = append(items, map[string]interface{}{
 					"agent_id":           agentID,
 					"enabled":            subcfg.Enabled,
@@ -140,6 +141,9 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 					"prompt_file_found":  promptFileFound,
 					"memory_namespace":   subcfg.MemoryNamespace,
 					"tool_allowlist":     append([]string(nil), subcfg.Tools.Allowlist...),
+					"tool_visibility":    toolInfo,
+					"effective_tools":    toolInfo["effective_tools"],
+					"inherited_tools":    toolInfo["inherited_tools"],
 					"routing_keywords":   routeKeywordsForRegistry(cfg.Agents.Router.Rules, agentID),
 					"managed_by":         "config.json",
 				})
@@ -151,6 +155,7 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 					if strings.TrimSpace(profile.ManagedBy) != "node_registry" {
 						continue
 					}
+					toolInfo := al.describeSubagentTools(profile.ToolAllowlist)
 					items = append(items, map[string]interface{}{
 						"agent_id":           profile.AgentID,
 						"enabled":            strings.EqualFold(strings.TrimSpace(profile.Status), "active"),
@@ -167,6 +172,9 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 						"prompt_file_found":  false,
 						"memory_namespace":   profile.MemoryNamespace,
 						"tool_allowlist":     append([]string(nil), profile.ToolAllowlist...),
+						"tool_visibility":    toolInfo,
+						"effective_tools":    toolInfo["effective_tools"],
+						"inherited_tools":    toolInfo["inherited_tools"],
 						"routing_keywords":   []string{},
 						"managed_by":         profile.ManagedBy,
 					})
@@ -433,6 +441,51 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 	default:
 		return nil, fmt.Errorf("unsupported action: %s", action)
 	}
+}
+
+func (al *AgentLoop) describeSubagentTools(allowlist []string) map[string]interface{} {
+	inherited := implicitSubagentTools()
+	allTools := make([]string, 0)
+	if al != nil && al.tools != nil {
+		allTools = al.tools.List()
+		sort.Strings(allTools)
+	}
+
+	normalizedAllow := normalizeToolAllowlist(allowlist)
+	mode := "allowlist"
+	effective := make([]string, 0)
+	if len(normalizedAllow) == 0 {
+		mode = "unrestricted"
+		effective = append(effective, allTools...)
+	} else if _, ok := normalizedAllow["*"]; ok {
+		mode = "all"
+		effective = append(effective, allTools...)
+	} else if _, ok := normalizedAllow["all"]; ok {
+		mode = "all"
+		effective = append(effective, allTools...)
+	} else {
+		for _, name := range allTools {
+			if isToolNameAllowed(normalizedAllow, name) || isImplicitlyAllowedSubagentTool(name) {
+				effective = append(effective, name)
+			}
+		}
+	}
+	return map[string]interface{}{
+		"mode":                 mode,
+		"raw_allowlist":        append([]string(nil), allowlist...),
+		"inherited_tools":      inherited,
+		"inherited_tool_count": len(inherited),
+		"effective_tools":      effective,
+		"effective_tool_count": len(effective),
+	}
+}
+
+func implicitSubagentTools() []string {
+	out := make([]string, 0, 1)
+	if isImplicitlyAllowedSubagentTool("skill_exec") {
+		out = append(out, "skill_exec")
+	}
+	return out
 }
 
 func mergeSubagentStream(events []tools.SubagentRunEvent, messages []tools.AgentMessage) []map[string]interface{} {
