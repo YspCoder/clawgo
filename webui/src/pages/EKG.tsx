@@ -58,7 +58,7 @@ function KVDistributionCard({
             </div>
             <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-amber-500/70 to-orange-400/80"
+                className="ekg-bar-fill h-full rounded-full"
                 style={{ width: `${maxValue > 0 ? (value / maxValue) * 100 : 0}%` }}
               />
             </div>
@@ -164,7 +164,7 @@ const EKG: React.FC = () => {
             <option value="24h">24h</option>
             <option value="7d">7d</option>
           </select>
-          <button onClick={fetchData} className="brand-button inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-white">
+          <button onClick={fetchData} className="brand-button inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-zinc-950">
             <RefreshCw className="w-4 h-4" />
             {loading ? t('loading') : t('refresh')}
           </button>
@@ -172,10 +172,10 @@ const EKG: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard title={t('ekgEscalations')} value={escalationCount} subtitle={`${ekgWindow} window`} accent="bg-amber-500/10 text-amber-300 border border-amber-500/20" icon={<AlertTriangle className="w-5 h-5" />} />
-        <StatCard title={t('ekgSourceStats')} value={sourceCount} subtitle={t('ekgActiveSources')} accent="bg-sky-500/10 text-sky-300 border border-sky-500/20" icon={<Workflow className="w-5 h-5" />} />
-        <StatCard title={t('ekgChannelStats')} value={channelCount} subtitle={t('ekgActiveChannels')} accent="bg-violet-500/10 text-violet-300 border border-violet-500/20" icon={<Route className="w-5 h-5" />} />
-        <StatCard title={t('ekgTopProvidersWorkload')} value={topWorkloadProvider} subtitle={`${t('ekgErrorsCount')} ${totalErrorHits}`} accent="bg-rose-500/10 text-rose-300 border border-rose-500/20" icon={<ServerCrash className="w-5 h-5" />} />
+        <StatCard title={t('ekgEscalations')} value={escalationCount} subtitle={`${ekgWindow} window`} accent="ui-pill ui-pill-warning border" icon={<AlertTriangle className="w-5 h-5" />} />
+        <StatCard title={t('ekgSourceStats')} value={sourceCount} subtitle={t('ekgActiveSources')} accent="ui-pill ui-pill-info border" icon={<Workflow className="w-5 h-5" />} />
+        <StatCard title={t('ekgChannelStats')} value={channelCount} subtitle={t('ekgActiveChannels')} accent="ui-pill ui-pill-accent border" icon={<Route className="w-5 h-5" />} />
+        <StatCard title={t('ekgTopProvidersWorkload')} value={topWorkloadProvider} subtitle={`${t('ekgErrorsCount')} ${totalErrorHits}`} accent="ui-pill ui-pill-danger border" icon={<ServerCrash className="w-5 h-5" />} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr] gap-6 min-h-0">

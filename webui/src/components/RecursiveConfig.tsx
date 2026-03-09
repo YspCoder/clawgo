@@ -59,7 +59,7 @@ const PrimitiveArrayEditor: React.FC<{
         {value.map((item, idx) => (
           <span key={`${item}-${idx}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-xl ui-soft-panel text-xs font-mono text-zinc-700 dark:text-zinc-200">
             {String(item)}
-            <button onClick={() => removeAt(idx)} className="text-zinc-400 hover:text-red-400">×</button>
+            <button onClick={() => removeAt(idx)} className="ui-text-danger-hover text-zinc-400">×</button>
           </span>
         ))}
       </div>

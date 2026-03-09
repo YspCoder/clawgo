@@ -11,12 +11,12 @@ const Sidebar: React.FC = () => {
   const location = useLocation();
   const [expandedSections, setExpandedSections] = React.useState<Record<string, boolean>>({
     main: true,
-    agents: true,
-    ops: true,
-    config: true,
-    knowledge: true,
-    insights: true,
-    channels: true,
+    agents: false,
+    ops: false,
+    config: false,
+    knowledge: false,
+    insights: false,
+    channels: false,
   });
 
   const sections = [
@@ -158,7 +158,7 @@ const Sidebar: React.FC = () => {
         </div>
       ) : (
         <div className="hidden md:flex justify-center p-3 border-t border-zinc-800 bg-zinc-900/20">
-          <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_14px_rgba(240,90,40,0.38)]" title={t('gatewayToken')} />
+          <div className="gateway-token-indicator w-2.5 h-2.5 rounded-full" title={t('gatewayToken')} />
         </div>
       )}
       <div className={`hidden md:flex border-t border-zinc-800 bg-zinc-900/20 ${sidebarCollapsed ? 'justify-center p-3' : 'justify-end p-3'}`}>

@@ -251,10 +251,10 @@ const NodeArtifacts: React.FC = () => {
                   const isVideo = kind === 'video' || mime.startsWith('video/');
                   const dataUrl = dataUrlForArtifact(selected);
                   if (isImage && dataUrl) {
-                    return <img src={dataUrl} alt={String(selected?.name || 'artifact')} className="max-h-[420px] rounded-2xl border border-zinc-800 object-contain bg-black/30" />;
+                    return <img src={dataUrl} alt={String(selected?.name || 'artifact')} className="ui-media-surface-strong max-h-[420px] rounded-2xl border object-contain" />;
                   }
                   if (isVideo && dataUrl) {
-                    return <video src={dataUrl} controls className="max-h-[420px] w-full rounded-2xl border border-zinc-800 bg-black/30" />;
+                    return <video src={dataUrl} controls className="ui-media-surface-strong max-h-[420px] w-full rounded-2xl border" />;
                   }
                   if (String(selected?.content_text || '').trim() !== '') {
                     return <pre className="ui-code-panel p-3 text-[12px] whitespace-pre-wrap overflow-auto max-h-[420px]">{String(selected?.content_text || '')}</pre>;

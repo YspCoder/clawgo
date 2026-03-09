@@ -190,12 +190,12 @@ const TaskAudit: React.FC = () => {
 
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('error')}</div>
-                  <div className="ui-code-panel p-2 whitespace-pre-wrap text-red-300">{selected.error || '-'}</div>
+                  <div className="ui-code-panel ui-code-danger p-2 whitespace-pre-wrap">{selected.error || '-'}</div>
                 </div>
 
                 <div>
                   <div className="text-zinc-500 text-xs mb-1">{t('blockReason')}</div>
-                  <div className="ui-code-panel p-2 whitespace-pre-wrap text-amber-200">{selected.block_reason || '-'}</div>
+                  <div className="ui-code-panel ui-code-warning p-2 whitespace-pre-wrap">{selected.block_reason || '-'}</div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -284,7 +284,7 @@ const TaskAudit: React.FC = () => {
 
                   <div>
                     <div className="text-zinc-500 text-xs mb-1">{t('error')}</div>
-                    <div className="ui-code-panel p-2 whitespace-pre-wrap text-red-300">{selectedNode.error || '-'}</div>
+                    <div className="ui-code-panel ui-code-danger p-2 whitespace-pre-wrap">{selectedNode.error || '-'}</div>
                   </div>
 
                   <div>
@@ -303,10 +303,10 @@ const TaskAudit: React.FC = () => {
                               {[artifact?.kind, artifact?.mime_type, formatBytes(artifact?.size_bytes)].filter(Boolean).join(' · ')}
                             </div>
                             <div className="mt-2">
-                              {isImage && dataUrl && <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="max-h-48 rounded-xl border border-zinc-800 object-contain bg-black/30" />}
-                              {isVideo && dataUrl && <video src={dataUrl} controls className="max-h-48 w-full rounded-xl border border-zinc-800 bg-black/30" />}
+                              {isImage && dataUrl && <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="ui-media-surface-strong max-h-48 rounded-xl border object-contain" />}
+                              {isVideo && dataUrl && <video src={dataUrl} controls className="ui-media-surface-strong max-h-48 w-full rounded-xl border" />}
                               {!isImage && !isVideo && String(artifact?.content_text || '').trim() !== '' && (
-                                <pre className="rounded-xl border border-zinc-800 bg-black/20 p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
+                                <pre className="ui-media-surface rounded-xl border p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
                               )}
                               {!isImage && !isVideo && String(artifact?.content_text || '').trim() === '' && (
                                 <div className="text-[11px] text-zinc-500 break-all mt-2">{String(artifact?.source_path || artifact?.path || artifact?.url || '-')}</div>

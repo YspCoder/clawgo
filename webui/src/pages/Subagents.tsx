@@ -159,7 +159,7 @@ type GraphCardSpec = {
   title: string;
   subtitle: string;
   meta: string[];
-  accent: string;
+  accentTone: 'success' | 'danger' | 'warning' | 'info' | 'accent' | 'neutral';
   online?: boolean;
   clickable?: boolean;
   highlighted?: boolean;
@@ -168,6 +168,30 @@ type GraphCardSpec = {
   scale: number;
   onClick?: () => void;
 };
+
+function graphAccentBackgroundClass(accentTone: GraphCardSpec['accentTone']) {
+  switch (accentTone) {
+    case 'success': return 'bg-gradient-to-br from-transparent to-emerald-500';
+    case 'danger': return 'bg-gradient-to-br from-transparent to-red-500';
+    case 'warning': return 'bg-gradient-to-br from-transparent to-amber-400';
+    case 'info': return 'bg-gradient-to-br from-transparent to-sky-400';
+    case 'accent': return 'bg-gradient-to-br from-transparent to-violet-400';
+    case 'neutral':
+    default: return 'bg-gradient-to-br from-transparent to-zinc-500';
+  }
+}
+
+function graphAccentIconClass(accentTone: GraphCardSpec['accentTone']) {
+  switch (accentTone) {
+    case 'success': return 'text-emerald-500';
+    case 'danger': return 'topology-icon-danger';
+    case 'warning': return 'text-amber-400';
+    case 'info': return 'text-sky-400';
+    case 'accent': return 'text-violet-400';
+    case 'neutral':
+    default: return 'text-zinc-500';
+  }
+}
 
 type GraphLineSpec = {
   path: string;
@@ -328,27 +352,27 @@ function GraphCard({
       >
         {/* Sleek Glass Node Background */}
         <div className={`absolute inset-0 rounded-full transition-all duration-300 backdrop-blur-md ${card.highlighted
-          ? 'shadow-[0_0_30px_rgba(245,158,11,0.2)]'
-          : 'shadow-xl shadow-black/60 group-hover:shadow-[0_0_20px_rgba(255,255,255,0.05)]'
+          ? 'topology-node-highlight'
+          : 'topology-node-base'
           }`}>
           {/* Base dark glass */}
           <div className="absolute inset-0 rounded-full bg-gradient-to-b from-zinc-800/95 to-zinc-950/95" />
 
           {/* Subtle accent glow */}
-          <div className={`absolute inset-0 rounded-full opacity-20 ${card.accent.replace('bg-', 'bg-gradient-to-br from-transparent to-')}`} />
+          <div className={`absolute inset-0 rounded-full opacity-20 ${graphAccentBackgroundClass(card.accentTone)}`} />
 
           {/* Inner depth ring */}
-          <div className="absolute inset-[1px] rounded-full border border-white/5" />
+          <div className="topology-node-inner-border absolute inset-[1px] rounded-full border" />
 
           {/* Border ring */}
-          <div className={`absolute inset-0 rounded-full border-[1.5px] ${card.highlighted ? 'border-amber-500/80' : 'border-zinc-700/80 group-hover:border-zinc-500/80'
+          <div className={`absolute inset-0 rounded-full border-[1.5px] ${card.highlighted ? 'topology-node-border-highlight' : 'border-zinc-700/80 group-hover:border-zinc-500/80'
             }`} />
         </div>
 
         {/* Content */}
         <div className="relative z-10 flex flex-col items-center justify-center w-full px-4 text-center">
           <div className={`flex items-center justify-center w-10 h-10 mb-1 rounded-full bg-zinc-950/60 border border-zinc-700/50 shadow-inner backdrop-blur-sm`}>
-            <Icon className={`w-5 h-5 ${card.accent.replace('bg-', 'text-')}`} />
+            <Icon className={`w-5 h-5 ${graphAccentIconClass(card.accentTone)}`} />
           </div>
 
           <div className="w-full">
@@ -357,7 +381,7 @@ function GraphCard({
           </div>
 
           {card.online !== undefined && (
-            <div className={`absolute top-6 right-6 w-2.5 h-2.5 rounded-full border border-zinc-900 ${card.online ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-red-500'}`} />
+            <div className={`absolute top-6 right-6 w-2.5 h-2.5 rounded-full border border-zinc-900 ${card.online ? 'status-dot-online topology-online-indicator' : 'status-dot-offline'}`} />
           )}
         </div>
       </div>
@@ -616,7 +640,7 @@ const Subagents: React.FC = () => {
         (localMainRegistry?.inherited_tools || []).length ? `inherits: ${(localMainRegistry?.inherited_tools || []).join(', ')}` : 'inherits: -',
         localMainStats.active[0] ? `task: ${localMainStats.active[0].title}` : t('noLiveTasks'),
       ],
-      accent: localMainStats.running > 0 ? 'bg-emerald-500' : localMainStats.latestStatus === 'failed' ? 'bg-red-500' : 'bg-amber-400',
+      accentTone: localMainStats.running > 0 ? 'success' : localMainStats.latestStatus === 'failed' ? 'danger' : 'warning',
       clickable: true,
       scale,
       onClick: () => {
@@ -654,7 +678,7 @@ const Subagents: React.FC = () => {
           (childRegistry?.inherited_tools || []).length ? `inherits: ${(childRegistry?.inherited_tools || []).join(', ')}` : 'inherits: -',
           stats.active[0] ? `task: ${stats.active[0].title}` : task ? `last: ${summarizeTask(task.task, task.label)}` : t('noLiveTasks'),
         ],
-        accent: stats.running > 0 ? 'bg-emerald-500' : stats.latestStatus === 'failed' ? 'bg-red-500' : 'bg-sky-400',
+        accentTone: stats.running > 0 ? 'success' : stats.latestStatus === 'failed' ? 'danger' : 'info',
         clickable: true,
         scale,
         onClick: () => {
@@ -699,7 +723,7 @@ const Subagents: React.FC = () => {
           `source=${normalizeTitle(treeRoot.managed_by, tree.source || '-')}`,
           t('remoteTasksUnavailable'),
         ],
-        accent: !tree.online ? 'bg-zinc-500' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'open' ? 'bg-emerald-400' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'connecting' ? 'bg-amber-400' : 'bg-fuchsia-400',
+        accentTone: !tree.online ? 'neutral' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'open' ? 'success' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'connecting' ? 'warning' : 'accent',
         clickable: true,
         scale,
         onClick: () => {
@@ -737,7 +761,7 @@ const Subagents: React.FC = () => {
             `source=${normalizeTitle(child.managed_by, 'remote_webui')}`,
             t('remoteTasksUnavailable'),
           ],
-          accent: normalizeTitle(p2pSession?.status, '').toLowerCase() === 'open' ? 'bg-emerald-400' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'connecting' ? 'bg-amber-400' : 'bg-violet-400',
+          accentTone: normalizeTitle(p2pSession?.status, '').toLowerCase() === 'open' ? 'success' : normalizeTitle(p2pSession?.status, '').toLowerCase() === 'connecting' ? 'warning' : 'accent',
           clickable: true,
           scale,
           onClick: () => {
@@ -1134,7 +1158,7 @@ const Subagents: React.FC = () => {
     <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentsRuntime')}</h1>
-        <button onClick={() => load()} className="brand-button px-3 py-1.5 rounded-xl text-sm text-white">{t('refresh')}</button>
+        <button onClick={() => load()} className="brand-button px-3 py-1.5 rounded-xl text-sm text-zinc-950">{t('refresh')}</button>
       </div>
 
       <div className="flex-1 min-h-0 brand-card border border-zinc-800 p-4 flex flex-col gap-3">
@@ -1285,7 +1309,7 @@ const Subagents: React.FC = () => {
                       <path
                         d={line.path}
                         fill="none"
-                        stroke={line.highlighted ? 'rgba(245,158,11,0.15)' : 'rgba(161,161,170,0.05)'}
+                        stroke={line.highlighted ? 'var(--topology-line-highlight-track)' : 'var(--topology-line-track)'}
                         strokeWidth={line.highlighted ? '6' : '2'}
                         strokeLinecap="round"
                         className="transition-all duration-300"
@@ -1294,7 +1318,7 @@ const Subagents: React.FC = () => {
                       <path
                         d={line.path}
                         fill="none"
-                        stroke={line.highlighted ? 'rgba(245,158,11,0.9)' : 'rgba(161,161,170,0.5)'}
+                        stroke={line.highlighted ? 'var(--topology-line-highlight-flow)' : 'var(--topology-line-flow)'}
                         strokeWidth={line.highlighted ? '2.5' : '1.5'}
                         strokeDasharray={line.highlighted ? "6 18" : "4 20"}
                         className={line.highlighted ? "animate-flow-fast" : "animate-flow"}
@@ -1312,11 +1336,11 @@ const Subagents: React.FC = () => {
           </div>
           {topologyTooltip && (
             <div
-              className="pointer-events-none fixed z-50 w-[360px] max-w-[min(360px,calc(100vw-24px))] brand-card-subtle border border-zinc-700/80 p-4 shadow-2xl shadow-black/50 backdrop-blur-md transition-opacity duration-200"
+              className="topology-tooltip pointer-events-none fixed z-50 w-[360px] max-w-[min(360px,calc(100vw-24px))] brand-card-subtle border border-zinc-700/80 p-4 backdrop-blur-md transition-opacity duration-200"
               style={{ left: topologyTooltip.x, top: topologyTooltip.y }}
             >
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                <div className="topology-accent-warning w-2 h-2 rounded-full" />
                 <div className="text-sm font-semibold text-zinc-100">{topologyTooltip.title}</div>
               </div>
               <div className="text-xs text-zinc-400 mb-3 pb-3 border-b border-zinc-800/60">{topologyTooltip.subtitle}</div>

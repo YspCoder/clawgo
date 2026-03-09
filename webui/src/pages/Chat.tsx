@@ -68,13 +68,13 @@ function formatAgentName(agentID?: string): string {
 
 function avatarSeed(key?: string): string {
   const palette = [
-    'bg-emerald-600/80 text-white',
-    'bg-sky-600/80 text-white',
-    'bg-violet-600/80 text-white',
-    'bg-amber-600/80 text-white',
-    'bg-rose-600/80 text-white',
-    'bg-cyan-600/80 text-white',
-    'bg-fuchsia-600/80 text-white',
+    'avatar-tone-1',
+    'avatar-tone-2',
+    'avatar-tone-3',
+    'avatar-tone-4',
+    'avatar-tone-5',
+    'avatar-tone-6',
+    'avatar-tone-7',
   ];
   const source = String(key || 'agent');
   let hash = 0;
@@ -192,12 +192,12 @@ const Chat: React.FC = () => {
 
         const actorName = role === 'user' ? t('user') : role === 'tool' || role === 'exec' ? t('exec') : role === 'system' ? t('system') : t('agent');
         const avatarClassName = role === 'user'
-          ? 'bg-indigo-600/90 text-white'
+          ? 'avatar-user'
           : role === 'tool' || role === 'exec'
-            ? 'bg-amber-600/80 text-white'
+            ? 'avatar-tool'
             : role === 'system'
-              ? 'bg-zinc-700 text-zinc-100'
-              : 'bg-emerald-600/80 text-white';
+              ? 'avatar-system'
+              : 'avatar-agent';
 
         return {
           id: `${targetSessionKey}-${index}`,
@@ -312,7 +312,7 @@ const Chat: React.FC = () => {
       label: t('user'),
       actorName: t('user'),
       avatarText: 'U',
-      avatarClassName: 'bg-indigo-600/90 text-white',
+      avatarClassName: 'avatar-user',
     }]);
 
     const currentMsg = msg;
@@ -334,7 +334,7 @@ const Chat: React.FC = () => {
         label: t('agent'),
         actorName: t('agent'),
         avatarText: 'A',
-        avatarClassName: 'bg-emerald-600/80 text-white',
+        avatarClassName: 'avatar-agent',
       }]);
 
       await new Promise<void>((resolve, reject) => {
@@ -656,23 +656,23 @@ const Chat: React.FC = () => {
                     const active = dispatchAgentID === agent.agent_id;
                     const badge = runtimeBadgeByAgent[String(agent.agent_id || '')];
                     const badgeClass = badge?.status === 'running'
-                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      ? 'ui-pill-success'
                       : badge?.status === 'waiting'
-                        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                        ? 'ui-pill-warning'
                         : badge?.status === 'failed'
-                          ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                          ? 'ui-pill-danger'
                           : badge?.status === 'completed'
-                            ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
-                            : 'bg-zinc-800 text-zinc-400 border-zinc-700';
+                            ? 'ui-pill-info'
+                            : 'ui-pill-neutral';
                     return (
                       <button
                         key={agent.agent_id}
                         onClick={() => setDispatchAgentID(String(agent.agent_id || ''))}
-                        className={`w-full text-left rounded-2xl border px-3 py-2.5 ${active ? 'border-amber-500 bg-amber-500/10' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/70'}`}
+                        className={`w-full text-left rounded-2xl border px-3 py-2.5 ${active ? 'ui-card-active-warning' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/70'}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-sm font-medium text-zinc-100">{formatAgentName(agent.display_name || agent.agent_id)}</div>
-                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${badgeClass}`}>{badge?.text || t('idle')}</span>
+                          <span className={`ui-pill inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${badgeClass}`}>{badge?.text || t('idle')}</span>
                         </div>
                         <div className="text-xs text-zinc-500">{agent.agent_id} · {agent.role || '-'}</div>
                       </button>
@@ -711,14 +711,14 @@ const Chat: React.FC = () => {
                         ? 'chat-bubble-system rounded-bl-sm'
                         : 'chat-bubble-agent rounded-bl-sm';
                 const metaClass = isUser
-                  ? 'text-white/75'
+                  ? 'chat-meta-user'
                   : isExec
-                    ? 'text-amber-800/75 dark:text-amber-100/75'
+                    ? 'chat-meta-tool'
                     : 'text-zinc-500 dark:text-zinc-400';
                 const subLabelClass = isUser
-                  ? 'text-white/70'
+                  ? 'chat-submeta-user'
                   : isExec
-                    ? 'text-amber-700/80 dark:text-amber-100/70'
+                    ? 'chat-submeta-tool'
                     : 'text-zinc-500 dark:text-zinc-400';
 
                 return (
@@ -729,7 +729,7 @@ const Chat: React.FC = () => {
                     className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
                   >
                     <div className={`flex items-start gap-2 max-w-full sm:max-w-[96%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <div className={`w-9 h-9 mt-1 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 ${m.avatarClassName || (isUser ? 'bg-indigo-600/90 text-white' : 'bg-emerald-600/80 text-white')}`}>{m.avatarText || (isUser ? 'U' : 'A')}</div>
+                      <div className={`w-9 h-9 mt-1 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 ${m.avatarClassName || (isUser ? 'avatar-user' : 'avatar-agent')}`}>{m.avatarText || (isUser ? 'U' : 'A')}</div>
                       <div className={`max-w-[calc(100vw-6rem)] sm:max-w-[92%] rounded-[24px] px-4 py-3 shadow-sm ${bubbleClass}`}>
                         <div className="flex items-center justify-between gap-3 mb-1">
                           <div className={`text-[11px] font-medium ${metaClass}`}>{m.actorName || m.label || (isUser ? t('user') : isExec ? t('exec') : isSystem ? t('system') : t('agent'))}</div>
@@ -774,7 +774,7 @@ const Chat: React.FC = () => {
             <button
               onClick={send}
               disabled={chatTab !== 'main' || (!msg.trim() && !fileSelected)}
-              className="absolute right-2 p-2.5 brand-button disabled:opacity-50 text-white rounded-full transition-colors"
+              className="absolute right-2 p-2.5 brand-button disabled:opacity-50 text-zinc-950 rounded-full transition-colors"
             >
               <Send className="w-4 h-4 ml-0.5" />
             </button>

@@ -114,7 +114,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       <AnimatePresence>
         {loading && (
-          <motion.div className="fixed inset-0 z-[120] bg-black/55 backdrop-blur-sm flex items-center justify-center"
+          <motion.div className="ui-overlay-medium fixed inset-0 z-[120] backdrop-blur-sm flex items-center justify-center"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="px-6 py-5 rounded-2xl border border-zinc-700 bg-zinc-900/95 shadow-2xl min-w-[240px] text-center">
               <div className="mx-auto mb-3 h-8 w-8 border-2 border-zinc-600 border-t-indigo-400 rounded-full animate-spin" />
@@ -134,7 +134,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       <AnimatePresence>
         {customModal && (
-          <motion.div className="fixed inset-0 z-[125] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          <motion.div className="ui-overlay-strong fixed inset-0 z-[125] backdrop-blur-sm flex items-center justify-center p-4"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <motion.div className="w-full max-w-4xl rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden"
               initial={{ scale: 0.96 }} animate={{ scale: 1 }} exit={{ scale: 0.96 }}>

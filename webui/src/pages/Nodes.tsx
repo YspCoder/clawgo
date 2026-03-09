@@ -348,10 +348,10 @@ const Nodes: React.FC = () => {
                     {selectedNodeAlerts.length > 0 ? selectedNodeAlerts.map((alert: any, index: number) => {
                       const severity = String(alert?.severity || 'warning');
                       return (
-                        <div key={`${alert?.kind || index}-${index}`} className={`rounded-2xl border p-3 ${severity === 'critical' ? 'border-rose-900/60 bg-rose-950/20' : 'border-amber-900/60 bg-amber-950/20'}`}>
+                        <div key={`${alert?.kind || index}-${index}`} className={`rounded-2xl border p-3 ${severity === 'critical' ? 'ui-notice-danger' : 'ui-notice-warning'}`}>
                           <div className="flex items-center justify-between gap-3">
                             <div className="text-sm font-medium text-zinc-100">{String(alert?.title || '-')}</div>
-                            <div className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${severity === 'critical' ? 'bg-rose-500/10 text-rose-300' : 'bg-amber-500/10 text-amber-300'}`}>{severity}</div>
+                            <div className={`ui-pill rounded-full px-2 py-0.5 text-[10px] font-medium ${severity === 'critical' ? 'ui-pill-danger' : 'ui-pill-warning'}`}>{severity}</div>
                           </div>
                           <div className="mt-2 text-xs text-zinc-300 whitespace-pre-wrap break-words">{String(alert?.detail || '-')}</div>
                         </div>
@@ -382,7 +382,7 @@ const Nodes: React.FC = () => {
                   <div className="text-zinc-500 text-xs mb-1">{t('agentTree')}</div>
                   <div className="ui-code-panel p-3 space-y-2">
                     {Array.isArray(selectedTree?.items) && selectedTree.items.length > 0 ? selectedTree.items.map((item: any, index: number) => (
-                      <div key={`${item?.agent_id || index}`} className="rounded-xl border border-zinc-800/80 bg-black/20 p-3">
+                      <div key={`${item?.agent_id || index}`} className="ui-media-surface rounded-xl border border-zinc-800/80 p-3">
                         <div className="text-sm font-medium text-zinc-100">{String(item?.display_name || item?.agent_id || '-')}</div>
                         <div className="text-xs text-zinc-500 mt-1">{String(item?.agent_id || '-')} · {String(item?.transport || '-')} · {String(item?.role || '-')}</div>
                       </div>
@@ -512,7 +512,7 @@ const Nodes: React.FC = () => {
                     <div>
                       <div className="text-zinc-500 text-xs mb-1">{t('nodeReplayResult')}</div>
                       {replayError ? (
-                        <div className="rounded-2xl border border-red-900/50 bg-red-950/20 p-3 text-xs whitespace-pre-wrap text-red-300">{replayError}</div>
+                        <div className="ui-notice-danger rounded-2xl border p-3 text-xs whitespace-pre-wrap">{replayError}</div>
                       ) : (
                         <pre className="ui-code-panel p-3 text-xs overflow-auto">{replayResult ? JSON.stringify(replayResult, null, 2) : '-'}</pre>
                       )}
@@ -529,16 +529,16 @@ const Nodes: React.FC = () => {
                         const isVideo = kind === 'video' || mime.startsWith('video/');
                         const dataUrl = dataUrlForArtifact(artifact);
                         return (
-                          <div key={`artifact-${artifactIndex}`} className="rounded-xl border border-zinc-800/80 bg-black/20 p-3">
+                          <div key={`artifact-${artifactIndex}`} className="ui-media-surface rounded-xl border border-zinc-800/80 p-3">
                             <div className="text-xs font-medium text-zinc-200 truncate">{String(artifact?.name || artifact?.source_path || `artifact-${artifactIndex + 1}`)}</div>
                             <div className="text-[11px] text-zinc-500 mt-1 truncate">
                               {[artifact?.kind, artifact?.mime_type, formatBytes(artifact?.size_bytes)].filter(Boolean).join(' · ')}
                             </div>
                             <div className="mt-2">
-                              {isImage && dataUrl && <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="max-h-56 rounded-xl border border-zinc-800 object-contain bg-black/30" />}
-                              {isVideo && dataUrl && <video src={dataUrl} controls className="max-h-56 w-full rounded-xl border border-zinc-800 bg-black/30" />}
+                              {isImage && dataUrl && <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="ui-media-surface-strong max-h-56 rounded-xl border object-contain" />}
+                              {isVideo && dataUrl && <video src={dataUrl} controls className="ui-media-surface-strong max-h-56 w-full rounded-xl border" />}
                               {!isImage && !isVideo && String(artifact?.content_text || '').trim() !== '' && (
-                                <pre className="rounded-xl border border-zinc-800 bg-black/20 p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
+                                <pre className="ui-media-surface rounded-xl border p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
                               )}
                             </div>
                           </div>

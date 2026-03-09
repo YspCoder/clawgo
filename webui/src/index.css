@@ -20,6 +20,24 @@
   --color-indigo-600: #ea580c;
   --color-indigo-700: #c2410c;
   --color-indigo-800: #9a3412;
+  --color-emerald-300: #6ee7b7;
+  --color-emerald-400: #34d399;
+  --color-emerald-500: #10b981;
+  --color-red-400: #f87171;
+  --color-red-500: #ef4444;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b;
+  --color-orange-400: #fb923c;
+  --color-sky-300: #7dd3fc;
+  --color-sky-400: #38bdf8;
+  --color-sky-500: #0ea5e9;
+  --color-violet-300: #c4b5fd;
+  --color-violet-400: #a78bfa;
+  --color-violet-500: #8b5cf6;
+  --color-rose-300: #fda4af;
+  --color-rose-500: #f43f5e;
+  --color-fuchsia-400: #e879f9;
 }
 
 html {
@@ -76,6 +94,75 @@ html {
   --button-danger-bg-hover: rgb(254 205 211 / 0.98);
   --button-danger-border: rgb(244 63 94 / 0.28);
   --button-danger-text: rgb(159 18 57 / 0.98);
+  --brand-badge-start: #ffb36b;
+  --brand-badge-mid: #ff8552;
+  --brand-badge-end: #d9481c;
+  --brand-badge-shadow: rgb(234 88 12 / 0.2);
+  --card-icon-inset: rgb(255 255 255 / 0.18);
+  --status-online-bg: rgb(16 185 129 / 0.1);
+  --status-online-border: rgb(16 185 129 / 0.2);
+  --status-online-text: var(--color-emerald-500);
+  --status-online-dot: var(--color-emerald-500);
+  --status-online-glow: rgb(16 185 129 / 0.8);
+  --status-offline-bg: rgb(239 68 68 / 0.1);
+  --status-offline-border: rgb(239 68 68 / 0.2);
+  --status-offline-text: var(--color-red-500);
+  --status-offline-dot: var(--color-red-500);
+  --status-offline-glow: rgb(239 68 68 / 0.8);
+  --token-indicator-glow: rgb(240 90 40 / 0.38);
+  --topology-node-highlight-shadow: rgb(245 158 11 / 0.2);
+  --topology-node-base-shadow: rgb(0 0 0 / 0.6);
+  --topology-node-hover-shadow: rgb(255 255 255 / 0.05);
+  --topology-node-inner-border: rgb(255 255 255 / 0.05);
+  --topology-node-highlight-border: rgb(245 158 11 / 0.8);
+  --topology-online-glow: rgb(16 185 129 / 0.8);
+  --topology-line-highlight-track: rgb(245 158 11 / 0.15);
+  --topology-line-track: rgb(161 161 170 / 0.05);
+  --topology-line-highlight-flow: rgb(245 158 11 / 0.9);
+  --topology-line-flow: rgb(161 161 170 / 0.5);
+  --topology-tooltip-shadow: rgb(0 0 0 / 0.5);
+  --particle-glow-start: rgba(255, 243, 233, 0.30);
+  --particle-glow-mid: rgba(255, 179, 107, 0.16);
+  --particle-glow-end: rgba(255, 226, 209, 0.55);
+  --particle-dot-rgb: 217, 72, 28;
+  --particle-dot-opacity-floor: 0.08;
+  --particle-dot-opacity-scale: 0.65;
+  --particle-line-rgb: 164, 58, 24;
+  --particle-line-opacity-scale: 0.85;
+  --ekg-bar-start: rgb(245 158 11 / 0.7);
+  --ekg-bar-end: rgb(251 146 60 / 0.8);
+  --overlay-scrim-soft: rgb(15 23 42 / 0.4);
+  --overlay-scrim-medium: rgb(15 23 42 / 0.55);
+  --overlay-scrim-strong: rgb(15 23 42 / 0.6);
+  --media-surface: rgb(15 23 42 / 0.2);
+  --media-surface-strong: rgb(15 23 42 / 0.3);
+  --media-border: var(--color-zinc-800);
+  --notice-warning-bg: rgb(254 243 199 / 0.72);
+  --notice-warning-border: rgb(245 158 11 / 0.28);
+  --notice-warning-text: rgb(146 64 14 / 0.96);
+  --notice-danger-bg: rgb(255 228 230 / 0.72);
+  --notice-danger-border: rgb(244 63 94 / 0.24);
+  --notice-danger-text: rgb(159 18 57 / 0.96);
+  --pill-warning-bg: rgb(254 243 199 / 0.82);
+  --pill-warning-border: rgb(245 158 11 / 0.24);
+  --pill-warning-text: rgb(146 64 14 / 0.96);
+  --pill-danger-bg: rgb(255 228 230 / 0.8);
+  --pill-danger-border: rgb(244 63 94 / 0.22);
+  --pill-danger-text: rgb(159 18 57 / 0.96);
+  --pill-success-bg: rgb(220 252 231 / 0.82);
+  --pill-success-border: rgb(52 211 153 / 0.24);
+  --pill-success-text: rgb(6 95 70 / 0.96);
+  --pill-info-bg: rgb(224 242 254 / 0.82);
+  --pill-info-border: rgb(14 165 233 / 0.22);
+  --pill-info-text: rgb(3 105 161 / 0.96);
+  --pill-accent-bg: rgb(237 233 254 / 0.82);
+  --pill-accent-border: rgb(139 92 246 / 0.22);
+  --pill-accent-text: rgb(109 40 217 / 0.96);
+  --pill-neutral-bg: rgb(226 232 240 / 0.82);
+  --pill-neutral-border: rgb(203 213 225 / 0.24);
+  --pill-neutral-text: rgb(71 85 105 / 0.96);
+  --code-danger-text: rgb(190 24 93 / 0.96);
+  --code-warning-text: rgb(180 83 9 / 0.96);
   --chip-bg: rgb(226 232 240 / 0.82);
   --chip-bg-hover: rgb(203 213 225 / 0.92);
   --chip-border: rgb(203 213 225 / 0.96);
@@ -165,6 +252,75 @@ html.theme-dark {
   --button-danger-bg-hover: rgb(244 63 94 / 0.22);
   --button-danger-border: rgb(251 113 133 / 0.24);
   --button-danger-text: rgb(255 228 230 / 0.96);
+  --brand-badge-start: #f8c58d;
+  --brand-badge-mid: #ee9852;
+  --brand-badge-end: #af4f16;
+  --brand-badge-shadow: rgb(217 107 37 / 0.18);
+  --card-icon-inset: rgb(255 255 255 / 0.1);
+  --status-online-bg: rgb(16 185 129 / 0.14);
+  --status-online-border: rgb(52 211 153 / 0.24);
+  --status-online-text: rgb(209 250 229 / 0.96);
+  --status-online-dot: var(--color-emerald-400);
+  --status-online-glow: rgb(16 185 129 / 0.78);
+  --status-offline-bg: rgb(244 63 94 / 0.14);
+  --status-offline-border: rgb(251 113 133 / 0.24);
+  --status-offline-text: rgb(255 228 230 / 0.96);
+  --status-offline-dot: var(--color-red-400);
+  --status-offline-glow: rgb(244 63 94 / 0.72);
+  --token-indicator-glow: rgb(232 132 58 / 0.42);
+  --topology-node-highlight-shadow: rgb(245 158 11 / 0.22);
+  --topology-node-base-shadow: rgb(0 0 0 / 0.7);
+  --topology-node-hover-shadow: rgb(255 255 255 / 0.06);
+  --topology-node-inner-border: rgb(255 255 255 / 0.06);
+  --topology-node-highlight-border: rgb(251 191 36 / 0.72);
+  --topology-online-glow: rgb(52 211 153 / 0.8);
+  --topology-line-highlight-track: rgb(245 158 11 / 0.16);
+  --topology-line-track: rgb(148 163 184 / 0.08);
+  --topology-line-highlight-flow: rgb(251 191 36 / 0.88);
+  --topology-line-flow: rgb(148 163 184 / 0.5);
+  --topology-tooltip-shadow: rgb(0 0 0 / 0.56);
+  --particle-glow-start: rgba(255, 133, 82, 0.16);
+  --particle-glow-mid: rgba(112, 41, 22, 0.20);
+  --particle-glow-end: rgba(28, 12, 8, 0.88);
+  --particle-dot-rgb: 255, 179, 107;
+  --particle-dot-opacity-floor: 0.1;
+  --particle-dot-opacity-scale: 1;
+  --particle-line-rgb: 240, 90, 40;
+  --particle-line-opacity-scale: 1;
+  --ekg-bar-start: rgb(251 191 36 / 0.78);
+  --ekg-bar-end: rgb(232 132 58 / 0.86);
+  --overlay-scrim-soft: rgb(0 0 0 / 0.4);
+  --overlay-scrim-medium: rgb(0 0 0 / 0.55);
+  --overlay-scrim-strong: rgb(0 0 0 / 0.62);
+  --media-surface: rgb(0 0 0 / 0.2);
+  --media-surface-strong: rgb(0 0 0 / 0.3);
+  --media-border: var(--color-zinc-700);
+  --notice-warning-bg: rgb(245 158 11 / 0.14);
+  --notice-warning-border: rgb(251 191 36 / 0.22);
+  --notice-warning-text: rgb(254 243 199 / 0.96);
+  --notice-danger-bg: rgb(244 63 94 / 0.14);
+  --notice-danger-border: rgb(251 113 133 / 0.22);
+  --notice-danger-text: rgb(255 228 230 / 0.96);
+  --pill-warning-bg: rgb(245 158 11 / 0.14);
+  --pill-warning-border: rgb(251 191 36 / 0.22);
+  --pill-warning-text: rgb(254 243 199 / 0.96);
+  --pill-danger-bg: rgb(244 63 94 / 0.14);
+  --pill-danger-border: rgb(251 113 133 / 0.22);
+  --pill-danger-text: rgb(255 228 230 / 0.96);
+  --pill-success-bg: rgb(16 185 129 / 0.14);
+  --pill-success-border: rgb(52 211 153 / 0.22);
+  --pill-success-text: rgb(209 250 229 / 0.96);
+  --pill-info-bg: rgb(14 165 233 / 0.14);
+  --pill-info-border: rgb(56 189 248 / 0.22);
+  --pill-info-text: rgb(224 242 254 / 0.96);
+  --pill-accent-bg: rgb(139 92 246 / 0.14);
+  --pill-accent-border: rgb(167 139 250 / 0.22);
+  --pill-accent-text: rgb(237 233 254 / 0.96);
+  --pill-neutral-bg: rgb(36 49 69 / 0.9);
+  --pill-neutral-border: rgb(93 109 135 / 0.22);
+  --pill-neutral-text: rgb(148 163 184 / 0.96);
+  --code-danger-text: rgb(251 113 133 / 0.96);
+  --code-warning-text: rgb(253 224 71 / 0.96);
   --chip-bg: rgb(36 49 69 / 0.9);
   --chip-bg-hover: rgb(48 63 87 / 0.96);
   --chip-border: rgb(93 109 135 / 0.82);
@@ -247,8 +403,8 @@ html.theme-dark .app-header {
 }
 
 .brand-badge {
-  background: linear-gradient(135deg, #ffb36b 0%, #ff8552 48%, #d9481c 100%);
-  box-shadow: 0 12px 28px rgb(234 88 12 / 0.2);
+  background: linear-gradient(135deg, var(--brand-badge-start) 0%, var(--brand-badge-mid) 48%, var(--brand-badge-end) 100%);
+  box-shadow: 0 12px 28px var(--brand-badge-shadow);
   border-radius: var(--radius-badge);
 }
 
@@ -333,6 +489,233 @@ html.theme-dark .brand-card-subtle {
   border-radius: var(--radius-button);
   background: linear-gradient(135deg, var(--button-start) 0%, var(--button-end) 100%);
   box-shadow: 0 8px 20px var(--button-shadow);
+}
+
+.status-pill-online {
+  background: var(--status-online-bg);
+  border-color: var(--status-online-border);
+  color: var(--status-online-text);
+}
+
+.status-pill-offline {
+  background: var(--status-offline-bg);
+  border-color: var(--status-offline-border);
+  color: var(--status-offline-text);
+}
+
+.status-dot-online {
+  background: var(--status-online-dot);
+  box-shadow: 0 0 8px var(--status-online-glow);
+}
+
+.status-dot-offline {
+  background: var(--status-offline-dot);
+  box-shadow: 0 0 8px var(--status-offline-glow);
+}
+
+.gateway-token-indicator {
+  background: var(--color-indigo-500);
+  box-shadow: 0 0 14px var(--token-indicator-glow);
+}
+
+.card-icon-shell {
+  box-shadow: inset 0 1px 0 var(--card-icon-inset);
+}
+
+.topology-node-highlight {
+  box-shadow: 0 0 30px var(--topology-node-highlight-shadow);
+}
+
+.topology-node-base {
+  box-shadow: 0 20px 40px var(--topology-node-base-shadow);
+}
+
+.group:hover .topology-node-base {
+  box-shadow:
+    0 20px 40px var(--topology-node-base-shadow),
+    0 0 20px var(--topology-node-hover-shadow);
+}
+
+.topology-node-inner-border {
+  border-color: var(--topology-node-inner-border);
+}
+
+.topology-node-border-highlight {
+  border-color: var(--topology-node-highlight-border);
+}
+
+.topology-online-indicator {
+  box-shadow: 0 0 10px var(--topology-online-glow);
+}
+
+.topology-tooltip {
+  box-shadow: 0 24px 48px var(--topology-tooltip-shadow);
+}
+
+.ekg-bar-fill {
+  background: linear-gradient(90deg, var(--ekg-bar-start), var(--ekg-bar-end));
+}
+
+.ui-overlay-soft {
+  background: var(--overlay-scrim-soft);
+}
+
+.ui-overlay-medium {
+  background: var(--overlay-scrim-medium);
+}
+
+.ui-overlay-strong {
+  background: var(--overlay-scrim-strong);
+}
+
+.ui-media-surface {
+  background: var(--media-surface);
+  border-color: var(--media-border);
+}
+
+.ui-media-surface-strong {
+  background: var(--media-surface-strong);
+  border-color: var(--media-border);
+}
+
+.ui-notice-warning {
+  background: var(--notice-warning-bg);
+  border-color: var(--notice-warning-border);
+  color: var(--notice-warning-text);
+}
+
+.ui-notice-danger {
+  background: var(--notice-danger-bg);
+  border-color: var(--notice-danger-border);
+  color: var(--notice-danger-text);
+}
+
+.ui-pill {
+  border: 1px solid transparent;
+}
+
+.ui-pill-warning {
+  background: var(--pill-warning-bg);
+  border-color: var(--pill-warning-border);
+  color: var(--pill-warning-text);
+}
+
+.ui-pill-danger {
+  background: var(--pill-danger-bg);
+  border-color: var(--pill-danger-border);
+  color: var(--pill-danger-text);
+}
+
+.ui-pill-success {
+  background: var(--pill-success-bg);
+  border-color: var(--pill-success-border);
+  color: var(--pill-success-text);
+}
+
+.ui-pill-info {
+  background: var(--pill-info-bg);
+  border-color: var(--pill-info-border);
+  color: var(--pill-info-text);
+}
+
+.ui-pill-accent {
+  background: var(--pill-accent-bg);
+  border-color: var(--pill-accent-border);
+  color: var(--pill-accent-text);
+}
+
+.ui-pill-neutral {
+  background: var(--pill-neutral-bg);
+  border-color: var(--pill-neutral-border);
+  color: var(--pill-neutral-text);
+}
+
+.ui-code-danger {
+  color: var(--code-danger-text);
+}
+
+.ui-code-warning {
+  color: var(--code-warning-text);
+}
+
+.avatar-user,
+.avatar-agent,
+.avatar-tool,
+.avatar-system,
+.avatar-tone-1,
+.avatar-tone-2,
+.avatar-tone-3,
+.avatar-tone-4,
+.avatar-tone-5,
+.avatar-tone-6,
+.avatar-tone-7 {
+  color: var(--color-zinc-950);
+}
+
+.avatar-user {
+  background: color-mix(in srgb, var(--color-indigo-600) 88%, transparent);
+}
+
+.avatar-agent {
+  background: color-mix(in srgb, var(--color-emerald-500) 80%, transparent);
+}
+
+.avatar-tool {
+  background: color-mix(in srgb, var(--color-amber-500) 80%, transparent);
+}
+
+.avatar-system {
+  background: color-mix(in srgb, var(--color-zinc-700) 92%, transparent);
+  color: var(--color-zinc-100);
+}
+
+.avatar-tone-1 { background: color-mix(in srgb, var(--color-emerald-500) 80%, transparent); }
+.avatar-tone-2 { background: color-mix(in srgb, var(--color-sky-500) 80%, transparent); }
+.avatar-tone-3 { background: color-mix(in srgb, var(--color-violet-500) 80%, transparent); }
+.avatar-tone-4 { background: color-mix(in srgb, var(--color-amber-500) 80%, transparent); }
+.avatar-tone-5 { background: color-mix(in srgb, var(--color-rose-500) 80%, transparent); }
+.avatar-tone-6 { background: color-mix(in srgb, var(--color-sky-400) 80%, transparent); }
+.avatar-tone-7 { background: color-mix(in srgb, var(--color-fuchsia-400) 80%, transparent); }
+
+.chat-meta-user {
+  color: rgb(255 255 255 / 0.75);
+}
+
+.chat-submeta-user {
+  color: rgb(255 255 255 / 0.7);
+}
+
+.chat-meta-tool {
+  color: color-mix(in srgb, var(--button-warning-text) 78%, transparent);
+}
+
+.chat-submeta-tool {
+  color: color-mix(in srgb, var(--button-warning-text) 84%, transparent);
+}
+
+.ui-dot-live {
+  background: var(--color-emerald-500);
+}
+
+.ui-dot-neutral {
+  background: var(--color-zinc-600);
+}
+
+.ui-text-danger-hover:hover {
+  color: var(--color-red-500);
+}
+
+.ui-card-active-warning {
+  border-color: var(--color-amber-500);
+  background: var(--pill-warning-bg);
+}
+
+.topology-accent-warning {
+  background: var(--color-amber-500);
+}
+
+.topology-icon-danger {
+  color: var(--color-red-500);
 }
 
 html.theme-dark .brand-button {

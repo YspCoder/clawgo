@@ -39,7 +39,6 @@ const MCP: React.FC = () => {
   const { t } = useTranslation();
   const { cfg, setCfg, q, loadConfig, setConfigEditing } = useAppContext();
   const ui = useUI();
-  const [mcpTools, setMcpTools] = useState<Array<{ name: string; description?: string; mcp?: { server?: string; remote_tool?: string } }>>([]);
   const [mcpServerChecks, setMcpServerChecks] = useState<Array<{ name: string; status?: string; message?: string; package?: string; installer?: string; installable?: boolean; resolved?: string }>>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingName, setEditingName] = useState<string | null>(null);
@@ -61,12 +60,10 @@ const MCP: React.FC = () => {
       if (!r.ok) throw new Error('Failed to load tools');
       const data = await r.json();
       if (!cancelled) {
-        setMcpTools(Array.isArray(data?.mcp_tools) ? data.mcp_tools : []);
         setMcpServerChecks(Array.isArray(data?.mcp_server_checks) ? data.mcp_server_checks : []);
       }
     } catch {
       if (!cancelled) {
-        setMcpTools([]);
         setMcpServerChecks([]);
       }
     }
@@ -383,14 +380,13 @@ const MCP: React.FC = () => {
           {serverEntries.map(([name, server]) => {
             const transport = String(server?.transport || 'stdio');
             const check = mcpServerChecks.find((item) => item.name === name);
-            const discoveredCount = mcpTools.filter((tool) => tool.mcp?.server === name).length;
             return (
               <div key={name} className="brand-card ui-panel rounded-[24px] p-4 space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="font-mono text-sm text-zinc-100">{name}</div>
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ${server?.enabled ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/20' : 'bg-zinc-800 text-zinc-400 border border-zinc-700/70'}`}>
+                      <span className={`ui-pill inline-flex items-center rounded-full px-2 py-0.5 text-[11px] border ${server?.enabled ? 'ui-pill-success' : 'ui-pill-neutral'}`}>
                         {server?.enabled ? t('enable') : t('paused')}
                       </span>
                       <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-zinc-900/70 text-zinc-400 border border-zinc-800">
@@ -427,14 +423,10 @@ const MCP: React.FC = () => {
                     <div className="text-zinc-500">permission</div>
                     <div className="mt-1 text-zinc-200">{String(server?.permission || 'workspace')}</div>
                   </div>
-                  <div className="ui-code-panel px-3 py-2">
-                    <div className="text-zinc-500">{t('configMCPDiscoveredTools')}</div>
-                    <div className="mt-1 text-zinc-200">{discoveredCount}</div>
-                  </div>
                 </div>
 
                 {check && check.status !== 'ok' && check.status !== 'disabled' && check.status !== 'not_applicable' && (
-                  <div className="rounded-2xl border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">
+                  <div className="ui-notice-warning rounded-2xl border px-3 py-2 text-xs">
                     <div>{check.message || t('configMCPCommandMissing')}</div>
                     {check.package && (
                       <div className="mt-1 text-amber-300/80">{t('configMCPInstallSuggested', { pkg: check.package })}</div>
@@ -452,31 +444,6 @@ const MCP: React.FC = () => {
         )}
       </div>
 
-      <div className="brand-card-subtle ui-subpanel rounded-2xl p-3 space-y-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm font-semibold text-zinc-200">{t('configMCPDiscoveredTools')}</div>
-          <div className="text-xs text-zinc-500">{t('configMCPDiscoveredToolsCount', { count: mcpTools.length })}</div>
-        </div>
-        <div className="space-y-2">
-          {mcpTools.map((tool) => (
-            <div key={tool.name} className="ui-soft-panel rounded-xl p-3">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="font-mono text-xs text-zinc-200">{tool.name}</div>
-                <div className="text-[11px] text-zinc-500">
-                  {(tool.mcp?.server || '-')}{' · '}{(tool.mcp?.remote_tool || '-')}
-                </div>
-              </div>
-              {tool.description && (
-                <div className="mt-2 text-xs text-zinc-400">{tool.description}</div>
-              )}
-            </div>
-          ))}
-          {mcpTools.length === 0 && (
-            <div className="text-xs text-zinc-500">{t('configNoMCPDiscoveredTools')}</div>
-          )}
-        </div>
-      </div>
-
       <AnimatePresence>
         {modalOpen && (
           <motion.div
@@ -486,7 +453,7 @@ const MCP: React.FC = () => {
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              className="ui-overlay-strong absolute inset-0 backdrop-blur-sm"
               onClick={closeModal}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -610,7 +577,7 @@ const MCP: React.FC = () => {
                 )}
 
                 {activeCheck && activeCheck.status !== 'ok' && activeCheck.status !== 'disabled' && activeCheck.status !== 'not_applicable' && (
-                  <div className="rounded-2xl border border-amber-800/60 bg-amber-950/30 px-4 py-3 text-xs text-amber-100 space-y-2">
+                  <div className="ui-notice-warning rounded-2xl border px-4 py-3 text-xs space-y-2">
                     <div>{activeCheck.message || t('configMCPCommandMissing')}</div>
                     {activeCheck.package && (
                       <div className="text-amber-300/80">{t('configMCPInstallSuggested', { pkg: activeCheck.package })}</div>

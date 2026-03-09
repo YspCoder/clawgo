@@ -156,7 +156,7 @@ const Logs: React.FC = () => {
     switch ((level || 'INFO').toUpperCase()) {
       case 'ERROR': return 'text-red-400';
       case 'WARN': return 'text-amber-400';
-      case 'DEBUG': return 'text-blue-400';
+      case 'DEBUG': return 'text-sky-400';
       default: return 'text-emerald-400';
     }
   };
@@ -166,10 +166,10 @@ const Logs: React.FC = () => {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{t('logs')}</h1>
-          <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
-            isStreaming ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+          <div className={`ui-pill flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+            isStreaming ? 'ui-pill-success' : 'ui-pill-neutral'
           }`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
+            <div className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'ui-dot-live animate-pulse' : 'ui-dot-neutral'}`} />
             {isStreaming ? t('live') : t('paused')}
           </div>
         </div>

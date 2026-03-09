@@ -32,9 +32,22 @@ export const SpaceParticles: React.FC = () => {
         resize();
 
         let observer: MutationObserver | null = null;
+        let themeStyles = typeof document !== 'undefined' ? getComputedStyle(document.documentElement) : null;
+
+        const readThemeColor = (name: string, fallback: string) => {
+            const value = themeStyles?.getPropertyValue(name).trim();
+            return value || fallback;
+        };
+
+        const readThemeNumber = (name: string, fallback: number) => {
+            const value = Number.parseFloat(themeStyles?.getPropertyValue(name).trim() || '');
+            return Number.isFinite(value) ? value : fallback;
+        };
+
         if (typeof document !== 'undefined') {
             observer = new MutationObserver(() => {
                 isDark = document.documentElement.classList.contains('theme-dark');
+                themeStyles = getComputedStyle(document.documentElement);
             });
             observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         }
@@ -60,17 +73,17 @@ export const SpaceParticles: React.FC = () => {
                 canvas.width / 2, canvas.height / 2, 0,
                 canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height)
             );
-            if (isDark) {
-                gradient.addColorStop(0, 'rgba(255, 133, 82, 0.16)');
-                gradient.addColorStop(0.55, 'rgba(112, 41, 22, 0.20)');
-                gradient.addColorStop(1, 'rgba(28, 12, 8, 0.88)');
-            } else {
-                gradient.addColorStop(0, 'rgba(255, 243, 233, 0.30)');
-                gradient.addColorStop(0.55, 'rgba(255, 179, 107, 0.16)');
-                gradient.addColorStop(1, 'rgba(255, 226, 209, 0.55)');
-            }
+            gradient.addColorStop(0, readThemeColor('--particle-glow-start', 'rgba(255, 243, 233, 0.30)'));
+            gradient.addColorStop(0.55, readThemeColor('--particle-glow-mid', 'rgba(255, 179, 107, 0.16)'));
+            gradient.addColorStop(1, readThemeColor('--particle-glow-end', 'rgba(255, 226, 209, 0.55)'));
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const particleRGB = readThemeColor('--particle-dot-rgb', isDark ? '255, 179, 107' : '217, 72, 28');
+            const particleOpacityFloor = readThemeNumber('--particle-dot-opacity-floor', isDark ? 0.1 : 0.08);
+            const particleOpacityScale = readThemeNumber('--particle-dot-opacity-scale', isDark ? 1 : 0.65);
+            const lineRGB = readThemeColor('--particle-line-rgb', isDark ? '240, 90, 40' : '164, 58, 24');
+            const lineOpacityScale = readThemeNumber('--particle-line-opacity-scale', isDark ? 1 : 0.85);
 
             particles.forEach((p) => {
                 p.x += p.speedX;
@@ -83,9 +96,7 @@ export const SpaceParticles: React.FC = () => {
 
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fillStyle = isDark
-                    ? `rgba(255, 179, 107, ${p.opacity})`
-                    : `rgba(217, 72, 28, ${Math.max(0.08, p.opacity * 0.65)})`;
+                ctx.fillStyle = `rgba(${particleRGB}, ${Math.max(particleOpacityFloor, p.opacity * particleOpacityScale)})`;
                 ctx.fill();
             });
 
@@ -100,9 +111,7 @@ export const SpaceParticles: React.FC = () => {
                     if (dist < 120) {
                         ctx.beginPath();
                         const lineOpacity = 0.16 * (1 - dist / 120);
-                        ctx.strokeStyle = isDark
-                            ? `rgba(240, 90, 40, ${lineOpacity})`
-                            : `rgba(164, 58, 24, ${lineOpacity * 0.85})`;
+                        ctx.strokeStyle = `rgba(${lineRGB}, ${lineOpacity * lineOpacityScale})`;
                         ctx.moveTo(particles[i].x, particles[i].y);
                         ctx.lineTo(particles[j].x, particles[j].y);
                         ctx.stroke();

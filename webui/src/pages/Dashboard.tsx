@@ -122,16 +122,16 @@ const Dashboard: React.FC = () => {
             {t('webui')}: <span className="font-mono text-zinc-300">{webuiVersion}</span>
           </div>
         </div>
-        <button onClick={refreshAll} className="brand-button flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors shrink-0 text-white">
+        <button onClick={refreshAll} className="brand-button flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors shrink-0 text-zinc-950">
           <RefreshCw className="w-4 h-4" /> {t('refreshAll')}
         </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
         <StatCard title={t('gatewayStatus')} value={isGatewayOnline ? t('online') : t('offline')} icon={<Activity className={`w-6 h-6 ${isGatewayOnline ? 'text-emerald-400' : 'text-red-400'}`} />} />
-        <StatCard title={t('activeSessions')} value={sessions.length} icon={<MessageSquare className="w-6 h-6 text-blue-400" />} />
-        <StatCard title={t('skills')} value={skills.length} icon={<Sparkles className="w-6 h-6 text-pink-400" />} />
-        <StatCard title={t('subagentsRuntime')} value={subagentCount} icon={<Wrench className="w-6 h-6 text-cyan-400" />} />
+        <StatCard title={t('activeSessions')} value={sessions.length} icon={<MessageSquare className="w-6 h-6 text-sky-400" />} />
+        <StatCard title={t('skills')} value={skills.length} icon={<Sparkles className="w-6 h-6 text-rose-300" />} />
+        <StatCard title={t('subagentsRuntime')} value={subagentCount} icon={<Wrench className="w-6 h-6 text-sky-300" />} />
         <StatCard title={t('taskAudit')} value={recentTasks.length} icon={<Activity className="w-6 h-6 text-amber-400" />} />
         <StatCard title={t('nodeP2P')} value={p2pEnabled ? `${p2pSessions} · ${p2pTransport}` : t('disabled')} icon={<Workflow className="w-6 h-6 text-violet-400" />} />
       </div>
@@ -172,7 +172,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="text-xs text-zinc-500 mt-1">{t('nodeArtifactsRetentionHint')}</div>
           </div>
-          <div className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${artifactRetentionEnabled ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-800 text-zinc-400'}`}>
+          <div className={`ui-pill rounded-full px-2.5 py-1 text-[11px] font-medium ${artifactRetentionEnabled ? 'ui-pill-success' : 'ui-pill-neutral'}`}>
             {artifactRetentionEnabled ? t('enabled') : t('disabled')}
           </div>
         </div>
@@ -214,7 +214,7 @@ const Dashboard: React.FC = () => {
                       <div className="text-sm font-medium text-zinc-100 truncate">{String(alert?.title || '-')}</div>
                       <div className="text-xs text-zinc-500 mt-1 truncate">{String(alert?.node || '-')} · {String(alert?.kind || '-')}</div>
                     </div>
-                    <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${severity === 'critical' ? 'bg-rose-500/10 text-rose-300' : 'bg-amber-500/10 text-amber-300'}`}>
+                    <div className={`ui-pill shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${severity === 'critical' ? 'ui-pill-danger' : 'ui-pill-warning'}`}>
                       {severity}
                     </div>
                   </div>
@@ -242,7 +242,7 @@ const Dashboard: React.FC = () => {
                     <div className="text-sm font-medium text-zinc-200 truncate">{task.task_id || `task-${index + 1}`}</div>
                     <div className="text-xs text-zinc-500 truncate">{task.channel || '-'} · {task.source || '-'}</div>
                   </div>
-                  <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${String(task.status || '').toLowerCase() === 'error' ? 'bg-rose-500/10 text-rose-300' : String(task.status || '').toLowerCase() === 'running' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-800 text-zinc-400'}`}>
+                  <div className={`ui-pill shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${String(task.status || '').toLowerCase() === 'error' ? 'ui-pill-danger' : String(task.status || '').toLowerCase() === 'running' ? 'ui-pill-success' : 'ui-pill-neutral'}`}>
                     {task.status || '-'}
                   </div>
                 </div>
@@ -304,7 +304,7 @@ const Dashboard: React.FC = () => {
                         {t('dashboardNodeP2PSessionCreated')}: {session.createdAt}
                       </div>
                     </div>
-                    <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${isOpen ? 'bg-emerald-500/10 text-emerald-300' : isConnecting ? 'bg-amber-500/10 text-amber-300' : 'bg-rose-500/10 text-rose-300'}`}>
+                    <div className={`ui-pill shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${isOpen ? 'ui-pill-success' : isConnecting ? 'ui-pill-warning' : 'ui-pill-danger'}`}>
                       {session.status}
                     </div>
                   </div>
@@ -356,7 +356,7 @@ const Dashboard: React.FC = () => {
                     <div className="text-sm font-medium text-zinc-100 truncate">{`${item.node} · ${item.action}`}</div>
                     <div className="text-xs text-zinc-500 mt-1">{item.time}</div>
                   </div>
-                  <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${item.ok ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
+                  <div className={`ui-pill shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${item.ok ? 'ui-pill-success' : 'ui-pill-danger'}`}>
                     {item.ok ? 'ok' : 'error'}
                   </div>
                 </div>
@@ -407,13 +407,13 @@ const Dashboard: React.FC = () => {
                             <div className="text-[11px] text-zinc-500">{String(artifact?.storage || '-')}</div>
                           </div>
                           {isImage && dataUrl && (
-                            <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="max-h-48 rounded-xl border border-zinc-800 object-contain bg-black/30" />
+                            <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="ui-media-surface-strong max-h-48 rounded-xl border object-contain" />
                           )}
                           {isVideo && dataUrl && (
-                            <video src={dataUrl} controls className="max-h-48 w-full rounded-xl border border-zinc-800 bg-black/30" />
+                            <video src={dataUrl} controls className="ui-media-surface-strong max-h-48 w-full rounded-xl border" />
                           )}
                           {!isImage && !isVideo && String(artifact?.content_text || '').trim() !== '' && (
-                            <pre className="rounded-xl border border-zinc-800 bg-black/20 p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
+                            <pre className="ui-media-surface rounded-xl border p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
                           )}
                           {!isImage && !isVideo && String(artifact?.content_text || '').trim() === '' && (
                             <div className="text-[11px] text-zinc-500 break-all">

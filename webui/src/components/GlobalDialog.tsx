@@ -32,7 +32,7 @@ export const GlobalDialog: React.FC<{
   return (
     <AnimatePresence>
       {open && (
-        <motion.div className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+        <motion.div className="ui-overlay-strong fixed inset-0 z-[130] backdrop-blur-sm flex items-center justify-center p-4"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
           <motion.div className="brand-card w-full max-w-md border border-zinc-700 shadow-2xl"
             initial={{ scale: 0.95, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 8 }}>

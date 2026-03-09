@@ -202,7 +202,7 @@ const Skills: React.FC = () => {
           </label>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className={`text-xs px-2.5 py-1 rounded-md border font-medium ${clawhubInstalled ? 'text-emerald-700 border-emerald-300 bg-emerald-50' : 'text-amber-700 border-amber-300 bg-amber-50'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
+          <div className={`ui-pill text-xs px-2.5 py-1 rounded-md border font-medium ${clawhubInstalled ? 'ui-pill-success' : 'ui-pill-warning'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
             {t('skillsClawhubStatus')}: {clawhubInstalled ? t('installed') : t('notInstalled')}
           </div>
           {!clawhubInstalled && (
@@ -225,7 +225,7 @@ const Skills: React.FC = () => {
       {!clawhubInstalled && (
         <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/45 p-4 text-sm shadow-sm">
           <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-400/20 bg-amber-500/10 text-amber-300">
+            <div className="ui-pill ui-pill-warning mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border">
               <Zap className="w-4 h-4" />
             </div>
             <div className="min-w-0">
@@ -275,7 +275,7 @@ const Skills: React.FC = () => {
               </button>
               <button
                 onClick={() => deleteSkill(s.id)}
-                className="p-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-lg transition-colors"
+                className="ui-pill ui-pill-danger p-2 rounded-lg transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -287,7 +287,7 @@ const Skills: React.FC = () => {
       <AnimatePresence>
         {isFileModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsFileModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsFileModalOpen(false)} className="ui-overlay-strong absolute inset-0 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} className="relative w-full max-w-6xl h-[80vh] bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden flex">
               <aside className="w-72 border-r border-zinc-800 bg-zinc-950/60 p-3 overflow-y-auto">
                 <div className="text-sm font-semibold mb-3">{activeSkill} {t('files')}</div>
@@ -301,7 +301,7 @@ const Skills: React.FC = () => {
                 <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
                   <div className="text-sm text-zinc-300 font-mono truncate">{activeFile || t('noFileSelected')}</div>
                   <div className="flex items-center gap-2">
-                    <button onClick={saveFile} className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs flex items-center gap-1"><Save className="w-3 h-3"/>{t('save')}</button>
+                    <button onClick={saveFile} className="ui-button ui-button-success px-3 py-1.5 rounded text-xs flex items-center gap-1"><Save className="w-3 h-3"/>{t('save')}</button>
                     <button onClick={() => setIsFileModalOpen(false)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400"><X className="w-4 h-4" /></button>
                   </div>
                 </div>

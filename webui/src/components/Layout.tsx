@@ -15,7 +15,7 @@ const Layout: React.FC = () => {
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         {sidebarOpen && (
-          <button className="fixed inset-0 top-16 bg-black/40 z-30 md:hidden" onClick={() => setSidebarOpen(false)} aria-label="close sidebar" />
+          <button className="ui-overlay-soft fixed inset-0 top-16 z-30 md:hidden" onClick={() => setSidebarOpen(false)} aria-label="close sidebar" />
         )}
         <main className="flex-1 flex flex-col min-w-0 relative app-main-surface">
           <AnimatePresence mode="wait">

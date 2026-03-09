@@ -63,14 +63,14 @@ const Header: React.FC = () => {
         </button>
         <div className="hidden md:flex items-center gap-3 rounded-xl px-2 py-1.5 min-w-0">
           <div className="brand-badge w-9 h-9 rounded-xl flex items-center justify-center shadow-lg shrink-0">
-            <Terminal className="w-5 h-5 text-white" />
+            <Terminal className="w-5 h-5 text-zinc-950" />
           </div>
           {!sidebarCollapsed && (
             <span className="font-semibold text-lg md:text-xl tracking-tight truncate">{t('appName')}</span>
           )}
         </div>
         <div className="brand-badge md:hidden w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shrink-0">
-          <Terminal className="w-4 h-4 text-white" />
+          <Terminal className="w-4 h-4 text-zinc-950" />
         </div>
         <span className="md:hidden font-semibold text-lg tracking-tight truncate">{t('appName')}</span>
       </div>
@@ -79,13 +79,13 @@ const Header: React.FC = () => {
         <div className="flex items-center gap-1.5 md:gap-2.5 bg-zinc-900 border border-zinc-800 px-2 md:px-3 py-1 rounded-lg max-w-[140px] md:max-w-none overflow-hidden">
           <span className="hidden md:inline text-sm font-medium text-zinc-400">{t('gatewayStatus')}:</span>
           {isGatewayOnline ? (
-            <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-md text-xs font-semibold border border-emerald-500/20">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            <div className="status-pill-online flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold border">
+              <div className="status-dot-online w-1.5 h-1.5 rounded-full" />
               {t('online')}
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 bg-red-500/10 text-red-400 px-2.5 py-0.5 rounded-md text-xs font-semibold border border-red-500/20">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+            <div className="status-pill-offline flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold border">
+              <div className="status-dot-offline w-1.5 h-1.5 rounded-full" />
               {t('offline')}
             </div>
           )}
