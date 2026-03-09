@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"clawgo/pkg/config"
-	"clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 )
 
 func TestSubagentConfigToolUpsert(t *testing.T) {
@@ -34,7 +34,7 @@ func TestSubagentConfigToolUpsert(t *testing.T) {
 		"role":               "testing",
 		"notify_main_policy": "internal_only",
 		"display_name":       "Review Agent",
-		"description":        "负责回归与评审",
+		"description":        "handles review and regression checks",
 		"system_prompt_file": "agents/reviewer/AGENT.md",
 		"routing_keywords":   []interface{}{"review", "regression"},
 		"tool_allowlist":     []interface{}{"shell", "sessions"},

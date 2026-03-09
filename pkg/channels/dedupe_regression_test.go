@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 type recordingChannel struct {
@@ -15,11 +15,11 @@ type recordingChannel struct {
 	sent []bus.OutboundMessage
 }
 
-func (r *recordingChannel) Name() string { return "test" }
-func (r *recordingChannel) Start(ctx context.Context) error { return nil }
-func (r *recordingChannel) Stop(ctx context.Context) error { return nil }
-func (r *recordingChannel) IsRunning() bool { return true }
-func (r *recordingChannel) IsAllowed(senderID string) bool { return true }
+func (r *recordingChannel) Name() string                          { return "test" }
+func (r *recordingChannel) Start(ctx context.Context) error       { return nil }
+func (r *recordingChannel) Stop(ctx context.Context) error        { return nil }
+func (r *recordingChannel) IsRunning() bool                       { return true }
+func (r *recordingChannel) IsAllowed(senderID string) bool        { return true }
 func (r *recordingChannel) HealthCheck(ctx context.Context) error { return nil }
 func (r *recordingChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	r.mu.Lock()
@@ -77,7 +77,6 @@ func TestBaseChannel_HandleMessage_ContentHashFallbackDedupe(t *testing.T) {
 		t.Fatalf("expected duplicate inbound to be dropped")
 	}
 }
-
 
 func TestDispatchOutbound_DifferentButtonsShouldNotDeduplicate(t *testing.T) {
 	mb := bus.NewMessageBus()

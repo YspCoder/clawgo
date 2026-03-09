@@ -13,18 +13,18 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/agent"
-	"clawgo/pkg/api"
-	"clawgo/pkg/bus"
-	"clawgo/pkg/channels"
-	"clawgo/pkg/config"
-	"clawgo/pkg/cron"
-	"clawgo/pkg/heartbeat"
-	"clawgo/pkg/logger"
-	"clawgo/pkg/nodes"
-	"clawgo/pkg/providers"
-	"clawgo/pkg/runtimecfg"
-	"clawgo/pkg/sentinel"
+	"github.com/YspCoder/clawgo/pkg/agent"
+	"github.com/YspCoder/clawgo/pkg/api"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/channels"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/cron"
+	"github.com/YspCoder/clawgo/pkg/heartbeat"
+	"github.com/YspCoder/clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/sentinel"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -107,26 +107,26 @@ func gatewayCmd() {
 
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
-		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
+		fmt.Printf("鉁?Channels enabled: %s\n", enabledChannels)
 	} else {
-		fmt.Println("⚠ Warning: No channels enabled")
+		fmt.Println("鈿?Warning: No channels enabled")
 	}
 
-	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf("鉁?Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop. Send SIGHUP to hot-reload config.")
 
 	if err := cronService.Start(); err != nil {
 		fmt.Printf("Error starting cron service: %v\n", err)
 	}
-	fmt.Println("✓ Cron service started")
+	fmt.Println("鉁?Cron service started")
 
 	if err := heartbeatService.Start(); err != nil {
 		fmt.Printf("Error starting heartbeat service: %v\n", err)
 	}
-	fmt.Println("✓ Heartbeat service started")
+	fmt.Println("鉁?Heartbeat service started")
 	if cfg.Sentinel.Enabled {
 		sentinelService.Start()
-		fmt.Println("✓ Sentinel service started")
+		fmt.Println("鉁?Sentinel service started")
 	}
 
 	registryServer := api.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
@@ -367,7 +367,7 @@ func gatewayCmd() {
 	if err := registryServer.Start(ctx); err != nil {
 		fmt.Printf("Error starting node registry server: %v\n", err)
 	} else {
-		fmt.Printf("✓ Node registry server started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+		fmt.Printf("鉁?Node registry server started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	}
 
 	if err := channelManager.StartAll(ctx); err != nil {
@@ -381,10 +381,10 @@ func gatewayCmd() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, gatewayNotifySignals()...)
 	applyReload := func() {
-		fmt.Println("\n↻ Reloading config...")
+		fmt.Println("\n鈫?Reloading config...")
 		newCfg, err := config.LoadConfig(getConfigPath())
 		if err != nil {
-			fmt.Printf("✗ Reload failed (load config): %v\n", err)
+			fmt.Printf("鉁?Reload failed (load config): %v\n", err)
 			return
 		}
 		if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
@@ -398,7 +398,7 @@ func gatewayCmd() {
 		}
 
 		if reflect.DeepEqual(cfg, newCfg) {
-			fmt.Println("✓ Config unchanged, skip reload")
+			fmt.Println("鉁?Config unchanged, skip reload")
 			return
 		}
 
@@ -437,13 +437,13 @@ func gatewayCmd() {
 			cfg = newCfg
 			runtimecfg.Set(cfg)
 			configureGatewayNodeP2P(agentLoop, registryServer, cfg)
-			fmt.Println("✓ Config hot-reload applied (logging/metadata only)")
+			fmt.Println("鉁?Config hot-reload applied (logging/metadata only)")
 			return
 		}
 
 		newAgentLoop, newChannelManager, err := buildGatewayRuntime(ctx, newCfg, msgBus, cronService)
 		if err != nil {
-			fmt.Printf("✗ Reload failed (init runtime): %v\n", err)
+			fmt.Printf("鉁?Reload failed (init runtime): %v\n", err)
 			return
 		}
 
@@ -485,11 +485,11 @@ func gatewayCmd() {
 		sentinelService.SetManager(channelManager)
 
 		if err := channelManager.StartAll(ctx); err != nil {
-			fmt.Printf("✗ Reload failed (start channels): %v\n", err)
+			fmt.Printf("鉁?Reload failed (start channels): %v\n", err)
 			return
 		}
 		go agentLoop.Run(ctx)
-		fmt.Println("✓ Config hot-reload applied")
+		fmt.Println("鉁?Config hot-reload applied")
 	}
 
 	for {
@@ -511,7 +511,7 @@ func gatewayCmd() {
 				cronService.Stop()
 				agentLoop.Stop()
 				channelManager.StopAll(ctx)
-				fmt.Println("✓ Gateway stopped")
+				fmt.Println("鉁?Gateway stopped")
 				return
 			}
 		}
@@ -606,7 +606,7 @@ func gatewayInstallServiceCmd() error {
 		return err
 	}
 
-	fmt.Printf("✓ Gateway service registered: %s (%s)\n", gatewayServiceName, scope)
+	fmt.Printf("鉁?Gateway service registered: %s (%s)\n", gatewayServiceName, scope)
 	fmt.Printf("  Unit file: %s\n", unitPath)
 	fmt.Println("  Start service:   clawgo gateway start")
 	fmt.Println("  Restart service: clawgo gateway restart")
@@ -766,9 +766,9 @@ func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.Me
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]interface{})
 	skillsInfo := startupInfo["skills"].(map[string]interface{})
-	fmt.Println("\n📦 Agent Status:")
-	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
-	fmt.Printf("  • Skills: %d/%d available\n", skillsInfo["available"], skillsInfo["total"])
+	fmt.Println("\n馃摝 Agent Status:")
+	fmt.Printf("  鈥?Tools: %d loaded\n", toolsInfo["count"])
+	fmt.Printf("  鈥?Skills: %d/%d available\n", skillsInfo["available"], skillsInfo["total"])
 
 	logger.InfoCF("agent", logger.C0098,
 		map[string]interface{}{

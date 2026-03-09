@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 type Server struct {

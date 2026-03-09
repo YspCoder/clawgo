@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
 func TestSubagentSpawnEnforcesTaskQuota(t *testing.T) {

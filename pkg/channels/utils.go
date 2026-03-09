@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 func truncateString(s string, maxLen int) string {

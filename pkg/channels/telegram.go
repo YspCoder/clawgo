@@ -20,9 +20,9 @@ import (
 	"github.com/mymmrac/telego/telegoutil"
 	"golang.org/x/time/rate"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 const (
@@ -1144,15 +1144,15 @@ func markdownToTelegramHTML(text string) string {
 	text = escapeHTML(text)
 
 	text = regexp.MustCompile("(?m)^#{1,6}\\s+(.+)$").ReplaceAllString(text, "<b>$1</b>")
-	text = regexp.MustCompile("(?m)^>\\s*(.*)$").ReplaceAllString(text, "│ $1")
+	text = regexp.MustCompile("(?m)^>\\s*(.*)$").ReplaceAllString(text, "鈹?$1")
 	text = regexp.MustCompile("\\[([^\\]]+)\\]\\(([^)]+)\\)").ReplaceAllString(text, `<a href="$2">$1</a>`)
 	text = regexp.MustCompile("\\*\\*(.+?)\\*\\*").ReplaceAllString(text, "<b>$1</b>")
 	text = regexp.MustCompile("__(.+?)__").ReplaceAllString(text, "<b>$1</b>")
 	text = regexp.MustCompile("\\*([^*\\n]+)\\*").ReplaceAllString(text, "<i>$1</i>")
 	text = regexp.MustCompile("_([^_\\n]+)_").ReplaceAllString(text, "<i>$1</i>")
 	text = regexp.MustCompile("~~(.+?)~~").ReplaceAllString(text, "<s>$1</s>")
-	text = regexp.MustCompile("(?m)^[-*]\\s+").ReplaceAllString(text, "• ")
-	text = regexp.MustCompile("(?m)^\\d+\\.\\s+").ReplaceAllString(text, "• ")
+	text = regexp.MustCompile("(?m)^[-*]\\s+").ReplaceAllString(text, "鈥?")
+	text = regexp.MustCompile("(?m)^\\d+\\.\\s+").ReplaceAllString(text, "鈥?")
 
 	for i, code := range inlineCodes.codes {
 		escaped := escapeHTML(code)

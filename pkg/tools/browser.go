@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"clawgo/pkg/browser"
+	"github.com/YspCoder/clawgo/pkg/browser"
 )
 
 type BrowserTool struct {

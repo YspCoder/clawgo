@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/bus"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"

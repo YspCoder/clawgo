@@ -3,7 +3,7 @@ package channels
 import (
 	"testing"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 func TestWhatsAppShouldHandleIncomingMessage(t *testing.T) {

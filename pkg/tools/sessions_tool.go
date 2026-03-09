@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
 type SessionInfo struct {

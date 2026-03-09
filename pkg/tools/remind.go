@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"clawgo/pkg/cron"
+	"github.com/YspCoder/clawgo/pkg/cron"
 )
 
 type RemindTool struct {

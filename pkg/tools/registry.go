@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 type ToolRegistry struct {

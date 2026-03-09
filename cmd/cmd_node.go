@@ -19,14 +19,14 @@ import (
 	"sync"
 	"time"
 
-	"clawgo/pkg/agent"
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/cron"
-	"clawgo/pkg/nodes"
-	"clawgo/pkg/providers"
-	"clawgo/pkg/runtimecfg"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/agent"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/cron"
+	"github.com/YspCoder/clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/tools"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
@@ -151,11 +151,11 @@ func nodeRegisterCmd(args []string) {
 		fmt.Printf("Error registering node: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ Node registered: %s -> %s\n", info.ID, opts.GatewayBase)
+	fmt.Printf("鉁?Node registered: %s -> %s\n", info.ID, opts.GatewayBase)
 	if !opts.Watch {
 		return
 	}
-	fmt.Printf("✓ Heartbeat loop started: every %ds\n", opts.HeartbeatSec)
+	fmt.Printf("鉁?Heartbeat loop started: every %ds\n", opts.HeartbeatSec)
 	if err := runNodeHeartbeatLoop(client, opts, info); err != nil {
 		fmt.Printf("Heartbeat loop stopped: %v\n", err)
 		os.Exit(1)
@@ -175,7 +175,7 @@ func nodeHeartbeatCmd(args []string) {
 		fmt.Printf("Error sending heartbeat: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("✓ Heartbeat sent: %s -> %s\n", opts.ID, opts.GatewayBase)
+	fmt.Printf("鉁?Heartbeat sent: %s -> %s\n", opts.ID, opts.GatewayBase)
 }
 
 func parseNodeRegisterArgs(args []string, cfg *config.Config) (nodeRegisterOptions, error) {
@@ -409,23 +409,23 @@ func runNodeHeartbeatLoop(client *http.Client, opts nodeRegisterOptions, info no
 	for {
 		if err := runNodeHeartbeatSocket(ctx, opts, info); err != nil {
 			if ctx.Err() != nil {
-				fmt.Println("✓ Node heartbeat stopped")
+				fmt.Println("鉁?Node heartbeat stopped")
 				return nil
 			}
 			fmt.Printf("Warning: node socket closed for %s: %v\n", info.ID, err)
 		}
 		if ctx.Err() != nil {
-			fmt.Println("✓ Node heartbeat stopped")
+			fmt.Println("鉁?Node heartbeat stopped")
 			return nil
 		}
 		if regErr := postNodeRegister(ctx, client, opts.GatewayBase, opts.Token, info); regErr != nil {
 			fmt.Printf("Warning: re-register failed for %s: %v\n", info.ID, regErr)
 		} else {
-			fmt.Printf("✓ Node re-registered: %s\n", info.ID)
+			fmt.Printf("鉁?Node re-registered: %s\n", info.ID)
 		}
 		select {
 		case <-ctx.Done():
-			fmt.Println("✓ Node heartbeat stopped")
+			fmt.Println("鉁?Node heartbeat stopped")
 			return nil
 		case <-time.After(2 * time.Second):
 		}
@@ -466,7 +466,7 @@ func runNodeHeartbeatSocket(ctx context.Context, opts nodeRegisterOptions, info 
 	if err := waitNodeAck(ctx, acks, errs, "registered", info.ID); err != nil {
 		return err
 	}
-	fmt.Printf("✓ Node socket connected: %s\n", info.ID)
+	fmt.Printf("鉁?Node socket connected: %s\n", info.ID)
 
 	ticker := time.NewTicker(time.Duration(opts.HeartbeatSec) * time.Second)
 	pingTicker := time.NewTicker(nodeSocketPingInterval(opts.HeartbeatSec))
@@ -493,7 +493,7 @@ func runNodeHeartbeatSocket(ctx context.Context, opts nodeRegisterOptions, info 
 			if err := waitNodeAck(ctx, acks, errs, "heartbeat", info.ID); err != nil {
 				return err
 			}
-			fmt.Printf("✓ Heartbeat ok: %s\n", info.ID)
+			fmt.Printf("鉁?Heartbeat ok: %s\n", info.ID)
 		}
 	}
 }

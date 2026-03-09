@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 )

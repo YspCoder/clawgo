@@ -22,9 +22,9 @@ import (
 	larksheets "github.com/larksuite/oapi-sdk-go/v3/service/sheets/v3"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 type FeishuChannel struct {
@@ -135,7 +135,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 				logger.WarnCF("feishu", logger.C0045, map[string]interface{}{logger.FieldError: lerr.Error(), logger.FieldChatID: msg.ChatID})
 				continue
 			}
-			links = append(links, fmt.Sprintf("表格%d: %s", i+1, link))
+			links = append(links, fmt.Sprintf("琛ㄦ牸%d: %s", i+1, link))
 		}
 		if len(links) > 0 {
 			if strings.TrimSpace(workMsg.Content) != "" {
@@ -903,9 +903,9 @@ func normalizeFeishuText(s string) string {
 	// Headers: "## title" -> "title"
 	s = regexp.MustCompile(`(?m)^#{1,6}\s+`).ReplaceAllString(s, "")
 	// Bullet styles
-	s = regexp.MustCompile(`(?m)^[-*]\s+`).ReplaceAllString(s, "• ")
+	s = regexp.MustCompile(`(?m)^[-*]\s+`).ReplaceAllString(s, "鈥?")
 	// Ordered list to bullet for readability
-	s = regexp.MustCompile(`(?m)^\d+\.\s+`).ReplaceAllString(s, "• ")
+	s = regexp.MustCompile(`(?m)^\d+\.\s+`).ReplaceAllString(s, "鈥?")
 	// Bold/italic/strike markers
 	s = regexp.MustCompile(`\*\*(.*?)\*\*`).ReplaceAllString(s, `$1`)
 	s = regexp.MustCompile(`__(.*?)__`).ReplaceAllString(s, `$1`)

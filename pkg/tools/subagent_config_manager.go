@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"clawgo/pkg/config"
-	"clawgo/pkg/configops"
-	"clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/configops"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 )
 
 func DraftConfigSubagent(description, agentIDHint string) map[string]interface{} {
@@ -287,11 +287,11 @@ func normalizeKeywords(items []string) []string {
 
 func inferDraftRole(lower string) string {
 	switch {
-	case containsDraftKeyword(lower, "test", "regression", "qa", "回归", "测试", "验证"):
+	case containsDraftKeyword(lower, "test", "regression", "qa", "鍥炲綊", "娴嬭瘯", "楠岃瘉"):
 		return "testing"
-	case containsDraftKeyword(lower, "doc", "docs", "readme", "文档", "说明"):
+	case containsDraftKeyword(lower, "doc", "docs", "readme", "鏂囨。", "璇存槑"):
 		return "docs"
-	case containsDraftKeyword(lower, "research", "investigate", "analyze", "调研", "分析", "研究"):
+	case containsDraftKeyword(lower, "research", "investigate", "analyze", "璋冪爺", "鍒嗘瀽", "鐮旂┒"):
 		return "research"
 	default:
 		return "coding"
@@ -301,7 +301,7 @@ func inferDraftRole(lower string) string {
 func inferDraftAgentID(role, lower string) string {
 	switch role {
 	case "testing":
-		if containsDraftKeyword(lower, "review", "审查", "reviewer") {
+		if containsDraftKeyword(lower, "review", "瀹℃煡", "reviewer") {
 			return "reviewer"
 		}
 		return "tester"
@@ -310,10 +310,10 @@ func inferDraftAgentID(role, lower string) string {
 	case "research":
 		return "researcher"
 	default:
-		if containsDraftKeyword(lower, "frontend", "ui", "前端") {
+		if containsDraftKeyword(lower, "frontend", "ui", "鍓嶇") {
 			return "frontend-coder"
 		}
-		if containsDraftKeyword(lower, "backend", "api", "后端") {
+		if containsDraftKeyword(lower, "backend", "api", "鍚庣") {
 			return "backend-coder"
 		}
 		return "coder"
@@ -356,19 +356,19 @@ func inferDraftKeywords(role, lower string) []string {
 	seed := []string{}
 	switch role {
 	case "testing":
-		seed = []string{"test", "regression", "verify", "回归", "测试", "验证"}
+		seed = []string{"test", "regression", "verify", "鍥炲綊", "娴嬭瘯", "楠岃瘉"}
 	case "docs":
-		seed = []string{"docs", "readme", "document", "文档", "说明"}
+		seed = []string{"docs", "readme", "document", "鏂囨。", "璇存槑"}
 	case "research":
-		seed = []string{"research", "analyze", "investigate", "调研", "分析", "研究"}
+		seed = []string{"research", "analyze", "investigate", "璋冪爺", "鍒嗘瀽", "鐮旂┒"}
 	default:
-		seed = []string{"code", "implement", "fix", "refactor", "代码", "实现", "修复", "重构"}
+		seed = []string{"code", "implement", "fix", "refactor", "浠ｇ爜", "瀹炵幇", "淇", "閲嶆瀯"}
 	}
-	if containsDraftKeyword(lower, "frontend", "前端", "ui") {
-		seed = append(seed, "frontend", "ui", "前端")
+	if containsDraftKeyword(lower, "frontend", "鍓嶇", "ui") {
+		seed = append(seed, "frontend", "ui", "鍓嶇")
 	}
-	if containsDraftKeyword(lower, "backend", "后端", "api") {
-		seed = append(seed, "backend", "api", "后端")
+	if containsDraftKeyword(lower, "backend", "鍚庣", "api") {
+		seed = append(seed, "backend", "api", "鍚庣")
 	}
 	return normalizeKeywords(seed)
 }
@@ -376,13 +376,13 @@ func inferDraftKeywords(role, lower string) []string {
 func inferDraftSystemPrompt(role, description string) string {
 	switch role {
 	case "testing":
-		return "你负责测试、验证、回归检查与风险反馈。任务描述：" + description
+		return "浣犺礋璐ｆ祴璇曘€侀獙璇併€佸洖褰掓鏌ヤ笌椋庨櫓鍙嶉銆備换鍔℃弿杩帮細" + description
 	case "docs":
-		return "你负责文档编写、结构整理和说明补全。任务描述：" + description
+		return "浣犺礋璐ｆ枃妗ｇ紪鍐欍€佺粨鏋勬暣鐞嗗拰璇存槑琛ュ叏銆備换鍔℃弿杩帮細" + description
 	case "research":
-		return "你负责调研、分析、比较方案，并输出结论与依据。任务描述：" + description
+		return "浣犺礋璐ｈ皟鐮斻€佸垎鏋愩€佹瘮杈冩柟妗堬紝骞惰緭鍑虹粨璁轰笌渚濇嵁銆備换鍔℃弿杩帮細" + description
 	default:
-		return "你负责代码实现与重构，输出具体修改建议和变更结果。任务描述：" + description
+		return "浣犺礋璐ｄ唬鐮佸疄鐜颁笌閲嶆瀯锛岃緭鍑哄叿浣撲慨鏀瑰缓璁拰鍙樻洿缁撴灉銆備换鍔℃弿杩帮細" + description
 	}
 }
 

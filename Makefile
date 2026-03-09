@@ -3,7 +3,7 @@
 # Build variables
 BINARY_NAME=clawgo
 BUILD_DIR=build
-CMD_DIR=cmd/$(BINARY_NAME)
+CMD_DIR=cmd
 MAIN_GO=$(CMD_DIR)/main.go
 
 # Version
@@ -46,7 +46,7 @@ WORKSPACE_DIR?=$(CLAWGO_HOME)/workspace
 WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 WORKSPACE_SOURCE_DIR=$(CURDIR)/workspace
-EMBED_WORKSPACE_DIR=$(CURDIR)/cmd/$(BINARY_NAME)/workspace
+EMBED_WORKSPACE_DIR=$(CURDIR)/cmd/workspace
 EMBED_WEBUI_DIR=$(EMBED_WORKSPACE_DIR)/webui
 DEV_CONFIG?=$(if $(wildcard $(CURDIR)/config.json),$(CURDIR)/config.json,$(CLAWGO_HOME)/config.json)
 DEV_ARGS?=--debug gateway run
@@ -189,11 +189,11 @@ package-all: build-all
 	fi
 	@echo "Package complete: $(BUILD_DIR)"
 
-## sync-embed-workspace: Sync workspace seed files and built WebUI into cmd/clawgo/workspace for go:embed
+## sync-embed-workspace: Sync workspace seed files and built WebUI into cmd/workspace for go:embed
 sync-embed-workspace: sync-embed-workspace-base sync-embed-webui
 	@echo "✓ Embed assets ready in $(EMBED_WORKSPACE_DIR)"
 
-## sync-embed-workspace-base: Sync root workspace files into cmd/clawgo/workspace for go:embed
+## sync-embed-workspace-base: Sync root workspace files into cmd/workspace for go:embed
 sync-embed-workspace-base:
 	@echo "Syncing workspace seed files for embedding..."
 	@if [ ! -d "$(WORKSPACE_SOURCE_DIR)" ]; then \

@@ -23,17 +23,17 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/cron"
-	"clawgo/pkg/ekg"
-	"clawgo/pkg/logger"
-	"clawgo/pkg/nodes"
-	"clawgo/pkg/providers"
-	"clawgo/pkg/runtimecfg"
-	"clawgo/pkg/scheduling"
-	"clawgo/pkg/session"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/cron"
+	"github.com/YspCoder/clawgo/pkg/ekg"
+	"github.com/YspCoder/clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/scheduling"
+	"github.com/YspCoder/clawgo/pkg/session"
+	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
 type AgentLoop struct {

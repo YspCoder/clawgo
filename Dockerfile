@@ -7,11 +7,11 @@ RUN go mod download
 
 COPY . ./
 
-RUN rm -rf cmd/clawgo/workspace \
-    && mkdir -p cmd/clawgo/workspace \
-    && cp -a workspace/. cmd/clawgo/workspace/
+RUN rm -rf cmd/workspace \
+ && mkdir -p cmd/workspace \
+ && cp -a workspace/. cmd/workspace/
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/clawgo ./cmd/clawgo
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/clawgo ./cmd
 
 FROM debian:bookworm-slim
 

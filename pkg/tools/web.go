@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 const (

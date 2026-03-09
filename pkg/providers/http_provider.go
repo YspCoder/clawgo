@@ -3,11 +3,11 @@ package providers
 import (
 	"bufio"
 	"bytes"
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 	"io"
 	"net/http"
 	"net/url"

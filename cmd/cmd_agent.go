@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"clawgo/pkg/agent"
-	"clawgo/pkg/bus"
-	"clawgo/pkg/cron"
-	"clawgo/pkg/logger"
-	"clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/agent"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/cron"
+	"github.com/YspCoder/clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/providers"
 
 	"github.com/chzyer/readline"
 )
@@ -27,7 +27,7 @@ func agentCmd() {
 		switch args[i] {
 		case "--debug", "-d":
 			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
+			fmt.Println("馃攳 Debug mode enabled")
 		case "-m", "--message":
 			if i+1 < len(args) {
 				message = args[i+1]

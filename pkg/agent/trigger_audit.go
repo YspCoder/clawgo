@@ -19,12 +19,12 @@ type triggerAudit struct {
 }
 
 type triggerEvent struct {
-	Time      string `json:"time"`
-	Trigger   string `json:"trigger"`
-	Channel   string `json:"channel"`
-	Session   string `json:"session"`
+	Time       string `json:"time"`
+	Trigger    string `json:"trigger"`
+	Channel    string `json:"channel"`
+	Session    string `json:"session"`
 	Suppressed bool   `json:"suppressed,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 func newTriggerAudit(workspace string) *triggerAudit {
@@ -37,10 +37,10 @@ func (ta *triggerAudit) Record(trigger, channel, session string, suppressed bool
 	}
 	trigger = normalizeTrigger(trigger)
 	e := triggerEvent{
-		Time:      time.Now().UTC().Format(time.RFC3339),
-		Trigger:   trigger,
-		Channel:   channel,
-		Session:   session,
+		Time:       time.Now().UTC().Format(time.RFC3339),
+		Trigger:    trigger,
+		Channel:    channel,
+		Session:    session,
 		Suppressed: suppressed,
 	}
 	if err != nil {

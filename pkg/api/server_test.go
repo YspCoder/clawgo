@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	cfgpkg "clawgo/pkg/config"
-	"clawgo/pkg/nodes"
+	cfgpkg "github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/nodes"
 	"github.com/gorilla/websocket"
 )
 

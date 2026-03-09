@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"clawgo/pkg/scheduling"
+	"github.com/YspCoder/clawgo/pkg/scheduling"
 )
 
 const (

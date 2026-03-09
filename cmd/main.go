@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"os"
 
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 //go:embed workspace
@@ -22,7 +22,7 @@ var embeddedFiles embed.FS
 var version = "dev"
 var buildTime = "unknown"
 
-const logo = "🦞"
+const logo = "馃"
 const gatewayServiceName = "clawgo-gateway.service"
 const envRootGranted = "CLAWGO_ROOT_GRANTED"
 

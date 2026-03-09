@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"clawgo/pkg/lifecycle"
+	"github.com/YspCoder/clawgo/pkg/lifecycle"
 	robcron "github.com/robfig/cron/v3"
 )
 

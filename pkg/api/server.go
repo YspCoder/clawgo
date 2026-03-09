@@ -28,10 +28,10 @@ import (
 	"sync"
 	"time"
 
-	"clawgo/pkg/channels"
-	cfgpkg "clawgo/pkg/config"
-	"clawgo/pkg/nodes"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/channels"
+	cfgpkg "github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/tools"
 	"github.com/gorilla/websocket"
 	"rsc.io/qr"
 )

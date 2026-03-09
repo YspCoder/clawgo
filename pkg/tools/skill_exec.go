@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 type SkillExecTool struct {
