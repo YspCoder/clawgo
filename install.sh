@@ -121,8 +121,10 @@ install_binary() {
   local extracted_bin=""
   if [[ -f "$TMPDIR/$BIN" ]]; then
     extracted_bin="$TMPDIR/$BIN"
+  elif [[ -f "$TMPDIR/${BIN}-${OS}-${ARCH}" ]]; then
+    extracted_bin="$TMPDIR/${BIN}-${OS}-${ARCH}"
   else
-    extracted_bin="$(find "$TMPDIR" -maxdepth 2 -type f -name "$BIN" | head -n1)"
+    extracted_bin="$(find "$TMPDIR" -maxdepth 3 -type f \( -name "$BIN" -o -name "${BIN}-${OS}-${ARCH}" -o -name "${BIN}-*" \) ! -name "*.tar.gz" ! -name "*.zip" | head -n1)"
   fi
 
   if [[ -z "$extracted_bin" || ! -f "$extracted_bin" ]]; then
