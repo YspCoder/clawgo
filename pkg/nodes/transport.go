@@ -20,8 +20,9 @@ type Transport interface {
 
 // Router prefers p2p transport and falls back to relay.
 type Router struct {
-	P2P   Transport
-	Relay Transport
+	P2P    Transport
+	Relay  Transport
+	Policy DispatchPolicy
 }
 
 func (r *Router) Dispatch(ctx context.Context, req Request, mode string) (Response, error) {
@@ -43,14 +44,25 @@ func (r *Router) Dispatch(ctx context.Context, req Request, mode string) (Respon
 		resp, err := r.Relay.Send(ctx, req)
 		return annotateTransport(resp, "relay", r.Relay.Name(), ""), err
 	default: // auto
-		if r.P2P != nil {
+		preferP2P := r.Policy.PreferP2P || r.Relay == nil
+		if preferP2P && r.P2P != nil {
 			if resp, err := r.P2P.Send(ctx, req); err == nil && resp.OK {
 				return annotateTransport(resp, "auto", r.P2P.Name(), ""), nil
+			} else if !r.Policy.AllowRelayFallback {
+				return annotateTransport(resp, "auto", r.P2P.Name(), ""), err
 			}
 		}
 		if r.Relay != nil {
 			resp, err := r.Relay.Send(ctx, req)
-			return annotateTransport(resp, "auto", r.Relay.Name(), "p2p"), err
+			fallback := ""
+			if preferP2P && r.P2P != nil {
+				fallback = "p2p"
+			}
+			return annotateTransport(resp, "auto", r.Relay.Name(), fallback), err
+		}
+		if !preferP2P && r.P2P != nil {
+			resp, err := r.P2P.Send(ctx, req)
+			return annotateTransport(resp, "auto", r.P2P.Name(), "relay"), err
 		}
 		return Response{}, fmt.Errorf("no transport available")
 	}

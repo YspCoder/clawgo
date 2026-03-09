@@ -217,6 +217,9 @@ func gatewayCmd() {
 	registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
 		return agentLoop.HandleSubagentRuntime(cctx, action, args)
 	})
+	registryServer.SetNodeDispatchHandler(func(cctx context.Context, req nodes.Request, mode string) (nodes.Response, error) {
+		return agentLoop.DispatchNodeRequest(cctx, req, mode)
+	})
 	registryServer.SetToolsCatalogHandler(func() interface{} {
 		return agentLoop.GetToolCatalog()
 	})

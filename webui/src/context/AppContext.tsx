@@ -11,6 +11,8 @@ type RuntimeSnapshot = {
     trees?: any[];
     p2p?: Record<string, any>;
     dispatches?: any[];
+    alerts?: any[];
+    artifact_retention?: Record<string, any>;
   };
   sessions?: {
     sessions?: Array<{ key: string; title?: string; channel?: string }>;
@@ -49,6 +51,10 @@ interface AppContextType {
   setNodeP2P: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   nodeDispatchItems: any[];
   setNodeDispatchItems: React.Dispatch<React.SetStateAction<any[]>>;
+  nodeAlerts: any[];
+  setNodeAlerts: React.Dispatch<React.SetStateAction<any[]>>;
+  nodeArtifactRetention: Record<string, any>;
+  setNodeArtifactRetention: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   cron: CronJob[];
   setCron: (cron: CronJob[]) => void;
   skills: Skill[];
@@ -111,6 +117,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [nodeTrees, setNodeTrees] = useState('[]');
   const [nodeP2P, setNodeP2P] = useState<Record<string, any>>({});
   const [nodeDispatchItems, setNodeDispatchItems] = useState<any[]>([]);
+  const [nodeAlerts, setNodeAlerts] = useState<any[]>([]);
+  const [nodeArtifactRetention, setNodeArtifactRetention] = useState<Record<string, any>>({});
   const [cron, setCron] = useState<CronJob[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [clawhubInstalled, setClawhubInstalled] = useState(false);
@@ -171,6 +179,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setNodeTrees(JSON.stringify(j.trees || [], null, 2));
       setNodeP2P(j.p2p || {});
       setNodeDispatchItems(Array.isArray(j.dispatches) ? j.dispatches : []);
+      setNodeAlerts(Array.isArray(j.alerts) ? j.alerts : []);
+      setNodeArtifactRetention(j.artifact_retention || {});
       setIsGatewayOnline(true);
     } catch (e) {
       setIsGatewayOnline(false);
@@ -277,6 +287,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setNodeTrees(JSON.stringify(Array.isArray(snapshot.nodes.trees) ? snapshot.nodes.trees : [], null, 2));
         setNodeP2P(snapshot.nodes.p2p || {});
         setNodeDispatchItems(Array.isArray(snapshot.nodes.dispatches) ? snapshot.nodes.dispatches : []);
+        setNodeAlerts(Array.isArray(snapshot.nodes.alerts) ? snapshot.nodes.alerts : []);
+        setNodeArtifactRetention(snapshot.nodes.artifact_retention || {});
       }
       if (snapshot.sessions) {
         const arr = Array.isArray(snapshot.sessions.sessions) ? snapshot.sessions.sessions : [];
@@ -355,7 +367,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       token, setToken, sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed, isGatewayOnline, setIsGatewayOnline,
-      cfg, setCfg, cfgRaw, setCfgRaw, configEditing, setConfigEditing, nodes, setNodes, nodeTrees, setNodeTrees, nodeP2P, setNodeP2P, nodeDispatchItems, setNodeDispatchItems,
+      cfg, setCfg, cfgRaw, setCfgRaw, configEditing, setConfigEditing, nodes, setNodes, nodeTrees, setNodeTrees, nodeP2P, setNodeP2P, nodeDispatchItems, setNodeDispatchItems, nodeAlerts, setNodeAlerts, nodeArtifactRetention, setNodeArtifactRetention,
       cron, setCron, skills, setSkills, clawhubInstalled, clawhubPath,
       sessions, setSessions,
       taskQueueItems, setTaskQueueItems, ekgSummary, setEkgSummary,

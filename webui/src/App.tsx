@@ -13,6 +13,7 @@ const Skills = lazy(() => import('./pages/Skills'));
 const MCP = lazy(() => import('./pages/MCP'));
 const Memory = lazy(() => import('./pages/Memory'));
 const Nodes = lazy(() => import('./pages/Nodes'));
+const NodeArtifacts = lazy(() => import('./pages/NodeArtifacts'));
 const TaskAudit = lazy(() => import('./pages/TaskAudit'));
 const EKG = lazy(() => import('./pages/EKG'));
 const LogCodes = lazy(() => import('./pages/LogCodes'));
@@ -43,6 +44,7 @@ export default function App() {
                 <Route path="cron" element={<Cron />} />
                 <Route path="memory" element={<Memory />} />
                 <Route path="nodes" element={<Nodes />} />
+                <Route path="node-artifacts" element={<NodeArtifacts />} />
                 <Route path="task-audit" element={<TaskAudit />} />
                 <Route path="ekg" element={<EKG />} />
                 <Route path="subagent-profiles" element={<SubagentProfiles />} />

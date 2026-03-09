@@ -18,6 +18,29 @@ function setPath(obj: any, path: string, value: any) {
   return next;
 }
 
+function parseTagRuleText(raw: string) {
+  const out: Record<string, string[]> = {};
+  for (const line of String(raw || '').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf('=');
+    if (idx <= 0) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const tags = trimmed.slice(idx + 1).split(',').map((item) => item.trim()).filter(Boolean);
+    if (!key || tags.length === 0) continue;
+    out[key] = tags;
+  }
+  return out;
+}
+
+function formatTagRuleText(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  return Object.entries(value as Record<string, any>)
+    .map(([key, tags]) => `${key}=${Array.isArray(tags) ? tags.join(',') : ''}`)
+    .filter((line) => line !== '=')
+    .join('\n');
+}
+
 const Config: React.FC = () => {
   const { t } = useTranslation();
   const ui = useUI();
@@ -109,6 +132,14 @@ const Config: React.FC = () => {
 
   function updateGatewayP2PField(field: string, value: any) {
     setCfg((v) => setPath(v, `gateway.nodes.p2p.${field}`, value));
+  }
+
+  function updateGatewayDispatchField(field: string, value: any) {
+    setCfg((v) => setPath(v, `gateway.nodes.dispatch.${field}`, value));
+  }
+
+  function updateGatewayArtifactsField(field: string, value: any) {
+    setCfg((v) => setPath(v, `gateway.nodes.artifacts.${field}`, value));
   }
 
   function updateGatewayIceServer(index: number, field: string, value: any) {
@@ -401,6 +432,144 @@ const Config: React.FC = () => {
                     ) : (
                       <div className="text-xs text-zinc-500">{t('configNodeP2PIceServersEmpty')}</div>
                     )}
+                  </div>
+                  <div className="border-t border-zinc-800/70 pt-3 space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="text-sm font-semibold text-zinc-200">{t('configNodeDispatch')}</div>
+                      <div className="text-xs text-zinc-500">{t('configNodeDispatchHint')}</div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchPreferLocal')}</div>
+                        <input
+                          type="checkbox"
+                          checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.prefer_local)}
+                          onChange={(e) => updateGatewayDispatchField('prefer_local', e.target.checked)}
+                        />
+                      </label>
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchPreferP2P')}</div>
+                        <input
+                          type="checkbox"
+                          checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.prefer_p2p ?? true)}
+                          onChange={(e) => updateGatewayDispatchField('prefer_p2p', e.target.checked)}
+                        />
+                      </label>
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchAllowRelay')}</div>
+                        <input
+                          type="checkbox"
+                          checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.allow_relay_fallback ?? true)}
+                          onChange={(e) => updateGatewayDispatchField('allow_relay_fallback', e.target.checked)}
+                        />
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchActionTags')}</div>
+                        <textarea
+                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.action_tags)}
+                          onChange={(e) => updateGatewayDispatchField('action_tags', parseTagRuleText(e.target.value))}
+                          placeholder={t('configNodeDispatchActionTagsPlaceholder')}
+                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
+                        />
+                      </label>
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchAgentTags')}</div>
+                        <textarea
+                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.agent_tags)}
+                          onChange={(e) => updateGatewayDispatchField('agent_tags', parseTagRuleText(e.target.value))}
+                          placeholder={t('configNodeDispatchAgentTagsPlaceholder')}
+                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
+                        />
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchAllowActions')}</div>
+                        <textarea
+                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.allow_actions)}
+                          onChange={(e) => updateGatewayDispatchField('allow_actions', parseTagRuleText(e.target.value))}
+                          placeholder={t('configNodeDispatchAllowActionsPlaceholder')}
+                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
+                        />
+                      </label>
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchDenyActions')}</div>
+                        <textarea
+                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.deny_actions)}
+                          onChange={(e) => updateGatewayDispatchField('deny_actions', parseTagRuleText(e.target.value))}
+                          placeholder={t('configNodeDispatchDenyActionsPlaceholder')}
+                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
+                        />
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchAllowAgents')}</div>
+                        <textarea
+                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.allow_agents)}
+                          onChange={(e) => updateGatewayDispatchField('allow_agents', parseTagRuleText(e.target.value))}
+                          placeholder={t('configNodeDispatchAllowAgentsPlaceholder')}
+                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
+                        />
+                      </label>
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeDispatchDenyAgents')}</div>
+                        <textarea
+                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.deny_agents)}
+                          onChange={(e) => updateGatewayDispatchField('deny_agents', parseTagRuleText(e.target.value))}
+                          placeholder={t('configNodeDispatchDenyAgentsPlaceholder')}
+                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="border-t border-zinc-800/70 pt-3 space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="text-sm font-semibold text-zinc-200">{t('configNodeArtifacts')}</div>
+                      <div className="text-xs text-zinc-500">{t('configNodeArtifactsHint')}</div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('enable')}</div>
+                        <input
+                          type="checkbox"
+                          checked={Boolean((cfg as any)?.gateway?.nodes?.artifacts?.enabled)}
+                          onChange={(e) => updateGatewayArtifactsField('enabled', e.target.checked)}
+                        />
+                      </label>
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeArtifactsKeepLatest')}</div>
+                        <input
+                          type="number"
+                          min={1}
+                          value={Number((cfg as any)?.gateway?.nodes?.artifacts?.keep_latest || 500)}
+                          onChange={(e) => updateGatewayArtifactsField('keep_latest', Math.max(1, Number.parseInt(e.target.value || '0', 10) || 1))}
+                          className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
+                        />
+                      </label>
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeArtifactsPruneOnRead')}</div>
+                        <input
+                          type="checkbox"
+                          checked={Boolean((cfg as any)?.gateway?.nodes?.artifacts?.prune_on_read ?? true)}
+                          onChange={(e) => updateGatewayArtifactsField('prune_on_read', e.target.checked)}
+                        />
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
+                        <div className="text-zinc-300">{t('configNodeArtifactsRetainDays')}</div>
+                        <input
+                          type="number"
+                          min={0}
+                          value={Number((cfg as any)?.gateway?.nodes?.artifacts?.retain_days ?? 7)}
+                          onChange={(e) => updateGatewayArtifactsField('retain_days', Math.max(0, Number.parseInt(e.target.value || '0', 10) || 0))}
+                          className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
               )}

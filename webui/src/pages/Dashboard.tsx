@@ -39,6 +39,8 @@ const Dashboard: React.FC = () => {
     cfg,
     nodeP2P,
     nodeDispatchItems,
+    nodeAlerts,
+    nodeArtifactRetention,
     taskQueueItems,
     ekgSummary,
   } = useAppContext();
@@ -83,6 +85,10 @@ const Dashboard: React.FC = () => {
       }))
       .sort((a, b) => a.node.localeCompare(b.node));
   }, [nodeP2P]);
+  const artifactRetentionEnabled = Boolean(nodeArtifactRetention?.enabled);
+  const artifactRetentionPruned = Number(nodeArtifactRetention?.pruned || 0);
+  const artifactRetentionRemaining = Number(nodeArtifactRetention?.remaining || 0);
+  const artifactRetentionLastRun = formatRuntimeTime(nodeArtifactRetention?.last_run_at);
   const recentNodeDispatches = useMemo(() => {
     return [...nodeDispatchItems]
       .slice(0, 8)
@@ -101,6 +107,9 @@ const Dashboard: React.FC = () => {
         error: String(item?.error || '').trim(),
       }));
   }, [nodeDispatchItems]);
+  const topNodeAlerts = useMemo(() => {
+    return [...(Array.isArray(nodeAlerts) ? nodeAlerts : [])].slice(0, 6);
+  }, [nodeAlerts]);
 
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
@@ -156,6 +165,69 @@ const Dashboard: React.FC = () => {
           <div className="text-3xl font-semibold text-zinc-100">{recentFailures.length}</div>
           <div className="mt-2 text-xs text-zinc-500">{t('dashboardRecentFailedTasks')}</div>
         </div>
+      </div>
+
+      <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6">
+        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 text-zinc-200">
+              <Activity className="w-5 h-5 text-zinc-400" />
+              <h2 className="text-lg font-medium">{t('nodeArtifactsRetention')}</h2>
+            </div>
+            <div className="text-xs text-zinc-500 mt-1">{t('nodeArtifactsRetentionHint')}</div>
+          </div>
+          <div className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${artifactRetentionEnabled ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-800 text-zinc-400'}`}>
+            {artifactRetentionEnabled ? t('enabled') : t('disabled')}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+          <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+            <div className="text-zinc-400 text-xs">{t('nodeArtifactsRetentionPruned')}</div>
+            <div className="mt-2 text-xl font-semibold text-zinc-100">{artifactRetentionPruned}</div>
+          </div>
+          <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+            <div className="text-zinc-400 text-xs">{t('nodeArtifactsRetentionRemaining')}</div>
+            <div className="mt-2 text-xl font-semibold text-zinc-100">{artifactRetentionRemaining}</div>
+          </div>
+          <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+            <div className="text-zinc-400 text-xs">{t('nodeArtifactsRetentionKeepLatest')}</div>
+            <div className="mt-2 text-xl font-semibold text-zinc-100">{Number(nodeArtifactRetention?.keep_latest || 0) || '-'}</div>
+          </div>
+          <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+            <div className="text-zinc-400 text-xs">{t('time')}</div>
+            <div className="mt-2 text-sm font-medium text-zinc-100">{artifactRetentionLastRun}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6">
+        <div className="flex items-center gap-2 mb-5 text-zinc-200">
+          <AlertTriangle className="w-5 h-5 text-amber-400" />
+          <h2 className="text-lg font-medium">{t('nodeAlerts')}</h2>
+        </div>
+        {topNodeAlerts.length === 0 ? (
+          <div className="text-sm text-zinc-500 text-center py-8">{t('nodeAlertsEmpty')}</div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {topNodeAlerts.map((alert: any, index: number) => {
+              const severity = String(alert?.severity || 'warning');
+              return (
+                <div key={`${alert?.node || 'node'}-${alert?.kind || index}-${index}`} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-zinc-100 truncate">{String(alert?.title || '-')}</div>
+                      <div className="text-xs text-zinc-500 mt-1 truncate">{String(alert?.node || '-')} · {String(alert?.kind || '-')}</div>
+                    </div>
+                    <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${severity === 'critical' ? 'bg-rose-500/10 text-rose-300' : 'bg-amber-500/10 text-amber-300'}`}>
+                      {severity}
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-zinc-300 whitespace-pre-wrap break-words">{String(alert?.detail || '-')}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">

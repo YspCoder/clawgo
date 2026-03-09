@@ -55,6 +55,19 @@ func TestParseNodeRegisterArgsDefaults(t *testing.T) {
 	}
 }
 
+func TestParseNodeRegisterArgsTags(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.DefaultConfig()
+	opts, err := parseNodeRegisterArgs([]string{"--id", "edge-dev", "--tags", "vision,gpu"}, cfg)
+	if err != nil {
+		t.Fatalf("parseNodeRegisterArgs failed: %v", err)
+	}
+	if len(opts.Tags) != 2 || opts.Tags[0] != "vision" || opts.Tags[1] != "gpu" {
+		t.Fatalf("unexpected tags: %+v", opts.Tags)
+	}
+}
+
 func TestPostNodeRegisterSendsNodeInfo(t *testing.T) {
 	t.Parallel()
 

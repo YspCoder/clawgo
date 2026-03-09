@@ -21,6 +21,7 @@ const Sidebar: React.FC = () => {
       title: t('sidebarRuntime'),
       items: [
         { icon: <Terminal className="w-5 h-5" />, label: t('nodes'), to: '/nodes' },
+        { icon: <FolderOpen className="w-5 h-5" />, label: t('nodeArtifacts'), to: '/node-artifacts' },
         { icon: <ClipboardList className="w-5 h-5" />, label: t('taskAudit'), to: '/task-audit' },
         { icon: <Terminal className="w-5 h-5" />, label: t('logs'), to: '/logs' },
         { icon: <BrainCircuit className="w-5 h-5" />, label: t('ekg'), to: '/ekg' },

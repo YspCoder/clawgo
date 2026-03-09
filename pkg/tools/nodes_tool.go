@@ -150,6 +150,9 @@ func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode stri
 		"error":       resp.Error,
 		"duration_ms": durationMs,
 	}
+	if len(req.Args) > 0 {
+		row["request_args"] = req.Args
+	}
 	if used, _ := resp.Payload["used_transport"].(string); strings.TrimSpace(used) != "" {
 		row["used_transport"] = strings.TrimSpace(used)
 	}

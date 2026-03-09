@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { formatLocalDateTime } from '../utils/time';
 
@@ -20,10 +21,23 @@ function formatBytes(value: unknown) {
 
 const Nodes: React.FC = () => {
   const { t } = useTranslation();
-  const { q, nodes, nodeTrees, nodeP2P, refreshNodes } = useAppContext();
+  const { q, nodes, nodeTrees, nodeP2P, nodeAlerts, refreshNodes } = useAppContext();
   const [selectedNodeID, setSelectedNodeID] = useState('');
   const [dispatches, setDispatches] = useState<any[]>([]);
+  const [selectedDispatchKey, setSelectedDispatchKey] = useState('');
   const [loading, setLoading] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
+  const [nodeFilter, setNodeFilter] = useState('');
+  const [dispatchActionFilter, setDispatchActionFilter] = useState('all');
+  const [dispatchTransportFilter, setDispatchTransportFilter] = useState('all');
+  const [dispatchStatusFilter, setDispatchStatusFilter] = useState('all');
+  const [replayPending, setReplayPending] = useState(false);
+  const [replayResult, setReplayResult] = useState<any>(null);
+  const [replayError, setReplayError] = useState('');
+  const [replayModeDraft, setReplayModeDraft] = useState('auto');
+  const [replayTaskDraft, setReplayTaskDraft] = useState('');
+  const [replayModelDraft, setReplayModelDraft] = useState('');
+  const [replayArgsDraft, setReplayArgsDraft] = useState('{}');
 
   const nodeItems = useMemo(() => {
     try {
@@ -54,11 +68,16 @@ const Nodes: React.FC = () => {
     const fetchDispatches = async () => {
       setLoading(true);
       try {
-        const r = await fetch(`/webui/api/node_dispatches${q ? `${q}&limit=200` : '?limit=200'}`);
+        const r = await fetch(`/webui/api/node_dispatches${q ? `${q}&limit=300` : '?limit=300'}`);
         if (!r.ok) throw new Error(await r.text());
         const j = await r.json();
         if (!cancelled) {
-          setDispatches(Array.isArray(j.items) ? j.items : []);
+          const items = Array.isArray(j.items) ? j.items : [];
+          setDispatches(items);
+          if (items.length > 0 && !selectedDispatchKey) {
+            const first = items[0];
+            setSelectedDispatchKey(`${first?.time || ''}:${first?.node || ''}:${first?.action || ''}`);
+          }
         }
       } catch (err) {
         console.error(err);
@@ -69,11 +88,28 @@ const Nodes: React.FC = () => {
     };
     fetchDispatches();
     return () => { cancelled = true; };
-  }, [q]);
+  }, [q, reloadTick]);
+
+  const filteredNodes = useMemo(() => {
+    const keyword = nodeFilter.trim().toLowerCase();
+    if (!keyword) return nodeItems;
+    return nodeItems.filter((item: any) => {
+      const tags = Array.isArray(item?.tags) ? item.tags.join(' ') : '';
+      const haystack = [
+        item?.id,
+        item?.name,
+        item?.os,
+        item?.arch,
+        item?.version,
+        tags,
+      ].join(' ').toLowerCase();
+      return haystack.includes(keyword);
+    });
+  }, [nodeItems, nodeFilter]);
 
   const selectedNode = useMemo(() => {
-    return nodeItems.find((item) => String(item?.id || '') === selectedNodeID) || nodeItems[0] || null;
-  }, [nodeItems, selectedNodeID]);
+    return nodeItems.find((item) => String(item?.id || '') === selectedNodeID) || filteredNodes[0] || nodeItems[0] || null;
+  }, [nodeItems, filteredNodes, selectedNodeID]);
 
   const selectedTree = useMemo(() => {
     const nodeID = String(selectedNode?.id || '');
@@ -85,11 +121,97 @@ const Nodes: React.FC = () => {
     const sessions = Array.isArray(nodeP2P?.nodes) ? nodeP2P.nodes : [];
     return sessions.find((item: any) => String(item?.node || '') === nodeID) || null;
   }, [nodeP2P, selectedNode]);
+  const selectedNodeAlerts = useMemo(() => {
+    const nodeID = String(selectedNode?.id || '');
+    return (Array.isArray(nodeAlerts) ? nodeAlerts : []).filter((item: any) => String(item?.node || '') === nodeID);
+  }, [nodeAlerts, selectedNode]);
 
   const filteredDispatches = useMemo(() => {
     const nodeID = String(selectedNode?.id || '');
-    return dispatches.filter((item) => String(item?.node || '') === nodeID);
-  }, [dispatches, selectedNode]);
+    return dispatches.filter((item) => {
+      if (String(item?.node || '') !== nodeID) return false;
+      if (dispatchActionFilter !== 'all' && String(item?.action || '') !== dispatchActionFilter) return false;
+      if (dispatchTransportFilter !== 'all' && String(item?.used_transport || '-') !== dispatchTransportFilter) return false;
+      if (dispatchStatusFilter === 'ok' && !item?.ok) return false;
+      if (dispatchStatusFilter === 'error' && item?.ok) return false;
+      return true;
+    });
+  }, [dispatches, selectedNode, dispatchActionFilter, dispatchTransportFilter, dispatchStatusFilter]);
+
+  const dispatchActions = useMemo(() => {
+    return Array.from(new Set(dispatches.map((item) => String(item?.action || '').trim()).filter(Boolean))).sort();
+  }, [dispatches]);
+
+  const dispatchTransports = useMemo(() => {
+    return Array.from(new Set(dispatches.map((item) => String(item?.used_transport || '').trim()).filter(Boolean))).sort();
+  }, [dispatches]);
+
+  const selectedDispatch = useMemo(() => {
+    if (!selectedDispatchKey) return filteredDispatches[0] || null;
+    return filteredDispatches.find((item) => `${item?.time || ''}:${item?.node || ''}:${item?.action || ''}` === selectedDispatchKey) || filteredDispatches[0] || null;
+  }, [filteredDispatches, selectedDispatchKey]);
+
+  const selectedDispatchPretty = useMemo(() => selectedDispatch ? JSON.stringify(selectedDispatch, null, 2) : '', [selectedDispatch]);
+
+  useEffect(() => {
+    if (!selectedDispatch) {
+      setReplayModeDraft('auto');
+      setReplayTaskDraft('');
+      setReplayModelDraft('');
+      setReplayArgsDraft('{}');
+      return;
+    }
+    setReplayModeDraft(String(selectedDispatch.mode || 'auto'));
+    setReplayTaskDraft(String(selectedDispatch.task || ''));
+    setReplayModelDraft(String(selectedDispatch.model || ''));
+    setReplayArgsDraft(JSON.stringify(selectedDispatch.request_args || {}, null, 2));
+  }, [selectedDispatch]);
+
+  function resetReplayDraft() {
+    if (!selectedDispatch) return;
+    setReplayModeDraft(String(selectedDispatch.mode || 'auto'));
+    setReplayTaskDraft(String(selectedDispatch.task || ''));
+    setReplayModelDraft(String(selectedDispatch.model || ''));
+    setReplayArgsDraft(JSON.stringify(selectedDispatch.request_args || {}, null, 2));
+    setReplayError('');
+  }
+
+  async function replayDispatch() {
+    if (!selectedDispatch) return;
+    setReplayPending(true);
+    setReplayError('');
+    setReplayResult(null);
+    try {
+      let parsedArgs: Record<string, any> = {};
+      try {
+        parsedArgs = replayArgsDraft.trim() ? JSON.parse(replayArgsDraft) : {};
+      } catch {
+        throw new Error(t('nodeReplayInvalidArgs'));
+      }
+      const r = await fetch(`/webui/api/node_dispatches/replay${q}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          node: selectedDispatch.node,
+          action: selectedDispatch.action,
+          mode: replayModeDraft || 'auto',
+          task: replayTaskDraft,
+          model: replayModelDraft,
+          args: parsedArgs,
+        }),
+      });
+      const text = await r.text();
+      if (!r.ok) throw new Error(text || 'replay failed');
+      const json = text ? JSON.parse(text) : {};
+      setReplayResult(json.result || null);
+      setReloadTick((value) => value + 1);
+      refreshNodes();
+    } catch (err: any) {
+      setReplayError(String(err?.message || err || 'replay failed'));
+    } finally {
+      setReplayPending(false);
+    }
+  }
 
   return (
     <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
@@ -98,138 +220,290 @@ const Nodes: React.FC = () => {
           <h1 className="text-xl md:text-2xl font-semibold">{t('nodes')}</h1>
           <div className="text-sm text-zinc-500 mt-1">{t('nodesDetailHint')}</div>
         </div>
-        <button onClick={() => { refreshNodes(); }} className="brand-button px-3 py-1.5 rounded-xl text-sm text-white">
+        <button onClick={() => { refreshNodes(); setReloadTick((value) => value + 1); }} className="brand-button px-3 py-1.5 rounded-xl text-sm text-white">
           {loading ? t('loading') : t('refresh')}
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr_1.1fr] gap-4 flex-1 min-h-0">
         <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
-          <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('nodes')}</div>
+          <div className="px-3 py-2 border-b border-zinc-800 space-y-2">
+            <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('nodes')}</div>
+            <input
+              value={nodeFilter}
+              onChange={(e) => setNodeFilter(e.target.value)}
+              placeholder={t('nodesFilterPlaceholder')}
+              className="w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2 text-sm"
+            />
+          </div>
           <div className="overflow-y-auto min-h-0">
-            {nodeItems.length === 0 ? (
+            {filteredNodes.length === 0 ? (
               <div className="p-4 text-sm text-zinc-500">{t('noNodes')}</div>
-            ) : nodeItems.map((node: any, index: number) => {
+            ) : filteredNodes.map((node: any, index: number) => {
               const nodeID = String(node?.id || `node-${index}`);
               const active = String(selectedNode?.id || '') === nodeID;
+              const tags = Array.isArray(node?.tags) ? node.tags : [];
               return (
                 <button
                   key={nodeID}
                   onClick={() => setSelectedNodeID(nodeID)}
-                  className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/20 ${active ? 'bg-indigo-500/15' : ''}`}
+                  className={`w-full text-left px-3 py-3 border-b border-zinc-800/60 hover:bg-zinc-800/20 ${active ? 'bg-indigo-500/15' : ''}`}
                 >
                   <div className="text-sm font-medium text-zinc-100 truncate">{String(node?.name || nodeID)}</div>
                   <div className="text-xs text-zinc-400 truncate">{nodeID} · {String(node?.os || '-')} / {String(node?.arch || '-')}</div>
                   <div className="text-[11px] text-zinc-500 truncate">{String(node?.online ? t('online') : t('offline'))} · {String(node?.version || '-')}</div>
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {tags.slice(0, 4).map((tag: string) => (
+                        <span key={`${nodeID}-${tag}`} className="rounded-full border border-zinc-700 bg-zinc-900/60 px-2 py-0.5 text-[10px] text-zinc-300">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </button>
               );
             })}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 2xl:grid-cols-[1.1fr_1fr] gap-4 min-h-0">
-          <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
-            <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('nodeDetails')}</div>
-            <div className="p-4 overflow-y-auto min-h-0 space-y-4 text-sm">
-              {!selectedNode ? (
-                <div className="text-zinc-500">{t('noNodes')}</div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    <div><div className="text-zinc-500 text-xs">{t('status')}</div><div>{selectedNode.online ? t('online') : t('offline')}</div></div>
-                    <div><div className="text-zinc-500 text-xs">{t('time')}</div><div>{formatLocalDateTime(selectedNode.last_seen_at)}</div></div>
-                    <div><div className="text-zinc-500 text-xs">{t('version')}</div><div>{String(selectedNode.version || '-')}</div></div>
-                    <div><div className="text-zinc-500 text-xs">OS</div><div>{String(selectedNode.os || '-')}</div></div>
-                    <div><div className="text-zinc-500 text-xs">Arch</div><div>{String(selectedNode.arch || '-')}</div></div>
-                    <div><div className="text-zinc-500 text-xs">Endpoint</div><div className="break-all">{String(selectedNode.endpoint || '-')}</div></div>
-                  </div>
+        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
+          <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('nodeDetails')}</div>
+          <div className="p-4 overflow-y-auto min-h-0 space-y-4 text-sm">
+            {!selectedNode ? (
+              <div className="text-zinc-500">{t('noNodes')}</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div><div className="text-zinc-500 text-xs">{t('status')}</div><div>{selectedNode.online ? t('online') : t('offline')}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('time')}</div><div>{formatLocalDateTime(selectedNode.last_seen_at)}</div></div>
+                  <div><div className="text-zinc-500 text-xs">{t('version')}</div><div>{String(selectedNode.version || '-')}</div></div>
+                  <div><div className="text-zinc-500 text-xs">OS</div><div>{String(selectedNode.os || '-')}</div></div>
+                  <div><div className="text-zinc-500 text-xs">Arch</div><div>{String(selectedNode.arch || '-')}</div></div>
+                  <div><div className="text-zinc-500 text-xs">Endpoint</div><div className="break-all">{String(selectedNode.endpoint || '-')}</div></div>
+                </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-zinc-500 text-xs mb-1">{t('nodeCapabilities')}</div>
-                      <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
-                        {Object.entries(selectedNode.capabilities || {}).filter(([, enabled]) => Boolean(enabled)).map(([key]) => key).join(', ') || '-'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-500 text-xs mb-1">{t('nodeActions')}</div>
-                      <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
-                        {Array.isArray(selectedNode.actions) && selectedNode.actions.length > 0 ? selectedNode.actions.join(', ') : '-'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-500 text-xs mb-1">{t('nodeModels')}</div>
-                      <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
-                        {Array.isArray(selectedNode.models) && selectedNode.models.length > 0 ? selectedNode.models.join(', ') : '-'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-500 text-xs mb-1">{t('nodeAgents')}</div>
-                      <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
-                        {Array.isArray(selectedNode.agents) && selectedNode.agents.length > 0 ? selectedNode.agents.map((item: any) => String(item?.id || '-')).join(', ') : '-'}
-                      </div>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Link
+                    to={`/node-artifacts?node=${encodeURIComponent(String(selectedNode.id || ''))}`}
+                    className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200"
+                  >
+                    {t('nodeArtifacts')}
+                  </Link>
+                  <a
+                    href={`/webui/api/node_artifacts/export${q ? `${q}&node=${encodeURIComponent(String(selectedNode.id || ''))}` : `?node=${encodeURIComponent(String(selectedNode.id || ''))}`}`}
+                    className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200"
+                  >
+                    {t('export')}
+                  </a>
+                </div>
 
+                <div>
+                  <div className="text-zinc-500 text-xs mb-1">{t('nodeTags')}</div>
+                  <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
+                    {Array.isArray(selectedNode.tags) && selectedNode.tags.length > 0 ? selectedNode.tags.join(', ') : '-'}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <div className="text-zinc-500 text-xs mb-1">{t('nodeP2P')}</div>
-                    <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200">
-                      {selectedSession ? (
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div><div className="text-zinc-500">{t('status')}</div><div>{String(selectedSession.status || 'unknown')}</div></div>
-                          <div><div className="text-zinc-500">{t('dashboardNodeP2PSessionRetries')}</div><div>{Number(selectedSession.retry_count || 0)}</div></div>
-                          <div><div className="text-zinc-500">{t('dashboardNodeP2PSessionReady')}</div><div>{formatLocalDateTime(selectedSession.last_ready_at)}</div></div>
-                          <div><div className="text-zinc-500">{t('dashboardNodeP2PSessionError')}</div><div className="break-all">{String(selectedSession.last_error || '-')}</div></div>
-                        </div>
-                      ) : (
-                        <div className="text-zinc-500">{t('dashboardNodeP2PSessionsEmpty')}</div>
-                      )}
+                    <div className="text-zinc-500 text-xs mb-1">{t('nodeCapabilities')}</div>
+                    <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
+                      {Object.entries(selectedNode.capabilities || {}).filter(([, enabled]) => Boolean(enabled)).map(([key]) => key).join(', ') || '-'}
                     </div>
                   </div>
-
                   <div>
-                    <div className="text-zinc-500 text-xs mb-1">{t('agentTree')}</div>
-                    <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 space-y-2">
-                      {Array.isArray(selectedTree?.items) && selectedTree.items.length > 0 ? selectedTree.items.map((item: any, index: number) => (
-                        <div key={`${item?.agent_id || index}`} className="rounded-xl border border-zinc-800/80 bg-black/20 p-3">
-                          <div className="text-sm font-medium text-zinc-100">{String(item?.display_name || item?.agent_id || '-')}</div>
-                          <div className="text-xs text-zinc-500 mt-1">{String(item?.agent_id || '-')} · {String(item?.transport || '-')} · {String(item?.role || '-')}</div>
-                        </div>
-                      )) : (
-                        <div className="text-zinc-500">{t('noAgentTree')}</div>
-                      )}
+                    <div className="text-zinc-500 text-xs mb-1">{t('nodeActions')}</div>
+                    <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
+                      {Array.isArray(selectedNode.actions) && selectedNode.actions.length > 0 ? selectedNode.actions.join(', ') : '-'}
                     </div>
                   </div>
-                </>
-              )}
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('nodeModels')}</div>
+                    <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
+                      {Array.isArray(selectedNode.models) && selectedNode.models.length > 0 ? selectedNode.models.join(', ') : '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('nodeAgents')}</div>
+                    <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 break-all">
+                      {Array.isArray(selectedNode.agents) && selectedNode.agents.length > 0 ? selectedNode.agents.map((item: any) => String(item?.id || '-')).join(', ') : '-'}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-zinc-500 text-xs mb-1">{t('nodeAlerts')}</div>
+                  <div className="space-y-2">
+                    {selectedNodeAlerts.length > 0 ? selectedNodeAlerts.map((alert: any, index: number) => {
+                      const severity = String(alert?.severity || 'warning');
+                      return (
+                        <div key={`${alert?.kind || index}-${index}`} className={`rounded-2xl border p-3 ${severity === 'critical' ? 'border-rose-900/60 bg-rose-950/20' : 'border-amber-900/60 bg-amber-950/20'}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-medium text-zinc-100">{String(alert?.title || '-')}</div>
+                            <div className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${severity === 'critical' ? 'bg-rose-500/10 text-rose-300' : 'bg-amber-500/10 text-amber-300'}`}>{severity}</div>
+                          </div>
+                          <div className="mt-2 text-xs text-zinc-300 whitespace-pre-wrap break-words">{String(alert?.detail || '-')}</div>
+                        </div>
+                      );
+                    }) : (
+                      <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-500">{t('nodeAlertsEmpty')}</div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-zinc-500 text-xs mb-1">{t('nodeP2P')}</div>
+                  <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200">
+                    {selectedSession ? (
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div><div className="text-zinc-500">{t('status')}</div><div>{String(selectedSession.status || 'unknown')}</div></div>
+                        <div><div className="text-zinc-500">{t('dashboardNodeP2PSessionRetries')}</div><div>{Number(selectedSession.retry_count || 0)}</div></div>
+                        <div><div className="text-zinc-500">{t('dashboardNodeP2PSessionReady')}</div><div>{formatLocalDateTime(selectedSession.last_ready_at)}</div></div>
+                        <div><div className="text-zinc-500">{t('dashboardNodeP2PSessionError')}</div><div className="break-all">{String(selectedSession.last_error || '-')}</div></div>
+                      </div>
+                    ) : (
+                      <div className="text-zinc-500">{t('dashboardNodeP2PSessionsEmpty')}</div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-zinc-500 text-xs mb-1">{t('agentTree')}</div>
+                  <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 text-zinc-200 space-y-2">
+                    {Array.isArray(selectedTree?.items) && selectedTree.items.length > 0 ? selectedTree.items.map((item: any, index: number) => (
+                      <div key={`${item?.agent_id || index}`} className="rounded-xl border border-zinc-800/80 bg-black/20 p-3">
+                        <div className="text-sm font-medium text-zinc-100">{String(item?.display_name || item?.agent_id || '-')}</div>
+                        <div className="text-xs text-zinc-500 mt-1">{String(item?.agent_id || '-')} · {String(item?.transport || '-')} · {String(item?.role || '-')}</div>
+                      </div>
+                    )) : (
+                      <div className="text-zinc-500">{t('noAgentTree')}</div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
+          <div className="px-3 py-2 border-b border-zinc-800 space-y-2">
+            <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('nodeDispatchDetail')}</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <select value={dispatchActionFilter} onChange={(e) => setDispatchActionFilter(e.target.value)} className="rounded-xl bg-zinc-950/70 border border-zinc-800 px-2 py-2 text-xs">
+                <option value="all">{t('allActions')}</option>
+                {dispatchActions.map((action) => <option key={action} value={action}>{action}</option>)}
+              </select>
+              <select value={dispatchTransportFilter} onChange={(e) => setDispatchTransportFilter(e.target.value)} className="rounded-xl bg-zinc-950/70 border border-zinc-800 px-2 py-2 text-xs">
+                <option value="all">{t('allTransports')}</option>
+                {dispatchTransports.map((transport) => <option key={transport} value={transport}>{transport}</option>)}
+              </select>
+              <select value={dispatchStatusFilter} onChange={(e) => setDispatchStatusFilter(e.target.value)} className="rounded-xl bg-zinc-950/70 border border-zinc-800 px-2 py-2 text-xs">
+                <option value="all">{t('allStatus')}</option>
+                <option value="ok">ok</option>
+                <option value="error">error</option>
+              </select>
             </div>
           </div>
-
-          <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
-            <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('dashboardNodeDispatches')}</div>
-            <div className="p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
+          <div className="grid grid-rows-[220px_1fr] min-h-0 flex-1">
+            <div className="overflow-y-auto min-h-0 border-b border-zinc-800/60">
               {filteredDispatches.length === 0 ? (
+                <div className="p-4 text-sm text-zinc-500">{t('dashboardNodeDispatchesEmpty')}</div>
+              ) : filteredDispatches.map((item: any, index: number) => {
+                const key = `${item?.time || ''}:${item?.node || ''}:${item?.action || ''}`;
+                const active = `${selectedDispatch?.time || ''}:${selectedDispatch?.node || ''}:${selectedDispatch?.action || ''}` === key;
+                return (
+                  <button
+                    key={key || `dispatch-${index}`}
+                    onClick={() => setSelectedDispatchKey(key)}
+                    className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/20 ${active ? 'bg-indigo-500/15' : ''}`}
+                  >
+                    <div className="text-sm font-medium text-zinc-100 truncate">{`${item?.action || '-'} · ${item?.used_transport || '-'}`}</div>
+                    <div className="text-xs text-zinc-400 truncate">{formatLocalDateTime(item?.time)} · {Number(item?.duration_ms || 0)}ms · {Number(item?.artifact_count || 0)} {t('dashboardNodeDispatchArtifacts')}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
+              {!selectedDispatch ? (
                 <div className="text-zinc-500">{t('dashboardNodeDispatchesEmpty')}</div>
-              ) : filteredDispatches.map((item: any, index: number) => (
-                <div key={`${item?.time || index}-${index}`} className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-zinc-100 truncate">{String(item?.action || '-')}</div>
-                      <div className="text-xs text-zinc-500 mt-1">{formatLocalDateTime(item?.time)}</div>
-                    </div>
-                    <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${item?.ok ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
-                      {item?.ok ? 'ok' : 'error'}
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-medium text-zinc-200">{t('nodeDispatchDetail')}</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={resetReplayDraft}
+                        disabled={replayPending}
+                        className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 disabled:opacity-60"
+                      >
+                        {t('resetReplayDraft')}
+                      </button>
+                      <button
+                        onClick={replayDispatch}
+                        disabled={replayPending}
+                        className="brand-button px-3 py-1.5 rounded-xl text-xs text-white disabled:opacity-60"
+                      >
+                        {replayPending ? t('replaying') : t('replayDispatch')}
+                      </button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-                    <div><div className="text-zinc-400">{t('dashboardNodeDispatchTransport')}</div><div className="text-zinc-200 mt-1">{String(item?.used_transport || '-')}</div></div>
-                    <div><div className="text-zinc-400">{t('dashboardNodeDispatchFallback')}</div><div className="text-zinc-200 mt-1">{String(item?.fallback_from || '-')}</div></div>
-                    <div><div className="text-zinc-400">{t('duration')}</div><div className="text-zinc-200 mt-1">{Number(item?.duration_ms || 0)}ms</div></div>
-                    <div><div className="text-zinc-400">{t('dashboardNodeDispatchArtifacts')}</div><div className="text-zinc-200 mt-1">{Number(item?.artifact_count || 0)}</div></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><div className="text-zinc-500 text-xs">{t('node')}</div><div>{selectedDispatch.node || '-'}</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('action')}</div><div>{selectedDispatch.action || '-'}</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('dashboardNodeDispatchTransport')}</div><div>{selectedDispatch.used_transport || '-'}</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('dashboardNodeDispatchFallback')}</div><div>{selectedDispatch.fallback_from || '-'}</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('duration')}</div><div>{Number(selectedDispatch.duration_ms || 0)}ms</div></div>
+                    <div><div className="text-zinc-500 text-xs">{t('status')}</div><div>{selectedDispatch.ok ? 'ok' : 'error'}</div></div>
                   </div>
-                  {Array.isArray(item?.artifacts) && item.artifacts.length > 0 && (
-                    <div className="mt-4 space-y-3">
-                      {item.artifacts.slice(0, 3).map((artifact: any, artifactIndex: number) => {
+
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('error')}</div>
+                    <div className="p-3 rounded-2xl bg-zinc-950/60 border border-zinc-800 whitespace-pre-wrap text-zinc-200">{selectedDispatch.error || '-'}</div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-zinc-500 text-xs mb-1">{t('nodeReplayRequest')}</div>
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-3 gap-2">
+                          <label className="space-y-1">
+                            <div className="text-zinc-500 text-[11px]">{t('mode')}</div>
+                            <select value={replayModeDraft} onChange={(e) => setReplayModeDraft(e.target.value)} className="w-full rounded-xl border border-zinc-800 bg-zinc-950/60 px-2 py-2 text-xs">
+                              <option value="auto">auto</option>
+                              <option value="p2p">p2p</option>
+                              <option value="relay">relay</option>
+                            </select>
+                          </label>
+                          <label className="space-y-1 col-span-2">
+                            <div className="text-zinc-500 text-[11px]">{t('model')}</div>
+                            <input value={replayModelDraft} onChange={(e) => setReplayModelDraft(e.target.value)} className="w-full rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs" />
+                          </label>
+                        </div>
+                        <label className="space-y-1 block">
+                          <div className="text-zinc-500 text-[11px]">{t('task')}</div>
+                          <textarea value={replayTaskDraft} onChange={(e) => setReplayTaskDraft(e.target.value)} className="min-h-24 w-full rounded-2xl border border-zinc-800 bg-zinc-950/60 p-3 text-xs" />
+                        </label>
+                        <label className="space-y-1 block">
+                          <div className="text-zinc-500 text-[11px]">{t('args')}</div>
+                          <textarea value={replayArgsDraft} onChange={(e) => setReplayArgsDraft(e.target.value)} className="min-h-40 w-full rounded-2xl border border-zinc-800 bg-zinc-950/60 p-3 text-xs font-mono" />
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-zinc-500 text-xs mb-1">{t('nodeReplayResult')}</div>
+                      {replayError ? (
+                        <div className="rounded-2xl border border-red-900/50 bg-red-950/20 p-3 text-xs whitespace-pre-wrap text-red-300">{replayError}</div>
+                      ) : (
+                        <pre className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-3 text-xs overflow-auto">{replayResult ? JSON.stringify(replayResult, null, 2) : '-'}</pre>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('dashboardNodeDispatchArtifactPreview')}</div>
+                    <div className="space-y-3">
+                      {Array.isArray(selectedDispatch.artifacts) && selectedDispatch.artifacts.length > 0 ? selectedDispatch.artifacts.map((artifact: any, artifactIndex: number) => {
                         const kind = String(artifact?.kind || '').trim().toLowerCase();
                         const mime = String(artifact?.mime_type || '').trim().toLowerCase();
                         const isImage = kind === 'image' || mime.startsWith('image/');
@@ -250,11 +524,18 @@ const Nodes: React.FC = () => {
                             </div>
                           </div>
                         );
-                      })}
+                      }) : (
+                        <div className="text-zinc-500">{t('dashboardNodeDispatchesEmpty')}</div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+
+                  <div>
+                    <div className="text-zinc-500 text-xs mb-1">{t('rawJson')}</div>
+                    <pre className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-3 text-xs overflow-auto">{selectedDispatchPretty}</pre>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

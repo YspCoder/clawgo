@@ -43,6 +43,7 @@ type nodeRegisterOptions struct {
 	Version      string
 	Actions      []string
 	Models       []string
+	Tags         []string
 	Agents       []nodes.AgentInfo
 	Capabilities nodes.Capabilities
 	Watch        bool
@@ -124,6 +125,7 @@ func printNodeHelp() {
 	fmt.Println("  --version <value>         Reported node version (default: current clawgo version)")
 	fmt.Println("  --actions <csv>           Supported actions, e.g. run,agent_task")
 	fmt.Println("  --models <csv>            Supported models, e.g. gpt-4o-mini")
+	fmt.Println("  --tags <csv>              Node tags for dispatch policy, e.g. gpu,vision,build")
 	fmt.Println("  --capabilities <csv>      Capability flags: run,invoke,model,camera,screen,location,canvas")
 	fmt.Println("  --watch                   Keep a websocket connection open and send heartbeats")
 	fmt.Println("  --heartbeat-sec <n>       Heartbeat interval in seconds when --watch is set (default: 30)")
@@ -270,6 +272,12 @@ func parseNodeRegisterArgs(args []string, cfg *config.Config) (nodeRegisterOptio
 				return opts, err
 			}
 			opts.Models = splitCSV(v)
+		case "--tags":
+			v, err := next()
+			if err != nil {
+				return opts, err
+			}
+			opts.Tags = splitCSV(v)
 		case "--capabilities":
 			v, err := next()
 			if err != nil {
@@ -359,6 +367,7 @@ func buildNodeInfo(opts nodeRegisterOptions) nodes.NodeInfo {
 	return nodes.NodeInfo{
 		ID:           strings.TrimSpace(opts.ID),
 		Name:         strings.TrimSpace(opts.Name),
+		Tags:         append([]string(nil), opts.Tags...),
 		OS:           strings.TrimSpace(opts.OS),
 		Arch:         strings.TrimSpace(opts.Arch),
 		Version:      strings.TrimSpace(opts.Version),

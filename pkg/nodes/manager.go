@@ -30,6 +30,19 @@ type Manager struct {
 	ttl       time.Duration
 	auditPath string
 	statePath string
+	policy    DispatchPolicy
+}
+
+type DispatchPolicy struct {
+	PreferLocal        bool
+	PreferP2P          bool
+	AllowRelayFallback bool
+	ActionTags         map[string][]string
+	AgentTags          map[string][]string
+	AllowActions       map[string][]string
+	DenyActions        map[string][]string
+	AllowAgents        map[string][]string
+	DenyAgents         map[string][]string
 }
 
 var defaultManager = NewManager()
@@ -43,6 +56,16 @@ func NewManager() *Manager {
 		senders:  map[string]WireSender{},
 		pending:  map[string]chan WireMessage{},
 		ttl:      defaultNodeTTL,
+		policy: DispatchPolicy{
+			PreferP2P:          true,
+			AllowRelayFallback: true,
+			ActionTags:         map[string][]string{},
+			AgentTags:          map[string][]string{},
+			AllowActions:       map[string][]string{},
+			DenyActions:        map[string][]string{},
+			AllowAgents:        map[string][]string{},
+			DenyAgents:         map[string][]string{},
+		},
 	}
 	go m.reaperLoop()
 	return m
@@ -61,6 +84,18 @@ func (m *Manager) SetStatePath(path string) {
 	m.loadState()
 }
 
+func (m *Manager) SetDispatchPolicy(policy DispatchPolicy) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.policy = normalizeDispatchPolicy(policy)
+}
+
+func (m *Manager) DispatchPolicy() DispatchPolicy {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return cloneDispatchPolicy(m.policy)
+}
+
 func (m *Manager) Upsert(info NodeInfo) {
 	m.mu.Lock()
 	now := time.Now().UTC()
@@ -70,6 +105,9 @@ func (m *Manager) Upsert(info NodeInfo) {
 	if existed {
 		if info.RegisteredAt.IsZero() {
 			info.RegisteredAt = old.RegisteredAt
+		}
+		if len(info.Tags) == 0 && len(old.Tags) > 0 {
+			info.Tags = append([]string(nil), old.Tags...)
 		}
 		if strings.TrimSpace(info.Endpoint) == "" {
 			info.Endpoint = old.Endpoint
@@ -303,8 +341,9 @@ func (m *Manager) PickRequest(req Request, mode string) (NodeInfo, bool) {
 	defer m.mu.RUnlock()
 	bestScore := -1
 	bestNode := NodeInfo{}
+	policy := normalizeDispatchPolicy(m.policy)
 	for _, n := range m.nodes {
-		score, ok := scoreNodeCandidate(n, req, mode, m.senders[strings.TrimSpace(n.ID)] != nil)
+		score, ok := scoreNodeCandidate(n, req, mode, m.senders[strings.TrimSpace(n.ID)] != nil, policy)
 		if !ok {
 			continue
 		}
@@ -319,11 +358,14 @@ func (m *Manager) PickRequest(req Request, mode string) (NodeInfo, bool) {
 	return bestNode, true
 }
 
-func scoreNodeCandidate(n NodeInfo, req Request, mode string, hasWireSender bool) (int, bool) {
+func scoreNodeCandidate(n NodeInfo, req Request, mode string, hasWireSender bool, policy DispatchPolicy) (int, bool) {
 	if !n.Online {
 		return 0, false
 	}
 	if !nodeSupportsRequest(n, req) {
+		return 0, false
+	}
+	if !matchesDispatchPolicy(n, req, policy) {
 		return 0, false
 	}
 
@@ -331,10 +373,23 @@ func scoreNodeCandidate(n NodeInfo, req Request, mode string, hasWireSender bool
 	if mode == "p2p" && !hasWireSender {
 		return 0, false
 	}
+	if !policy.AllowRelayFallback && strings.TrimSpace(n.ID) != "local" && !hasWireSender {
+		return 0, false
+	}
 
 	score := 100
 	if hasWireSender {
 		score += 30
+	}
+	if policy.PreferP2P {
+		if hasWireSender {
+			score += 35
+		} else {
+			score -= 10
+		}
+	}
+	if policy.PreferLocal && strings.EqualFold(strings.TrimSpace(n.ID), "local") {
+		score += 60
 	}
 	if prefersRealtimeTransport(req.Action) && hasWireSender {
 		score += 40
@@ -368,6 +423,151 @@ func scoreNodeCandidate(n NodeInfo, req Request, mode string, hasWireSender bool
 		}
 	}
 	return score, true
+}
+
+func normalizeDispatchPolicy(policy DispatchPolicy) DispatchPolicy {
+	normalized := DispatchPolicy{
+		PreferLocal:        policy.PreferLocal,
+		PreferP2P:          policy.PreferP2P,
+		AllowRelayFallback: policy.AllowRelayFallback,
+		ActionTags:         map[string][]string{},
+		AgentTags:          map[string][]string{},
+		AllowActions:       map[string][]string{},
+		DenyActions:        map[string][]string{},
+		AllowAgents:        map[string][]string{},
+		DenyAgents:         map[string][]string{},
+	}
+	for key, tags := range policy.ActionTags {
+		trimmed := normalizeStringList(tags)
+		if len(trimmed) > 0 {
+			normalized.ActionTags[strings.ToLower(strings.TrimSpace(key))] = trimmed
+		}
+	}
+	for key, tags := range policy.AgentTags {
+		trimmed := normalizeStringList(tags)
+		if len(trimmed) > 0 {
+			normalized.AgentTags[strings.ToLower(strings.TrimSpace(key))] = trimmed
+		}
+	}
+	for key, tags := range policy.AllowActions {
+		trimmed := normalizeStringList(tags)
+		if len(trimmed) > 0 {
+			normalized.AllowActions[strings.ToLower(strings.TrimSpace(key))] = trimmed
+		}
+	}
+	for key, tags := range policy.DenyActions {
+		trimmed := normalizeStringList(tags)
+		if len(trimmed) > 0 {
+			normalized.DenyActions[strings.ToLower(strings.TrimSpace(key))] = trimmed
+		}
+	}
+	for key, tags := range policy.AllowAgents {
+		trimmed := normalizeStringList(tags)
+		if len(trimmed) > 0 {
+			normalized.AllowAgents[strings.ToLower(strings.TrimSpace(key))] = trimmed
+		}
+	}
+	for key, tags := range policy.DenyAgents {
+		trimmed := normalizeStringList(tags)
+		if len(trimmed) > 0 {
+			normalized.DenyAgents[strings.ToLower(strings.TrimSpace(key))] = trimmed
+		}
+	}
+	return normalized
+}
+
+func cloneDispatchPolicy(policy DispatchPolicy) DispatchPolicy {
+	return normalizeDispatchPolicy(policy)
+}
+
+func normalizeStringList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, raw := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(raw))
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func matchesDispatchPolicy(n NodeInfo, req Request, policy DispatchPolicy) bool {
+	if !isNodePermittedByPolicy(n, req, policy) {
+		return false
+	}
+	if tags := policy.ActionTags[strings.ToLower(strings.TrimSpace(req.Action))]; len(tags) > 0 && !nodeMatchesAnyTag(n, tags) {
+		return false
+	}
+	remoteAgentID := requestedRemoteAgentID(req.Args)
+	if remoteAgentID != "" {
+		if tags := policy.AgentTags[remoteAgentID]; len(tags) > 0 && !nodeMatchesAnyTag(n, tags) {
+			return false
+		}
+	}
+	return true
+}
+
+func isNodePermittedByPolicy(n NodeInfo, req Request, policy DispatchPolicy) bool {
+	nodeID := strings.ToLower(strings.TrimSpace(n.ID))
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	remoteAgentID := requestedRemoteAgentID(req.Args)
+	if remoteAgentID == "" && action == "agent_task" {
+		remoteAgentID = "main"
+	}
+	if deny := policy.DenyActions[nodeID]; len(deny) > 0 && containsNormalized(deny, action) {
+		return false
+	}
+	if allow := policy.AllowActions[nodeID]; len(allow) > 0 && !containsNormalized(allow, action) {
+		return false
+	}
+	if remoteAgentID != "" {
+		if deny := policy.DenyAgents[nodeID]; len(deny) > 0 && containsNormalized(deny, remoteAgentID) {
+			return false
+		}
+		if allow := policy.AllowAgents[nodeID]; len(allow) > 0 && !containsNormalized(allow, remoteAgentID) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsNormalized(items []string, target string) bool {
+	target = strings.ToLower(strings.TrimSpace(target))
+	for _, item := range items {
+		if strings.ToLower(strings.TrimSpace(item)) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func nodeMatchesAnyTag(n NodeInfo, tags []string) bool {
+	if len(tags) == 0 {
+		return true
+	}
+	nodeTags := normalizeStringList(n.Tags)
+	if len(nodeTags) == 0 {
+		return false
+	}
+	seen := map[string]struct{}{}
+	for _, tag := range nodeTags {
+		seen[tag] = struct{}{}
+	}
+	for _, tag := range tags {
+		if _, ok := seen[strings.ToLower(strings.TrimSpace(tag))]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func requestedRemoteAgentID(args map[string]interface{}) string {

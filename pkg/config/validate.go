@@ -145,6 +145,21 @@ func Validate(cfg *Config) []error {
 			}
 		}
 	}
+	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.action_tags", cfg.Gateway.Nodes.Dispatch.ActionTags)...)
+	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.agent_tags", cfg.Gateway.Nodes.Dispatch.AgentTags)...)
+	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.allow_actions", cfg.Gateway.Nodes.Dispatch.AllowActions)...)
+	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.deny_actions", cfg.Gateway.Nodes.Dispatch.DenyActions)...)
+	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.allow_agents", cfg.Gateway.Nodes.Dispatch.AllowAgents)...)
+	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.deny_agents", cfg.Gateway.Nodes.Dispatch.DenyAgents)...)
+	if cfg.Gateway.Nodes.Artifacts.Enabled && cfg.Gateway.Nodes.Artifacts.KeepLatest <= 0 {
+		errs = append(errs, fmt.Errorf("gateway.nodes.artifacts.keep_latest must be > 0 when enabled=true"))
+	}
+	if cfg.Gateway.Nodes.Artifacts.KeepLatest < 0 {
+		errs = append(errs, fmt.Errorf("gateway.nodes.artifacts.keep_latest must be >= 0"))
+	}
+	if cfg.Gateway.Nodes.Artifacts.RetainDays < 0 {
+		errs = append(errs, fmt.Errorf("gateway.nodes.artifacts.retain_days must be >= 0"))
+	}
 	if cfg.Cron.MinSleepSec <= 0 {
 		errs = append(errs, fmt.Errorf("cron.min_sleep_sec must be > 0"))
 	}
@@ -236,6 +251,21 @@ func Validate(cfg *Config) []error {
 		}
 	}
 
+	return errs
+}
+
+func validateDispatchTagMap(prefix string, mapping map[string][]string) []error {
+	if len(mapping) == 0 {
+		return nil
+	}
+	errs := make([]error, 0)
+	for key, tags := range mapping {
+		if strings.TrimSpace(key) == "" {
+			errs = append(errs, fmt.Errorf("%s contains empty key", prefix))
+			continue
+		}
+		errs = append(errs, validateNonEmptyStringList(fmt.Sprintf("%s.%s", prefix, key), tags)...)
+	}
 	return errs
 }
 

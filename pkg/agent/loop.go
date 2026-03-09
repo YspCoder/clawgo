@@ -86,6 +86,31 @@ func (al *AgentLoop) SetNodeP2PTransport(t nodes.Transport) {
 	al.nodeRouter.P2P = t
 }
 
+func (al *AgentLoop) DispatchNodeRequest(ctx context.Context, req nodes.Request, mode string) (nodes.Response, error) {
+	if al == nil || al.tools == nil {
+		return nodes.Response{}, fmt.Errorf("agent loop not ready")
+	}
+	args := map[string]interface{}{
+		"action": req.Action,
+		"node":   req.Node,
+		"mode":   mode,
+		"task":   req.Task,
+		"model":  req.Model,
+	}
+	if len(req.Args) > 0 {
+		args["args"] = req.Args
+	}
+	out, err := al.tools.Execute(ctx, "nodes", args)
+	if err != nil {
+		return nodes.Response{}, err
+	}
+	var resp nodes.Response
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		return nodes.Response{}, err
+	}
+	return resp, nil
+}
+
 // StartupCompactionReport provides startup memory/session maintenance stats.
 type StartupCompactionReport struct {
 	TotalSessions     int `json:"total_sessions"`
@@ -149,6 +174,18 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 			return nodes.Response{OK: false, Code: "unsupported_action", Node: "local", Action: req.Action, Error: "unsupported local simulated action"}
 		}
 	})
+	nodeDispatchPolicy := nodes.DispatchPolicy{
+		PreferLocal:        cfg.Gateway.Nodes.Dispatch.PreferLocal,
+		PreferP2P:          cfg.Gateway.Nodes.Dispatch.PreferP2P,
+		AllowRelayFallback: cfg.Gateway.Nodes.Dispatch.AllowRelayFallback,
+		ActionTags:         cfg.Gateway.Nodes.Dispatch.ActionTags,
+		AgentTags:          cfg.Gateway.Nodes.Dispatch.AgentTags,
+		AllowActions:       cfg.Gateway.Nodes.Dispatch.AllowActions,
+		DenyActions:        cfg.Gateway.Nodes.Dispatch.DenyActions,
+		AllowAgents:        cfg.Gateway.Nodes.Dispatch.AllowAgents,
+		DenyAgents:         cfg.Gateway.Nodes.Dispatch.DenyAgents,
+	}
+	nodesManager.SetDispatchPolicy(nodeDispatchPolicy)
 	var nodeP2P nodes.Transport
 	if cfg.Gateway.Nodes.P2P.Enabled {
 		switch strings.ToLower(strings.TrimSpace(cfg.Gateway.Nodes.P2P.Transport)) {
@@ -159,7 +196,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 			nodeP2P = &nodes.WebsocketP2PTransport{Manager: nodesManager}
 		}
 	}
-	nodesRouter := &nodes.Router{P2P: nodeP2P, Relay: &nodes.HTTPRelayTransport{Manager: nodesManager}}
+	nodesRouter := &nodes.Router{P2P: nodeP2P, Relay: &nodes.HTTPRelayTransport{Manager: nodesManager}, Policy: nodesManager.DispatchPolicy()}
 	toolsRegistry.Register(tools.NewNodesTool(nodesManager, nodesRouter, filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")))
 
 	if cs != nil {

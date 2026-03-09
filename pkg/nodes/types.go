@@ -42,6 +42,7 @@ type Artifact struct {
 type NodeInfo struct {
 	ID           string       `json:"id"`
 	Name         string       `json:"name,omitempty"`
+	Tags         []string     `json:"tags,omitempty"`
 	OS           string       `json:"os,omitempty"`
 	Arch         string       `json:"arch,omitempty"`
 	Version      string       `json:"version,omitempty"`

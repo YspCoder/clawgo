@@ -177,3 +177,70 @@ func TestValidateGatewayNodeP2PIceServersRequireTurnCredentials(t *testing.T) {
 		t.Fatalf("expected validation errors")
 	}
 }
+
+func TestValidateGatewayNodeDispatchRejectsEmptyTagKey(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Gateway.Nodes.Dispatch.ActionTags = map[string][]string{
+		"": {"vision"},
+	}
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}
+
+func TestValidateGatewayNodeDispatchRejectsEmptyAllowNodeKey(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Gateway.Nodes.Dispatch.AllowActions = map[string][]string{
+		"": {"screen_snapshot"},
+	}
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}
+
+func TestDefaultConfigSetsNodeArtifactRetentionDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	if cfg.Gateway.Nodes.Artifacts.Enabled {
+		t.Fatalf("expected node artifact retention disabled by default")
+	}
+	if cfg.Gateway.Nodes.Artifacts.KeepLatest != 500 {
+		t.Fatalf("unexpected default keep_latest: %d", cfg.Gateway.Nodes.Artifacts.KeepLatest)
+	}
+	if cfg.Gateway.Nodes.Artifacts.RetainDays != 7 {
+		t.Fatalf("unexpected default retain_days: %d", cfg.Gateway.Nodes.Artifacts.RetainDays)
+	}
+	if !cfg.Gateway.Nodes.Artifacts.PruneOnRead {
+		t.Fatalf("expected prune_on_read enabled by default")
+	}
+}
+
+func TestValidateNodeArtifactRetentionRequiresPositiveKeepLatestWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Gateway.Nodes.Artifacts.Enabled = true
+	cfg.Gateway.Nodes.Artifacts.KeepLatest = 0
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}
+
+func TestValidateNodeArtifactRetentionRejectsNegativeRetainDays(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Gateway.Nodes.Artifacts.RetainDays = -1
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}
