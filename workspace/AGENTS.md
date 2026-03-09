@@ -53,6 +53,13 @@ At the start of work, load context in this order:
 - For coding/debug/refactor:
     - investigate and decide internally
     - minimize interruptions
+    - only enable spec-driven docs when the user is clearly asking for code changes and the work is non-trivial
+    - skip spec-driven docs for small tweaks, one-line fixes, and other lightweight edits unless the user explicitly asks for the workflow
+    - for eligible work, maintain `spec.md`, `tasks.md`, and `checklist.md` in the current coding project root
+    - keep `spec.md` focused on scope / decisions / tradeoffs
+    - keep `tasks.md` as a live implementation plan with progress updates
+    - keep `checklist.md` as the final verification gate before declaring completion
+    - do not create or load these files for non-coding conversations unless the user explicitly asks
 
 ---
 
@@ -82,6 +89,7 @@ At the start of work, load context in this order:
 - At task start, always load:
     - `SOUL.md`, `USER.md`, today’s `memory/YYYY-MM-DD.md`, plus `MEMORY.md` (direct chat only)
 - Before responding, select **at most one** most relevant skill and read its `SKILL.md`.
+- For non-trivial coding work, prefer the `spec-coding` skill.
 - If multiple skills apply: pick the **most specific**; do not bulk-load.
 - If no skill applies: proceed without loading skill files.
 - Resolve relative paths relative to the skill directory.

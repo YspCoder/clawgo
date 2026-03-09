@@ -248,9 +248,9 @@ const Nodes: React.FC = () => {
                 <button
                   key={nodeID}
                   onClick={() => setSelectedNodeID(nodeID)}
-                  className={`w-full text-left px-3 py-3 border-b border-zinc-800/60 transition-colors ${active ? 'bg-indigo-500/15' : ''}`}
+                  className="w-full text-left px-3 py-3 border-b border-zinc-800/60 transition-colors"
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-zinc-100 truncate">{String(node?.name || nodeID)}</div>
                       <div className="text-xs text-zinc-400 truncate">{nodeID} · {String(node?.os || '-')} / {String(node?.arch || '-')}</div>
@@ -266,7 +266,7 @@ const Nodes: React.FC = () => {
                       )}
                     </div>
                     {active && (
-                      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300">
+                      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300 self-center">
                         <Check className="w-3.5 h-3.5" />
                       </span>
                     )}

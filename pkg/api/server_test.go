@@ -486,6 +486,59 @@ func TestHandleWebUINodesIncludesP2PSummary(t *testing.T) {
 	}
 }
 
+func TestHandleWebUINodesEnrichesLocalNodeMetadata(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
+	srv.SetSubagentHandler(func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
+		if action != "registry" {
+			return map[string]interface{}{"items": []map[string]interface{}{}}, nil
+		}
+		return map[string]interface{}{
+			"items": []map[string]interface{}{
+				{
+					"agent_id":     "coder",
+					"display_name": "Code Agent",
+					"role":         "coding",
+					"type":         "worker",
+					"transport":    "local",
+				},
+			},
+		}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/webui/api/nodes", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUINodes(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	items, _ := body["nodes"].([]interface{})
+	if len(items) == 0 {
+		t.Fatalf("expected local node in payload")
+	}
+	local, _ := items[0].(map[string]interface{})
+	if strings.TrimSpace(fmt.Sprint(local["id"])) != "local" {
+		t.Fatalf("expected first node to be local, got %+v", local)
+	}
+	if strings.TrimSpace(fmt.Sprint(local["os"])) == "" || strings.TrimSpace(fmt.Sprint(local["arch"])) == "" {
+		t.Fatalf("expected local os/arch, got %+v", local)
+	}
+	actions, _ := local["actions"].([]interface{})
+	if len(actions) == 0 {
+		t.Fatalf("expected local actions, got %+v", local)
+	}
+	agents, _ := local["agents"].([]interface{})
+	if len(agents) != 1 {
+		t.Fatalf("expected local agents from registry, got %+v", local)
+	}
+}
+
 func TestHandleWebUINodeDispatchReplay(t *testing.T) {
 	t.Parallel()
 

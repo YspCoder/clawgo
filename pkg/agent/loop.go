@@ -1011,10 +1011,57 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
 	}
+	specTaskRef := specCodingTaskRef{}
+	if err := al.maybeEnsureSpecCodingDocs(msg.Content); err != nil {
+		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+			"session_key": msg.SessionKey,
+			"error":       err.Error(),
+		})
+	}
+	if taskRef, err := al.maybeStartSpecCodingTask(msg.Content); err != nil {
+		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+			"session_key": msg.SessionKey,
+			"error":       err.Error(),
+		})
+	} else {
+		specTaskRef = normalizeSpecCodingTaskRef(taskRef)
+	}
 	if configAction, handled, configErr := al.maybeHandleSubagentConfigIntent(ctx, msg); handled {
+		if configErr != nil && specTaskRef.Summary != "" {
+			if err := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, configErr.Error()); err != nil {
+				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+					"session_key": msg.SessionKey,
+					"error":       err.Error(),
+				})
+			}
+		}
+		if configErr == nil && specTaskRef.Summary != "" {
+			if err := al.maybeCompleteSpecCodingTask(specTaskRef, configAction); err != nil {
+				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+					"session_key": msg.SessionKey,
+					"error":       err.Error(),
+				})
+			}
+		}
 		return configAction, configErr
 	}
 	if routed, ok, routeErr := al.maybeAutoRoute(ctx, msg); ok {
+		if routeErr != nil && specTaskRef.Summary != "" {
+			if err := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, routeErr.Error()); err != nil {
+				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+					"session_key": msg.SessionKey,
+					"error":       err.Error(),
+				})
+			}
+		}
+		if routeErr == nil && specTaskRef.Summary != "" {
+			if err := al.maybeCompleteSpecCodingTask(specTaskRef, routed); err != nil {
+				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+					"session_key": msg.SessionKey,
+					"error":       err.Error(),
+				})
+			}
+		}
 		return routed, routeErr
 	}
 
@@ -1129,6 +1176,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 					"iteration": iteration,
 					"error":     err.Error(),
 				})
+			if specTaskRef.Summary != "" {
+				if rerr := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, err.Error()); rerr != nil {
+					logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+						"session_key": msg.SessionKey,
+						"error":       rerr.Error(),
+					})
+				}
+			}
 			return "", fmt.Errorf("LLM call failed: %w", err)
 		}
 
@@ -1252,6 +1307,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"user_length":  len(userContent),
 		})
 
+	if specTaskRef.Summary != "" {
+		if err := al.maybeCompleteSpecCodingTask(specTaskRef, userContent); err != nil {
+			logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+				"session_key": msg.SessionKey,
+				"error":       err.Error(),
+			})
+		}
+	}
 	al.appendDailySummaryLog(msg, userContent)
 	return userContent, nil
 }

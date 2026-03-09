@@ -58,7 +58,16 @@ ClawGo 更关注真正的运行时能力：
 - `system_prompt_file -> AGENT.md`
 - WebUI 可编辑、热更新、查看运行态
 
-### 5. 适合真正长期运行
+### 5. Spec Coding（规范驱动开发）
+
+- 明确需要编码且属于非 trivial 的任务可走 `spec.md -> tasks.md -> checklist.md`
+- 小修小补、轻微代码调整、单点改动默认不启用这套流程
+- `spec.md` 负责范围、决策、权衡
+- `tasks.md` 负责任务拆解和进度更新
+- `checklist.md` 负责最终完整性核查
+- 这三份文档是活文档，允许在开发过程中持续修订
+
+### 6. 适合真正长期运行
 
 - 本地优先
 - Go 原生 runtime
@@ -152,6 +161,7 @@ user -> main -> worker -> main -> user
 - 🌐 本地主控 + 远端 node 分支的分布式执行
 - 🔍 需要强观测、强审计、强恢复的 Agent 系统
 - 🏭 想把 prompt、agent、工具权限、运行策略工程化管理的团队
+- 📝 想把编码过程变成可追踪的 spec-driven delivery 流程
 
 ## 配置结构
 

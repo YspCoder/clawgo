@@ -1,6 +1,5 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Check } from 'lucide-react';
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -23,11 +22,6 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, to, collapsed = false })
       <>
         <span className="shrink-0">{icon}</span>
         {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
-        {!collapsed && isActive && (
-          <span className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300">
-            <Check className="w-3.5 h-3.5" />
-          </span>
-        )}
       </>
     )}
   </NavLink>

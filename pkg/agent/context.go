@@ -15,6 +15,7 @@ import (
 
 type ContextBuilder struct {
 	workspace    string
+	cwd          string
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	toolsSummary func() []string // Function to get tool summaries dynamically
@@ -37,6 +38,7 @@ func NewContextBuilder(workspace string, toolsSummaryFunc func() []string) *Cont
 
 	return &ContextBuilder{
 		workspace:    workspace,
+		cwd:          wd,
 		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
 		memory:       NewMemoryStore(workspace),
 		toolsSummary: toolsSummaryFunc,
@@ -67,8 +69,12 @@ Your workspace is at: %s
 - Daily Notes: %s/memory/YYYY-MM-DD.md
 - Skills: %s/skills/{skill-name}/SKILL.md
 
+## Spec-Driven Coding
+- Active project spec docs (when present): %s/{spec.md,tasks.md,checklist.md}
+- Keep spec.md as project scope / decisions, tasks.md as execution plan, checklist.md as final verification gate
+
 %s`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection)
+		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, cb.projectRootPath(), toolsSection)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -127,6 +133,18 @@ func (cb *ContextBuilder) BuildSystemPromptWithMemoryNamespace(memoryNamespace s
 	return strings.Join(parts, "\n\n---\n\n")
 }
 
+func (cb *ContextBuilder) projectRootPath() string {
+	root := strings.TrimSpace(cb.cwd)
+	if root == "" {
+		root, _ = os.Getwd()
+	}
+	root, _ = filepath.Abs(root)
+	if root == "" {
+		root = "."
+	}
+	return root
+}
+
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	bootstrapFiles := []string{
 		"AGENTS.md",
@@ -153,6 +171,77 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	}
 
 	return result
+}
+
+func (cb *ContextBuilder) LoadProjectPlanningFiles() string {
+	root := cb.projectRootPath()
+	if root == "" {
+		return ""
+	}
+	files := []struct {
+		name        string
+		description string
+		maxChars    int
+	}{
+		{name: "spec.md", description: "Project scope and decisions", maxChars: 4000},
+		{name: "tasks.md", description: "Execution plan and progress", maxChars: 5000},
+		{name: "checklist.md", description: "Verification checklist", maxChars: 3000},
+	}
+	var parts []string
+	for _, file := range files {
+		fullPath := filepath.Join(root, file.name)
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			continue
+		}
+		text := strings.TrimSpace(string(data))
+		if text == "" {
+			continue
+		}
+		if file.maxChars > 0 && len(text) > file.maxChars {
+			text = strings.TrimSpace(text[:file.maxChars]) + "\n\n[TRUNCATED]"
+		}
+		parts = append(parts, fmt.Sprintf("## %s\n\nPath: %s\nPurpose: %s\n\n%s", file.name, fullPath, file.description, text))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func (cb *ContextBuilder) shouldUseSpecCoding(currentMessage string) bool {
+	text := strings.ToLower(strings.TrimSpace(currentMessage))
+	if text == "" {
+		return false
+	}
+	if containsAnyKeyword(text,
+		"spec coding", "spec-driven", "spec驱动", "规范驱动", "用 spec", "spec.md", "tasks.md", "checklist.md",
+	) {
+		return true
+	}
+	if !containsAnyKeyword(text,
+		"写代码", "改代码", "编码", "实现", "开发", "修复", "重构", "补测试", "加测试", "测试",
+		"implement", "implementation", "code", "coding", "fix", "refactor", "rewrite", "add test", "update test",
+	) {
+		return false
+	}
+	if containsAnyKeyword(text,
+		"小改", "小修", "微调", "轻微", "小幅", "顺手改", "顺便改", "一行", "两行", "单文件", "简单修复", "简单改一下",
+		"tiny", "small tweak", "minor", "small fix", "quick fix", "one-line", "one line", "two-line", "single-file", "single file",
+	) {
+		return false
+	}
+	return containsAnyKeyword(text,
+		"多文件", "跨模块", "模块", "架构", "设计", "完整", "系统性", "成套", "专项", "一轮", "整体", "项目", "范围", "方案", "联调",
+		"feature", "workflow", "module", "architecture", "design", "project", "scope", "end-to-end", "full", "multi-file", "cross-cutting",
+		"debug", "排查", "回归", "返工", "问题定位",
+	)
+}
+
+func containsAnyKeyword(text string, keywords ...string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(text, strings.ToLower(strings.TrimSpace(keyword))) {
+			return true
+		}
+	}
+	return false
 }
 
 func (cb *ContextBuilder) shouldLoadBootstrap() bool {
@@ -186,6 +275,11 @@ func (cb *ContextBuilder) BuildMessagesWithMemoryNamespace(history []providers.M
 	}
 	if responseLanguage != "" {
 		systemPrompt += fmt.Sprintf("\n\n## Response Language\nReply in %s unless user explicitly asks to switch language. Keep code identifiers and CLI commands unchanged.", responseLanguage)
+	}
+	if cb.shouldUseSpecCoding(currentMessage) {
+		if projectPlanning := cb.LoadProjectPlanningFiles(); projectPlanning != "" {
+			systemPrompt += "\n\n## Active Project Planning\n\n" + projectPlanning
+		}
 	}
 
 	// Log system prompt summary for debugging (debug mode only)

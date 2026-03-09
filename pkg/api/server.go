@@ -1226,8 +1226,36 @@ func (s *Server) webUINodesPayload(ctx context.Context) map[string]interface{} {
 	if s.mgr != nil {
 		list = s.mgr.List()
 	}
+	localRegistry := s.fetchRegistryItems(ctx)
+	localAgents := make([]nodes.AgentInfo, 0, len(localRegistry))
+	for _, item := range localRegistry {
+		agentID := strings.TrimSpace(stringFromMap(item, "agent_id"))
+		if agentID == "" {
+			continue
+		}
+		localAgents = append(localAgents, nodes.AgentInfo{
+			ID:          agentID,
+			DisplayName: strings.TrimSpace(stringFromMap(item, "display_name")),
+			Role:        strings.TrimSpace(stringFromMap(item, "role")),
+			Type:        strings.TrimSpace(stringFromMap(item, "type")),
+			Transport:   fallbackString(strings.TrimSpace(stringFromMap(item, "transport")), "local"),
+		})
+	}
 	host, _ := os.Hostname()
-	local := nodes.NodeInfo{ID: "local", Name: "local", Endpoint: "gateway", Version: gatewayBuildVersion(), LastSeenAt: time.Now(), Online: true}
+	local := nodes.NodeInfo{
+		ID:           "local",
+		Name:         "local",
+		Endpoint:     "gateway",
+		Version:      gatewayBuildVersion(),
+		OS:           runtime.GOOS,
+		Arch:         runtime.GOARCH,
+		LastSeenAt:   time.Now(),
+		Online:       true,
+		Capabilities: nodes.Capabilities{Run: true, Invoke: true, Model: true, Camera: true, Screen: true, Location: true, Canvas: true},
+		Actions:      []string{"run", "agent_task", "camera_snap", "camera_clip", "screen_snapshot", "screen_record", "location_get", "canvas_snapshot", "canvas_action"},
+		Models:       []string{"local-sim"},
+		Agents:       localAgents,
+	}
 	if strings.TrimSpace(host) != "" {
 		local.Name = host
 	}

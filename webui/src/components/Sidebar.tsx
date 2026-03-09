@@ -58,11 +58,11 @@ const Sidebar: React.FC = () => {
 
   return (
     <aside className={`sidebar-shell fixed md:static inset-y-14 md:inset-y-16 left-0 z-40 ${sidebarCollapsed ? 'md:w-20' : 'md:w-64'} w-[86vw] max-w-72 border-r border-zinc-800 backdrop-blur-xl flex flex-col shrink-0 transform transition-all duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-      <nav className={`flex-1 ${sidebarCollapsed ? 'px-2' : 'px-3'} py-4 space-y-3 overflow-y-auto`}>
+      <nav className={`flex-1 ${sidebarCollapsed ? 'px-2' : 'px-3'} py-3 space-y-2 overflow-y-auto`}>
         {sections.map((sec) => (
-          <div key={sec.title} className={`sidebar-section rounded-2xl border border-zinc-800/60 ${sidebarCollapsed ? 'p-2' : 'p-2.5'}`}>
-            {!sidebarCollapsed && <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-2 pb-2">{sec.title}</div>}
-            <div className="space-y-1">
+          <div key={sec.title} className={`sidebar-section rounded-2xl border border-zinc-800/60 ${sidebarCollapsed ? 'p-2' : 'p-2'}`}>
+            {!sidebarCollapsed && <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-2 pb-1.5">{sec.title}</div>}
+            <div className="space-y-0.5">
               {sec.items.map((it) => (
                 <NavItem key={it.to} icon={it.icon} label={it.label} to={it.to} collapsed={sidebarCollapsed} />
               ))}
@@ -87,7 +87,7 @@ const Sidebar: React.FC = () => {
           <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_14px_rgba(240,90,40,0.38)]" title={t('gatewayToken')} />
         </div>
       )}
-      <div className={`hidden md:flex border-t border-zinc-800 bg-zinc-900/20 ${sidebarCollapsed ? 'justify-center p-3' : 'p-3'}`}>
+      <div className={`hidden md:flex border-t border-zinc-800 bg-zinc-900/20 ${sidebarCollapsed ? 'justify-center p-3' : 'justify-end p-3'}`}>
         <button
           onClick={() => setSidebarCollapsed((prev) => !prev)}
           className="flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-800 brand-card-subtle hover:bg-zinc-900/40 text-zinc-300 transition-colors"

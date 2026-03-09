@@ -144,16 +144,16 @@ const TaskAudit: React.FC = () => {
                 <button
                   key={`${it.task_id || idx}-${it.time || idx}`}
                   onClick={() => setSelected(it)}
-                  className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 transition-colors ${active ? 'bg-indigo-500/15' : ''}`}
+                  className="w-full text-left px-3 py-2 border-b border-zinc-800/60 transition-colors"
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-zinc-100 truncate">{it.task_id || `task-${idx + 1}`}</div>
                       <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · attempts:{it.attempts || 1} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'} · {it.provider || '-'} / {it.model || '-'}</div>
                       <div className="text-[11px] text-zinc-500 truncate">{formatLocalDateTime(it.time)}</div>
                     </div>
                     {active && (
-                      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300">
+                      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300 self-center">
                         <Check className="w-3.5 h-3.5" />
                       </span>
                     )}

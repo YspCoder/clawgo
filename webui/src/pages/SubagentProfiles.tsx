@@ -291,9 +291,9 @@ const SubagentProfiles: React.FC = () => {
               <button
                 key={it.agent_id}
                 onClick={() => onSelect(it)}
-                className={`w-full text-left px-3 py-2 border-b border-zinc-800/50 transition-colors ${selectedId === it.agent_id ? 'bg-indigo-500/15' : ''}`}
+                className="w-full text-left px-3 py-2 border-b border-zinc-800/50 transition-colors"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="text-sm text-zinc-100 truncate">{it.agent_id || '-'}</div>
                     <div className="text-xs text-zinc-400 truncate">
@@ -301,7 +301,7 @@ const SubagentProfiles: React.FC = () => {
                     </div>
                   </div>
                   {selectedId === it.agent_id && (
-                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300">
+                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300 self-center">
                       <Check className="w-3.5 h-3.5" />
                     </span>
                   )}
@@ -482,28 +482,28 @@ const SubagentProfiles: React.FC = () => {
             <button
               onClick={save}
               disabled={saving}
-              className="px-3 py-1.5 text-xs rounded bg-indigo-700/80 hover:bg-indigo-600 disabled:opacity-60"
+              className="px-3 py-1.5 text-xs rounded-xl border border-indigo-400/30 bg-indigo-500/14 text-indigo-100 hover:bg-indigo-500/22 disabled:opacity-60"
             >
               {selected ? t('update') : t('create')}
             </button>
             <button
               onClick={() => setStatus('active')}
               disabled={!draft.agent_id}
-              className="px-3 py-1.5 text-xs rounded bg-emerald-700/70 hover:bg-emerald-600 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs rounded-xl border border-emerald-400/30 bg-emerald-500/14 text-emerald-100 hover:bg-emerald-500/22 disabled:opacity-50"
             >
               {t('enable')}
             </button>
             <button
               onClick={() => setStatus('disabled')}
               disabled={!draft.agent_id}
-              className="px-3 py-1.5 text-xs rounded bg-amber-700/70 hover:bg-amber-600 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs rounded-xl border border-amber-400/30 bg-amber-500/14 text-amber-100 hover:bg-amber-500/22 disabled:opacity-50"
             >
               {t('disable')}
             </button>
             <button
               onClick={remove}
               disabled={!draft.agent_id}
-              className="px-3 py-1.5 text-xs rounded bg-red-700/70 hover:bg-red-600 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs rounded-xl border border-rose-400/30 bg-rose-500/14 text-rose-100 hover:bg-rose-500/22 disabled:opacity-50"
             >
               {t('delete')}
             </button>
