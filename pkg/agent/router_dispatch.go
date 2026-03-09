@@ -38,10 +38,11 @@ func (al *AgentLoop) maybeAutoRoute(ctx context.Context, msg bus.InboundMessage)
 	waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitTimeout)*time.Second)
 	defer cancel()
 	task, err := al.subagentRouter.DispatchTask(waitCtx, tools.RouterDispatchRequest{
-		Task:          taskText,
-		AgentID:       agentID,
-		OriginChannel: msg.Channel,
-		OriginChatID:  msg.ChatID,
+		Task:             taskText,
+		AgentID:          agentID,
+		NotifyMainPolicy: "internal_only",
+		OriginChannel:    msg.Channel,
+		OriginChatID:     msg.ChatID,
 	})
 	if err != nil {
 		return "", true, err

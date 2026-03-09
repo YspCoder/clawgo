@@ -53,6 +53,7 @@ type SubagentTask struct {
 type SubagentManager struct {
 	tasks              map[string]*SubagentTask
 	cancelFuncs        map[string]context.CancelFunc
+	waiters            map[string]map[chan struct{}]struct{}
 	recoverableTaskIDs []string
 	archiveAfterMinute int64
 	mu                 sync.RWMutex
@@ -92,6 +93,7 @@ func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *b
 	mgr := &SubagentManager{
 		tasks:              make(map[string]*SubagentTask),
 		cancelFuncs:        make(map[string]context.CancelFunc),
+		waiters:            make(map[string]map[chan struct{}]struct{}),
 		archiveAfterMinute: 60,
 		provider:           provider,
 		bus:                bus,
@@ -356,6 +358,7 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			CreatedAt:     task.Updated,
 		})
 		sm.persistTaskLocked(task, "completed", task.Result)
+		sm.notifyTaskWaitersLocked(task.ID)
 	} else {
 		task.Status = "completed"
 		task.Result = applySubagentResultQuota(result, task.MaxResultChars)
@@ -373,6 +376,7 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			CreatedAt:     task.Updated,
 		})
 		sm.persistTaskLocked(task, "completed", task.Result)
+		sm.notifyTaskWaitersLocked(task.ID)
 	}
 	sm.mu.Unlock()
 
@@ -790,6 +794,7 @@ func (sm *SubagentManager) KillTask(taskID string) bool {
 		t.WaitingReply = false
 		t.Updated = time.Now().UnixMilli()
 		sm.persistTaskLocked(t, "killed", "")
+		sm.notifyTaskWaitersLocked(taskID)
 	}
 	return true
 }
@@ -1011,6 +1016,96 @@ func (sm *SubagentManager) persistTaskLocked(task *SubagentTask, eventType, mess
 		RetryCount: cp.RetryCount,
 		At:         cp.Updated,
 	})
+}
+
+func (sm *SubagentManager) WaitTask(ctx context.Context, taskID string) (*SubagentTask, bool, error) {
+	if sm == nil {
+		return nil, false, fmt.Errorf("subagent manager not available")
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, false, fmt.Errorf("task id is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ch := make(chan struct{}, 1)
+	sm.mu.Lock()
+	sm.pruneArchivedLocked()
+	task, ok := sm.tasks[taskID]
+	if !ok && sm.runStore != nil {
+		if persisted, found := sm.runStore.Get(taskID); found && persisted != nil {
+			if strings.TrimSpace(persisted.Status) != "running" {
+				sm.mu.Unlock()
+				return persisted, true, nil
+			}
+		}
+	}
+	if ok && task != nil && strings.TrimSpace(task.Status) != "running" {
+		cp := cloneSubagentTask(task)
+		sm.mu.Unlock()
+		return cp, true, nil
+	}
+	waiters := sm.waiters[taskID]
+	if waiters == nil {
+		waiters = map[chan struct{}]struct{}{}
+		sm.waiters[taskID] = waiters
+	}
+	waiters[ch] = struct{}{}
+	sm.mu.Unlock()
+
+	defer sm.removeTaskWaiter(taskID, ch)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		case <-ch:
+			sm.mu.Lock()
+			sm.pruneArchivedLocked()
+			task, ok := sm.tasks[taskID]
+			if ok && task != nil && strings.TrimSpace(task.Status) != "running" {
+				cp := cloneSubagentTask(task)
+				sm.mu.Unlock()
+				return cp, true, nil
+			}
+			if !ok && sm.runStore != nil {
+				if persisted, found := sm.runStore.Get(taskID); found && persisted != nil && strings.TrimSpace(persisted.Status) != "running" {
+					sm.mu.Unlock()
+					return persisted, true, nil
+				}
+			}
+			sm.mu.Unlock()
+		}
+	}
+}
+
+func (sm *SubagentManager) removeTaskWaiter(taskID string, ch chan struct{}) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	waiters := sm.waiters[taskID]
+	if len(waiters) == 0 {
+		delete(sm.waiters, taskID)
+		return
+	}
+	delete(waiters, ch)
+	if len(waiters) == 0 {
+		delete(sm.waiters, taskID)
+	}
+}
+
+func (sm *SubagentManager) notifyTaskWaitersLocked(taskID string) {
+	waiters := sm.waiters[taskID]
+	if len(waiters) == 0 {
+		delete(sm.waiters, taskID)
+		return
+	}
+	for ch := range waiters {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	delete(sm.waiters, taskID)
 }
 
 func (sm *SubagentManager) recordMailboxMessageLocked(task *SubagentTask, msg AgentMessage) {

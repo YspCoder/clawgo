@@ -25,6 +25,8 @@ const (
 	maxWorldCycle  = 60 * time.Second
 )
 
+const GlobalWatchdogTick = watchdogTick
+
 var ErrCommandNoProgress = errors.New("command no progress across tick rounds")
 var ErrTaskWatchdogTimeout = errors.New("task watchdog timeout exceeded")
 

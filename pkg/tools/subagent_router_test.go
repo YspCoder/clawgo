@@ -47,3 +47,29 @@ func TestSubagentRouterMergeResults(t *testing.T) {
 		t.Fatalf("unexpected merged output: %s", out)
 	}
 }
+
+func TestSubagentRouterWaitReplyContextCancel(t *testing.T) {
+	workspace := t.TempDir()
+	manager := NewSubagentManager(nil, workspace, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	router := NewSubagentRouter(manager)
+
+	task, err := router.DispatchTask(context.Background(), RouterDispatchRequest{
+		Task:          "long task",
+		AgentID:       "coder",
+		OriginChannel: "cli",
+		OriginChatID:  "direct",
+	})
+	if err != nil {
+		t.Fatalf("dispatch failed: %v", err)
+	}
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := router.WaitReply(waitCtx, task.ID, 20*time.Millisecond); err == nil {
+		t.Fatalf("expected context cancellation error")
+	}
+}

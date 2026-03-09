@@ -67,6 +67,24 @@ type AgentLoop struct {
 	subagentConfigTool   *tools.SubagentConfigTool
 	nodeRouter           *nodes.Router
 	configPath           string
+	subagentDigestMu     sync.Mutex
+	subagentDigestDelay  time.Duration
+	subagentDigests      map[string]*subagentDigestState
+}
+
+type subagentDigestItem struct {
+	agentID       string
+	reason        string
+	status        string
+	taskSummary   string
+	resultSummary string
+}
+
+type subagentDigestState struct {
+	channel string
+	chatID  string
+	items   map[string]subagentDigestItem
+	dueAt   time.Time
 }
 
 func (al *AgentLoop) SetConfigPath(path string) {
@@ -320,7 +338,10 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		subagentRouter:       subagentRouter,
 		subagentConfigTool:   subagentConfigTool,
 		nodeRouter:           nodesRouter,
+		subagentDigestDelay:  5 * time.Second,
+		subagentDigests:      map[string]*subagentDigestState{},
 	}
+	go loop.runSubagentDigestTicker()
 	// Initialize provider fallback chain (primary + proxy_fallbacks).
 	loop.providerPool = map[string]providers.LLMProvider{}
 	loop.providerNames = []string{}
@@ -371,7 +392,31 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 			sessionKey = fmt.Sprintf("subagent:%s", strings.TrimSpace(task.ID))
 		}
 		taskInput := loop.buildSubagentTaskInput(task)
-		return loop.ProcessDirectWithOptions(ctx, taskInput, sessionKey, task.OriginChannel, task.OriginChatID, task.MemoryNS, task.ToolAllowlist)
+		ns := normalizeMemoryNamespace(task.MemoryNS)
+		ctx = withMemoryNamespaceContext(ctx, ns)
+		ctx = withToolAllowlistContext(ctx, task.ToolAllowlist)
+		channel := strings.TrimSpace(task.OriginChannel)
+		if channel == "" {
+			channel = "cli"
+		}
+		chatID := strings.TrimSpace(task.OriginChatID)
+		if chatID == "" {
+			chatID = "direct"
+		}
+		msg := bus.InboundMessage{
+			Channel:    channel,
+			SenderID:   "subagent",
+			ChatID:     chatID,
+			Content:    taskInput,
+			SessionKey: sessionKey,
+			Metadata: map[string]string{
+				"memory_namespace": ns,
+				"memory_ns":        ns,
+				"disable_planning": "true",
+				"trigger":          "subagent",
+			},
+		}
+		return loop.processMessage(ctx, msg)
 	})
 
 	return loop
@@ -1349,6 +1394,10 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			"chat_id":   msg.ChatID,
 		})
 
+	if al.handleSubagentSystemMessage(msg) {
+		return "", nil
+	}
+
 	originChannel, originChatID := resolveSystemOrigin(msg.ChatID)
 
 	// Use the origin session for context
@@ -1489,6 +1538,36 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		})
 
 	return finalContent, nil
+}
+
+func (al *AgentLoop) handleSubagentSystemMessage(msg bus.InboundMessage) bool {
+	if !isSubagentSystemMessage(msg) {
+		return false
+	}
+	reason := ""
+	agentID := ""
+	status := ""
+	taskSummary := ""
+	resultSummary := ""
+	if msg.Metadata != nil {
+		reason = strings.ToLower(strings.TrimSpace(msg.Metadata["notify_reason"]))
+		agentID = strings.TrimSpace(msg.Metadata["agent_id"])
+		status = strings.TrimSpace(msg.Metadata["status"])
+	}
+	if agentID == "" {
+		agentID = strings.TrimSpace(strings.TrimPrefix(msg.SenderID, "subagent:"))
+	}
+	if taskSummary == "" || resultSummary == "" {
+		taskSummary, resultSummary = parseSubagentSystemContent(msg.Content)
+	}
+	al.enqueueSubagentDigest(msg, subagentDigestItem{
+		agentID:       agentID,
+		reason:        reason,
+		status:        status,
+		taskSummary:   taskSummary,
+		resultSummary: resultSummary,
+	})
+	return true
 }
 
 // truncate returns a truncated version of s with at most maxLen characters.
@@ -2217,6 +2296,219 @@ func fallbackSubagentNotification(msg bus.InboundMessage) (string, bool) {
 		content = fmt.Sprintf("Subagent %s completed.", id)
 	}
 	return content, true
+}
+
+func parseSubagentSystemContent(content string) (string, string) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", ""
+	}
+	lines := strings.Split(content, "\n")
+	taskSummary := ""
+	resultSummary := ""
+	for _, line := range lines {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		lower := strings.ToLower(t)
+		switch {
+		case strings.HasPrefix(lower, "task:"):
+			taskSummary = strings.TrimSpace(t[len("task:"):])
+		case strings.HasPrefix(lower, "summary:"):
+			resultSummary = strings.TrimSpace(t[len("summary:"):])
+		}
+	}
+	if taskSummary == "" && len(lines) > 0 {
+		taskSummary = summarizeSystemNotificationText(content, 120)
+	}
+	return taskSummary, resultSummary
+}
+
+func summarizeSystemNotificationText(s string, max int) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n"))
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.Join(strings.Fields(s), " ")
+	if s == "" {
+		return ""
+	}
+	if max > 0 && len(s) > max {
+		return strings.TrimSpace(s[:max-3]) + "..."
+	}
+	return s
+}
+
+func (al *AgentLoop) enqueueSubagentDigest(msg bus.InboundMessage, item subagentDigestItem) {
+	if al == nil || al.bus == nil {
+		return
+	}
+	originChannel, originChatID := resolveSystemOrigin(msg.ChatID)
+	key := originChannel + "\x00" + originChatID
+	delay := al.subagentDigestDelay
+	if delay <= 0 {
+		delay = 5 * time.Second
+	}
+
+	al.subagentDigestMu.Lock()
+	state, ok := al.subagentDigests[key]
+	if !ok || state == nil {
+		state = &subagentDigestState{
+			channel: originChannel,
+			chatID:  originChatID,
+			items:   map[string]subagentDigestItem{},
+		}
+		al.subagentDigests[key] = state
+	}
+	itemKey := subagentDigestItemKey(item)
+	state.items[itemKey] = item
+	state.dueAt = time.Now().Add(delay)
+	al.subagentDigestMu.Unlock()
+}
+
+func subagentDigestItemKey(item subagentDigestItem) string {
+	agentID := strings.ToLower(strings.TrimSpace(item.agentID))
+	reason := strings.ToLower(strings.TrimSpace(item.reason))
+	task := strings.ToLower(strings.TrimSpace(item.taskSummary))
+	if agentID == "" {
+		agentID = "subagent"
+	}
+	return agentID + "\x00" + reason + "\x00" + task
+}
+
+func (al *AgentLoop) flushSubagentDigest(key string) {
+	if al == nil || al.bus == nil {
+		return
+	}
+	al.subagentDigestMu.Lock()
+	state := al.subagentDigests[key]
+	delete(al.subagentDigests, key)
+	al.subagentDigestMu.Unlock()
+	if state == nil || len(state.items) == 0 {
+		return
+	}
+	content := formatSubagentDigestSummary(state.items)
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+	al.bus.PublishOutbound(bus.OutboundMessage{
+		Channel: state.channel,
+		ChatID:  state.chatID,
+		Content: content,
+	})
+}
+
+func (al *AgentLoop) runSubagentDigestTicker() {
+	if al == nil {
+		return
+	}
+	tick := tools.GlobalWatchdogTick
+	if tick <= 0 {
+		tick = time.Second
+	}
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+	for now := range ticker.C {
+		al.flushDueSubagentDigests(now)
+	}
+}
+
+func (al *AgentLoop) flushDueSubagentDigests(now time.Time) {
+	if al == nil || al.bus == nil {
+		return
+	}
+	dueKeys := make([]string, 0, 4)
+	al.subagentDigestMu.Lock()
+	for key, state := range al.subagentDigests {
+		if state == nil || state.dueAt.IsZero() || now.Before(state.dueAt) {
+			continue
+		}
+		dueKeys = append(dueKeys, key)
+	}
+	al.subagentDigestMu.Unlock()
+	for _, key := range dueKeys {
+		al.flushSubagentDigest(key)
+	}
+}
+
+func formatSubagentDigestSummary(items map[string]subagentDigestItem) string {
+	if len(items) == 0 {
+		return ""
+	}
+	list := make([]subagentDigestItem, 0, len(items))
+	completed := 0
+	blocked := 0
+	milestone := 0
+	failed := 0
+	for _, item := range items {
+		list = append(list, item)
+		switch {
+		case strings.EqualFold(strings.TrimSpace(item.reason), "blocked"):
+			blocked++
+		case strings.EqualFold(strings.TrimSpace(item.reason), "milestone"):
+			milestone++
+		case strings.EqualFold(strings.TrimSpace(item.status), "failed"):
+			failed++
+		default:
+			completed++
+		}
+	}
+	sort.Slice(list, func(i, j int) bool {
+		left := strings.TrimSpace(list[i].agentID)
+		right := strings.TrimSpace(list[j].agentID)
+		if left == right {
+			return strings.TrimSpace(list[i].taskSummary) < strings.TrimSpace(list[j].taskSummary)
+		}
+		return left < right
+	})
+	var sb strings.Builder
+	sb.WriteString("阶段总结")
+	stats := make([]string, 0, 4)
+	if completed > 0 {
+		stats = append(stats, fmt.Sprintf("完成 %d", completed))
+	}
+	if blocked > 0 {
+		stats = append(stats, fmt.Sprintf("受阻 %d", blocked))
+	}
+	if failed > 0 {
+		stats = append(stats, fmt.Sprintf("失败 %d", failed))
+	}
+	if milestone > 0 {
+		stats = append(stats, fmt.Sprintf("进展 %d", milestone))
+	}
+	if len(stats) > 0 {
+		sb.WriteString("（" + strings.Join(stats, "，") + "）")
+	}
+	sb.WriteString("\n")
+	for _, item := range list {
+		agentLabel := strings.TrimSpace(item.agentID)
+		if agentLabel == "" {
+			agentLabel = "subagent"
+		}
+		statusText := "已完成"
+		switch {
+		case strings.EqualFold(strings.TrimSpace(item.reason), "blocked"):
+			statusText = "受阻"
+		case strings.EqualFold(strings.TrimSpace(item.reason), "milestone"):
+			statusText = "有进展"
+		case strings.EqualFold(strings.TrimSpace(item.status), "failed"):
+			statusText = "失败"
+		}
+		sb.WriteString("- " + agentLabel + "：" + statusText)
+		if task := strings.TrimSpace(item.taskSummary); task != "" {
+			sb.WriteString("，任务：" + task)
+		}
+		if summary := strings.TrimSpace(item.resultSummary); summary != "" {
+			label := "摘要"
+			if statusText == "受阻" {
+				label = "原因"
+			} else if statusText == "有进展" {
+				label = "进度"
+			}
+			sb.WriteString("，" + label + "：" + summary)
+		}
+		sb.WriteString("\n")
+	}
+	return strings.TrimSpace(sb.String())
 }
 
 func shouldFlushTelegramStreamSnapshot(s string) bool {

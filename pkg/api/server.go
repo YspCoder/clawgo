@@ -64,6 +64,11 @@ type Server struct {
 	ekgCacheStamp   time.Time
 	ekgCacheSize    int64
 	ekgCacheRows    []map[string]interface{}
+	liveRuntimeMu   sync.Mutex
+	liveRuntimeSubs map[chan []byte]struct{}
+	liveRuntimeOn   bool
+	liveSubagentMu  sync.Mutex
+	liveSubagents   map[string]*liveSubagentGroup
 }
 
 var nodesWebsocketUpgrader = websocket.Upgrader{
@@ -79,12 +84,14 @@ func NewServer(host string, port int, token string, mgr *nodes.Manager) *Server 
 		port = 7788
 	}
 	return &Server{
-		addr:          fmt.Sprintf("%s:%d", addr, port),
-		token:         strings.TrimSpace(token),
-		mgr:           mgr,
-		nodeConnIDs:   map[string]string{},
-		nodeSockets:   map[string]*nodeSocketConn{},
-		artifactStats: map[string]interface{}{},
+		addr:            fmt.Sprintf("%s:%d", addr, port),
+		token:           strings.TrimSpace(token),
+		mgr:             mgr,
+		nodeConnIDs:     map[string]string{},
+		nodeSockets:     map[string]*nodeSocketConn{},
+		artifactStats:   map[string]interface{}{},
+		liveRuntimeSubs: map[chan []byte]struct{}{},
+		liveSubagents:   map[string]*liveSubagentGroup{},
 	}
 }
 
@@ -92,6 +99,13 @@ type nodeSocketConn struct {
 	connID string
 	conn   *websocket.Conn
 	mu     sync.Mutex
+}
+
+type liveSubagentGroup struct {
+	taskID        string
+	previewTaskID string
+	subs          map[chan []byte]struct{}
+	stopCh        chan struct{}
 }
 
 func (c *nodeSocketConn) Send(msg nodes.WireMessage) error {
@@ -102,6 +116,168 @@ func (c *nodeSocketConn) Send(msg nodes.WireMessage) error {
 	defer c.mu.Unlock()
 	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return c.conn.WriteJSON(msg)
+}
+
+func publishLiveSnapshot(subs map[chan []byte]struct{}, payload []byte) {
+	for ch := range subs {
+		select {
+		case ch <- payload:
+		default:
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- payload:
+			default:
+			}
+		}
+	}
+}
+
+func (s *Server) subscribeRuntimeLive(ctx context.Context) chan []byte {
+	ch := make(chan []byte, 1)
+	s.liveRuntimeMu.Lock()
+	s.liveRuntimeSubs[ch] = struct{}{}
+	start := !s.liveRuntimeOn
+	if start {
+		s.liveRuntimeOn = true
+	}
+	s.liveRuntimeMu.Unlock()
+	if start {
+		go s.runtimeLiveLoop()
+	}
+	go func() {
+		<-ctx.Done()
+		s.unsubscribeRuntimeLive(ch)
+	}()
+	return ch
+}
+
+func (s *Server) unsubscribeRuntimeLive(ch chan []byte) {
+	s.liveRuntimeMu.Lock()
+	delete(s.liveRuntimeSubs, ch)
+	s.liveRuntimeMu.Unlock()
+}
+
+func (s *Server) runtimeLiveLoop() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		if !s.publishRuntimeSnapshot(context.Background()) {
+			s.liveRuntimeMu.Lock()
+			if len(s.liveRuntimeSubs) == 0 {
+				s.liveRuntimeOn = false
+				s.liveRuntimeMu.Unlock()
+				return
+			}
+			s.liveRuntimeMu.Unlock()
+		}
+		<-ticker.C
+	}
+}
+
+func (s *Server) publishRuntimeSnapshot(ctx context.Context) bool {
+	if s == nil {
+		return false
+	}
+	payload := map[string]interface{}{
+		"ok":       true,
+		"type":     "runtime_snapshot",
+		"snapshot": s.buildWebUIRuntimeSnapshot(ctx),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+	s.liveRuntimeMu.Lock()
+	defer s.liveRuntimeMu.Unlock()
+	if len(s.liveRuntimeSubs) == 0 {
+		return false
+	}
+	publishLiveSnapshot(s.liveRuntimeSubs, data)
+	return true
+}
+
+func buildSubagentLiveKey(taskID, previewTaskID string) string {
+	return strings.TrimSpace(taskID) + "\x00" + strings.TrimSpace(previewTaskID)
+}
+
+func (s *Server) subscribeSubagentLive(ctx context.Context, taskID, previewTaskID string) chan []byte {
+	ch := make(chan []byte, 1)
+	key := buildSubagentLiveKey(taskID, previewTaskID)
+	s.liveSubagentMu.Lock()
+	group := s.liveSubagents[key]
+	if group == nil {
+		group = &liveSubagentGroup{
+			taskID:        strings.TrimSpace(taskID),
+			previewTaskID: strings.TrimSpace(previewTaskID),
+			subs:          map[chan []byte]struct{}{},
+			stopCh:        make(chan struct{}),
+		}
+		s.liveSubagents[key] = group
+		go s.subagentLiveLoop(key, group)
+	}
+	group.subs[ch] = struct{}{}
+	s.liveSubagentMu.Unlock()
+	go func() {
+		<-ctx.Done()
+		s.unsubscribeSubagentLive(key, ch)
+	}()
+	return ch
+}
+
+func (s *Server) unsubscribeSubagentLive(key string, ch chan []byte) {
+	s.liveSubagentMu.Lock()
+	group := s.liveSubagents[key]
+	if group == nil {
+		s.liveSubagentMu.Unlock()
+		return
+	}
+	delete(group.subs, ch)
+	if len(group.subs) == 0 {
+		delete(s.liveSubagents, key)
+		close(group.stopCh)
+	}
+	s.liveSubagentMu.Unlock()
+}
+
+func (s *Server) subagentLiveLoop(key string, group *liveSubagentGroup) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		if !s.publishSubagentLiveSnapshot(context.Background(), key, group.taskID, group.previewTaskID) {
+			return
+		}
+		select {
+		case <-group.stopCh:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Server) publishSubagentLiveSnapshot(ctx context.Context, key, taskID, previewTaskID string) bool {
+	if s == nil {
+		return false
+	}
+	payload := map[string]interface{}{
+		"ok":      true,
+		"type":    "subagents_live",
+		"payload": s.buildSubagentsLivePayload(ctx, taskID, previewTaskID),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+	s.liveSubagentMu.Lock()
+	defer s.liveSubagentMu.Unlock()
+	group := s.liveSubagents[key]
+	if group == nil || len(group.subs) == 0 {
+		return false
+	}
+	publishLiveSnapshot(group.subs, data)
+	return true
 }
 
 func (s *Server) SetConfigPath(path string)    { s.configPath = strings.TrimSpace(path) }
@@ -977,28 +1153,23 @@ func (s *Server) handleWebUIRuntime(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	ctx := r.Context()
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	sendSnapshot := func() error {
-		payload := map[string]interface{}{
-			"ok":       true,
-			"type":     "runtime_snapshot",
-			"snapshot": s.buildWebUIRuntimeSnapshot(ctx),
-		}
-		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		return conn.WriteJSON(payload)
+	sub := s.subscribeRuntimeLive(ctx)
+	initial := map[string]interface{}{
+		"ok":       true,
+		"type":     "runtime_snapshot",
+		"snapshot": s.buildWebUIRuntimeSnapshot(ctx),
 	}
-
-	if err := sendSnapshot(); err != nil {
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err := conn.WriteJSON(initial); err != nil {
 		return
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			if err := sendSnapshot(); err != nil {
+		case payload := <-sub:
+			_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 				return
 			}
 		}
@@ -4245,28 +4416,23 @@ func (s *Server) handleWebUISubagentsRuntimeLive(w http.ResponseWriter, r *http.
 	ctx := r.Context()
 	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
 	previewTaskID := strings.TrimSpace(r.URL.Query().Get("preview_task_id"))
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	sendSnapshot := func() error {
-		payload := map[string]interface{}{
-			"ok":      true,
-			"type":    "subagents_live",
-			"payload": s.buildSubagentsLivePayload(ctx, taskID, previewTaskID),
-		}
-		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		return conn.WriteJSON(payload)
+	sub := s.subscribeSubagentLive(ctx, taskID, previewTaskID)
+	initial := map[string]interface{}{
+		"ok":      true,
+		"type":    "subagents_live",
+		"payload": s.buildSubagentsLivePayload(ctx, taskID, previewTaskID),
 	}
-
-	if err := sendSnapshot(); err != nil {
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err := conn.WriteJSON(initial); err != nil {
 		return
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			if err := sendSnapshot(); err != nil {
+		case payload := <-sub:
+			_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 				return
 			}
 		}

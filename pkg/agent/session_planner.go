@@ -12,9 +12,11 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"clawgo/pkg/bus"
 	"clawgo/pkg/ekg"
+	"clawgo/pkg/providers"
 	"clawgo/pkg/scheduling"
 )
 
@@ -35,17 +37,22 @@ type plannedTaskResult struct {
 var reLeadingNumber = regexp.MustCompile(`^\d+[\.)、]\s*`)
 
 func (al *AgentLoop) processPlannedMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
-	tasks := al.planSessionTasks(msg)
+	tasks := al.planSessionTasks(ctx, msg)
 	if len(tasks) <= 1 {
 		return al.processMessage(ctx, msg)
 	}
 	return al.runPlannedTasks(ctx, msg, tasks)
 }
 
-func (al *AgentLoop) planSessionTasks(msg bus.InboundMessage) []plannedTask {
+func (al *AgentLoop) planSessionTasks(ctx context.Context, msg bus.InboundMessage) []plannedTask {
 	base := strings.TrimSpace(msg.Content)
 	if base == "" {
 		return nil
+	}
+	if msg.Metadata != nil {
+		if planningDisabled(msg.Metadata["disable_planning"]) {
+			return []plannedTask{{Index: 1, Content: base, ResourceKeys: scheduling.DeriveResourceKeys(base)}}
+		}
 	}
 	if msg.Channel == "system" || msg.Channel == "internal" {
 		return []plannedTask{{Index: 1, Content: base, ResourceKeys: scheduling.DeriveResourceKeys(base)}}
@@ -62,6 +69,9 @@ func (al *AgentLoop) planSessionTasks(msg bus.InboundMessage) []plannedTask {
 	segments := splitPlannedSegments(base)
 	if len(segments) <= 1 {
 		return []plannedTask{{Index: 1, Content: base, ResourceKeys: scheduling.DeriveResourceKeys(base)}}
+	}
+	if refined, ok := al.inferPlannedSegments(ctx, base, segments); ok {
+		segments = refined
 	}
 
 	out := make([]plannedTask, 0, len(segments))
@@ -84,6 +94,125 @@ func (al *AgentLoop) planSessionTasks(msg bus.InboundMessage) []plannedTask {
 		out[0].ResourceKeys = scheduling.DeriveResourceKeys(base)
 	}
 	return out
+}
+
+type plannerDecision struct {
+	ShouldSplit bool     `json:"should_split"`
+	Tasks       []string `json:"tasks"`
+}
+
+func (al *AgentLoop) inferPlannedSegments(ctx context.Context, content string, candidates []string) ([]string, bool) {
+	if al == nil || al.provider == nil {
+		return nil, false
+	}
+	content = strings.TrimSpace(content)
+	if content == "" || len(candidates) <= 1 {
+		return nil, false
+	}
+	plannerCtx := ctx
+	if plannerCtx == nil {
+		plannerCtx = context.Background()
+	}
+	var cancel context.CancelFunc
+	plannerCtx, cancel = context.WithTimeout(plannerCtx, 8*time.Second)
+	defer cancel()
+
+	previewCandidates := candidates
+	if len(previewCandidates) > 12 {
+		previewCandidates = previewCandidates[:12]
+	}
+	var candidateList strings.Builder
+	for i, item := range previewCandidates {
+		candidateList.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(item)))
+	}
+
+	resp, err := al.provider.Chat(plannerCtx, []providers.Message{
+		{
+			Role: "system",
+			Content: "Decide whether the request should stay as one task or be split into a small number of high-level task groups. " +
+				"Default to no split. Only split when the request contains multiple independent deliverables, roles, or workstreams. " +
+				"Never split into fine-grained execution steps. Merge related steps. Return strict JSON only: " +
+				`{"should_split":true|false,"tasks":["..."]}` +
+				" If should_split is false, tasks must be empty. If true, tasks must contain 2 to 8 concise high-level task groups.",
+		},
+		{
+			Role: "user",
+			Content: fmt.Sprintf("Original request:\n%s\n\nRule-based candidate segments (%d shown of %d):\n%s",
+				content,
+				len(previewCandidates),
+				len(candidates),
+				strings.TrimSpace(candidateList.String()),
+			),
+		},
+	}, nil, al.provider.GetDefaultModel(), map[string]interface{}{
+		"max_tokens": 256,
+	})
+	if err != nil || resp == nil {
+		return nil, false
+	}
+	decision, ok := parsePlannerDecision(resp.Content)
+	if !ok {
+		return nil, false
+	}
+	if !decision.ShouldSplit {
+		return []string{content}, true
+	}
+	tasks := sanitizePlannerTasks(decision.Tasks)
+	if len(tasks) < 2 || len(tasks) > 8 {
+		return []string{content}, true
+	}
+	return tasks, true
+}
+
+func parsePlannerDecision(raw string) (plannerDecision, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return plannerDecision{}, false
+	}
+	if fenced := extractJSONObject(raw); fenced != "" {
+		raw = fenced
+	}
+	var out plannerDecision
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return plannerDecision{}, false
+	}
+	return out, true
+}
+
+func extractJSONObject(raw string) string {
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return ""
+	}
+	return strings.TrimSpace(raw[start : end+1])
+}
+
+func sanitizePlannerTasks(items []string) []string {
+	out := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		t := strings.TrimSpace(reLeadingNumber.ReplaceAllString(strings.TrimSpace(item), ""))
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(t)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, t)
+	}
+	return out
+}
+
+func planningDisabled(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func splitPlannedSegments(content string) []string {

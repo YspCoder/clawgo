@@ -76,20 +76,21 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 			return nil, fmt.Errorf("task is required")
 		}
 		task, err := router.DispatchTask(ctx, tools.RouterDispatchRequest{
-			Task:           taskInput,
-			Label:          runtimeStringArg(args, "label"),
-			Role:           runtimeStringArg(args, "role"),
-			AgentID:        runtimeStringArg(args, "agent_id"),
-			ThreadID:       runtimeStringArg(args, "thread_id"),
-			CorrelationID:  runtimeStringArg(args, "correlation_id"),
-			ParentRunID:    runtimeStringArg(args, "parent_run_id"),
-			OriginChannel:  fallbackString(runtimeStringArg(args, "channel"), "webui"),
-			OriginChatID:   fallbackString(runtimeStringArg(args, "chat_id"), "webui"),
-			MaxRetries:     runtimeIntArg(args, "max_retries", 0),
-			RetryBackoff:   runtimeIntArg(args, "retry_backoff_ms", 0),
-			TimeoutSec:     runtimeIntArg(args, "timeout_sec", 0),
-			MaxTaskChars:   runtimeIntArg(args, "max_task_chars", 0),
-			MaxResultChars: runtimeIntArg(args, "max_result_chars", 0),
+			Task:             taskInput,
+			Label:            runtimeStringArg(args, "label"),
+			Role:             runtimeStringArg(args, "role"),
+			AgentID:          runtimeStringArg(args, "agent_id"),
+			NotifyMainPolicy: "internal_only",
+			ThreadID:         runtimeStringArg(args, "thread_id"),
+			CorrelationID:    runtimeStringArg(args, "correlation_id"),
+			ParentRunID:      runtimeStringArg(args, "parent_run_id"),
+			OriginChannel:    fallbackString(runtimeStringArg(args, "channel"), "webui"),
+			OriginChatID:     fallbackString(runtimeStringArg(args, "chat_id"), "webui"),
+			MaxRetries:       runtimeIntArg(args, "max_retries", 0),
+			RetryBackoff:     runtimeIntArg(args, "retry_backoff_ms", 0),
+			TimeoutSec:       runtimeIntArg(args, "timeout_sec", 0),
+			MaxTaskChars:     runtimeIntArg(args, "max_task_chars", 0),
+			MaxResultChars:   runtimeIntArg(args, "max_result_chars", 0),
 		})
 		if err != nil {
 			return nil, err

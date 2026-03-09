@@ -8,20 +8,21 @@ import (
 )
 
 type RouterDispatchRequest struct {
-	Task           string
-	Label          string
-	Role           string
-	AgentID        string
-	ThreadID       string
-	CorrelationID  string
-	ParentRunID    string
-	OriginChannel  string
-	OriginChatID   string
-	MaxRetries     int
-	RetryBackoff   int
-	TimeoutSec     int
-	MaxTaskChars   int
-	MaxResultChars int
+	Task             string
+	Label            string
+	Role             string
+	AgentID          string
+	NotifyMainPolicy string
+	ThreadID         string
+	CorrelationID    string
+	ParentRunID      string
+	OriginChannel    string
+	OriginChatID     string
+	MaxRetries       int
+	RetryBackoff     int
+	TimeoutSec       int
+	MaxTaskChars     int
+	MaxResultChars   int
 }
 
 type RouterReply struct {
@@ -46,20 +47,21 @@ func (r *SubagentRouter) DispatchTask(ctx context.Context, req RouterDispatchReq
 		return nil, fmt.Errorf("subagent router is not configured")
 	}
 	task, err := r.manager.SpawnTask(ctx, SubagentSpawnOptions{
-		Task:           req.Task,
-		Label:          req.Label,
-		Role:           req.Role,
-		AgentID:        req.AgentID,
-		ThreadID:       req.ThreadID,
-		CorrelationID:  req.CorrelationID,
-		ParentRunID:    req.ParentRunID,
-		OriginChannel:  req.OriginChannel,
-		OriginChatID:   req.OriginChatID,
-		MaxRetries:     req.MaxRetries,
-		RetryBackoff:   req.RetryBackoff,
-		TimeoutSec:     req.TimeoutSec,
-		MaxTaskChars:   req.MaxTaskChars,
-		MaxResultChars: req.MaxResultChars,
+		Task:             req.Task,
+		Label:            req.Label,
+		Role:             req.Role,
+		AgentID:          req.AgentID,
+		NotifyMainPolicy: req.NotifyMainPolicy,
+		ThreadID:         req.ThreadID,
+		CorrelationID:    req.CorrelationID,
+		ParentRunID:      req.ParentRunID,
+		OriginChannel:    req.OriginChannel,
+		OriginChatID:     req.OriginChatID,
+		MaxRetries:       req.MaxRetries,
+		RetryBackoff:     req.RetryBackoff,
+		TimeoutSec:       req.TimeoutSec,
+		MaxTaskChars:     req.MaxTaskChars,
+		MaxResultChars:   req.MaxResultChars,
 	})
 	if err != nil {
 		return nil, err
@@ -71,33 +73,26 @@ func (r *SubagentRouter) WaitReply(ctx context.Context, taskID string, interval 
 	if r == nil || r.manager == nil {
 		return nil, fmt.Errorf("subagent router is not configured")
 	}
-	if interval <= 0 {
-		interval = 100 * time.Millisecond
-	}
+	_ = interval
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
 		return nil, fmt.Errorf("task id is required")
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		task, ok := r.manager.GetTask(taskID)
-		if ok && task != nil && task.Status != "running" {
-			return &RouterReply{
-				TaskID:        task.ID,
-				ThreadID:      task.ThreadID,
-				CorrelationID: task.CorrelationID,
-				AgentID:       task.AgentID,
-				Status:        task.Status,
-				Result:        strings.TrimSpace(task.Result),
-			}, nil
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
-		}
+	task, ok, err := r.manager.WaitTask(ctx, taskID)
+	if err != nil {
+		return nil, err
 	}
+	if !ok || task == nil {
+		return nil, fmt.Errorf("subagent not found")
+	}
+	return &RouterReply{
+		TaskID:        task.ID,
+		ThreadID:      task.ThreadID,
+		CorrelationID: task.CorrelationID,
+		AgentID:       task.AgentID,
+		Status:        task.Status,
+		Result:        strings.TrimSpace(task.Result),
+	}, nil
 }
 
 func (r *SubagentRouter) MergeResults(replies []*RouterReply) string {
