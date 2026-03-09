@@ -21,12 +21,9 @@ type UIContextType = {
 };
 
 const UIContext = createContext<UIContextType | undefined>(undefined);
-const THEME_STORAGE_KEY = 'clawgo:webui:theme';
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === 'undefined') return 'dark';
-  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (saved === 'light' || saved === 'dark') return saved;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
@@ -45,8 +42,24 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     root.classList.remove('theme-light', 'theme-dark');
     root.classList.add(theme === 'dark' ? 'theme-dark' : 'theme-light');
     root.style.colorScheme = theme;
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const applySystemTheme = (event?: MediaQueryList | MediaQueryListEvent) => {
+      const matches = 'matches' in (event || media) ? (event || media).matches : media.matches;
+      setTheme(matches ? 'dark' : 'light');
+    };
+    applySystemTheme(media);
+    const onChange = (event: MediaQueryListEvent) => applySystemTheme(event);
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', onChange);
+      return () => media.removeEventListener('change', onChange);
+    }
+    media.addListener(onChange);
+    return () => media.removeListener(onChange);
+  }, []);
 
   const value = useMemo<UIContextType>(() => ({
     loading,

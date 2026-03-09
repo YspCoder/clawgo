@@ -54,11 +54,10 @@ const Header: React.FC = () => {
 
         <button
           onClick={toggleTheme}
-          className="flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 px-3 py-1.5 rounded-lg"
+          className="inline-flex h-9 w-9 items-center justify-center text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg"
           title={theme === 'dark' ? t('themeLight') : t('themeDark')}
         >
           {theme === 'dark' ? <SunMedium className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          <span className="hidden sm:inline">{theme === 'dark' ? t('themeLight') : t('themeDark')}</span>
         </button>
         
         <button 

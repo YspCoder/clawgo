@@ -719,7 +719,6 @@ func TestSubagentUsesConfiguredSystemPromptFile(t *testing.T) {
 	if _, err := manager.ProfileStore().Upsert(SubagentProfile{
 		AgentID:          "coder",
 		Status:           "active",
-		SystemPrompt:     "inline-fallback",
 		SystemPromptFile: "agents/coder/AGENT.md",
 	}); err != nil {
 		t.Fatalf("profile upsert failed: %v", err)

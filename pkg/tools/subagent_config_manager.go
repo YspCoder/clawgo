@@ -21,14 +21,12 @@ func DraftConfigSubagent(description, agentIDHint string) map[string]interface{}
 	displayName := inferDraftDisplayName(role, agentID)
 	toolAllowlist := inferDraftToolAllowlist(role)
 	keywords := inferDraftKeywords(role, lower)
-	systemPrompt := inferDraftSystemPrompt(role, desc)
 	return map[string]interface{}{
 		"agent_id":           agentID,
 		"role":               role,
 		"display_name":       displayName,
 		"description":        desc,
 		"notify_main_policy": "final_only",
-		"system_prompt":      systemPrompt,
 		"system_prompt_file": "agents/" + agentID + "/AGENT.md",
 		"memory_namespace":   agentID,
 		"tool_allowlist":     toolAllowlist,
@@ -86,9 +84,6 @@ func UpsertConfigSubagent(configPath string, args map[string]interface{}) (map[s
 	}
 	if v := stringArgFromMap(args, "description"); v != "" {
 		subcfg.Description = v
-	}
-	if v := stringArgFromMap(args, "system_prompt"); v != "" {
-		subcfg.SystemPrompt = v
 	}
 	if v := stringArgFromMap(args, "system_prompt_file"); v != "" {
 		subcfg.SystemPromptFile = v

@@ -4007,19 +4007,19 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true, "agent_id": agentID})
 	case http.MethodPost:
 		var body struct {
-			Action          string   `json:"action"`
-			AgentID         string   `json:"agent_id"`
-			Name            string   `json:"name"`
-			Role            string   `json:"role"`
-			SystemPrompt    string   `json:"system_prompt"`
-			MemoryNamespace string   `json:"memory_namespace"`
-			Status          string   `json:"status"`
-			ToolAllowlist   []string `json:"tool_allowlist"`
-			MaxRetries      *int     `json:"max_retries"`
-			RetryBackoffMS  *int     `json:"retry_backoff_ms"`
-			TimeoutSec      *int     `json:"timeout_sec"`
-			MaxTaskChars    *int     `json:"max_task_chars"`
-			MaxResultChars  *int     `json:"max_result_chars"`
+			Action           string   `json:"action"`
+			AgentID          string   `json:"agent_id"`
+			Name             string   `json:"name"`
+			Role             string   `json:"role"`
+			SystemPromptFile string   `json:"system_prompt_file"`
+			MemoryNamespace  string   `json:"memory_namespace"`
+			Status           string   `json:"status"`
+			ToolAllowlist    []string `json:"tool_allowlist"`
+			MaxRetries       *int     `json:"max_retries"`
+			RetryBackoffMS   *int     `json:"retry_backoff_ms"`
+			TimeoutSec       *int     `json:"timeout_sec"`
+			MaxTaskChars     *int     `json:"max_task_chars"`
+			MaxResultChars   *int     `json:"max_result_chars"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -4045,18 +4045,18 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			profile, err := store.Upsert(tools.SubagentProfile{
-				AgentID:         agentID,
-				Name:            body.Name,
-				Role:            body.Role,
-				SystemPrompt:    body.SystemPrompt,
-				MemoryNamespace: body.MemoryNamespace,
-				Status:          body.Status,
-				ToolAllowlist:   body.ToolAllowlist,
-				MaxRetries:      derefInt(body.MaxRetries),
-				RetryBackoff:    derefInt(body.RetryBackoffMS),
-				TimeoutSec:      derefInt(body.TimeoutSec),
-				MaxTaskChars:    derefInt(body.MaxTaskChars),
-				MaxResultChars:  derefInt(body.MaxResultChars),
+				AgentID:          agentID,
+				Name:             body.Name,
+				Role:             body.Role,
+				SystemPromptFile: body.SystemPromptFile,
+				MemoryNamespace:  body.MemoryNamespace,
+				Status:           body.Status,
+				ToolAllowlist:    body.ToolAllowlist,
+				MaxRetries:       derefInt(body.MaxRetries),
+				RetryBackoff:     derefInt(body.RetryBackoffMS),
+				TimeoutSec:       derefInt(body.TimeoutSec),
+				MaxTaskChars:     derefInt(body.MaxTaskChars),
+				MaxResultChars:   derefInt(body.MaxResultChars),
 			})
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -4076,7 +4076,7 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 			next := *existing
 			next.Name = body.Name
 			next.Role = body.Role
-			next.SystemPrompt = body.SystemPrompt
+			next.SystemPromptFile = body.SystemPromptFile
 			next.MemoryNamespace = body.MemoryNamespace
 			if body.Status != "" {
 				next.Status = body.Status
@@ -4134,18 +4134,18 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true, "agent_id": agentID})
 		case "upsert":
 			profile, err := store.Upsert(tools.SubagentProfile{
-				AgentID:         agentID,
-				Name:            body.Name,
-				Role:            body.Role,
-				SystemPrompt:    body.SystemPrompt,
-				MemoryNamespace: body.MemoryNamespace,
-				Status:          body.Status,
-				ToolAllowlist:   body.ToolAllowlist,
-				MaxRetries:      derefInt(body.MaxRetries),
-				RetryBackoff:    derefInt(body.RetryBackoffMS),
-				TimeoutSec:      derefInt(body.TimeoutSec),
-				MaxTaskChars:    derefInt(body.MaxTaskChars),
-				MaxResultChars:  derefInt(body.MaxResultChars),
+				AgentID:          agentID,
+				Name:             body.Name,
+				Role:             body.Role,
+				SystemPromptFile: body.SystemPromptFile,
+				MemoryNamespace:  body.MemoryNamespace,
+				Status:           body.Status,
+				ToolAllowlist:    body.ToolAllowlist,
+				MaxRetries:       derefInt(body.MaxRetries),
+				RetryBackoff:     derefInt(body.RetryBackoffMS),
+				TimeoutSec:       derefInt(body.TimeoutSec),
+				MaxTaskChars:     derefInt(body.MaxTaskChars),
+				MaxResultChars:   derefInt(body.MaxResultChars),
 			})
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)

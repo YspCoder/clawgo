@@ -147,15 +147,11 @@ const Dashboard: React.FC = () => {
         </div>
         <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
           <div className="flex items-center gap-2 text-zinc-200 mb-2">
-            <Workflow className="w-4 h-4 text-sky-400" />
-            <div className="text-sm font-medium">{t('nodeP2P')}</div>
+            <Sparkles className="w-4 h-4 text-sky-400" />
+            <div className="text-sm font-medium">{t('ekgTopProvidersWorkload')}</div>
           </div>
-          <div className="text-2xl font-semibold text-zinc-100 truncate">
-            {p2pEnabled ? `${p2pConfiguredIce} ICE · ${p2pConfiguredStun} STUN` : t('disabled')}
-          </div>
-          <div className="mt-2 text-xs text-zinc-500">
-            {t('dashboardNodeP2PDetail', { transport: p2pTransport, sessions: p2pSessions, retries: p2pRetryCount })}
-          </div>
+          <div className="text-2xl font-semibold text-zinc-100 truncate">{ekgTopProvider}</div>
+          <div className="mt-2 text-xs text-zinc-500">{t('dashboardWorkloadSnapshot')}</div>
         </div>
         <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
           <div className="flex items-center gap-2 text-zinc-200 mb-2">

@@ -45,7 +45,6 @@ func (t *SubagentConfigTool) Parameters() map[string]interface{} {
 			"parent_agent_id":    map[string]interface{}{"type": "string"},
 			"role":               map[string]interface{}{"type": "string"},
 			"display_name":       map[string]interface{}{"type": "string"},
-			"system_prompt":      map[string]interface{}{"type": "string"},
 			"system_prompt_file": map[string]interface{}{"type": "string"},
 			"memory_namespace":   map[string]interface{}{"type": "string"},
 			"type":               map[string]interface{}{"type": "string"},

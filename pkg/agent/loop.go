@@ -464,9 +464,6 @@ func (al *AgentLoop) buildSubagentTaskInput(task *tools.SubagentTask) string {
 			return fmt.Sprintf("Role Profile Policy (%s):\n%s\n\nTask:\n%s", promptFile, promptText, taskText)
 		}
 	}
-	if prompt := strings.TrimSpace(task.SystemPrompt); prompt != "" {
-		return fmt.Sprintf("Role Profile Prompt:\n%s\n\nTask:\n%s", prompt, taskText)
-	}
 	return taskText
 }
 

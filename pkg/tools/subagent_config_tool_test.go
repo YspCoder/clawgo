@@ -35,7 +35,6 @@ func TestSubagentConfigToolUpsert(t *testing.T) {
 		"notify_main_policy": "internal_only",
 		"display_name":       "Review Agent",
 		"description":        "负责回归与评审",
-		"system_prompt":      "review changes",
 		"system_prompt_file": "agents/reviewer/AGENT.md",
 		"routing_keywords":   []interface{}{"review", "regression"},
 		"tool_allowlist":     []interface{}{"shell", "sessions"},

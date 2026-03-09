@@ -27,7 +27,6 @@ type SubagentTask struct {
 	NotifyMainPolicy string                 `json:"notify_main_policy,omitempty"`
 	SessionKey       string                 `json:"session_key"`
 	MemoryNS         string                 `json:"memory_ns"`
-	SystemPrompt     string                 `json:"system_prompt,omitempty"`
 	SystemPromptFile string                 `json:"system_prompt_file,omitempty"`
 	ToolAllowlist    []string               `json:"tool_allowlist,omitempty"`
 	MaxRetries       int                    `json:"max_retries,omitempty"`
@@ -168,7 +167,6 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		agentID = "default"
 	}
 	memoryNS := agentID
-	systemPrompt := ""
 	systemPromptFile := ""
 	transport := "local"
 	nodeID := ""
@@ -207,7 +205,6 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		nodeID = strings.TrimSpace(profile.NodeID)
 		parentAgentID = strings.TrimSpace(profile.ParentAgentID)
 		notifyMainPolicy = normalizeNotifyMainPolicy(profile.NotifyMainPolicy)
-		systemPrompt = strings.TrimSpace(profile.SystemPrompt)
 		systemPromptFile = strings.TrimSpace(profile.SystemPromptFile)
 		toolAllowlist = append([]string(nil), profile.ToolAllowlist...)
 		maxRetries = profile.MaxRetries
@@ -288,7 +285,6 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		NotifyMainPolicy: notifyMainPolicy,
 		SessionKey:       sessionKey,
 		MemoryNS:         memoryNS,
-		SystemPrompt:     systemPrompt,
 		SystemPromptFile: systemPromptFile,
 		ToolAllowlist:    toolAllowlist,
 		MaxRetries:       maxRetries,
@@ -670,9 +666,6 @@ func (sm *SubagentManager) resolveSystemPrompt(task *SubagentTask) string {
 		if promptText := sm.readWorkspacePromptFile(promptFile); promptText != "" {
 			return systemPrompt + "\n\nSubagent policy (" + promptFile + "):\n" + promptText
 		}
-	}
-	if rolePrompt := strings.TrimSpace(task.SystemPrompt); rolePrompt != "" {
-		return systemPrompt + "\n\nRole-specific profile prompt:\n" + rolePrompt
 	}
 	return systemPrompt
 }

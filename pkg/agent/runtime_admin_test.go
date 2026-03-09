@@ -78,7 +78,6 @@ func TestHandleSubagentRuntimeUpsertConfigSubagent(t *testing.T) {
 		"role":               "testing",
 		"notify_main_policy": "internal_only",
 		"display_name":       "Review Agent",
-		"system_prompt":      "review changes",
 		"system_prompt_file": "agents/reviewer/AGENT.md",
 		"routing_keywords":   []interface{}{"review", "regression"},
 		"tool_allowlist":     []interface{}{"shell", "sessions"},
@@ -129,7 +128,6 @@ func TestHandleSubagentRuntimeRegistryAndToggleEnabled(t *testing.T) {
 		Type:             "worker",
 		Role:             "testing",
 		DisplayName:      "Test Agent",
-		SystemPrompt:     "run tests",
 		SystemPromptFile: "agents/tester/AGENT.md",
 		MemoryNamespace:  "tester",
 		Tools: config.SubagentToolsConfig{

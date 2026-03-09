@@ -126,7 +126,6 @@ func TestSubagentProfileStoreReadsProfilesFromRuntimeConfig(t *testing.T) {
 		Enabled:          true,
 		DisplayName:      "Code Agent",
 		Role:             "coding",
-		SystemPrompt:     "write code",
 		SystemPromptFile: "agents/coder/AGENT.md",
 		MemoryNamespace:  "code-ns",
 		Tools: config.SubagentToolsConfig{

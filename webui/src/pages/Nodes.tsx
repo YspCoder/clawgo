@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { Check } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatLocalDateTime } from '../utils/time';
 
@@ -247,20 +248,29 @@ const Nodes: React.FC = () => {
                 <button
                   key={nodeID}
                   onClick={() => setSelectedNodeID(nodeID)}
-                  className={`w-full text-left px-3 py-3 border-b border-zinc-800/60 hover:bg-zinc-800/20 ${active ? 'bg-indigo-500/15' : ''}`}
+                  className={`w-full text-left px-3 py-3 border-b border-zinc-800/60 transition-colors ${active ? 'bg-indigo-500/15' : ''}`}
                 >
-                  <div className="text-sm font-medium text-zinc-100 truncate">{String(node?.name || nodeID)}</div>
-                  <div className="text-xs text-zinc-400 truncate">{nodeID} · {String(node?.os || '-')} / {String(node?.arch || '-')}</div>
-                  <div className="text-[11px] text-zinc-500 truncate">{String(node?.online ? t('online') : t('offline'))} · {String(node?.version || '-')}</div>
-                  {tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {tags.slice(0, 4).map((tag: string) => (
-                        <span key={`${nodeID}-${tag}`} className="rounded-full border border-zinc-700 bg-zinc-900/60 px-2 py-0.5 text-[10px] text-zinc-300">
-                          {tag}
-                        </span>
-                      ))}
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-zinc-100 truncate">{String(node?.name || nodeID)}</div>
+                      <div className="text-xs text-zinc-400 truncate">{nodeID} · {String(node?.os || '-')} / {String(node?.arch || '-')}</div>
+                      <div className="text-[11px] text-zinc-500 truncate">{String(node?.online ? t('online') : t('offline'))} · {String(node?.version || '-')}</div>
+                      {tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {tags.slice(0, 4).map((tag: string) => (
+                            <span key={`${nodeID}-${tag}`} className="rounded-full border border-zinc-700 bg-zinc-900/60 px-2 py-0.5 text-[10px] text-zinc-300">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
+                    {active && (
+                      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300">
+                        <Check className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </div>
                 </button>
               );
             })}
@@ -416,10 +426,19 @@ const Nodes: React.FC = () => {
                   <button
                     key={key || `dispatch-${index}`}
                     onClick={() => setSelectedDispatchKey(key)}
-                    className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 hover:bg-zinc-800/20 ${active ? 'bg-indigo-500/15' : ''}`}
+                    className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 transition-colors ${active ? 'bg-indigo-500/15' : ''}`}
                   >
-                    <div className="text-sm font-medium text-zinc-100 truncate">{`${item?.action || '-'} · ${item?.used_transport || '-'}`}</div>
-                    <div className="text-xs text-zinc-400 truncate">{formatLocalDateTime(item?.time)} · {Number(item?.duration_ms || 0)}ms · {Number(item?.artifact_count || 0)} {t('dashboardNodeDispatchArtifacts')}</div>
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-zinc-100 truncate">{`${item?.action || '-'} · ${item?.used_transport || '-'}`}</div>
+                        <div className="text-xs text-zinc-400 truncate">{formatLocalDateTime(item?.time)} · {Number(item?.duration_ms || 0)}ms · {Number(item?.artifact_count || 0)} {t('dashboardNodeDispatchArtifacts')}</div>
+                      </div>
+                      {active && (
+                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300">
+                          <Check className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}

@@ -77,7 +77,6 @@ type SubagentConfig struct {
 	DisplayName           string                `json:"display_name,omitempty"`
 	Role                  string                `json:"role,omitempty"`
 	Description           string                `json:"description,omitempty"`
-	SystemPrompt          string                `json:"system_prompt,omitempty"`
 	SystemPromptFile      string                `json:"system_prompt_file,omitempty"`
 	MemoryNamespace       string                `json:"memory_namespace,omitempty"`
 	AcceptFrom            []string              `json:"accept_from,omitempty"`
@@ -86,6 +85,19 @@ type SubagentConfig struct {
 	DefaultReplyTo        string                `json:"default_reply_to,omitempty"`
 	Tools                 SubagentToolsConfig   `json:"tools,omitempty"`
 	Runtime               SubagentRuntimeConfig `json:"runtime,omitempty"`
+}
+
+func (s *SubagentConfig) UnmarshalJSON(data []byte) error {
+	type alias SubagentConfig
+	var raw struct {
+		alias
+		LegacySystemPrompt string `json:"system_prompt"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*s = SubagentConfig(raw.alias)
+	return nil
 }
 
 type SubagentToolsConfig struct {

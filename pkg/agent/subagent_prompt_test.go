@@ -20,7 +20,6 @@ func TestBuildSubagentTaskInputPrefersPromptFile(t *testing.T) {
 	loop := &AgentLoop{workspace: workspace}
 	input := loop.buildSubagentTaskInput(&tools.SubagentTask{
 		Task:             "implement login flow",
-		SystemPrompt:     "inline-fallback",
 		SystemPromptFile: "agents/coder/AGENT.md",
 	})
 	if !strings.Contains(input, "coder-file-policy") {
@@ -31,13 +30,15 @@ func TestBuildSubagentTaskInputPrefersPromptFile(t *testing.T) {
 	}
 }
 
-func TestBuildSubagentTaskInputFallsBackToInlinePrompt(t *testing.T) {
+func TestBuildSubagentTaskInputWithoutPromptFileUsesTaskOnly(t *testing.T) {
 	loop := &AgentLoop{workspace: t.TempDir()}
 	input := loop.buildSubagentTaskInput(&tools.SubagentTask{
-		Task:         "run regression",
-		SystemPrompt: "test inline prompt",
+		Task: "run regression",
 	})
-	if !strings.Contains(input, "test inline prompt") {
-		t.Fatalf("expected inline prompt in task input, got: %s", input)
+	if strings.Contains(input, "test inline prompt") {
+		t.Fatalf("did not expect inline prompt fallback, got: %s", input)
+	}
+	if !strings.Contains(input, "run regression") {
+		t.Fatalf("expected task input to contain task, got: %s", input)
 	}
 }

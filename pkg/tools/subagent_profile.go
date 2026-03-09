@@ -24,7 +24,6 @@ type SubagentProfile struct {
 	ParentAgentID    string   `json:"parent_agent_id,omitempty"`
 	NotifyMainPolicy string   `json:"notify_main_policy,omitempty"`
 	Role             string   `json:"role,omitempty"`
-	SystemPrompt     string   `json:"system_prompt,omitempty"`
 	SystemPromptFile string   `json:"system_prompt_file,omitempty"`
 	ToolAllowlist    []string `json:"tool_allowlist,omitempty"`
 	MemoryNamespace  string   `json:"memory_namespace,omitempty"`
@@ -191,7 +190,6 @@ func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
 	p.ParentAgentID = normalizeSubagentIdentifier(p.ParentAgentID)
 	p.NotifyMainPolicy = normalizeNotifyMainPolicy(p.NotifyMainPolicy)
 	p.Role = strings.TrimSpace(p.Role)
-	p.SystemPrompt = strings.TrimSpace(p.SystemPrompt)
 	p.SystemPromptFile = strings.TrimSpace(p.SystemPromptFile)
 	p.MemoryNamespace = normalizeSubagentIdentifier(p.MemoryNamespace)
 	if p.MemoryNamespace == "" {
@@ -409,7 +407,6 @@ func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentPro
 		ParentAgentID:    strings.TrimSpace(subcfg.ParentAgentID),
 		NotifyMainPolicy: strings.TrimSpace(subcfg.NotifyMainPolicy),
 		Role:             strings.TrimSpace(subcfg.Role),
-		SystemPrompt:     strings.TrimSpace(subcfg.SystemPrompt),
 		SystemPromptFile: strings.TrimSpace(subcfg.SystemPromptFile),
 		ToolAllowlist:    append([]string(nil), subcfg.Tools.Allowlist...),
 		MemoryNamespace:  strings.TrimSpace(subcfg.MemoryNamespace),
@@ -554,7 +551,6 @@ func (t *SubagentProfileTool) Parameters() map[string]interface{} {
 			"name":               map[string]interface{}{"type": "string"},
 			"notify_main_policy": map[string]interface{}{"type": "string", "description": "final_only|internal_only|milestone|on_blocked|always"},
 			"role":               map[string]interface{}{"type": "string"},
-			"system_prompt":      map[string]interface{}{"type": "string"},
 			"system_prompt_file": map[string]interface{}{"type": "string"},
 			"memory_namespace":   map[string]interface{}{"type": "string"},
 			"status":             map[string]interface{}{"type": "string", "description": "active|disabled"},
@@ -625,7 +621,6 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 			Name:             stringArg(args, "name"),
 			NotifyMainPolicy: stringArg(args, "notify_main_policy"),
 			Role:             stringArg(args, "role"),
-			SystemPrompt:     stringArg(args, "system_prompt"),
 			SystemPromptFile: stringArg(args, "system_prompt_file"),
 			MemoryNamespace:  stringArg(args, "memory_namespace"),
 			Status:           stringArg(args, "status"),
@@ -661,9 +656,6 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 		}
 		if _, ok := args["notify_main_policy"]; ok {
 			next.NotifyMainPolicy = stringArg(args, "notify_main_policy")
-		}
-		if _, ok := args["system_prompt"]; ok {
-			next.SystemPrompt = stringArg(args, "system_prompt")
 		}
 		if _, ok := args["system_prompt_file"]; ok {
 			next.SystemPromptFile = stringArg(args, "system_prompt_file")

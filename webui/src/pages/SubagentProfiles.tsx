@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Check } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 
@@ -8,7 +9,6 @@ type SubagentProfile = {
   name?: string;
   notify_main_policy?: string;
   role?: string;
-  system_prompt?: string;
   system_prompt_file?: string;
   tool_allowlist?: string[];
   memory_namespace?: string;
@@ -33,7 +33,6 @@ const emptyDraft: SubagentProfile = {
   name: '',
   notify_main_policy: 'final_only',
   role: '',
-  system_prompt: '',
   system_prompt_file: '',
   memory_namespace: '',
   status: 'active',
@@ -81,7 +80,6 @@ const SubagentProfiles: React.FC = () => {
       name: next.name || '',
       notify_main_policy: next.notify_main_policy || 'final_only',
       role: next.role || '',
-      system_prompt: next.system_prompt || '',
       system_prompt_file: next.system_prompt_file || '',
       memory_namespace: next.memory_namespace || '',
       status: (next.status as string) || 'active',
@@ -142,7 +140,6 @@ const SubagentProfiles: React.FC = () => {
       name: p.name || '',
       notify_main_policy: p.notify_main_policy || 'final_only',
       role: p.role || '',
-      system_prompt: p.system_prompt || '',
       system_prompt_file: p.system_prompt_file || '',
       memory_namespace: p.memory_namespace || '',
       status: (p.status as string) || 'active',
@@ -195,7 +192,6 @@ const SubagentProfiles: React.FC = () => {
           name: draft.name || '',
           notify_main_policy: draft.notify_main_policy || 'final_only',
           role: draft.role || '',
-          system_prompt: draft.system_prompt || '',
           system_prompt_file: draft.system_prompt_file || '',
           memory_namespace: draft.memory_namespace || '',
           status: draft.status || 'active',
@@ -295,11 +291,20 @@ const SubagentProfiles: React.FC = () => {
               <button
                 key={it.agent_id}
                 onClick={() => onSelect(it)}
-                className={`w-full text-left px-3 py-2 border-b border-zinc-800/50 hover:bg-zinc-800/20 ${selectedId === it.agent_id ? 'bg-indigo-500/15' : ''}`}
+                className={`w-full text-left px-3 py-2 border-b border-zinc-800/50 transition-colors ${selectedId === it.agent_id ? 'bg-indigo-500/15' : ''}`}
               >
-                <div className="text-sm text-zinc-100 truncate">{it.agent_id || '-'}</div>
-                <div className="text-xs text-zinc-400 truncate">
-                  {(it.status || 'active')} · {it.role || '-'} · {(it.memory_namespace || '-')}
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-zinc-100 truncate">{it.agent_id || '-'}</div>
+                    <div className="text-xs text-zinc-400 truncate">
+                      {(it.status || 'active')} · {it.role || '-'} · {(it.memory_namespace || '-')}
+                    </div>
+                  </div>
+                  {selectedId === it.agent_id && (
+                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300">
+                      <Check className="w-3.5 h-3.5" />
+                    </span>
+                  )}
                 </div>
               </button>
             ))}
@@ -408,15 +413,6 @@ const SubagentProfiles: React.FC = () => {
                   ))}
                 </div>
               )}
-            </div>
-            <div className="md:col-span-2">
-              <div className="text-xs text-zinc-400 mb-1">System Prompt</div>
-              <textarea
-                value={draft.system_prompt || ''}
-                onChange={(e) => setDraft({ ...draft, system_prompt: e.target.value })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[140px]"
-                placeholder="You are a coding specialist..."
-              />
             </div>
             <div className="md:col-span-2">
               <div className="flex items-center justify-between mb-1 gap-3">

@@ -91,7 +91,6 @@ type RegistrySubagent = {
   display_name?: string;
   role?: string;
   description?: string;
-  system_prompt?: string;
   system_prompt_file?: string;
   prompt_file_found?: boolean;
   memory_namespace?: string;
@@ -392,7 +391,6 @@ const Subagents: React.FC = () => {
   const [configAgentID, setConfigAgentID] = useState('');
   const [configRole, setConfigRole] = useState('');
   const [configDisplayName, setConfigDisplayName] = useState('');
-  const [configSystemPrompt, setConfigSystemPrompt] = useState('');
   const [configSystemPromptFile, setConfigSystemPromptFile] = useState('');
   const [configToolAllowlist, setConfigToolAllowlist] = useState('');
   const [configRoutingKeywords, setConfigRoutingKeywords] = useState('');

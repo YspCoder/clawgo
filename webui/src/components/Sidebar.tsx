@@ -14,17 +14,21 @@ const Sidebar: React.FC = () => {
       items: [
         { icon: <LayoutDashboard className="w-5 h-5" />, label: t('dashboard'), to: '/' },
         { icon: <MessageSquare className="w-5 h-5" />, label: t('chat'), to: '/chat' },
-        { icon: <Boxes className="w-5 h-5" />, label: t('subagentsRuntime'), to: '/subagents' },
       ],
     },
     {
-      title: t('sidebarRuntime'),
+      title: t('sidebarAgents'),
+      items: [
+        { icon: <Boxes className="w-5 h-5" />, label: t('subagentsRuntime'), to: '/subagents' },
+        { icon: <Bot className="w-5 h-5" />, label: t('subagentProfiles'), to: '/subagent-profiles' },
+      ],
+    },
+    {
+      title: t('sidebarOps'),
       items: [
         { icon: <Terminal className="w-5 h-5" />, label: t('nodes'), to: '/nodes' },
         { icon: <FolderOpen className="w-5 h-5" />, label: t('nodeArtifacts'), to: '/node-artifacts' },
         { icon: <ClipboardList className="w-5 h-5" />, label: t('taskAudit'), to: '/task-audit' },
-        { icon: <Terminal className="w-5 h-5" />, label: t('logs'), to: '/logs' },
-        { icon: <BrainCircuit className="w-5 h-5" />, label: t('ekg'), to: '/ekg' },
       ],
     },
     {
@@ -32,7 +36,6 @@ const Sidebar: React.FC = () => {
       items: [
         { icon: <Settings className="w-5 h-5" />, label: t('config'), to: '/config' },
         { icon: <Plug className="w-5 h-5" />, label: t('mcpServices'), to: '/mcp' },
-        { icon: <Bot className="w-5 h-5" />, label: t('subagentProfiles'), to: '/subagent-profiles' },
         { icon: <Clock className="w-5 h-5" />, label: t('cronJobs'), to: '/cron' },
       ],
     },
@@ -41,6 +44,13 @@ const Sidebar: React.FC = () => {
       items: [
         { icon: <FolderOpen className="w-5 h-5" />, label: t('memory'), to: '/memory' },
         { icon: <Zap className="w-5 h-5" />, label: t('skills'), to: '/skills' },
+      ],
+    },
+    {
+      title: t('sidebarInsights'),
+      items: [
+        { icon: <Terminal className="w-5 h-5" />, label: t('logs'), to: '/logs' },
+        { icon: <BrainCircuit className="w-5 h-5" />, label: t('ekg'), to: '/ekg' },
         { icon: <Hash className="w-5 h-5" />, label: t('logCodes'), to: '/log-codes' },
       ],
     },
@@ -80,15 +90,10 @@ const Sidebar: React.FC = () => {
       <div className={`hidden md:flex border-t border-zinc-800 bg-zinc-900/20 ${sidebarCollapsed ? 'justify-center p-3' : 'p-3'}`}>
         <button
           onClick={() => setSidebarCollapsed((prev) => !prev)}
-          className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} gap-3 rounded-2xl border border-zinc-800 brand-card-subtle hover:bg-zinc-900/40 text-zinc-300 transition-colors ${sidebarCollapsed ? 'w-11 h-11' : 'w-full px-3 py-2.5'}`}
+          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-800 brand-card-subtle hover:bg-zinc-900/40 text-zinc-300 transition-colors"
           title={sidebarCollapsed ? t('expand') : t('collapse')}
         >
-          {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : (
-            <>
-              <span className="text-sm font-medium">{t('collapse')}</span>
-              <PanelLeftClose className="w-4 h-4 shrink-0" />
-            </>
-          )}
+          {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
         </button>
       </div>
     </aside>

@@ -202,13 +202,13 @@ const Skills: React.FC = () => {
           </label>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className={`text-xs px-2 py-1 rounded-md border ${clawhubInstalled ? 'text-emerald-300 border-emerald-700/50 bg-emerald-900/20' : 'text-amber-300 border-amber-700/50 bg-amber-900/20'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
+          <div className={`text-xs px-2 py-1 rounded-md border font-medium ${clawhubInstalled ? 'text-emerald-200 border-emerald-500/35 bg-emerald-500/12' : 'text-amber-100 border-amber-500/45 bg-amber-500/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
             {t('skillsClawhubStatus')}: {clawhubInstalled ? t('installed') : t('notInstalled')}
           </div>
           {!clawhubInstalled && (
             <button
               onClick={installClawHubIfNeeded}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm bg-cyan-500/15 text-cyan-200 border border-cyan-400/25 hover:bg-cyan-500/25 hover:border-cyan-300/35"
             >
               <Zap className="w-4 h-4" /> {t('skillsInstallNow')}
             </button>
@@ -223,9 +223,16 @@ const Skills: React.FC = () => {
       </div>
 
       {!clawhubInstalled && (
-        <div className="rounded-2xl border border-amber-700/40 bg-amber-950/20 p-4 text-sm text-amber-100">
-          <div className="font-medium mb-1">{t('skillsClawhubMissingTitle')}</div>
-          <div className="text-amber-200/90">{t('skillsInstallPanelHint')}</div>
+        <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/45 p-4 text-sm shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-400/20 bg-amber-500/10 text-amber-300">
+              <Zap className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-medium text-zinc-100 mb-1">{t('skillsClawhubMissingTitle')}</div>
+              <div className="text-zinc-400 leading-6">{t('skillsInstallPanelHint')}</div>
+            </div>
+          </div>
         </div>
       )}
 
