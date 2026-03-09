@@ -151,9 +151,9 @@ const NodeArtifacts: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-4 flex-1 min-h-0">
-        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
-          <div className="p-3 border-b border-zinc-800 space-y-2">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-300 space-y-1">
+        <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
+          <div className="p-3 border-b border-zinc-800 dark:border-zinc-700 space-y-2">
+            <div className="ui-code-panel p-3 text-xs text-zinc-700 dark:text-zinc-300 space-y-1">
               <div className="font-medium text-zinc-100">{t('nodeArtifactsRetention')}</div>
               <div>{t('nodeArtifactsRetentionKeepLatest')}: {Number(retentionSummary?.keep_latest || 0) || '-'}</div>
               <div>{t('nodeArtifactsRetentionRetainDays')}: {Number(retentionSummary?.retain_days || 0)}</div>
@@ -161,15 +161,15 @@ const NodeArtifacts: React.FC = () => {
               <div>{t('nodeArtifactsRetentionRemaining')}: {Number(retentionSummary?.remaining || filteredItems.length || 0)}</div>
             </div>
             <div className="grid grid-cols-1 gap-2">
-              <select value={nodeFilter} onChange={(e) => setNodeFilter(e.target.value)} className="rounded-xl bg-zinc-950/70 border border-zinc-800 px-2 py-2 text-xs">
+              <select value={nodeFilter} onChange={(e) => setNodeFilter(e.target.value)} className="ui-select rounded-xl px-2 py-2 text-xs">
                 <option value="all">{t('allNodes')}</option>
                 {nodes.map((node) => <option key={node} value={node}>{node}</option>)}
               </select>
-              <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="rounded-xl bg-zinc-950/70 border border-zinc-800 px-2 py-2 text-xs">
+              <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="ui-select rounded-xl px-2 py-2 text-xs">
                 <option value="all">{t('allActions')}</option>
                 {actions.map((action) => <option key={action} value={action}>{action}</option>)}
               </select>
-              <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className="rounded-xl bg-zinc-950/70 border border-zinc-800 px-2 py-2 text-xs">
+              <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className="ui-select rounded-xl px-2 py-2 text-xs">
                 <option value="all">{t('allKinds')}</option>
                 {kinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
               </select>
@@ -180,7 +180,7 @@ const NodeArtifacts: React.FC = () => {
                 onChange={(e) => setKeepLatest(e.target.value)}
                 inputMode="numeric"
                 placeholder={t('nodeArtifactsKeepLatest')}
-                className="rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2 text-xs"
+                className="ui-input rounded-xl px-3 py-2 text-xs"
               />
               <button
                 onClick={pruneArtifacts}
@@ -211,8 +211,8 @@ const NodeArtifacts: React.FC = () => {
           </div>
         </div>
 
-        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden flex flex-col min-h-0">
-          <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">{t('nodeArtifactDetail')}</div>
+        <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
+          <div className="px-3 py-2 border-b border-zinc-800 dark:border-zinc-700 text-xs text-zinc-400 uppercase tracking-wider">{t('nodeArtifactDetail')}</div>
           <div className="p-4 overflow-y-auto min-h-0 space-y-4 text-sm">
             {!selected ? (
               <div className="text-zinc-500">{t('nodeArtifactsEmpty')}</div>
@@ -257,12 +257,12 @@ const NodeArtifacts: React.FC = () => {
                     return <video src={dataUrl} controls className="max-h-[420px] w-full rounded-2xl border border-zinc-800 bg-black/30" />;
                   }
                   if (String(selected?.content_text || '').trim() !== '') {
-                    return <pre className="rounded-2xl border border-zinc-800 bg-black/20 p-3 text-[12px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-[420px]">{String(selected?.content_text || '')}</pre>;
+                    return <pre className="ui-code-panel p-3 text-[12px] whitespace-pre-wrap overflow-auto max-h-[420px]">{String(selected?.content_text || '')}</pre>;
                   }
                   return <div className="text-zinc-500">{t('nodeArtifactPreviewUnavailable')}</div>;
                 })()}
 
-                <pre className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-3 text-xs overflow-auto">{JSON.stringify(selected, null, 2)}</pre>
+                <pre className="ui-code-panel p-3 text-xs overflow-auto">{JSON.stringify(selected, null, 2)}</pre>
               </>
             )}
           </div>

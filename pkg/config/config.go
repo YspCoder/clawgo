@@ -178,9 +178,11 @@ type ChannelsConfig struct {
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool     `json:"enabled" env:"CLAWGO_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL string   `json:"bridge_url" env:"CLAWGO_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	AllowFrom []string `json:"allow_from" env:"CLAWGO_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	Enabled                bool     `json:"enabled" env:"CLAWGO_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL              string   `json:"bridge_url" env:"CLAWGO_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	AllowFrom              []string `json:"allow_from" env:"CLAWGO_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	EnableGroups           bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_WHATSAPP_ENABLE_GROUPS"`
+	RequireMentionInGroups bool     `json:"require_mention_in_groups" env:"CLAWGO_CHANNELS_WHATSAPP_REQUIRE_MENTION_IN_GROUPS"`
 }
 
 type TelegramConfig struct {
@@ -525,9 +527,11 @@ func DefaultConfig() *Config {
 			InboundContentDedupeWindowSeconds: 12,
 			OutboundDedupeWindowSeconds:       12,
 			WhatsApp: WhatsAppConfig{
-				Enabled:   false,
-				BridgeURL: "ws://localhost:3001",
-				AllowFrom: []string{},
+				Enabled:                false,
+				BridgeURL:              "ws://localhost:3001",
+				AllowFrom:              []string{},
+				EnableGroups:           true,
+				RequireMentionInGroups: true,
 			},
 			Telegram: TelegramConfig{
 				Enabled:                false,

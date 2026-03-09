@@ -57,7 +57,7 @@ const PrimitiveArrayEditor: React.FC<{
       <div className="flex flex-wrap gap-2">
         {value.length === 0 && <span className="text-xs text-zinc-500 italic">{t('empty')}</span>}
         {value.map((item, idx) => (
-          <span key={`${item}-${idx}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-zinc-900/70 border border-zinc-700 text-xs font-mono text-zinc-200">
+          <span key={`${item}-${idx}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-xl ui-soft-panel text-xs font-mono text-zinc-700 dark:text-zinc-200">
             {String(item)}
             <button onClick={() => removeAt(idx)} className="text-zinc-400 hover:text-red-400">×</button>
           </span>
@@ -70,7 +70,7 @@ const PrimitiveArrayEditor: React.FC<{
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t('recursiveAddValuePlaceholder')}
-          className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+          className="ui-input rounded-xl px-3 py-2 text-sm"
         />
         <datalist id={`${path}-suggestions`}>
           {suggestions.map((s) => (
@@ -83,7 +83,7 @@ const PrimitiveArrayEditor: React.FC<{
             addValue(draft);
             setDraft('');
           }}
-          className="px-3 py-2 text-xs rounded-xl bg-zinc-800 hover:bg-zinc-700"
+          className="ui-button ui-button-neutral px-3 py-2 text-xs rounded-xl"
         >
           {t('add')}
         </button>
@@ -95,7 +95,7 @@ const PrimitiveArrayEditor: React.FC<{
             setSelected(v);
             if (v) addValue(v);
           }}
-          className="px-3 py-2 text-xs rounded-xl bg-zinc-950/70 border border-zinc-800"
+          className="ui-select px-3 py-2 text-xs rounded-xl"
         >
           <option value="">{t('recursiveSelectOption')}</option>
           {suggestions.filter((s) => !value.includes(s)).map((s) => (
@@ -129,7 +129,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                 <span className="text-sm font-medium text-zinc-300 block capitalize">{label}</span>
                 <span className="text-[10px] text-zinc-600 font-mono">{currentPath}</span>
               </div>
-              <div className="p-3 bg-zinc-950/60 border border-zinc-800 rounded-2xl">
+              <div className="ui-soft-panel p-3">
                 {allPrimitive ? (
                   <PrimitiveArrayEditor
                     value={value}
@@ -147,7 +147,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                         // ignore invalid json during typing
                       }
                     }}
-                    className="w-full min-h-28 bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                    className="ui-textarea w-full min-h-28 rounded-xl px-3 py-2 text-sm font-mono"
                   />
                 )}
               </div>
@@ -162,7 +162,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                 <span className="w-1.5 h-4 bg-indigo-500 rounded-full" />
                 {label}
               </h3>
-              <div className="pl-6 border-l border-zinc-800/50">
+              <div className="pl-6 border-l border-zinc-800/50 dark:border-zinc-700/50">
                 <RecursiveConfig data={value} labels={labels} path={currentPath} onChange={onChange} hotPaths={hotPaths} onlyHot={onlyHot} />
               </div>
             </div>
@@ -176,7 +176,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
               <span className="text-[10px] text-zinc-600 font-mono">{currentPath}</span>
             </div>
             {typeof value === 'boolean' ? (
-              <label className="flex items-center gap-3 p-3 bg-zinc-950/60 border border-zinc-800 rounded-2xl cursor-pointer hover:border-zinc-700 transition-colors group">
+              <label className="ui-toggle-card flex items-center gap-3 p-3 cursor-pointer transition-colors group">
                 <input
                   type="checkbox"
                   checked={value}
@@ -192,7 +192,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                 type={typeof value === 'number' ? 'number' : 'text'}
                 value={value === null || value === undefined ? '' : String(value)}
                 onChange={(e) => onChange(currentPath, typeof value === 'number' ? Number(e.target.value) : e.target.value)}
-                className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors font-mono text-zinc-300"
+                className="ui-input w-full rounded-xl px-3 py-2.5 text-sm transition-colors font-mono"
               />
             )}
           </div>

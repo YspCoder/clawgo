@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,6 +107,15 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		"type":    "message",
 		"to":      msg.ChatID,
 		"content": msg.Content,
+	}
+	if replyToID := strings.TrimSpace(msg.ReplyToID); replyToID != "" {
+		payload["reply_to_id"] = replyToID
+	}
+	if replyToSender := strings.TrimSpace(msg.ReplyToSender); replyToSender != "" {
+		payload["reply_to_sender"] = replyToSender
+	}
+	if media := strings.TrimSpace(msg.Media); media != "" {
+		payload["media"] = []string{media}
 	}
 
 	data, err := json.Marshal(payload)
@@ -215,13 +226,54 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]interface{}) {
 	if userName, ok := msg["from_name"].(string); ok {
 		metadata["user_name"] = userName
 	}
+	isGroup := parseBoolish(msg["is_group"])
+	if isGroup {
+		metadata["is_group"] = "true"
+	}
+	mentionedSelf := parseBoolish(msg["mentioned_self"])
+	if mentionedSelf {
+		metadata["mentioned_self"] = "true"
+	}
+	replyToMe := parseBoolish(msg["reply_to_me"])
+	if replyToMe {
+		metadata["reply_to_me"] = "true"
+	}
 
 	logger.InfoCF("whatsapp", logger.C0128, map[string]interface{}{
 		logger.FieldSenderID: senderID,
 		logger.FieldPreview:  truncateString(content, 50),
 	})
 
+	if !c.shouldHandleIncomingMessage(isGroup, mentionedSelf, replyToMe) {
+		return
+	}
+
 	c.HandleMessage(senderID, chatID, content, mediaPaths, metadata)
+}
+
+func (c *WhatsAppChannel) shouldHandleIncomingMessage(isGroup, mentionedSelf, replyToMe bool) bool {
+	if !isGroup {
+		return true
+	}
+	if !c.config.EnableGroups {
+		return false
+	}
+	if !c.config.RequireMentionInGroups {
+		return true
+	}
+	return mentionedSelf || replyToMe
+}
+
+func parseBoolish(v interface{}) bool {
+	switch value := v.(type) {
+	case bool:
+		return value
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		return err == nil && parsed
+	default:
+		return false
+	}
 }
 
 func nextBackoff(current, max time.Duration) time.Duration {

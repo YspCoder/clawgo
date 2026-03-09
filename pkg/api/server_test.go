@@ -20,6 +20,106 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func TestHandleWebUIWhatsAppStatus(t *testing.T) {
+	t.Parallel()
+
+	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/status":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"state":        "connected",
+				"connected":    true,
+				"logged_in":    true,
+				"bridge_addr":  "127.0.0.1:3001",
+				"user_jid":     "8613012345678@s.whatsapp.net",
+				"qr_available": false,
+				"last_event":   "connected",
+				"updated_at":   "2026-03-09T12:00:00+08:00",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer bridge.Close()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Logging.Enabled = false
+	cfg.Channels.WhatsApp.Enabled = true
+	cfg.Channels.WhatsApp.BridgeURL = "ws" + strings.TrimPrefix(bridge.URL, "http") + "/ws"
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "", nil)
+	srv.SetConfigPath(cfgPath)
+
+	req := httptest.NewRequest(http.MethodGet, "/webui/api/whatsapp/status", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUIWhatsAppStatus(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"bridge_running":true`) {
+		t.Fatalf("expected bridge_running=true, got: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"user_jid":"8613012345678@s.whatsapp.net"`) {
+		t.Fatalf("expected user_jid in payload, got: %s", rec.Body.String())
+	}
+}
+
+func TestHandleWebUIWhatsAppQR(t *testing.T) {
+	t.Parallel()
+
+	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/status":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"state":        "qr_ready",
+				"connected":    false,
+				"logged_in":    false,
+				"bridge_addr":  "127.0.0.1:3001",
+				"qr_available": true,
+				"qr_code":      "test-qr-code",
+				"last_event":   "qr_ready",
+				"updated_at":   "2026-03-09T12:00:00+08:00",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer bridge.Close()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Logging.Enabled = false
+	cfg.Channels.WhatsApp.Enabled = true
+	cfg.Channels.WhatsApp.BridgeURL = "ws" + strings.TrimPrefix(bridge.URL, "http") + "/ws"
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "", nil)
+	srv.SetConfigPath(cfgPath)
+
+	req := httptest.NewRequest(http.MethodGet, "/webui/api/whatsapp/qr.svg", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUIWhatsAppQR(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "image/svg+xml") {
+		t.Fatalf("expected svg content-type, got %q", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "<svg") {
+		t.Fatalf("expected svg payload, got: %s", rec.Body.String())
+	}
+}
+
 func TestHandleWebUIConfigRequiresConfirmForProviderAPIBaseChange(t *testing.T) {
 	t.Parallel()
 
@@ -276,6 +376,56 @@ func TestHandleNodeConnectRelaysSignalMessages(t *testing.T) {
 	}
 	if fmt.Sprintf("%v", forwarded.Payload["sdp"]) != "offer-sdp" {
 		t.Fatalf("unexpected forwarded payload: %+v", forwarded.Payload)
+	}
+}
+
+func TestHandleWebUISessionsHidesInternalSessionsByDefault(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	sessionsDir := filepath.Join(tmp, "agents", "main", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0755); err != nil {
+		t.Fatalf("mkdir sessions dir: %v", err)
+	}
+	for _, name := range []string{
+		"review-api.jsonl",
+		"internal:heartbeat.jsonl",
+		"heartbeat:default.jsonl",
+		"cron:nightly.jsonl",
+		"subagent:worker.jsonl",
+	} {
+		if err := os.WriteFile(filepath.Join(sessionsDir, name), []byte("{}\n"), 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	srv := NewServer("127.0.0.1", 0, "", nil)
+	srv.SetWorkspacePath(filepath.Join(tmp, "workspace"))
+
+	req := httptest.NewRequest(http.MethodGet, "/webui/api/sessions", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUISessions(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		OK       bool `json:"ok"`
+		Sessions []struct {
+			Key string `json:"key"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	keys := make([]string, 0, len(payload.Sessions))
+	for _, item := range payload.Sessions {
+		keys = append(keys, item.Key)
+	}
+	if len(keys) != 1 || keys[0] != "review-api" {
+		t.Fatalf("unexpected sessions: %v", keys)
 	}
 }
 

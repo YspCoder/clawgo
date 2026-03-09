@@ -931,7 +931,13 @@ func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (b
 	if al.shouldSuppressOutbound(msg, clean) {
 		return bus.OutboundMessage{}, false
 	}
-	outbound := bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Content: clean, ReplyToID: strings.TrimSpace(replyToID)}
+	outbound := bus.OutboundMessage{
+		Channel:       msg.Channel,
+		ChatID:        msg.ChatID,
+		Content:       clean,
+		ReplyToID:     strings.TrimSpace(replyToID),
+		ReplyToSender: strings.TrimSpace(msg.SenderID),
+	}
 	if msg.Channel == "system" {
 		outbound.Channel, outbound.ChatID = resolveSystemOrigin(msg.ChatID)
 	}

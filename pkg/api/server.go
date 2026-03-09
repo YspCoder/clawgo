@@ -28,10 +28,12 @@ import (
 	"sync"
 	"time"
 
+	"clawgo/pkg/channels"
 	cfgpkg "clawgo/pkg/config"
 	"clawgo/pkg/nodes"
 	"clawgo/pkg/tools"
 	"github.com/gorilla/websocket"
+	"rsc.io/qr"
 )
 
 type Server struct {
@@ -409,6 +411,9 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/chat/live", s.handleWebUIChatLive)
 	mux.HandleFunc("/webui/api/runtime", s.handleWebUIRuntime)
 	mux.HandleFunc("/webui/api/version", s.handleWebUIVersion)
+	mux.HandleFunc("/webui/api/whatsapp/status", s.handleWebUIWhatsAppStatus)
+	mux.HandleFunc("/webui/api/whatsapp/logout", s.handleWebUIWhatsAppLogout)
+	mux.HandleFunc("/webui/api/whatsapp/qr.svg", s.handleWebUIWhatsAppQR)
 	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
 	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
 	mux.HandleFunc("/webui/api/node_dispatches", s.handleWebUINodeDispatches)
@@ -1139,6 +1144,197 @@ func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 		"gateway_version": firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
 		"webui_version":   firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
 	})
+}
+
+func (s *Server) handleWebUIWhatsAppStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	payload, code := s.webUIWhatsAppStatusPayload(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (s *Server) handleWebUIWhatsAppLogout(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	waCfg, err := s.loadWhatsAppConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	logoutURL, err := channels.BridgeLogoutURL(strings.TrimSpace(waCfg.BridgeURL))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, logoutURL, nil)
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		return
+	}
+}
+
+func (s *Server) handleWebUIWhatsAppQR(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	payload, code := s.webUIWhatsAppStatusPayload(r.Context())
+	status, _ := payload["status"].(map[string]interface{})
+	qrCode := ""
+	if status != nil {
+		qrCode, _ = status["qr_code"].(string)
+	}
+	if code != http.StatusOK || strings.TrimSpace(qrCode) == "" {
+		http.Error(w, "qr unavailable", http.StatusNotFound)
+		return
+	}
+	qrCode = strings.TrimSpace(qrCode)
+	qrImage, err := qr.Encode(qrCode, qr.M)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	_, _ = io.WriteString(w, renderQRCodeSVG(qrImage, 8, 24))
+}
+
+func (s *Server) webUIWhatsAppStatusPayload(ctx context.Context) (map[string]interface{}, int) {
+	waCfg, err := s.loadWhatsAppConfig()
+	if err != nil {
+		return map[string]interface{}{
+			"ok":    false,
+			"error": err.Error(),
+		}, http.StatusInternalServerError
+	}
+	bridgeURL := strings.TrimSpace(waCfg.BridgeURL)
+	statusURL, err := channels.BridgeStatusURL(bridgeURL)
+	if err != nil {
+		return map[string]interface{}{
+			"ok":         false,
+			"enabled":    waCfg.Enabled,
+			"bridge_url": bridgeURL,
+			"error":      err.Error(),
+		}, http.StatusBadRequest
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		return map[string]interface{}{
+			"ok":             false,
+			"enabled":        waCfg.Enabled,
+			"bridge_url":     bridgeURL,
+			"bridge_running": false,
+			"error":          err.Error(),
+		}, http.StatusOK
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return map[string]interface{}{
+			"ok":             false,
+			"enabled":        waCfg.Enabled,
+			"bridge_url":     bridgeURL,
+			"bridge_running": false,
+			"error":          strings.TrimSpace(string(body)),
+		}, http.StatusOK
+	}
+	var status channels.WhatsAppBridgeStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return map[string]interface{}{
+			"ok":             false,
+			"enabled":        waCfg.Enabled,
+			"bridge_url":     bridgeURL,
+			"bridge_running": false,
+			"error":          err.Error(),
+		}, http.StatusOK
+	}
+	return map[string]interface{}{
+		"ok":             true,
+		"enabled":        waCfg.Enabled,
+		"bridge_url":     bridgeURL,
+		"bridge_running": true,
+		"status": map[string]interface{}{
+			"state":        status.State,
+			"connected":    status.Connected,
+			"logged_in":    status.LoggedIn,
+			"bridge_addr":  status.BridgeAddr,
+			"user_jid":     status.UserJID,
+			"push_name":    status.PushName,
+			"platform":     status.Platform,
+			"qr_available": status.QRAvailable,
+			"qr_code":      status.QRCode,
+			"last_event":   status.LastEvent,
+			"last_error":   status.LastError,
+			"updated_at":   status.UpdatedAt,
+		},
+	}, http.StatusOK
+}
+
+func (s *Server) loadWhatsAppConfig() (cfgpkg.WhatsAppConfig, error) {
+	configPath := strings.TrimSpace(s.configPath)
+	if configPath == "" {
+		configPath = filepath.Join(cfgpkg.GetConfigDir(), "config.json")
+	}
+	cfg, err := cfgpkg.LoadConfig(configPath)
+	if err != nil {
+		return cfgpkg.WhatsAppConfig{}, err
+	}
+	return cfg.Channels.WhatsApp, nil
+}
+
+func renderQRCodeSVG(code *qr.Code, scale, quietZone int) string {
+	if code == nil || code.Size <= 0 {
+		return ""
+	}
+	if scale <= 0 {
+		scale = 8
+	}
+	if quietZone < 0 {
+		quietZone = 0
+	}
+	total := (code.Size + quietZone*2) * scale
+	var b strings.Builder
+	b.Grow(total * 8)
+	b.WriteString(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" shape-rendering="crispEdges">`, total, total))
+	b.WriteString(fmt.Sprintf(`<rect width="%d" height="%d" fill="#ffffff"/>`, total, total))
+	b.WriteString(`<g fill="#111111">`)
+	for y := 0; y < code.Size; y++ {
+		for x := 0; x < code.Size; x++ {
+			if !code.Black(x, y) {
+				continue
+			}
+			rx := (x + quietZone) * scale
+			ry := (y + quietZone) * scale
+			b.WriteString(fmt.Sprintf(`<rect x="%d" y="%d" width="%d" height="%d"/>`, rx, ry, scale, scale))
+		}
+	}
+	b.WriteString(`</g></svg>`)
+	return b.String()
 }
 
 func (s *Server) handleWebUIRuntime(w http.ResponseWriter, r *http.Request) {
@@ -4126,6 +4322,7 @@ func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionsDir := filepath.Join(filepath.Dir(s.workspacePath), "agents", "main", "sessions")
 	_ = os.MkdirAll(sessionsDir, 0755)
+	includeInternal := r.URL.Query().Get("include_internal") == "1"
 	type item struct {
 		Key     string `json:"key"`
 		Channel string `json:"channel,omitempty"`
@@ -4146,6 +4343,9 @@ func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 			if strings.TrimSpace(key) == "" {
 				continue
 			}
+			if !includeInternal && !isUserFacingSessionKey(key) {
+				continue
+			}
 			if _, ok := seen[key]; ok {
 				continue
 			}
@@ -4161,6 +4361,29 @@ func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 		out = append(out, item{Key: "main", Channel: "main"})
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": out})
+}
+
+func isUserFacingSessionKey(key string) bool {
+	k := strings.ToLower(strings.TrimSpace(key))
+	if k == "" {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(k, "subagent:"):
+		return false
+	case strings.HasPrefix(k, "internal:"):
+		return false
+	case strings.HasPrefix(k, "heartbeat:"):
+		return false
+	case strings.HasPrefix(k, "cron:"):
+		return false
+	case strings.HasPrefix(k, "hook:"):
+		return false
+	case strings.HasPrefix(k, "node:"):
+		return false
+	default:
+		return true
+	}
 }
 
 func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Request) {

@@ -374,7 +374,7 @@ const MCP: React.FC = () => {
         </div>
       </div>
 
-      <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4 space-y-4">
+      <div className="brand-card-subtle ui-subpanel rounded-2xl p-4 space-y-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-sm font-semibold text-zinc-200">{t('configMCPServers')}</div>
           <div className="text-xs text-zinc-500">{serverEntries.length}</div>
@@ -385,7 +385,7 @@ const MCP: React.FC = () => {
             const check = mcpServerChecks.find((item) => item.name === name);
             const discoveredCount = mcpTools.filter((tool) => tool.mcp?.server === name).length;
             return (
-              <div key={name} className="brand-card rounded-[24px] border border-zinc-800/80 p-4 space-y-4">
+              <div key={name} className="brand-card ui-panel rounded-[24px] p-4 space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -415,19 +415,19 @@ const MCP: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                  <div className="ui-code-panel px-3 py-2">
                     <div className="text-zinc-500">package</div>
                     <div className="mt-1 text-zinc-200 break-all">{String(server?.package || '-')}</div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                  <div className="ui-code-panel px-3 py-2">
                     <div className="text-zinc-500">args</div>
                     <div className="mt-1 text-zinc-200">{Array.isArray(server?.args) ? server.args.length : 0}</div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                  <div className="ui-code-panel px-3 py-2">
                     <div className="text-zinc-500">permission</div>
                     <div className="mt-1 text-zinc-200">{String(server?.permission || 'workspace')}</div>
                   </div>
-                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                  <div className="ui-code-panel px-3 py-2">
                     <div className="text-zinc-500">{t('configMCPDiscoveredTools')}</div>
                     <div className="mt-1 text-zinc-200">{discoveredCount}</div>
                   </div>
@@ -446,20 +446,20 @@ const MCP: React.FC = () => {
           })}
         </div>
         {serverEntries.length === 0 && (
-          <div className="rounded-[24px] border border-dashed border-zinc-800 px-6 py-10 text-center text-sm text-zinc-500">
+          <div className="ui-subpanel rounded-[24px] border-dashed px-6 py-10 text-center text-sm text-zinc-500">
             {t('configNoMCPServers')}
           </div>
         )}
       </div>
 
-      <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-3 space-y-3">
+      <div className="brand-card-subtle ui-subpanel rounded-2xl p-3 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-sm font-semibold text-zinc-200">{t('configMCPDiscoveredTools')}</div>
           <div className="text-xs text-zinc-500">{t('configMCPDiscoveredToolsCount', { count: mcpTools.length })}</div>
         </div>
         <div className="space-y-2">
           {mcpTools.map((tool) => (
-            <div key={tool.name} className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3">
+            <div key={tool.name} className="ui-soft-panel rounded-xl p-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="font-mono text-xs text-zinc-200">{tool.name}</div>
                 <div className="text-[11px] text-zinc-500">
@@ -493,12 +493,12 @@ const MCP: React.FC = () => {
               exit={{ opacity: 0 }}
             />
             <motion.div
-              className="brand-card relative z-[1] w-full max-w-4xl border border-zinc-800 shadow-2xl overflow-hidden"
+              className="brand-card ui-panel relative z-[1] w-full max-w-4xl shadow-2xl overflow-hidden"
               initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 16 }}
             >
-              <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-6 py-4">
+              <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-6 py-4 dark:border-zinc-700">
                 <div>
                   <div className="text-lg font-semibold text-zinc-100">
                     {editingName ? `${t('edit')} MCP` : `${t('add')} MCP`}
@@ -514,18 +514,18 @@ const MCP: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <label className="space-y-2">
                     <div className="text-xs text-zinc-400">{t('configNewMCPServerName')}</div>
-                    <input value={draftName} onChange={(e) => setDraftName(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                    <input value={draftName} onChange={(e) => setDraftName(e.target.value)} className="ui-input h-11 px-3" />
                   </label>
                   <label className="space-y-2">
                     <div className="text-xs text-zinc-400">{t('configLabels.description')}</div>
-                    <input value={draft.description} onChange={(e) => updateDraftField('description', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                    <input value={draft.description} onChange={(e) => updateDraftField('description', e.target.value)} className="ui-input h-11 px-3" />
                   </label>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <label className="space-y-2">
                     <div className="text-xs text-zinc-400">transport</div>
-                    <select value={draft.transport} onChange={(e) => updateDraftField('transport', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3">
+                    <select value={draft.transport} onChange={(e) => updateDraftField('transport', e.target.value)} className="ui-select h-11 px-3">
                       <option value="stdio">stdio</option>
                       <option value="http">http</option>
                       <option value="streamable_http">streamable_http</option>
@@ -534,14 +534,14 @@ const MCP: React.FC = () => {
                   </label>
                   <label className="space-y-2">
                     <div className="text-xs text-zinc-400">enabled</div>
-                    <div className="flex h-11 items-center rounded-xl border border-zinc-800 bg-zinc-950/70 px-3">
+                    <div className="ui-toggle-card flex h-11 items-center rounded-xl px-3">
                       <input type="checkbox" checked={draft.enabled} onChange={(e) => updateDraftField('enabled', e.target.checked)} />
                     </div>
                   </label>
                   {draft.transport === 'stdio' && (
                     <label className="space-y-2">
                       <div className="text-xs text-zinc-400">permission</div>
-                      <select value={draft.permission} onChange={(e) => updateDraftField('permission', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3">
+                      <select value={draft.permission} onChange={(e) => updateDraftField('permission', e.target.value)} className="ui-select h-11 px-3">
                         <option value="workspace">workspace</option>
                         <option value="full">full</option>
                       </select>
@@ -550,7 +550,7 @@ const MCP: React.FC = () => {
                   {draft.transport === 'stdio' && (
                     <label className="space-y-2">
                       <div className="text-xs text-zinc-400">{t('configLabels.package')}</div>
-                      <input value={draft.package} onChange={(e) => updateDraftField('package', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                      <input value={draft.package} onChange={(e) => updateDraftField('package', e.target.value)} className="ui-input h-11 px-3" />
                     </label>
                   )}
                 </div>
@@ -559,22 +559,22 @@ const MCP: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <label className="space-y-2">
                       <div className="text-xs text-zinc-400">{t('configLabels.command')}</div>
-                      <input value={draft.command} onChange={(e) => updateDraftField('command', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                      <input value={draft.command} onChange={(e) => updateDraftField('command', e.target.value)} className="ui-input h-11 px-3" />
                     </label>
                     <label className="space-y-2">
                       <div className="text-xs text-zinc-400">{t('configLabels.working_dir')}</div>
-                      <input value={draft.working_dir} onChange={(e) => updateDraftField('working_dir', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                      <input value={draft.working_dir} onChange={(e) => updateDraftField('working_dir', e.target.value)} className="ui-input h-11 px-3" />
                     </label>
                   </div>
                 ) : (
                   <label className="space-y-2">
                     <div className="text-xs text-zinc-400">{t('configLabels.url')}</div>
-                    <input value={draft.url} onChange={(e) => updateDraftField('url', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                    <input value={draft.url} onChange={(e) => updateDraftField('url', e.target.value)} className="ui-input h-11 px-3" />
                   </label>
                 )}
 
                 {draft.transport === 'stdio' && (
-                  <div className="rounded-[24px] border border-zinc-800 bg-zinc-950/45 p-4 space-y-3">
+                  <div className="ui-soft-panel rounded-[24px] p-4 space-y-3">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div>
                         <div className="text-sm font-medium text-zinc-200">Args</div>
@@ -587,7 +587,7 @@ const MCP: React.FC = () => {
 
                     <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto pr-1">
                       {draft.args.map((arg, index) => (
-                        <span key={`draft-arg-${index}`} className="inline-flex max-w-full items-center gap-2 rounded-xl bg-zinc-800 px-2.5 py-1.5 text-[11px] text-zinc-200">
+                        <span key={`draft-arg-${index}`} className="inline-flex max-w-full items-center gap-2 rounded-xl ui-soft-panel px-2.5 py-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
                           <span className="font-mono break-all">{arg}</span>
                           <button type="button" onClick={() => removeDraftArg(index)} className="shrink-0 text-zinc-400 hover:text-zinc-100">x</button>
                         </span>
@@ -604,7 +604,7 @@ const MCP: React.FC = () => {
                       }}
                       onBlur={() => addDraftArg(draftArgInput)}
                       placeholder={t('configMCPArgsEnterHint')}
-                      className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-3"
+                      className="ui-input h-11 px-3"
                     />
                   </div>
                 )}
@@ -624,7 +624,7 @@ const MCP: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex items-center justify-between gap-3 border-t border-zinc-800 px-6 py-4">
+              <div className="flex items-center justify-between gap-3 border-t border-zinc-800 px-6 py-4 dark:border-zinc-700">
                 <div className="text-xs text-zinc-500">
                   {activeCheck?.resolved ? activeCheck.resolved : ''}
                 </div>

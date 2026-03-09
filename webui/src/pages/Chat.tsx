@@ -108,6 +108,19 @@ function collectActors(items: StreamItem[]): string[] {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+function isUserFacingMainSession(key?: string): boolean {
+  const normalized = String(key || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return !(
+    normalized.startsWith('subagent:') ||
+    normalized.startsWith('internal:') ||
+    normalized.startsWith('heartbeat:') ||
+    normalized.startsWith('cron:') ||
+    normalized.startsWith('hook:') ||
+    normalized.startsWith('node:')
+  );
+}
+
 const Chat: React.FC = () => {
   const { t } = useTranslation();
   const { q, sessions, subagentRuntimeItems, subagentRegistryItems, subagentStreamItems } = useAppContext();
@@ -401,7 +414,7 @@ const Chat: React.FC = () => {
     loadRuntimeTasks();
   }, [q, chatTab, sessionKey, subagentRuntimeItems, subagentRegistryItems, subagentStreamItems]);
 
-  const userSessions = (sessions || []).filter((s: any) => !String(s?.key || '').startsWith('subagent:'));
+  const userSessions = (sessions || []).filter((s: any) => isUserFacingMainSession(s?.key));
 
   useEffect(() => {
     if (chatTab !== 'main') return;
@@ -553,8 +566,8 @@ const Chat: React.FC = () => {
 
   return (
     <div className="flex h-full min-w-0">
-      <div className="flex-1 flex flex-col brand-card rounded-[30px] border border-zinc-800/80 overflow-hidden">
-        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-3 flex-wrap bg-zinc-900/15">
+      <div className="flex-1 flex flex-col brand-card ui-panel rounded-[30px] overflow-hidden">
+        <div className="px-4 py-3 border-b border-zinc-800 dark:border-zinc-700 flex items-center justify-between gap-3 flex-wrap bg-zinc-900/15">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <button
               onClick={() => setChatTab('main')}
@@ -569,7 +582,7 @@ const Chat: React.FC = () => {
               {t('subagentGroup')}
             </button>
             {chatTab === 'main' && (
-              <select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="max-w-full bg-zinc-900/70 border border-zinc-700 rounded-xl px-2.5 py-1.5 text-xs text-zinc-200">
+              <select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="ui-select max-w-full rounded-xl px-2.5 py-1.5 text-xs">
                 {userSessions.map((s: any) => <option key={s.key} value={s.key}>{s.title || s.key}</option>)}
               </select>
             )}
@@ -578,7 +591,7 @@ const Chat: React.FC = () => {
         </div>
 
         {chatTab === 'subagents' && (
-          <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-950/20 flex flex-wrap gap-2">
+          <div className="px-4 py-3 border-b border-zinc-800 dark:border-zinc-700 bg-zinc-950/20 flex flex-wrap gap-2">
             <button
               onClick={() => setSelectedStreamAgents([])}
               className={`ui-button px-2.5 py-1 rounded-full text-xs ${selectedStreamAgents.length === 0 ? 'ui-button-primary' : 'ui-button-neutral'}`}
@@ -599,7 +612,7 @@ const Chat: React.FC = () => {
 
         <div className="flex-1 min-h-0 flex flex-col xl:flex-row">
           {chatTab === 'subagents' && (
-            <div className="w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r border-zinc-800 bg-zinc-950/28 p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
+            <div className="w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r border-zinc-800 dark:border-zinc-700 bg-zinc-950/28 p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
               <div>
                 <div className="text-xs uppercase tracking-wider text-zinc-500 mb-1">{t('subagentDispatch')}</div>
                 <div className="text-sm text-zinc-300">{t('subagentDispatchHint')}</div>
@@ -608,7 +621,7 @@ const Chat: React.FC = () => {
                 <select
                   value={dispatchAgentID}
                   onChange={(e) => setDispatchAgentID(e.target.value)}
-                  className="w-full bg-zinc-900/70 border border-zinc-800 rounded-2xl px-3 py-2.5 text-sm text-zinc-200"
+                  className="ui-select w-full rounded-2xl px-3 py-2.5 text-sm"
                 >
                   {registryAgents.map((agent) => (
                     <option key={agent.agent_id} value={agent.agent_id}>
@@ -620,13 +633,13 @@ const Chat: React.FC = () => {
                   value={dispatchTask}
                   onChange={(e) => setDispatchTask(e.target.value)}
                   placeholder={t('subagentTaskPlaceholder')}
-                  className="w-full min-h-[180px] resize-none bg-zinc-900/70 border border-zinc-800 rounded-2xl px-3 py-3 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  className="ui-textarea w-full min-h-[180px] resize-none rounded-2xl px-3 py-3 text-sm"
                 />
                 <input
                   value={dispatchLabel}
                   onChange={(e) => setDispatchLabel(e.target.value)}
                   placeholder={t('subagentLabelPlaceholder')}
-                  className="w-full bg-zinc-900/70 border border-zinc-800 rounded-2xl px-3 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  className="ui-input w-full rounded-2xl px-3 py-2.5 text-sm"
                 />
                 <button
                   onClick={dispatchSubagentTask}
@@ -636,7 +649,7 @@ const Chat: React.FC = () => {
                   {t('dispatchToSubagent')}
                 </button>
               </div>
-              <div className="border-t border-zinc-800 pt-4 min-h-0 flex flex-col">
+              <div className="border-t border-zinc-800 dark:border-zinc-700 pt-4 min-h-0 flex flex-col">
                 <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">{t('agents')}</div>
                 <div className="overflow-y-auto space-y-2 min-h-0">
                   {registryAgents.map((agent) => {
@@ -736,7 +749,7 @@ const Chat: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-3 sm:p-4 bg-zinc-950/20 border-t border-zinc-800">
+        <div className="p-3 sm:p-4 bg-zinc-950/20 border-t border-zinc-800 dark:border-zinc-700">
           <div className="w-full relative flex items-center">
             <input
               type="file"
@@ -756,7 +769,7 @@ const Chat: React.FC = () => {
               onKeyDown={(e) => chatTab === 'main' && e.key === 'Enter' && send()}
               placeholder={chatTab === 'main' ? t('typeMessage') : t('subagentGroupReadonly')}
               disabled={chatTab !== 'main'}
-              className="w-full bg-zinc-900/75 border border-zinc-800 rounded-full pl-14 pr-14 py-3.5 text-[15px] focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-500 shadow-sm disabled:opacity-60"
+              className="ui-input w-full rounded-full pl-14 pr-14 py-3.5 text-[15px] transition-all shadow-sm disabled:opacity-60"
             />
             <button
               onClick={send}

@@ -259,9 +259,9 @@ const Cron: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="brand-card relative w-full max-w-lg border border-zinc-800 rounded-[32px] shadow-2xl overflow-hidden"
+              className="brand-card ui-panel relative w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden"
             >
-              <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/20 relative z-[1]">
+              <div className="p-6 border-b border-zinc-800 dark:border-zinc-700 flex items-center justify-between bg-zinc-900/20 relative z-[1]">
                 <h2 className="text-xl font-semibold text-zinc-100">{editingCron ? t('editJob') : t('addJob')}</h2>
                 <button onClick={() => setIsCronModalOpen(false)} className="ui-button ui-button-neutral p-2 rounded-full">
                   <X className="w-5 h-5" />
@@ -276,7 +276,7 @@ const Cron: React.FC = () => {
                       type="text"
                       value={cronForm.name}
                       onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })}
-                      className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
+                      className="ui-input rounded-xl px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="block">
@@ -286,7 +286,7 @@ const Cron: React.FC = () => {
                       value={cronForm.expr}
                       onChange={(e) => setCronForm({ ...cronForm, expr: e.target.value })}
                       placeholder={t('cronExpressionPlaceholder')}
-                      className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
+                      className="ui-input rounded-xl px-3 py-2 text-sm"
                     />
                   </label>
                 </div>
@@ -297,7 +297,7 @@ const Cron: React.FC = () => {
                     value={cronForm.message}
                     onChange={(e) => setCronForm({ ...cronForm, message: e.target.value })}
                     rows={3}
-                    className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors resize-none"
+                    className="ui-textarea rounded-xl px-3 py-2 text-sm resize-none"
                   />
                 </label>
 
@@ -312,7 +312,7 @@ const Cron: React.FC = () => {
                         const nextTo = candidates.includes(cronForm.to) ? cronForm.to : (candidates[0] || '');
                         setCronForm({ ...cronForm, channel: nextChannel, to: nextTo });
                       }}
-                      className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
+                      className="ui-select rounded-xl px-3 py-2 text-sm"
                     >
                       {(enabledChannels.length > 0 ? enabledChannels : [cronForm.channel]).map((ch) => (
                         <option key={ch} value={ch}>{ch}</option>
@@ -325,7 +325,7 @@ const Cron: React.FC = () => {
                       <select
                         value={cronForm.to}
                         onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
-                        className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
+                        className="ui-select rounded-xl px-3 py-2 text-sm"
                       >
                         {(channelRecipients[cronForm.channel] || []).map((id) => (
                           <option key={id} value={id}>{id}</option>
@@ -337,7 +337,7 @@ const Cron: React.FC = () => {
                         value={cronForm.to}
                         onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
                         placeholder={t('recipientId')}
-                        className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
+                        className="ui-input rounded-xl px-3 py-2 text-sm"
                       />
                     )}
                   </label>
@@ -365,7 +365,7 @@ const Cron: React.FC = () => {
                 </div>
               </div>
 
-              <div className="p-6 border-t border-zinc-800 bg-zinc-900/20 flex items-center justify-end gap-3 relative z-[1]">
+              <div className="p-6 border-t border-zinc-800 dark:border-zinc-700 bg-zinc-900/20 flex items-center justify-end gap-3 relative z-[1]">
                 <button
                   onClick={() => setIsCronModalOpen(false)}
                   className="ui-button ui-button-neutral px-4 py-2 text-sm font-medium"

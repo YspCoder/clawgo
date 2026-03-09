@@ -400,6 +400,90 @@ html.theme-dark .brand-button {
   background: var(--button-danger-bg-hover);
 }
 
+.ui-panel {
+  border: 1px solid var(--color-zinc-800);
+  border-radius: var(--radius-card);
+}
+
+.ui-subpanel {
+  border: 1px solid var(--color-zinc-800);
+  border-radius: var(--radius-subtle);
+  background:
+    linear-gradient(180deg, var(--card-subtle-a), var(--card-subtle-b));
+}
+
+.ui-toggle-card {
+  border: 1px solid var(--color-zinc-800);
+  border-radius: var(--radius-subtle);
+  background: rgb(255 255 255 / 0.8);
+}
+
+.ui-input,
+.ui-textarea,
+.ui-select {
+  width: 100%;
+  border: 1px solid var(--color-zinc-800);
+  border-radius: var(--radius-subtle);
+  background: rgb(255 255 255 / 0.9);
+  color: rgb(51 65 85 / 0.98);
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.ui-input::placeholder,
+.ui-textarea::placeholder {
+  color: rgb(100 116 139 / 0.9);
+}
+
+.ui-input:focus,
+.ui-textarea:focus,
+.ui-select:focus {
+  border-color: var(--color-indigo-500);
+  box-shadow: 0 0 0 2px rgb(249 115 22 / 0.12);
+}
+
+html.theme-dark .ui-toggle-card {
+  border-color: var(--color-zinc-700);
+  background: rgb(9 16 28 / 0.32);
+}
+
+html.theme-dark .ui-input,
+html.theme-dark .ui-textarea,
+html.theme-dark .ui-select {
+  border-color: var(--color-zinc-700);
+  background: rgb(9 16 28 / 0.6);
+  color: rgb(226 232 240 / 0.96);
+}
+
+html.theme-dark .ui-input::placeholder,
+html.theme-dark .ui-textarea::placeholder {
+  color: rgb(111 131 155 / 0.9);
+}
+
+.ui-soft-panel {
+  border: 1px solid var(--color-zinc-800);
+  border-radius: var(--radius-subtle);
+  background: rgb(255 255 255 / 0.72);
+}
+
+.ui-code-panel {
+  border: 1px solid var(--color-zinc-800);
+  border-radius: var(--radius-subtle);
+  background: rgb(241 245 249 / 0.9);
+  color: rgb(51 65 85 / 0.96);
+}
+
+html.theme-dark .ui-soft-panel {
+  border-color: var(--color-zinc-700);
+  background: rgb(9 16 28 / 0.34);
+}
+
+html.theme-dark .ui-code-panel {
+  border-color: var(--color-zinc-700);
+  background: rgb(9 16 28 / 0.6);
+  color: rgb(226 232 240 / 0.96);
+}
+
 .chat-bubble-user {
   background: linear-gradient(135deg, var(--button-start) 0%, var(--button-end) 100%);
   color: white;

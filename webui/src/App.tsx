@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { UIProvider } from './context/UIContext';
 import Layout from './components/Layout';
@@ -11,6 +11,7 @@ const Cron = lazy(() => import('./pages/Cron'));
 const Logs = lazy(() => import('./pages/Logs'));
 const Skills = lazy(() => import('./pages/Skills'));
 const MCP = lazy(() => import('./pages/MCP'));
+const ChannelSettings = lazy(() => import('./pages/ChannelSettings'));
 const Memory = lazy(() => import('./pages/Memory'));
 const Nodes = lazy(() => import('./pages/Nodes'));
 const NodeArtifacts = lazy(() => import('./pages/NodeArtifacts'));
@@ -40,6 +41,8 @@ export default function App() {
                 <Route path="log-codes" element={<LogCodes />} />
                 <Route path="skills" element={<Skills />} />
                 <Route path="mcp" element={<MCP />} />
+                <Route path="whatsapp" element={<Navigate to="/channels/whatsapp" replace />} />
+                <Route path="channels/:channelId" element={<ChannelSettings />} />
                 <Route path="config" element={<Config />} />
                 <Route path="cron" element={<Cron />} />
                 <Route path="memory" element={<Memory />} />

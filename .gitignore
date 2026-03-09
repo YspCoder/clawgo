@@ -21,3 +21,4 @@ build
 /clawgo_test
 
 .gocache
+.vscode
