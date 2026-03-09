@@ -128,7 +128,7 @@ const TaskAudit: React.FC = () => {
             <option value="error">{t('statusError')}</option>
             <option value="suppressed">{t('statusSuppressed')}</option>
           </select>
-          <button onClick={fetchData} className="brand-button px-3 py-1.5 rounded-xl text-sm text-white">{loading ? t('loading') : t('refresh')}</button>
+          <button onClick={fetchData} className="ui-button ui-button-primary px-3 py-1.5 text-sm">{loading ? t('loading') : t('refresh')}</button>
         </div>
       </div>
 

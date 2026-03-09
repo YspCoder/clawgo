@@ -282,18 +282,18 @@ const Config: React.FC = () => {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold tracking-tight">{t('configuration')}</h1>
         <div className="flex items-center gap-1 bg-zinc-900/60 p-1 rounded-xl border border-zinc-800">
-          <button onClick={() => setShowRaw(false)} className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${!showRaw ? 'brand-button text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}>{t('form')}</button>
-          <button onClick={() => setShowRaw(true)} className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${showRaw ? 'brand-button text-white shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}>{t('rawJson')}</button>
+          <button onClick={() => setShowRaw(false)} className={`ui-button px-4 py-1.5 text-sm font-medium rounded-lg ${!showRaw ? 'ui-button-primary' : 'ui-button-neutral'}`}>{t('form')}</button>
+          <button onClick={() => setShowRaw(true)} className={`ui-button px-4 py-1.5 text-sm font-medium rounded-lg ${showRaw ? 'ui-button-primary' : 'ui-button-neutral'}`}>{t('rawJson')}</button>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors">
+          <button onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium">
             <RefreshCw className="w-4 h-4" /> {t('reload')}
           </button>
-          <button onClick={() => setShowDiff(true)} className="px-3 py-2 bg-zinc-900/70 border border-zinc-800 rounded-xl text-sm">{t('configDiffPreview')}</button>
-          <button onClick={() => setBasicMode(v => !v)} className="px-3 py-2 bg-zinc-900/70 border border-zinc-800 rounded-xl text-sm">
+          <button onClick={() => setShowDiff(true)} className="ui-button ui-button-neutral px-3 py-2 text-sm">{t('configDiffPreview')}</button>
+          <button onClick={() => setBasicMode(v => !v)} className="ui-button ui-button-neutral px-3 py-2 text-sm">
             {basicMode ? t('configBasicMode') : t('configAdvancedMode')}
           </button>
           <label className="flex items-center gap-2 text-sm text-zinc-300">
@@ -302,7 +302,7 @@ const Config: React.FC = () => {
           </label>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="px-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm" />
         </div>
-        <button onClick={saveConfig} className="brand-button flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">
+        <button onClick={saveConfig} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium">
           <Save className="w-4 h-4" /> {t('saveChanges')}
         </button>
       </div>
@@ -345,7 +345,7 @@ const Config: React.FC = () => {
                     <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
                     <div className="flex items-center gap-2">
                       <input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder={t('configNewProviderName')} className="px-2 py-1 rounded-lg bg-zinc-900/70 border border-zinc-700 text-xs" />
-                      <button onClick={addProxy} className="brand-button px-2 py-1 rounded-lg text-xs text-white">{t('add')}</button>
+                      <button onClick={addProxy} className="ui-button ui-button-primary px-2 py-1 rounded-lg text-xs">{t('add')}</button>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -355,7 +355,7 @@ const Config: React.FC = () => {
                         <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
                         <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
                         <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                        <button onClick={()=>removeProxy(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
+                        <button onClick={()=>removeProxy(name)} className="ui-button ui-button-danger md:col-span-1 px-2 py-1 rounded text-xs">{t('delete')}</button>
                       </div>
                     ))}
                     {Object.keys(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).length === 0 && (
@@ -403,7 +403,7 @@ const Config: React.FC = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="text-sm font-medium text-zinc-200">{t('configNodeP2PIceServers')}</div>
-                      <button onClick={addGatewayIceServer} className="brand-button px-2 py-1 rounded-lg text-xs text-white">{t('add')}</button>
+                      <button onClick={addGatewayIceServer} className="ui-button ui-button-primary px-2 py-1 rounded-lg text-xs">{t('add')}</button>
                     </div>
                     {Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.ice_servers) && (cfg as any).gateway.nodes.p2p.ice_servers.length > 0 ? (
                       ((cfg as any).gateway.nodes.p2p.ice_servers as Array<any>).map((server, index) => (
@@ -426,7 +426,7 @@ const Config: React.FC = () => {
                             placeholder={t('configNodeP2PIceCredential')}
                             className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
                           />
-                          <button onClick={() => removeGatewayIceServer(index)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
+                          <button onClick={() => removeGatewayIceServer(index)} className="ui-button ui-button-danger md:col-span-1 px-2 py-1 rounded text-xs">{t('delete')}</button>
                         </div>
                       ))
                     ) : (

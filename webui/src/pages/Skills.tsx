@@ -190,7 +190,7 @@ const Skills: React.FC = () => {
         <h1 className="text-2xl font-semibold tracking-tight">{t('skills')}</h1>
         <div className="flex items-center gap-2 flex-wrap w-full xl:w-auto">
           <input disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 px-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm disabled:opacity-60" />
-          <button disabled={installingSkill} onClick={installSkill} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-sm font-medium">{installingSkill ? t('loading') : t('install')}</button>
+          <button disabled={installingSkill} onClick={installSkill} className="ui-button ui-button-success px-3 py-2 text-sm font-medium">{installingSkill ? t('loading') : t('install')}</button>
           <label className="flex items-center gap-2 text-xs text-zinc-400">
             <input
               type="checkbox"
@@ -202,21 +202,21 @@ const Skills: React.FC = () => {
           </label>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className={`text-xs px-2 py-1 rounded-md border font-medium ${clawhubInstalled ? 'text-emerald-200 border-emerald-500/35 bg-emerald-500/12' : 'text-amber-100 border-amber-500/45 bg-amber-500/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
+          <div className={`text-xs px-2.5 py-1 rounded-md border font-medium ${clawhubInstalled ? 'text-emerald-700 border-emerald-300 bg-emerald-50' : 'text-amber-700 border-amber-300 bg-amber-50'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
             {t('skillsClawhubStatus')}: {clawhubInstalled ? t('installed') : t('notInstalled')}
           </div>
           {!clawhubInstalled && (
             <button
               onClick={installClawHubIfNeeded}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm bg-cyan-500/15 text-cyan-200 border border-cyan-400/25 hover:bg-cyan-500/25 hover:border-cyan-300/35"
+              className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium shadow-sm"
             >
               <Zap className="w-4 h-4" /> {t('skillsInstallNow')}
             </button>
           )}
-          <button onClick={() => refreshSkills()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors">
+          <button onClick={() => refreshSkills()} className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium">
             <RefreshCw className="w-4 h-4" /> {t('refresh')}
           </button>
-          <button onClick={onAddSkillClick} className="brand-button flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">
+          <button onClick={onAddSkillClick} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium shadow-sm">
             <Plus className="w-4 h-4" /> {t('skillsAdd')}
           </button>
         </div>

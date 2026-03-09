@@ -275,7 +275,7 @@ const MCP: React.FC = () => {
         </div>
         <button
           onClick={async () => { setBaseline(null); await loadConfig(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors"
+          className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium"
         >
           <RefreshCw className="w-4 h-4" /> {t('reload')}
         </button>
@@ -285,7 +285,7 @@ const MCP: React.FC = () => {
         <button
           onClick={saveConfig}
           disabled={!isDirty}
-          className="brand-button flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium"
         >
           <Save className="w-4 h-4" /> {t('saveChanges')}
         </button>
@@ -296,7 +296,7 @@ const MCP: React.FC = () => {
           <div className="text-sm font-semibold text-zinc-200">{t('configMCPServers')}</div>
           <div className="flex items-center gap-2">
             <input value={newMCPServerName} onChange={(e)=>setNewMCPServerName(e.target.value)} placeholder={t('configNewMCPServerName')} className="px-2 py-1 rounded-lg bg-zinc-900/70 border border-zinc-700 text-xs" />
-            <button onClick={addMCPServer} className="brand-button px-2 py-1 rounded-lg text-xs text-white">{t('add')}</button>
+            <button onClick={addMCPServer} className="ui-button ui-button-primary px-2 py-1 rounded-lg text-xs">{t('add')}</button>
           </div>
         </div>
         <div className="space-y-2">
@@ -356,9 +356,9 @@ const MCP: React.FC = () => {
               )}
               <input value={String(server?.description || '')} onChange={(e)=>updateMCPServerField(name, 'description', e.target.value)} placeholder={t('configLabels.description')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
               {isStdio && (
-                <button onClick={()=>installMCPServerPackage(name, server)} className="md:col-span-1 px-2 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 text-emerald-100">{t('install')}</button>
+                <button onClick={()=>installMCPServerPackage(name, server)} className="ui-button ui-button-success md:col-span-1 px-2 py-1 rounded text-xs">{t('install')}</button>
               )}
-              <button onClick={()=>removeMCPServer(name)} className="md:col-span-1 px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-100">{t('delete')}</button>
+              <button onClick={()=>removeMCPServer(name)} className="ui-button ui-button-danger md:col-span-1 px-2 py-1 rounded text-xs">{t('delete')}</button>
               {(() => {
                 const check = mcpServerChecks.find((item) => item.name === name);
                 if (!check || check.status === 'ok' || check.status === 'disabled' || check.status === 'not_applicable') return null;
@@ -371,7 +371,7 @@ const MCP: React.FC = () => {
                       )}
                     </div>
                     {check.installable && (
-                      <button onClick={() => installMCPServerCheckPackage(check)} className="px-2 py-1 rounded bg-amber-700 hover:bg-amber-600 text-white">
+                      <button onClick={() => installMCPServerCheckPackage(check)} className="ui-button ui-button-warning px-2 py-1 rounded text-xs">
                         {t('install')}
                       </button>
                     )}

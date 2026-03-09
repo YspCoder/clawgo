@@ -272,10 +272,10 @@ const SubagentProfiles: React.FC = () => {
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentProfiles')}</h1>
         <div className="flex items-center gap-2">
-          <button onClick={() => load()} className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm">
+          <button onClick={() => load()} className="ui-button ui-button-neutral px-3 py-1.5 text-sm">
             {t('refresh')}
           </button>
-          <button onClick={onNew} className="px-3 py-1.5 rounded-xl bg-emerald-700/80 hover:bg-emerald-600 text-sm">
+          <button onClick={onNew} className="ui-button ui-button-success px-3 py-1.5 text-sm">
             {t('newProfile')}
           </button>
         </div>
@@ -405,7 +405,7 @@ const SubagentProfiles: React.FC = () => {
                       key={g.name}
                       type="button"
                       onClick={() => addAllowlistToken(`group:${g.name}`)}
-                      className="px-2 py-1 text-[11px] rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+                      className="ui-button ui-button-neutral px-2 py-1 text-[11px] rounded"
                       title={g.description || g.name}
                     >
                       {`group:${g.name}`}
@@ -430,7 +430,7 @@ const SubagentProfiles: React.FC = () => {
                   type="button"
                   onClick={savePromptFile}
                   disabled={!String(draft.system_prompt_file || '').trim()}
-                  className="px-3 py-1.5 text-xs rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50"
+                  className="ui-button ui-button-neutral px-3 py-1.5 text-xs rounded disabled:opacity-50"
                 >
                   {t('savePromptFile')}
                 </button>
@@ -482,28 +482,28 @@ const SubagentProfiles: React.FC = () => {
             <button
               onClick={save}
               disabled={saving}
-              className="px-3 py-1.5 text-xs rounded-xl border border-indigo-400/30 bg-indigo-500/14 text-indigo-100 hover:bg-indigo-500/22 disabled:opacity-60"
+              className="ui-button ui-button-primary px-3 py-1.5 text-xs"
             >
               {selected ? t('update') : t('create')}
             </button>
             <button
               onClick={() => setStatus('active')}
               disabled={!draft.agent_id}
-              className="px-3 py-1.5 text-xs rounded-xl border border-emerald-400/30 bg-emerald-500/14 text-emerald-100 hover:bg-emerald-500/22 disabled:opacity-50"
+              className="ui-button ui-button-success px-3 py-1.5 text-xs"
             >
               {t('enable')}
             </button>
             <button
               onClick={() => setStatus('disabled')}
               disabled={!draft.agent_id}
-              className="px-3 py-1.5 text-xs rounded-xl border border-amber-400/30 bg-amber-500/14 text-amber-100 hover:bg-amber-500/22 disabled:opacity-50"
+              className="ui-button ui-button-warning px-3 py-1.5 text-xs"
             >
               {t('disable')}
             </button>
             <button
               onClick={remove}
               disabled={!draft.agent_id}
-              className="px-3 py-1.5 text-xs rounded-xl border border-rose-400/30 bg-rose-500/14 text-rose-100 hover:bg-rose-500/22 disabled:opacity-50"
+              className="ui-button ui-button-danger px-3 py-1.5 text-xs"
             >
               {t('delete')}
             </button>

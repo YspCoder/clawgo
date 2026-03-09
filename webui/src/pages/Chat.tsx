@@ -558,13 +558,13 @@ const Chat: React.FC = () => {
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <button
               onClick={() => setChatTab('main')}
-              className={`px-3 py-1.5 rounded-xl text-xs ${chatTab === 'main' ? 'brand-button text-white' : 'bg-zinc-900/70 border border-zinc-700 text-zinc-300'}`}
+              className={`ui-button px-3 py-1.5 text-xs ${chatTab === 'main' ? 'ui-button-primary' : 'ui-button-neutral'}`}
             >
               {t('mainChat')}
             </button>
             <button
               onClick={() => setChatTab('subagents')}
-              className={`px-3 py-1.5 rounded-xl text-xs ${chatTab === 'subagents' ? 'bg-amber-600 text-white' : 'bg-zinc-900/70 border border-zinc-700 text-zinc-300'}`}
+              className={`ui-button px-3 py-1.5 text-xs ${chatTab === 'subagents' ? 'ui-button-primary' : 'ui-button-neutral'}`}
             >
               {t('subagentGroup')}
             </button>
@@ -574,14 +574,14 @@ const Chat: React.FC = () => {
               </select>
             )}
           </div>
-          <button onClick={() => { if (chatTab === 'main') { void loadHistory(); } else { void loadSubagentGroup(); } }} className="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-xl bg-zinc-800 hover:bg-zinc-700"><RefreshCw className="w-3 h-3" />{t('reloadHistory')}</button>
+          <button onClick={() => { if (chatTab === 'main') { void loadHistory(); } else { void loadSubagentGroup(); } }} className="ui-button ui-button-neutral flex items-center gap-1 px-2.5 py-1.5 text-xs"><RefreshCw className="w-3 h-3" />{t('reloadHistory')}</button>
         </div>
 
         {chatTab === 'subagents' && (
           <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-950/20 flex flex-wrap gap-2">
             <button
               onClick={() => setSelectedStreamAgents([])}
-              className={`px-2.5 py-1 rounded-full text-xs border ${selectedStreamAgents.length === 0 ? 'bg-amber-600 text-white border-amber-500' : 'bg-zinc-900/70 border-zinc-700 text-zinc-300'}`}
+              className={`ui-button px-2.5 py-1 rounded-full text-xs ${selectedStreamAgents.length === 0 ? 'ui-button-primary' : 'ui-button-neutral'}`}
             >
               {t('allAgents')}
             </button>
@@ -589,7 +589,7 @@ const Chat: React.FC = () => {
               <button
                 key={agent}
                 onClick={() => toggleStreamAgent(agent)}
-                className={`px-2.5 py-1 rounded-full text-xs border ${selectedStreamAgents.includes(agent) ? 'bg-zinc-100 text-zinc-950 border-zinc-100' : 'bg-zinc-900/70 border-zinc-700 text-zinc-300'}`}
+                className={`ui-button px-2.5 py-1 rounded-full text-xs ${selectedStreamAgents.includes(agent) ? 'ui-button-primary' : 'ui-button-neutral'}`}
               >
                 {formatAgentName(agent)}
               </button>
@@ -631,7 +631,7 @@ const Chat: React.FC = () => {
                 <button
                   onClick={dispatchSubagentTask}
                   disabled={!dispatchAgentID.trim() || !dispatchTask.trim()}
-                  className="w-full px-3 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm font-medium shadow-[0_12px_30px_rgba(217,119,6,0.22)]"
+                  className="ui-button ui-button-primary w-full px-3 py-2.5 text-sm font-medium"
                 >
                   {t('dispatchToSubagent')}
                 </button>
@@ -689,14 +689,24 @@ const Chat: React.FC = () => {
                 const isExec = m.role === 'tool' || m.role === 'exec';
                 const isSystem = m.role === 'system';
                 const bubbleClass = isUser
-                  ? 'bg-indigo-600 text-white rounded-br-sm'
+                  ? 'chat-bubble-user rounded-br-sm'
                   : isExec
-                    ? 'bg-amber-500/10 text-amber-100 rounded-bl-sm border border-amber-500/30'
+                    ? 'chat-bubble-tool rounded-bl-sm'
                     : isSystem
-                      ? 'bg-zinc-700/40 text-zinc-100 rounded-bl-sm border border-zinc-600/40'
+                      ? 'chat-bubble-system rounded-bl-sm'
                       : m.isReadonlyGroup
-                        ? 'bg-zinc-900/85 text-zinc-200 rounded-bl-sm border border-zinc-700/60'
-                        : 'bg-zinc-800/80 text-zinc-200 rounded-bl-sm border border-zinc-700/50';
+                        ? 'chat-bubble-system rounded-bl-sm'
+                        : 'chat-bubble-agent rounded-bl-sm';
+                const metaClass = isUser
+                  ? 'text-white/75'
+                  : isExec
+                    ? 'text-amber-800/75 dark:text-amber-100/75'
+                    : 'text-zinc-500 dark:text-zinc-400';
+                const subLabelClass = isUser
+                  ? 'text-white/70'
+                  : isExec
+                    ? 'text-amber-700/80 dark:text-amber-100/70'
+                    : 'text-zinc-500 dark:text-zinc-400';
 
                 return (
                   <motion.div
@@ -709,11 +719,11 @@ const Chat: React.FC = () => {
                       <div className={`w-9 h-9 mt-1 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 ${m.avatarClassName || (isUser ? 'bg-indigo-600/90 text-white' : 'bg-emerald-600/80 text-white')}`}>{m.avatarText || (isUser ? 'U' : 'A')}</div>
                       <div className={`max-w-[calc(100vw-6rem)] sm:max-w-[92%] rounded-[24px] px-4 py-3 shadow-sm ${bubbleClass}`}>
                         <div className="flex items-center justify-between gap-3 mb-1">
-                          <div className="text-[11px] opacity-85">{m.actorName || m.label || (isUser ? t('user') : isExec ? t('exec') : isSystem ? t('system') : t('agent'))}</div>
-                          {m.metaLine && <div className="text-[11px] text-zinc-400">{m.metaLine}</div>}
+                          <div className={`text-[11px] font-medium ${metaClass}`}>{m.actorName || m.label || (isUser ? t('user') : isExec ? t('exec') : isSystem ? t('system') : t('agent'))}</div>
+                          {m.metaLine && <div className={`text-[11px] ${metaClass}`}>{m.metaLine}</div>}
                         </div>
                         {m.label && m.actorName && m.label !== m.actorName && (
-                          <div className="text-[11px] text-zinc-500 mb-2">{m.label}</div>
+                          <div className={`text-[11px] mb-2 ${subLabelClass}`}>{m.label}</div>
                         )}
                         <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{m.text}</p>
                       </div>

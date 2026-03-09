@@ -115,19 +115,19 @@ const Memory: React.FC = () => {
       <aside className="w-full lg:w-72 border-b lg:border-b-0 lg:border-r border-zinc-800 p-4 space-y-2 overflow-y-auto bg-zinc-950/20">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">{t('memoryFiles')}</h2>
-          <button onClick={createFile} className="brand-button px-2.5 py-1 rounded-xl text-white">+</button>
+          <button onClick={createFile} className="ui-button ui-button-primary px-2.5 py-1 rounded-xl">+</button>
         </div>
         {files.map((f) => (
           <div key={f} className={`flex items-center justify-between p-2.5 rounded-2xl ${active === f ? 'nav-item-active' : 'hover:bg-zinc-900/30'}`}>
             <button className="text-left flex-1" onClick={() => openFile(f)}>{f}</button>
-            <button className="text-red-400" onClick={() => removeFile(f)}>x</button>
+            <button className="ui-button ui-button-danger px-2 py-1 text-xs rounded-lg" onClick={() => removeFile(f)}>x</button>
           </div>
         ))}
       </aside>
       <main className="flex-1 p-4 md:p-6 space-y-3 min-h-0">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">{active || t('noFileSelected')}</h2>
-          <button onClick={saveFile} className="brand-button px-3 py-1.5 rounded-xl text-white">{t('save')}</button>
+          <button onClick={saveFile} className="ui-button ui-button-primary px-3 py-1.5 rounded-xl">{t('save')}</button>
         </div>
         <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[50vh] lg:h-[80vh] bg-zinc-900/70 border border-zinc-800 rounded-[24px] p-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
       </main>

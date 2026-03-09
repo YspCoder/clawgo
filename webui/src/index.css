@@ -56,6 +56,26 @@ html {
   --button-start: #fb923c;
   --button-end: #f97316;
   --button-shadow: rgb(249 115 22 / 0.16);
+  --button-neutral-bg: rgb(226 232 240 / 0.9);
+  --button-neutral-bg-hover: rgb(203 213 225 / 0.96);
+  --button-neutral-border: rgb(203 213 225 / 0.98);
+  --button-neutral-text: rgb(51 65 85 / 0.96);
+  --button-primary-bg: rgb(255 237 213 / 0.96);
+  --button-primary-bg-hover: rgb(255 224 189 / 0.98);
+  --button-primary-border: rgb(251 146 60 / 0.34);
+  --button-primary-text: rgb(154 52 18 / 0.98);
+  --button-success-bg: rgb(220 252 231 / 0.96);
+  --button-success-bg-hover: rgb(187 247 208 / 0.98);
+  --button-success-border: rgb(52 211 153 / 0.34);
+  --button-success-text: rgb(6 95 70 / 0.98);
+  --button-warning-bg: rgb(254 243 199 / 0.98);
+  --button-warning-bg-hover: rgb(253 230 138 / 0.98);
+  --button-warning-border: rgb(245 158 11 / 0.34);
+  --button-warning-text: rgb(146 64 14 / 0.98);
+  --button-danger-bg: rgb(255 228 230 / 0.98);
+  --button-danger-bg-hover: rgb(254 205 211 / 0.98);
+  --button-danger-border: rgb(244 63 94 / 0.28);
+  --button-danger-text: rgb(159 18 57 / 0.98);
   --chip-bg: rgb(226 232 240 / 0.82);
   --chip-bg-hover: rgb(203 213 225 / 0.92);
   --chip-border: rgb(203 213 225 / 0.96);
@@ -125,6 +145,26 @@ html.theme-dark {
   --button-start: #ee9852;
   --button-end: #d96b25;
   --button-shadow: rgb(217 107 37 / 0.18);
+  --button-neutral-bg: rgb(36 49 69 / 0.9);
+  --button-neutral-bg-hover: rgb(48 63 87 / 0.96);
+  --button-neutral-border: rgb(93 109 135 / 0.82);
+  --button-neutral-text: rgb(226 232 240 / 0.96);
+  --button-primary-bg: rgb(232 132 58 / 0.16);
+  --button-primary-bg-hover: rgb(232 132 58 / 0.24);
+  --button-primary-border: rgb(232 132 58 / 0.3);
+  --button-primary-text: rgb(255 228 205 / 0.96);
+  --button-success-bg: rgb(16 185 129 / 0.14);
+  --button-success-bg-hover: rgb(16 185 129 / 0.22);
+  --button-success-border: rgb(52 211 153 / 0.24);
+  --button-success-text: rgb(209 250 229 / 0.96);
+  --button-warning-bg: rgb(245 158 11 / 0.14);
+  --button-warning-bg-hover: rgb(245 158 11 / 0.22);
+  --button-warning-border: rgb(251 191 36 / 0.24);
+  --button-warning-text: rgb(254 243 199 / 0.96);
+  --button-danger-bg: rgb(244 63 94 / 0.14);
+  --button-danger-bg-hover: rgb(244 63 94 / 0.22);
+  --button-danger-border: rgb(251 113 133 / 0.24);
+  --button-danger-text: rgb(255 228 230 / 0.96);
   --chip-bg: rgb(36 49 69 / 0.9);
   --chip-bg-hover: rgb(48 63 87 / 0.96);
   --chip-border: rgb(93 109 135 / 0.82);
@@ -297,6 +337,108 @@ html.theme-dark .brand-card-subtle {
 
 html.theme-dark .brand-button {
   box-shadow: 0 10px 24px var(--button-shadow);
+}
+
+.ui-button {
+  border-radius: var(--radius-button);
+  border: 1px solid transparent;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-button-neutral {
+  background: var(--button-neutral-bg);
+  border-color: var(--button-neutral-border);
+  color: var(--button-neutral-text);
+}
+
+.ui-button-neutral:hover:not(:disabled) {
+  background: var(--button-neutral-bg-hover);
+}
+
+.ui-button-primary {
+  background: var(--button-primary-bg);
+  border-color: var(--button-primary-border);
+  color: var(--button-primary-text);
+}
+
+.ui-button-primary:hover:not(:disabled) {
+  background: var(--button-primary-bg-hover);
+}
+
+.ui-button-success {
+  background: var(--button-success-bg);
+  border-color: var(--button-success-border);
+  color: var(--button-success-text);
+}
+
+.ui-button-success:hover:not(:disabled) {
+  background: var(--button-success-bg-hover);
+}
+
+.ui-button-warning {
+  background: var(--button-warning-bg);
+  border-color: var(--button-warning-border);
+  color: var(--button-warning-text);
+}
+
+.ui-button-warning:hover:not(:disabled) {
+  background: var(--button-warning-bg-hover);
+}
+
+.ui-button-danger {
+  background: var(--button-danger-bg);
+  border-color: var(--button-danger-border);
+  color: var(--button-danger-text);
+}
+
+.ui-button-danger:hover:not(:disabled) {
+  background: var(--button-danger-bg-hover);
+}
+
+.chat-bubble-user {
+  background: linear-gradient(135deg, var(--button-start) 0%, var(--button-end) 100%);
+  color: white;
+}
+
+.chat-bubble-tool {
+  background: rgb(255 247 237 / 0.96);
+  border: 1px solid rgb(253 186 116 / 0.7);
+  color: rgb(124 45 18 / 0.98);
+}
+
+.chat-bubble-agent {
+  background: rgb(226 232 240 / 0.9);
+  border: 1px solid rgb(203 213 225 / 0.95);
+  color: rgb(51 65 85 / 0.98);
+}
+
+.chat-bubble-system {
+  background: rgb(226 232 240 / 0.72);
+  border: 1px solid rgb(203 213 225 / 0.9);
+  color: rgb(51 65 85 / 0.98);
+}
+
+html.theme-dark .chat-bubble-tool {
+  background: rgb(123 58 24 / 0.24);
+  border-color: rgb(232 132 58 / 0.28);
+  color: rgb(255 237 213 / 0.96);
+}
+
+html.theme-dark .chat-bubble-agent {
+  background: rgb(22 32 50 / 0.82);
+  border-color: rgb(71 85 105 / 0.76);
+  color: rgb(226 232 240 / 0.96);
+}
+
+html.theme-dark .chat-bubble-system {
+  background: rgb(36 49 69 / 0.74);
+  border-color: rgb(71 85 105 / 0.74);
+  color: rgb(226 232 240 / 0.96);
 }
 
 .control-chip {

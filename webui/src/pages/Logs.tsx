@@ -176,19 +176,19 @@ const Logs: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowRaw(!showRaw)}
-            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors text-zinc-300"
+            className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium"
           >
             {showRaw ? t('pretty') : t('raw')}
           </button>
           <button 
             onClick={() => setIsStreaming(!isStreaming)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-              isStreaming ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300' : 'brand-button text-white'
+            className={`ui-button flex items-center gap-2 px-4 py-2 text-sm font-medium ${
+              isStreaming ? 'ui-button-neutral' : 'ui-button-primary'
             }`}
           >
             {isStreaming ? <><Square className="w-4 h-4" /> {t('pause')}</> : <><Play className="w-4 h-4" /> {t('resume')}</>}
           </button>
-          <button onClick={clearLogs} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-medium transition-colors text-zinc-300">
+          <button onClick={clearLogs} className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium">
             <Trash2 className="w-4 h-4" /> {t('clear')}
           </button>
         </div>

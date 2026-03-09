@@ -141,10 +141,10 @@ const NodeArtifacts: React.FC = () => {
           <div className="text-sm text-zinc-500 mt-1">{t('nodeArtifactsHint')}</div>
         </div>
         <div className="flex items-center gap-2">
-          <a href={exportURL()} className="rounded-xl border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200">
+          <a href={exportURL()} className="ui-button ui-button-neutral px-3 py-1.5 text-sm">
             {t('export')}
           </a>
-          <button onClick={loadArtifacts} className="brand-button px-3 py-1.5 rounded-xl text-sm text-white">
+          <button onClick={loadArtifacts} className="ui-button ui-button-primary px-3 py-1.5 text-sm">
             {loading ? t('loading') : t('refresh')}
           </button>
         </div>
@@ -185,7 +185,7 @@ const NodeArtifacts: React.FC = () => {
               <button
                 onClick={pruneArtifacts}
                 disabled={prunePending}
-                className="rounded-xl border border-zinc-700 px-3 py-2 text-xs text-zinc-200 disabled:opacity-60"
+                className="ui-button ui-button-warning px-3 py-2 text-xs"
               >
                 {prunePending ? t('loading') : t('nodeArtifactsPrune')}
               </button>
@@ -224,10 +224,10 @@ const NodeArtifacts: React.FC = () => {
                     <div className="text-xs text-zinc-500 mt-1">{String(selected?.node || '-')} · {String(selected?.action || '-')} · {formatLocalDateTime(selected?.time)}</div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <a href={downloadURL(String(selected?.id || ''))} className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200">
+                    <a href={downloadURL(String(selected?.id || ''))} className="ui-button ui-button-neutral px-3 py-1.5 text-xs">
                       {t('download')}
                     </a>
-                    <button onClick={() => deleteArtifact(String(selected?.id || ''))} className="rounded-xl bg-red-900/60 px-3 py-1.5 text-xs text-red-100">
+                    <button onClick={() => deleteArtifact(String(selected?.id || ''))} className="ui-button ui-button-danger px-3 py-1.5 text-xs">
                       {t('delete')}
                     </button>
                   </div>

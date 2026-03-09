@@ -221,7 +221,7 @@ const Nodes: React.FC = () => {
           <h1 className="text-xl md:text-2xl font-semibold">{t('nodes')}</h1>
           <div className="text-sm text-zinc-500 mt-1">{t('nodesDetailHint')}</div>
         </div>
-        <button onClick={() => { refreshNodes(); setReloadTick((value) => value + 1); }} className="brand-button px-3 py-1.5 rounded-xl text-sm text-white">
+        <button onClick={() => { refreshNodes(); setReloadTick((value) => value + 1); }} className="ui-button ui-button-primary px-3 py-1.5 text-sm">
           {loading ? t('loading') : t('refresh')}
         </button>
       </div>
@@ -296,13 +296,13 @@ const Nodes: React.FC = () => {
                 <div className="flex items-center gap-2 flex-wrap">
                   <Link
                     to={`/node-artifacts?node=${encodeURIComponent(String(selectedNode.id || ''))}`}
-                    className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200"
+                    className="ui-button ui-button-neutral px-3 py-1.5 text-xs"
                   >
                     {t('nodeArtifacts')}
                   </Link>
                   <a
                     href={`/webui/api/node_artifacts/export${q ? `${q}&node=${encodeURIComponent(String(selectedNode.id || ''))}` : `?node=${encodeURIComponent(String(selectedNode.id || ''))}`}`}
-                    className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200"
+                    className="ui-button ui-button-neutral px-3 py-1.5 text-xs"
                   >
                     {t('export')}
                   </a>
@@ -454,14 +454,14 @@ const Nodes: React.FC = () => {
                       <button
                         onClick={resetReplayDraft}
                         disabled={replayPending}
-                        className="rounded-xl border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 disabled:opacity-60"
+                        className="ui-button ui-button-neutral px-3 py-1.5 text-xs"
                       >
                         {t('resetReplayDraft')}
                       </button>
                       <button
                         onClick={replayDispatch}
                         disabled={replayPending}
-                        className="brand-button px-3 py-1.5 rounded-xl text-xs text-white disabled:opacity-60"
+                        className="ui-button ui-button-primary px-3 py-1.5 text-xs"
                       >
                         {replayPending ? t('replaying') : t('replayDispatch')}
                       </button>

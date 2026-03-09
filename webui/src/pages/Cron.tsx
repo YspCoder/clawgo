@@ -172,10 +172,10 @@ const Cron: React.FC = () => {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{t('cronJobs')}</h1>
         <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={() => refreshCron()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => refreshCron()} className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium">
             <RefreshCw className="w-4 h-4" /> {t('refresh')}
           </button>
-          <button onClick={() => openCronModal()} className="brand-button flex items-center gap-2 px-4 py-2 text-white rounded-xl text-sm font-medium transition-colors shadow-sm">
+          <button onClick={() => openCronModal()} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium">
             <Plus className="w-4 h-4" /> {t('addJob')}
           </button>
         </div>
@@ -215,20 +215,20 @@ const Cron: React.FC = () => {
             <div className="flex items-center gap-2 pt-4 border-t border-zinc-800/50">
               <button
                 onClick={() => openCronModal(j)}
-                className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-800/70 hover:bg-zinc-700 rounded-xl text-xs font-medium transition-colors text-zinc-300"
+                className="ui-button ui-button-neutral flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium"
               >
                 <Edit2 className="w-3.5 h-3.5" /> {t('editJob')}
               </button>
               <button
                 onClick={() => cronAction(j.enabled ? 'disable' : 'enable', j.id)}
-                className={`p-2 rounded-lg transition-colors ${j.enabled ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20'}`}
+                className={`ui-button p-2 rounded-lg ${j.enabled ? 'ui-button-warning' : 'ui-button-success'}`}
                 title={j.enabled ? t('pauseJob') : t('startJob')}
               >
                 {j.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
               </button>
               <button
                 onClick={() => cronAction('delete', j.id)}
-                className="p-2 bg-red-500/10 text-red-500 hover:bg-red-500/20 rounded-lg transition-colors"
+                className="ui-button ui-button-danger p-2 rounded-lg"
                 title={t('deleteJob')}
               >
                 <Trash2 className="w-4 h-4" />
@@ -263,7 +263,7 @@ const Cron: React.FC = () => {
             >
               <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/20 relative z-[1]">
                 <h2 className="text-xl font-semibold text-zinc-100">{editingCron ? t('editJob') : t('addJob')}</h2>
-                <button onClick={() => setIsCronModalOpen(false)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400 hover:text-zinc-200">
+                <button onClick={() => setIsCronModalOpen(false)} className="ui-button ui-button-neutral p-2 rounded-full">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -368,13 +368,13 @@ const Cron: React.FC = () => {
               <div className="p-6 border-t border-zinc-800 bg-zinc-900/20 flex items-center justify-end gap-3 relative z-[1]">
                 <button
                   onClick={() => setIsCronModalOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+                  className="ui-button ui-button-neutral px-4 py-2 text-sm font-medium"
                 >
                   {t('cancel')}
                 </button>
                 <button
                   onClick={handleCronSubmit}
-                  className="brand-button px-6 py-2 text-white rounded-xl text-sm font-medium transition-all"
+                  className="ui-button ui-button-primary px-6 py-2 text-sm font-medium"
                 >
                   {editingCron ? t('update') : t('create')}
                 </button>

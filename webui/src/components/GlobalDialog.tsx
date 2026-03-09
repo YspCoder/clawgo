@@ -61,9 +61,9 @@ export const GlobalDialog: React.FC<{
             </div>
             <div className="px-5 pb-5 flex items-center justify-end gap-2 relative z-[1]">
               {(kind === 'confirm' || kind === 'prompt') && (
-                <button onClick={onCancel} className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm">{options.cancelText || t('cancel')}</button>
+                <button onClick={onCancel} className="ui-button ui-button-neutral px-3 py-1.5 text-sm">{options.cancelText || t('cancel')}</button>
               )}
-              <button onClick={() => onConfirm(kind === 'prompt' ? value : undefined)} className={`px-3 py-1.5 rounded-xl text-sm ${options.danger ? 'bg-red-600 hover:bg-red-500 text-white' : 'brand-button text-white'}`}>
+              <button onClick={() => onConfirm(kind === 'prompt' ? value : undefined)} className={`ui-button px-3 py-1.5 text-sm ${options.danger ? 'ui-button-danger' : 'ui-button-primary'}`}>
                 {options.confirmText || t('dialogOk')}
               </button>
             </div>
