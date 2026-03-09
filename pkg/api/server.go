@@ -71,6 +71,8 @@ type Server struct {
 	liveRuntimeOn   bool
 	liveSubagentMu  sync.Mutex
 	liveSubagents   map[string]*liveSubagentGroup
+	whatsAppBridge  *channels.WhatsAppBridgeService
+	whatsAppBase    string
 }
 
 var nodesWebsocketUpgrader = websocket.Upgrader{
@@ -311,6 +313,42 @@ func (s *Server) SetNodeWebRTCTransport(t *nodes.WebRTCTransport) {
 func (s *Server) SetNodeP2PStatusHandler(fn func() map[string]interface{}) {
 	s.nodeP2PStatus = fn
 }
+func (s *Server) SetWhatsAppBridge(service *channels.WhatsAppBridgeService, basePath string) {
+	s.whatsAppBridge = service
+	s.whatsAppBase = strings.TrimSpace(basePath)
+}
+
+func (s *Server) handleWhatsAppBridgeWS(w http.ResponseWriter, r *http.Request) {
+	if s.whatsAppBridge == nil {
+		http.Error(w, "whatsapp bridge unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	s.whatsAppBridge.ServeWS(w, r)
+}
+
+func (s *Server) handleWhatsAppBridgeStatus(w http.ResponseWriter, r *http.Request) {
+	if s.whatsAppBridge == nil {
+		http.Error(w, "whatsapp bridge unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	s.whatsAppBridge.ServeStatus(w, r)
+}
+
+func (s *Server) handleWhatsAppBridgeLogout(w http.ResponseWriter, r *http.Request) {
+	if s.whatsAppBridge == nil {
+		http.Error(w, "whatsapp bridge unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	s.whatsAppBridge.ServeLogout(w, r)
+}
+
+func joinServerRoute(base, endpoint string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" || base == "/" {
+		return "/" + strings.TrimPrefix(endpoint, "/")
+	}
+	return base + "/" + strings.TrimPrefix(endpoint, "/")
+}
 
 func (s *Server) rememberNodeConnection(nodeID, connID string) {
 	nodeID = strings.TrimSpace(nodeID)
@@ -440,6 +478,16 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/webui/api/logs/live", s.handleWebUILogsLive)
 	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
+	if strings.TrimSpace(s.whatsAppBase) != "" {
+		base := strings.TrimRight(strings.TrimSpace(s.whatsAppBase), "/")
+		if base == "" {
+			base = "/whatsapp"
+		}
+		mux.HandleFunc(base, s.handleWhatsAppBridgeWS)
+		mux.HandleFunc(joinServerRoute(base, "ws"), s.handleWhatsAppBridgeWS)
+		mux.HandleFunc(joinServerRoute(base, "status"), s.handleWhatsAppBridgeStatus)
+		mux.HandleFunc(joinServerRoute(base, "logout"), s.handleWhatsAppBridgeLogout)
+	}
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
 	go func() {
 		<-ctx.Done()

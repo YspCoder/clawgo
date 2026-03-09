@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -86,6 +87,9 @@ func gatewayCmd() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	if shouldEmbedWhatsAppBridge(cfg) {
+		cfg.Channels.WhatsApp.BridgeURL = embeddedWhatsAppBridgeURL(cfg)
+	}
 
 	agentLoop, channelManager, err := buildGatewayRuntime(ctx, cfg, msgBus, cronService)
 	if err != nil {
@@ -123,10 +127,6 @@ func gatewayCmd() {
 	if cfg.Sentinel.Enabled {
 		sentinelService.Start()
 		fmt.Println("✓ Sentinel service started")
-	}
-
-	if err := channelManager.StartAll(ctx); err != nil {
-		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
 	registryServer := api.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
@@ -223,6 +223,10 @@ func gatewayCmd() {
 	registryServer.SetToolsCatalogHandler(func() interface{} {
 		return agentLoop.GetToolCatalog()
 	})
+	whatsAppBridge, whatsAppEmbedded := setupEmbeddedWhatsAppBridge(ctx, cfg)
+	if whatsAppBridge != nil {
+		registryServer.SetWhatsAppBridge(whatsAppBridge, embeddedWhatsAppBridgeBasePath)
+	}
 	registryServer.SetCronHandler(func(action string, args map[string]interface{}) (interface{}, error) {
 		getStr := func(k string) string {
 			v, _ := args[k].(string)
@@ -366,6 +370,10 @@ func gatewayCmd() {
 		fmt.Printf("✓ Node registry server started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	}
 
+	if err := channelManager.StartAll(ctx); err != nil {
+		fmt.Printf("Error starting channels: %v\n", err)
+	}
+
 	go agentLoop.Run(ctx)
 	go runGatewayStartupCompactionCheck(ctx, agentLoop)
 	go runGatewayBootstrapInit(ctx, cfg, agentLoop)
@@ -392,6 +400,10 @@ func gatewayCmd() {
 		if reflect.DeepEqual(cfg, newCfg) {
 			fmt.Println("✓ Config unchanged, skip reload")
 			return
+		}
+
+		if shouldEmbedWhatsAppBridge(newCfg) {
+			newCfg.Channels.WhatsApp.BridgeURL = embeddedWhatsAppBridgeURL(newCfg)
 		}
 
 		runtimeSame := reflect.DeepEqual(cfg.Agents, newCfg.Agents) &&
@@ -435,14 +447,22 @@ func gatewayCmd() {
 			return
 		}
 
+		newWhatsAppBridge, _ := setupEmbeddedWhatsAppBridge(ctx, newCfg)
+
 		channelManager.StopAll(ctx)
 		agentLoop.Stop()
+		if whatsAppBridge != nil {
+			whatsAppBridge.Stop()
+		}
 
 		channelManager = newChannelManager
 		agentLoop = newAgentLoop
 		cfg = newCfg
+		whatsAppBridge = newWhatsAppBridge
+		whatsAppEmbedded = newWhatsAppBridge != nil
 		runtimecfg.Set(cfg)
 		configureGatewayNodeP2P(agentLoop, registryServer, cfg)
+		registryServer.SetWhatsAppBridge(whatsAppBridge, embeddedWhatsAppBridgeBasePath)
 		sentinelService.Stop()
 		sentinelService = sentinel.NewService(
 			getConfigPath(),
@@ -483,6 +503,9 @@ func gatewayCmd() {
 			default:
 				fmt.Println("\nShutting down...")
 				cancel()
+				if whatsAppEmbedded && whatsAppBridge != nil {
+					whatsAppBridge.Stop()
+				}
 				heartbeatService.Stop()
 				sentinelService.Stop()
 				cronService.Stop()
@@ -494,6 +517,8 @@ func gatewayCmd() {
 		}
 	}
 }
+
+const embeddedWhatsAppBridgeBasePath = "/whatsapp"
 
 func runGatewayStartupCompactionCheck(parent context.Context, agentLoop *agent.AgentLoop) {
 	if agentLoop == nil {
@@ -842,4 +867,66 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 		})
 		return "queued", nil
 	}, hbInterval, cfg.Agents.Defaults.Heartbeat.Enabled, cfg.Agents.Defaults.Heartbeat.PromptTemplate)
+}
+
+func setupEmbeddedWhatsAppBridge(ctx context.Context, cfg *config.Config) (*channels.WhatsAppBridgeService, bool) {
+	if cfg == nil || !cfg.Channels.WhatsApp.Enabled || !shouldEmbedWhatsAppBridge(cfg) {
+		return nil, false
+	}
+	cfg.Channels.WhatsApp.BridgeURL = embeddedWhatsAppBridgeURL(cfg)
+	stateDir := filepath.Join(filepath.Dir(getConfigPath()), "channels", "whatsapp")
+	svc := channels.NewWhatsAppBridgeService(fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port), stateDir, false)
+	if err := svc.StartEmbedded(ctx); err != nil {
+		fmt.Printf("Error starting embedded WhatsApp bridge: %v\n", err)
+		return nil, false
+	}
+	return svc, true
+}
+
+func shouldEmbedWhatsAppBridge(cfg *config.Config) bool {
+	raw := strings.TrimSpace(cfg.Channels.WhatsApp.BridgeURL)
+	if raw == "" {
+		return true
+	}
+	hostPort := comparableBridgeHostPort(raw)
+	if hostPort == "" {
+		return false
+	}
+	if hostPort == "127.0.0.1:3001" || hostPort == "localhost:3001" {
+		return true
+	}
+	return hostPort == comparableGatewayHostPort(cfg.Gateway.Host, cfg.Gateway.Port)
+}
+
+func embeddedWhatsAppBridgeURL(cfg *config.Config) string {
+	host := strings.TrimSpace(cfg.Gateway.Host)
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("ws://%s:%d%s/ws", host, cfg.Gateway.Port, embeddedWhatsAppBridgeBasePath)
+}
+
+func comparableBridgeHostPort(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, "://") {
+		return strings.ToLower(raw)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(u.Host))
+}
+
+func comparableGatewayHostPort(host string, port int) string {
+	host = strings.TrimSpace(strings.ToLower(host))
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("%s:%d", host, port)
 }

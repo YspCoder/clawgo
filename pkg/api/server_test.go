@@ -120,6 +120,53 @@ func TestHandleWebUIWhatsAppQR(t *testing.T) {
 	}
 }
 
+func TestHandleWebUIWhatsAppStatusWithNestedBridgePath(t *testing.T) {
+	t.Parallel()
+
+	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/whatsapp/status":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"state":        "connected",
+				"connected":    true,
+				"logged_in":    true,
+				"bridge_addr":  "127.0.0.1:7788",
+				"user_jid":     "8613012345678@s.whatsapp.net",
+				"qr_available": false,
+				"last_event":   "connected",
+				"updated_at":   "2026-03-09T12:00:00+08:00",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer bridge.Close()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Logging.Enabled = false
+	cfg.Channels.WhatsApp.Enabled = true
+	cfg.Channels.WhatsApp.BridgeURL = "ws" + strings.TrimPrefix(bridge.URL, "http") + "/whatsapp/ws"
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "", nil)
+	srv.SetConfigPath(cfgPath)
+
+	req := httptest.NewRequest(http.MethodGet, "/webui/api/whatsapp/status", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUIWhatsAppStatus(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"bridge_running":true`) {
+		t.Fatalf("expected bridge_running=true, got: %s", rec.Body.String())
+	}
+}
+
 func TestHandleWebUIConfigRequiresConfirmForProviderAPIBaseChange(t *testing.T) {
 	t.Parallel()
 

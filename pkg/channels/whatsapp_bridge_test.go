@@ -53,6 +53,16 @@ func TestBridgeStatusURL(t *testing.T) {
 	}
 }
 
+func TestBridgeStatusURLWithNestedPath(t *testing.T) {
+	got, err := BridgeStatusURL("ws://localhost:7788/whatsapp/ws")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "http://localhost:7788/whatsapp/status" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestNormalizeWhatsAppRecipientJID(t *testing.T) {
 	tests := []struct {
 		input string

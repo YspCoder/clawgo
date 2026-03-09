@@ -67,6 +67,7 @@ type WhatsAppBridgeService struct {
 	status      WhatsAppBridgeStatus
 	wsClientsMu sync.Mutex
 	markReadFn  func(ctx context.Context, ids []types.MessageID, timestamp time.Time, chat, sender types.JID) error
+	localOnly   bool
 }
 
 type whatsappBridgeWSMessage struct {
@@ -100,6 +101,34 @@ func NewWhatsAppBridgeService(addr, stateDir string, printQR bool) *WhatsAppBrid
 }
 
 func (s *WhatsAppBridgeService) Start(ctx context.Context) error {
+	if err := s.startRuntime(ctx); err != nil {
+		return err
+	}
+
+	mux := http.NewServeMux()
+	s.RegisterRoutes(mux, "")
+	s.httpServer = &http.Server{
+		Addr:    s.addr,
+		Handler: mux,
+	}
+
+	ln, err := net.Listen("tcp", s.addr)
+	if err != nil {
+		return fmt.Errorf("listen whatsapp bridge: %w", err)
+	}
+
+	if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+func (s *WhatsAppBridgeService) StartEmbedded(ctx context.Context) error {
+	s.localOnly = true
+	return s.startRuntime(ctx)
+}
+
+func (s *WhatsAppBridgeService) startRuntime(ctx context.Context) error {
 	if strings.TrimSpace(s.addr) == "" {
 		return fmt.Errorf("bridge address is required")
 	}
@@ -116,26 +145,13 @@ func (s *WhatsAppBridgeService) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleWS)
-	mux.HandleFunc("/ws", s.handleWS)
-	mux.HandleFunc("/status", s.handleStatus)
-	mux.HandleFunc("/logout", s.handleLogout)
-	s.httpServer = &http.Server{
-		Addr:    s.addr,
-		Handler: mux,
-	}
-
-	ln, err := net.Listen("tcp", s.addr)
-	if err != nil {
-		return fmt.Errorf("listen whatsapp bridge: %w", err)
-	}
-
 	go func() {
 		<-runCtx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.httpServer.Shutdown(shutdownCtx)
+		if s.httpServer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.httpServer.Shutdown(shutdownCtx)
+		}
 		s.closeWSClients()
 		if s.client != nil {
 			s.client.Disconnect()
@@ -148,10 +164,6 @@ func (s *WhatsAppBridgeService) Start(ctx context.Context) error {
 	go func() {
 		_ = s.connectClient(runCtx)
 	}()
-
-	if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
 	return nil
 }
 
@@ -159,6 +171,17 @@ func (s *WhatsAppBridgeService) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 	}
+}
+
+func (s *WhatsAppBridgeService) RegisterRoutes(mux *http.ServeMux, basePath string) {
+	if mux == nil {
+		return
+	}
+	basePath = normalizeBridgeBasePath(basePath)
+	mux.HandleFunc(basePath, s.ServeWS)
+	mux.HandleFunc(joinBridgeRoute(basePath, "ws"), s.ServeWS)
+	mux.HandleFunc(joinBridgeRoute(basePath, "status"), s.ServeStatus)
+	mux.HandleFunc(joinBridgeRoute(basePath, "logout"), s.ServeLogout)
 }
 
 func (s *WhatsAppBridgeService) StatusSnapshot() WhatsAppBridgeStatus {
@@ -421,9 +444,27 @@ func (s *WhatsAppBridgeService) handleWS(w http.ResponseWriter, r *http.Request)
 	}
 }
 
+func (s *WhatsAppBridgeService) ServeWS(w http.ResponseWriter, r *http.Request) {
+	s.wrapHandler(s.handleWS)(w, r)
+}
+
+func (s *WhatsAppBridgeService) wrapHandler(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.localOnly && !isLoopbackRequest(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func (s *WhatsAppBridgeService) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(s.StatusSnapshot())
+}
+
+func (s *WhatsAppBridgeService) ServeStatus(w http.ResponseWriter, r *http.Request) {
+	s.wrapHandler(s.handleStatus)(w, r)
 }
 
 func (s *WhatsAppBridgeService) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -795,36 +836,16 @@ func ParseWhatsAppBridgeListenAddr(raw string) (string, error) {
 	return raw, nil
 }
 
+func (s *WhatsAppBridgeService) ServeLogout(w http.ResponseWriter, r *http.Request) {
+	s.wrapHandler(s.handleLogout)(w, r)
+}
+
 func BridgeStatusURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", fmt.Errorf("bridge url is required")
-	}
-	if !strings.Contains(raw, "://") {
-		raw = "ws://" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "", fmt.Errorf("parse bridge url: %w", err)
-	}
-	switch u.Scheme {
-	case "wss":
-		u.Scheme = "https"
-	default:
-		u.Scheme = "http"
-	}
-	u.Path = "/status"
-	u.RawQuery = ""
-	u.Fragment = ""
-	return u.String(), nil
+	return bridgeEndpointURL(raw, "status")
 }
 
 func BridgeLogoutURL(raw string) (string, error) {
-	statusURL, err := BridgeStatusURL(raw)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSuffix(statusURL, "/status") + "/logout", nil
+	return bridgeEndpointURL(raw, "logout")
 }
 
 func normalizeWhatsAppRecipientJID(raw string) (types.JID, error) {
@@ -873,4 +894,74 @@ func extractWhatsAppMessageText(msg *waProto.Message) string {
 	default:
 		return ""
 	}
+}
+
+func bridgeEndpointURL(raw, endpoint string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("bridge url is required")
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "ws://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse bridge url: %w", err)
+	}
+	switch u.Scheme {
+	case "wss":
+		u.Scheme = "https"
+	default:
+		u.Scheme = "http"
+	}
+	u.Path = bridgeSiblingPath(u.Path, endpoint)
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+func bridgeSiblingPath(pathValue, endpoint string) string {
+	pathValue = strings.TrimSpace(pathValue)
+	if endpoint == "" {
+		endpoint = "status"
+	}
+	if pathValue == "" || pathValue == "/" {
+		return "/" + endpoint
+	}
+	trimmed := strings.TrimSuffix(pathValue, "/")
+	if strings.HasSuffix(trimmed, "/ws") {
+		return strings.TrimSuffix(trimmed, "/ws") + "/" + endpoint
+	}
+	return trimmed + "/" + endpoint
+}
+
+func normalizeBridgeBasePath(basePath string) string {
+	basePath = strings.TrimSpace(basePath)
+	if basePath == "" || basePath == "/" {
+		return "/"
+	}
+	if !strings.HasPrefix(basePath, "/") {
+		basePath = "/" + basePath
+	}
+	return strings.TrimSuffix(basePath, "/")
+}
+
+func joinBridgeRoute(basePath, endpoint string) string {
+	basePath = normalizeBridgeBasePath(basePath)
+	if basePath == "/" {
+		return "/" + strings.TrimPrefix(endpoint, "/")
+	}
+	return basePath + "/" + strings.TrimPrefix(endpoint, "/")
+}
+
+func isLoopbackRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
