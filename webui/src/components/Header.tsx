@@ -1,17 +1,58 @@
 import React from 'react';
-import { Terminal, Globe, Menu, Moon, SunMedium } from 'lucide-react';
+import { Terminal, Globe, Github, Menu, Moon, RefreshCw, SunMedium } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 
+const REPO_URL = 'https://github.com/YspCoder/clawgo';
+
+function normalizeVersion(value: string) {
+  return String(value || '').trim().replace(/^v/i, '');
+}
+
 const Header: React.FC = () => {
   const { t, i18n } = useTranslation();
-  const { isGatewayOnline, setSidebarOpen, sidebarCollapsed } = useAppContext();
-  const { theme, toggleTheme } = useUI();
+  const { isGatewayOnline, setSidebarOpen, sidebarCollapsed, gatewayVersion, webuiVersion } = useAppContext();
+  const { theme, toggleTheme, notify } = useUI();
+  const [checkingVersion, setCheckingVersion] = React.useState(false);
 
   const toggleLang = () => {
     const nextLang = i18n.language === 'en' ? 'zh' : 'en';
     i18n.changeLanguage(nextLang);
+  };
+
+  const checkVersion = async () => {
+    setCheckingVersion(true);
+    try {
+      const response = await fetch('https://api.github.com/repos/YspCoder/clawgo/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json' },
+      });
+      if (!response.ok) {
+        throw new Error(`GitHub API ${response.status}`);
+      }
+      const data = await response.json();
+      const latest = normalizeVersion(data?.tag_name || '');
+      const currentGateway = normalizeVersion(gatewayVersion);
+      const currentWebUI = normalizeVersion(webuiVersion);
+      const isCurrent = latest && latest === currentGateway && latest === currentWebUI;
+      await notify({
+        title: isCurrent ? t('versionCheckUpToDateTitle') : t('versionCheckUpdateTitle'),
+        message: isCurrent
+          ? t('versionCheckUpToDateMessage', { version: latest || '-' })
+          : t('versionCheckUpdateMessage', {
+              latest: latest || '-',
+              gateway: currentGateway || '-',
+              webui: currentWebUI || '-',
+            }),
+      });
+    } catch (error) {
+      await notify({
+        title: t('versionCheckFailedTitle'),
+        message: t('versionCheckFailedMessage', { error: error instanceof Error ? error.message : String(error) }),
+      });
+    } finally {
+      setCheckingVersion(false);
+    }
   };
 
   return (
@@ -51,6 +92,25 @@ const Header: React.FC = () => {
         </div>
         
         <div className="hidden md:block h-5 w-px bg-zinc-800" />
+
+        <a
+          href={REPO_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-9 w-9 items-center justify-center text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg"
+          title={t('githubRepo')}
+        >
+          <Github className="w-4 h-4" />
+        </a>
+
+        <button
+          onClick={checkVersion}
+          disabled={checkingVersion}
+          className="inline-flex h-9 w-9 items-center justify-center text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg disabled:opacity-60"
+          title={t('checkVersion')}
+        >
+          <RefreshCw className={`w-4 h-4 ${checkingVersion ? 'animate-spin' : ''}`} />
+        </button>
 
         <button
           onClick={toggleTheme}
