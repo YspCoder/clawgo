@@ -5,11 +5,25 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"clawgo/pkg/config"
 )
 
+type onboardOptions struct {
+	syncWebUIOnly bool
+}
+
 func onboard() {
+	opts := parseOnboardOptions(os.Args[2:])
+	if opts.syncWebUIOnly {
+		cfg := config.DefaultConfig()
+		workspace := cfg.WorkspacePath()
+		createWorkspaceTemplates(workspace, true)
+		fmt.Printf("%s embedded WebUI refreshed in %s\n", logo, filepath.Join(workspace, "webui"))
+		return
+	}
+
 	configPath := getConfigPath()
 
 	if _, err := os.Stat(configPath); err == nil {
@@ -30,7 +44,7 @@ func onboard() {
 	}
 
 	workspace := cfg.WorkspacePath()
-	createWorkspaceTemplates(workspace)
+	createWorkspaceTemplates(workspace, false)
 
 	fmt.Printf("%s clawgo is ready!\n", logo)
 	fmt.Println("\nNext steps:")
@@ -64,7 +78,17 @@ func ensureConfigOnboard(configPath string, defaults *config.Config) (string, er
 	return "created", nil
 }
 
-func copyEmbeddedToTarget(targetDir string) error {
+func parseOnboardOptions(args []string) onboardOptions {
+	var opts onboardOptions
+	for _, arg := range args {
+		if strings.EqualFold(strings.TrimSpace(arg), "--sync-webui") {
+			opts.syncWebUIOnly = true
+		}
+	}
+	return opts
+}
+
+func copyEmbeddedToTarget(targetDir string, overwrite func(relPath string) bool) error {
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory: %w", err)
 	}
@@ -88,7 +112,9 @@ func copyEmbeddedToTarget(targetDir string) error {
 		}
 		targetPath := filepath.Join(targetDir, relPath)
 		if _, statErr := os.Stat(targetPath); statErr == nil {
-			return nil
+			if overwrite == nil || !overwrite(relPath) {
+				return nil
+			}
 		} else if !os.IsNotExist(statErr) {
 			return statErr
 		}
@@ -104,8 +130,15 @@ func copyEmbeddedToTarget(targetDir string) error {
 	})
 }
 
-func createWorkspaceTemplates(workspace string) {
-	err := copyEmbeddedToTarget(workspace)
+func createWorkspaceTemplates(workspace string, overwriteWebUI bool) {
+	var overwrite func(relPath string) bool
+	if overwriteWebUI {
+		overwrite = func(relPath string) bool {
+			relPath = filepath.ToSlash(relPath)
+			return strings.HasPrefix(relPath, "webui/")
+		}
+	}
+	err := copyEmbeddedToTarget(workspace, overwrite)
 	if err != nil {
 		fmt.Printf("Error copying workspace templates: %v\n", err)
 	}

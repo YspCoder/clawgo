@@ -1,270 +1,209 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# ====================
-# Config
-# ====================
 OWNER="YspCoder"
 REPO="clawgo"
 BIN="clawgo"
 INSTALL_DIR="/usr/local/bin"
-WEBUI_DIR="$HOME/.clawgo/workspace/webui"
-UI_ONLY=0
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/clawgo"
+CONFIG_PATH="$CONFIG_DIR/config.json"
+WORKSPACE_DIR="$HOME/.clawgo/workspace"
+LEGACY_WORKSPACE_DIR="$HOME/.openclaw/workspace"
 
 usage() {
   cat <<EOF
-Usage: $0 [-ui]
+Usage: $0
 
-Options:
-  -ui      Update WebUI only. Skip binary download/install and migration prompt.
-  -h       Show this help message.
+Install or upgrade ClawGo from the latest GitHub release.
+
+Notes:
+  - WebUI is embedded in the binary and initialized when you run 'clawgo onboard'.
+  - OpenClaw migration is offered only when a legacy workspace is detected.
 EOF
 }
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -ui)
-      UI_ONLY=1
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
+log() {
+  printf '%s\n' "$*"
+}
+
+warn() {
+  printf 'Warning: %s\n' "$*" >&2
+}
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    warn "Missing required command: $1"
+    exit 1
+  fi
+}
+
+prompt_yes_no() {
+  local prompt="$1"
+  local default="${2:-N}"
+  local reply
+  if [[ ! -r /dev/tty ]]; then
+    [[ "$default" =~ ^[Yy]$ ]]
+    return
+  fi
+  if [[ "$default" =~ ^[Yy]$ ]]; then
+    read -r -p "$prompt [Y/n]: " reply < /dev/tty || true
+    reply="${reply:-Y}"
+  else
+    read -r -p "$prompt [y/N]: " reply < /dev/tty || true
+    reply="${reply:-N}"
+  fi
+  [[ "$reply" =~ ^[Yy]$ ]]
+}
+
+tty_read() {
+  local __var_name="$1"
+  local __prompt="$2"
+  local __default="${3:-}"
+  local __silent="${4:-0}"
+  local __reply=""
+
+  if [[ ! -r /dev/tty ]]; then
+    printf -v "$__var_name" '%s' "$__default"
+    return
+  fi
+
+  if [[ "$__silent" == "1" ]]; then
+    read -r -s -p "$__prompt" __reply < /dev/tty || true
+    echo > /dev/tty
+  else
+    read -r -p "$__prompt" __reply < /dev/tty || true
+  fi
+  __reply="${__reply:-$__default}"
+  printf -v "$__var_name" '%s' "$__reply"
+}
+
+detect_platform() {
+  OS="$(uname | tr '[:upper:]' '[:lower:]')"
+  ARCH="$(uname -m)"
+  case "$ARCH" in
+    x86_64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
     *)
-      echo "Unknown argument: $1"
-      usage
+      warn "Unsupported architecture: $ARCH"
       exit 1
       ;;
   esac
-done
-
-# ====================
-# Detect OS/ARCH
-# ====================
-OS="$(uname | tr '[:upper:]' '[:lower:]')"
-ARCH="$(uname -m)"
-
-case "$ARCH" in
-  x86_64) ARCH="amd64" ;;
-  aarch64|arm64) ARCH="arm64" ;;
-  *)
-    echo "Unsupported architecture: $ARCH"
-    exit 1
-    ;;
-esac
-
-echo "Detected OS=$OS ARCH=$ARCH"
-
-# ====================
-# Check if already installed
-# ====================
-if [[ "$UI_ONLY" -eq 0 ]]; then
-  if command -v "$BIN" &> /dev/null; then
-    echo "$BIN is already installed. Removing existing version..."
-    sudo rm -f "$INSTALL_DIR/$BIN"
-  fi
-else
-  echo "UI-only mode enabled: skip binary uninstall/install."
-fi
-
-# ====================
-# Get Latest GitHub Release
-# ====================
-echo "Fetching latest release..."
-API="https://api.github.com/repos/$OWNER/$REPO/releases/latest"
-TAG=$(curl -s "$API" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-
-if [ -z "$TAG" ]; then
-  echo "Unable to get latest release tag from GitHub"
-  exit 1
-fi
-
-echo "Latest Release: $TAG"
-
-# ====================
-# Construct Download URL for the binary and WebUI
-# ====================
-FILE="${BIN}-${OS}-${ARCH}.tar.gz"
-WEBUI_FILE="webui.tar.gz"
-URL="https://github.com/$OWNER/$REPO/releases/download/$TAG/$FILE"
-WEBUI_URL="https://github.com/$OWNER/$REPO/releases/download/$TAG/$WEBUI_FILE"
-
-TMPDIR="$(mktemp -d)"
-if [[ "$UI_ONLY" -eq 0 ]]; then
-  echo "Trying to download: $URL"
-  OUT="$TMPDIR/$FILE"
-
-  # Now try downloading the file
-  if curl -fSL "$URL" -o "$OUT"; then
-    echo "Downloaded $FILE"
-    tar -xzf "$OUT" -C "$TMPDIR"
-
-    EXTRACTED_BIN=""
-    if [[ -f "$TMPDIR/$BIN" ]]; then
-      EXTRACTED_BIN="$TMPDIR/$BIN"
-    else
-      EXTRACTED_BIN="$(find "$TMPDIR" -maxdepth 2 -type f -name "${BIN}*" ! -name "*.tar.gz" ! -name "*.zip" | head -n1)"
-    fi
-
-    if [[ -z "$EXTRACTED_BIN" || ! -f "$EXTRACTED_BIN" ]]; then
-      echo "Failed to locate extracted binary from $FILE"
+  case "$OS" in
+    linux|darwin) ;;
+    *)
+      warn "Unsupported operating system: $OS"
       exit 1
-    fi
+      ;;
+  esac
+  log "Detected OS=$OS ARCH=$ARCH"
+}
 
-    chmod +x "$EXTRACTED_BIN"
-    echo "Installing $BIN to $INSTALL_DIR (may require sudo)..."
-    sudo mv "$EXTRACTED_BIN" "$INSTALL_DIR/$BIN"
-    echo "Installed $BIN to $INSTALL_DIR/clawgo"
-  else
-    echo "No prebuilt binary found, exiting..."
+fetch_latest_tag() {
+  require_cmd curl
+  local api="https://api.github.com/repos/$OWNER/$REPO/releases/latest"
+  TAG="$(curl -fsSL "$api" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1)"
+  if [[ -z "${TAG:-}" ]]; then
+    warn "Unable to get latest release tag from GitHub"
     exit 1
   fi
-fi
+  log "Latest Release: $TAG"
+}
 
-# ====================
-# Download WebUI
-# ====================
-echo "Downloading ClawGo WebUI..."
-WEBUI_OUT="$TMPDIR/$WEBUI_FILE"
-if curl -fSL "$WEBUI_URL" -o "$WEBUI_OUT"; then
-  echo "Downloaded WebUI"
-  mkdir -p "$WEBUI_DIR"
-  WEBUI_TMP="$TMPDIR/webui_extract"
-  rm -rf "$WEBUI_TMP"
-  mkdir -p "$WEBUI_TMP"
-  tar -xzf "$WEBUI_OUT" -C "$WEBUI_TMP"
+install_binary() {
+  local file="${BIN}-${OS}-${ARCH}.tar.gz"
+  local url="https://github.com/$OWNER/$REPO/releases/download/$TAG/$file"
+  local out="$TMPDIR/$file"
 
-  WEBUI_DIST_DIR=""
-  if [[ -d "$WEBUI_TMP/dist" ]]; then
-    WEBUI_DIST_DIR="$WEBUI_TMP/dist"
+  log "Downloading $file..."
+  curl -fSL "$url" -o "$out"
+  tar -xzf "$out" -C "$TMPDIR"
+
+  local extracted_bin=""
+  if [[ -f "$TMPDIR/$BIN" ]]; then
+    extracted_bin="$TMPDIR/$BIN"
   else
-    WEBUI_DIST_DIR="$(find "$WEBUI_TMP" -mindepth 2 -maxdepth 4 -type d -name dist | head -n1)"
+    extracted_bin="$(find "$TMPDIR" -maxdepth 2 -type f -name "$BIN" | head -n1)"
   fi
 
-  if [[ -n "$WEBUI_DIST_DIR" && -d "$WEBUI_DIST_DIR" ]]; then
-    rsync -a --delete "$WEBUI_DIST_DIR/" "$WEBUI_DIR/"
-  else
-    rsync -a --delete "$WEBUI_TMP/" "$WEBUI_DIR/"
+  if [[ -z "$extracted_bin" || ! -f "$extracted_bin" ]]; then
+    warn "Failed to locate extracted binary from $file"
+    exit 1
   fi
-  echo "WebUI installed to $WEBUI_DIR"
-else
-  echo "Failed to download WebUI"
-  exit 1
-fi
 
-# ====================
-# Migrate (Embedded openclaw2clawgo Script)
-# ====================
-if [[ "$UI_ONLY" -eq 0 ]]; then
-read -p "Do you want to migrate your OpenClaw workspace to ClawGo? (y/n): " MIGRATE
-if [[ "$MIGRATE" == "y" || "$MIGRATE" == "Y" ]]; then
-  echo "Choose migration type: "
-  echo "1. Local migration"
-  echo "2. Remote migration"
-  read -p "Enter your choice (1 or 2): " MIGRATION_TYPE
+  chmod +x "$extracted_bin"
+  if command -v "$BIN" >/dev/null 2>&1 || [[ -f "$INSTALL_DIR/$BIN" ]]; then
+    log "Updating existing $BIN in $INSTALL_DIR ..."
+  else
+    log "Installing $BIN to $INSTALL_DIR ..."
+  fi
+  sudo mv "$extracted_bin" "$INSTALL_DIR/$BIN"
+  log "Installed $BIN to $INSTALL_DIR/$BIN"
+}
 
-  case "$MIGRATION_TYPE" in
-    1)
-      echo "Proceeding with local migration..."
+migrate_local_openclaw() {
+  local src="${1:-$LEGACY_WORKSPACE_DIR}"
+  local dst="${2:-$WORKSPACE_DIR}"
 
-      # Default paths for local migration
-      SRC_DEFAULT="$HOME/.openclaw/workspace"
-      DST_DEFAULT="$HOME/.clawgo/workspace"
-      SRC="${SRC_DEFAULT}"
-      DST="${DST_DEFAULT}"
+  if [[ ! -d "$src" ]]; then
+    warn "OpenClaw workspace not found: $src"
+    return 1
+  fi
 
-      # Prompt user about overwriting existing data
-      echo "Warning: Migration will overwrite the contents of $DST"
-      read -p "Are you sure you want to continue? (y/n): " CONFIRM
-      if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
-        echo "Migration canceled."
-        exit 0
-      fi
+  log "[INFO] source: $src"
+  log "[INFO] target: $dst"
+  mkdir -p "$dst" "$dst/memory"
+  local ts
+  ts="$(date -u +%Y%m%dT%H%M%SZ)"
+  local backup_dir="$dst/.migration-backup-$ts"
+  mkdir -p "$backup_dir"
 
-      echo "[INFO] source: $SRC"
-      echo "[INFO] target: $DST"
+  for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
+    if [[ -f "$dst/$f" ]]; then
+      cp -a "$dst/$f" "$backup_dir/$f"
+    fi
+  done
+  if [[ -d "$dst/memory" ]]; then
+    cp -a "$dst/memory" "$backup_dir/memory" || true
+  fi
 
-      mkdir -p "$DST" "$DST/memory"
-      TS="$(date -u +%Y%m%dT%H%M%SZ)"
-      BACKUP_DIR="$DST/.migration-backup-$TS"
-      mkdir -p "$BACKUP_DIR"
+  for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
+    if [[ -f "$src/$f" ]]; then
+      cp -a "$src/$f" "$dst/$f"
+      log "[OK] migrated $f"
+    fi
+  done
+  if [[ -d "$src/memory" ]]; then
+    rsync -a "$src/memory/" "$dst/memory/"
+    log "[OK] migrated memory/"
+  fi
 
-      # Backup existing key files if present
-      for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
-        if [[ -f "$DST/$f" ]]; then
-          cp -a "$DST/$f" "$BACKUP_DIR/$f"
-        fi
-      done
-      if [[ -d "$DST/memory" ]]; then
-        cp -a "$DST/memory" "$BACKUP_DIR/memory" || true
-      fi
+  log "[DONE] local migration complete"
+}
 
-      # Migrate core persona/context files
-      for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
-        if [[ -f "$SRC/$f" ]]; then
-          cp -a "$SRC/$f" "$DST/$f"
-          echo "[OK] migrated $f"
-        fi
-      done
+migrate_remote_openclaw() {
+  require_cmd sshpass
+  require_cmd scp
+  require_cmd ssh
 
-      # Merge memory directory
-      if [[ -d "$SRC/memory" ]]; then
-        rsync -a "$SRC/memory/" "$DST/memory/"
-        echo "[OK] migrated memory/"
-      fi
+  local remote_host remote_port remote_pass migration_script
+  tty_read remote_host "Enter remote host (e.g. user@hostname): "
+  tty_read remote_port "Enter remote port (default 22): " "22"
+  tty_read remote_pass "Enter remote password: " "" "1"
 
-      # Optional: sync into embedded workspace template used by clawgo builds
-      echo "[INFO] Syncing embed workspace template..."
-      if [[ -d "$DST" ]]; then
-        mkdir -p "$DST"
-        for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
-          if [[ -f "$DST/$f" ]]; then
-            cp -a "$DST/$f" "$DST/$f"
-          fi
-        done
-        if [[ -d "$DST/memory" ]]; then
-          mkdir -p "$DST/memory"
-          rsync -a "$DST/memory/" "$DST/memory/"
-        fi
-        echo "[OK] synced embed workspace template"
-      fi
-
-      echo "[DONE] migration complete"
-      ;;
-    2)
-      echo "Proceeding with remote migration..."
-
-      read -p "Enter remote host (e.g., user@hostname): " REMOTE_HOST
-      read -p "Enter remote port (default 22): " REMOTE_PORT
-      REMOTE_PORT="${REMOTE_PORT:-22}"
-      read -sp "Enter remote password: " REMOTE_PASS
-      echo
-
-      # Create a temporary SSH key for non-interactive SSH authentication (assuming sshpass is installed)
-      SSH_KEY=$(mktemp)
-      sshpass -p "$REMOTE_PASS" ssh-copy-id -i "$SSH_KEY" -p "$REMOTE_PORT" "$REMOTE_HOST"
-
-      # Prepare migration script
-      MIGRATION_SCRIPT="$TMPDIR/openclaw2clawgo.sh"
-      cat << 'EOF' > "$MIGRATION_SCRIPT"
-#!/bin/bash
-set -e
-
+  migration_script="$TMPDIR/openclaw2clawgo.sh"
+  cat > "$migration_script" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
 SRC_DEFAULT="$HOME/.openclaw/workspace"
 DST_DEFAULT="$HOME/.clawgo/workspace"
 SRC="${1:-$SRC_DEFAULT}"
 DST="${2:-$DST_DEFAULT}"
-
-echo "[INFO] source: $SRC"
-echo "[INFO] target: $DST"
 
 mkdir -p "$DST" "$DST/memory"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_DIR="$DST/.migration-backup-$TS"
 mkdir -p "$BACKUP_DIR"
 
-# Backup existing key files if present
 for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
   if [[ -f "$DST/$f" ]]; then
     cp -a "$DST/$f" "$BACKUP_DIR/$f"
@@ -273,44 +212,99 @@ done
 if [[ -d "$DST/memory" ]]; then
   cp -a "$DST/memory" "$BACKUP_DIR/memory" || true
 fi
-fi
 
-# Migrate core persona/context files
 for f in AGENTS.md SOUL.md USER.md IDENTITY.md TOOLS.md MEMORY.md HEARTBEAT.md; do
   if [[ -f "$SRC/$f" ]]; then
     cp -a "$SRC/$f" "$DST/$f"
     echo "[OK] migrated $f"
   fi
 done
-
-# Merge memory directory
 if [[ -d "$SRC/memory" ]]; then
   rsync -a "$SRC/memory/" "$DST/memory/"
   echo "[OK] migrated memory/"
 fi
-
-echo "[DONE] migration complete"
+echo "[DONE] remote migration complete"
 EOF
 
-      # Copy migration script to remote server and execute it
-      sshpass -p "$REMOTE_PASS" scp -P "$REMOTE_PORT" "$MIGRATION_SCRIPT" "$REMOTE_HOST:/tmp/openclaw2clawgo.sh"
-      sshpass -p "$REMOTE_PASS" ssh -p "$REMOTE_PORT" "$REMOTE_HOST" "bash /tmp/openclaw2clawgo.sh"
+  chmod +x "$migration_script"
+  sshpass -p "$remote_pass" scp -P "$remote_port" "$migration_script" "$remote_host:/tmp/openclaw2clawgo.sh"
+  sshpass -p "$remote_pass" ssh -p "$remote_port" "$remote_host" "bash /tmp/openclaw2clawgo.sh"
+  log "[INFO] Remote migration completed."
+}
 
-      echo "[INFO] Remote migration completed."
+offer_openclaw_migration() {
+  if [[ ! -d "$LEGACY_WORKSPACE_DIR" ]]; then
+    return
+  fi
+  if ! prompt_yes_no "Detected OpenClaw workspace at $LEGACY_WORKSPACE_DIR. Migrate it to ClawGo now?" "N"; then
+    return
+  fi
+
+  local migration_type
+  if [[ -r /dev/tty ]]; then
+    log "Choose migration type:"
+    log "  1. Local migration"
+    log "  2. Remote migration"
+    tty_read migration_type "Enter your choice (1 or 2): " "1"
+  else
+    migration_type="1"
+  fi
+
+  case "$migration_type" in
+    1)
+      warn "Migration will overwrite files in $WORKSPACE_DIR when names collide."
+      if prompt_yes_no "Continue local migration?" "N"; then
+        migrate_local_openclaw
+      else
+        log "Migration skipped."
+      fi
+      ;;
+    2)
+      migrate_remote_openclaw
       ;;
     *)
-      echo "Invalid choice. Skipping migration."
+      log "Invalid choice. Skipping migration."
       ;;
   esac
-fi
-fi
+}
 
-echo "Cleaning up..."
-rm -rf "$TMPDIR"
+offer_onboard() {
+  log "Refreshing embedded WebUI assets..."
+  "$INSTALL_DIR/$BIN" onboard --sync-webui >/dev/null 2>&1 || warn "Failed to refresh embedded WebUI assets automatically. You can run 'clawgo onboard --sync-webui' later."
 
-echo "Done 🎉"
-if [[ "$UI_ONLY" -eq 0 ]]; then
-  echo "Run 'clawgo --help' to verify"
-else
-  echo "WebUI update finished."
-fi
+  if [[ -f "$CONFIG_PATH" ]]; then
+    log "Existing config detected at $CONFIG_PATH"
+    log "WebUI assets were refreshed from the embedded bundle."
+    log "Run 'clawgo onboard' only if you want to regenerate config or missing workspace templates."
+    return
+  fi
+
+  log "WebUI assets were refreshed from the embedded bundle."
+  if prompt_yes_no "No config found. Run 'clawgo onboard' now?" "N"; then
+    "$INSTALL_DIR/$BIN" onboard
+  else
+    log "Skipped onboard. Run 'clawgo onboard' when you are ready."
+  fi
+}
+
+main() {
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+  fi
+
+  detect_platform
+  fetch_latest_tag
+
+  TMPDIR="$(mktemp -d)"
+  trap 'rm -rf "$TMPDIR"' EXIT
+
+  install_binary
+  offer_openclaw_migration
+  offer_onboard
+
+  log "Done."
+  log "Run 'clawgo --help' to verify the installation."
+}
+
+main "$@"

@@ -6,6 +6,15 @@ import (
 	"clawgo/pkg/config"
 )
 
+func TestParseOnboardOptionsSyncWebUI(t *testing.T) {
+	t.Parallel()
+
+	opts := parseOnboardOptions([]string{"--sync-webui"})
+	if !opts.syncWebUIOnly {
+		t.Fatalf("expected sync webui option to be enabled")
+	}
+}
+
 func TestEnsureConfigOnboardGeneratesGatewayToken(t *testing.T) {
 	t.Parallel()
 

@@ -181,7 +181,6 @@ package-all: build-all
 			tar -czf "$$archive" "$$bin"; \
 		fi; \
 	done
-	@tar -czf "$(BUILD_DIR)/webui.tar.gz" -C "$(DEV_WEBUI_DIR)" dist
 	@set -e; cd $(BUILD_DIR); \
 	if command -v sha256sum >/dev/null 2>&1; then \
 		sha256sum *.tar.gz *.zip 2>/dev/null | tee checksums.txt || true; \
