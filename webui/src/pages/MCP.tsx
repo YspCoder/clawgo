@@ -1,48 +1,59 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Save } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Package, Pencil, Plus, RefreshCw, Save, Trash2, Wrench, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 
-function setPath(obj: any, path: string, value: any) {
-  const keys = path.split('.');
-  const next = JSON.parse(JSON.stringify(obj || {}));
-  let cur = next;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const k = keys[i];
-    if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {};
-    cur = cur[k];
-  }
-  cur[keys[keys.length - 1]] = value;
-  return next;
-}
+type MCPDraftServer = {
+  enabled: boolean;
+  transport: string;
+  url: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  permission: string;
+  working_dir: string;
+  description: string;
+  package: string;
+  installer?: string;
+};
+
+const emptyDraftServer = (): MCPDraftServer => ({
+  enabled: true,
+  transport: 'stdio',
+  url: '',
+  command: '',
+  args: [],
+  env: {},
+  permission: 'workspace',
+  working_dir: '',
+  description: '',
+  package: '',
+  installer: '',
+});
+
+const cloneDeep = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
 const MCP: React.FC = () => {
   const { t } = useTranslation();
   const { cfg, setCfg, q, loadConfig, setConfigEditing } = useAppContext();
   const ui = useUI();
-  const [newMCPServerName, setNewMCPServerName] = useState('');
   const [mcpTools, setMcpTools] = useState<Array<{ name: string; description?: string; mcp?: { server?: string; remote_tool?: string } }>>([]);
   const [mcpServerChecks, setMcpServerChecks] = useState<Array<{ name: string; status?: string; message?: string; package?: string; installer?: string; installable?: boolean; resolved?: string }>>([]);
-  const [argInputs, setArgInputs] = useState<Record<string, string>>({});
-  const [baseline, setBaseline] = useState<any>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const [draft, setDraft] = useState<MCPDraftServer>(emptyDraftServer());
+  const [draftArgInput, setDraftArgInput] = useState('');
 
-  const currentPayload = useMemo(() => cfg || {}, [cfg]);
-  const isDirty = useMemo(() => {
-    if (baseline == null) return false;
-    return JSON.stringify(baseline) !== JSON.stringify(currentPayload);
-  }, [baseline, currentPayload]);
-
-  useEffect(() => {
-    if (baseline == null && cfg && Object.keys(cfg).length > 0) {
-      setBaseline(JSON.parse(JSON.stringify(cfg)));
-    }
-  }, [cfg, baseline]);
+  const servers = useMemo(() => ((((cfg as any)?.tools?.mcp?.servers) || {}) as Record<string, any>), [cfg]);
+  const serverEntries = useMemo(() => Object.entries(servers), [servers]);
 
   useEffect(() => {
-    setConfigEditing(isDirty);
+    setConfigEditing(false);
     return () => setConfigEditing(false);
-  }, [isDirty, setConfigEditing]);
+  }, [setConfigEditing]);
 
   async function refreshMCPTools(cancelled = false) {
     try {
@@ -69,60 +80,163 @@ const MCP: React.FC = () => {
     };
   }, [q]);
 
-  function updateMCPServerField(name: string, field: string, value: any) {
-    setCfg((v) => setPath(v, `tools.mcp.servers.${name}.${field}`, value));
+  function openCreateModal() {
+    setEditingName(null);
+    setDraftName('');
+    setDraft(emptyDraftServer());
+    setDraftArgInput('');
+    setModalOpen(true);
   }
 
-  function addMCPArg(name: string, rawValue: string) {
+  function openEditModal(name: string, server: any) {
+    setEditingName(name);
+    setDraftName(name);
+    setDraft({
+      enabled: Boolean(server?.enabled),
+      transport: String(server?.transport || 'stdio'),
+      url: String(server?.url || ''),
+      command: String(server?.command || ''),
+      args: Array.isArray(server?.args) ? server.args.map((x: any) => String(x)) : [],
+      env: typeof server?.env === 'object' && server?.env ? cloneDeep(server.env) : {},
+      permission: String(server?.permission || 'workspace'),
+      working_dir: String(server?.working_dir || ''),
+      description: String(server?.description || ''),
+      package: String(server?.package || ''),
+      installer: String(server?.installer || ''),
+    });
+    setDraftArgInput('');
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    setEditingName(null);
+    setDraftName('');
+    setDraft(emptyDraftServer());
+    setDraftArgInput('');
+  }
+
+  function updateDraftField<K extends keyof MCPDraftServer>(field: K, value: MCPDraftServer[K]) {
+    setDraft((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function addDraftArg(rawValue: string) {
     const value = rawValue.trim();
     if (!value) return;
-    const current = ((((cfg as any)?.tools?.mcp?.servers?.[name]?.args) || []) as any[])
-      .map((x) => String(x).trim())
-      .filter(Boolean);
-    updateMCPServerField(name, 'args', [...current, value]);
-    setArgInputs((prev) => ({ ...prev, [name]: '' }));
+    setDraft((prev) => ({ ...prev, args: [...prev.args.map((x) => x.trim()).filter(Boolean), value] }));
+    setDraftArgInput('');
   }
 
-  function removeMCPArg(name: string, index: number) {
-    const current = ((((cfg as any)?.tools?.mcp?.servers?.[name]?.args) || []) as any[])
-      .map((x) => String(x).trim())
-      .filter(Boolean);
-    updateMCPServerField(name, 'args', current.filter((_, i) => i !== index));
+  function removeDraftArg(index: number) {
+    setDraft((prev) => ({ ...prev, args: prev.args.filter((_, i) => i !== index) }));
   }
 
-  function addMCPServer() {
-    const name = newMCPServerName.trim();
-    if (!name) return;
-    setCfg((v) => {
-      const next = JSON.parse(JSON.stringify(v || {}));
-      if (!next.tools || typeof next.tools !== 'object') next.tools = {};
-      if (!next.tools.mcp || typeof next.tools.mcp !== 'object') {
-        next.tools.mcp = { enabled: true, request_timeout_sec: 20, servers: {} };
-      }
-      if (!next.tools.mcp.servers || typeof next.tools.mcp.servers !== 'object' || Array.isArray(next.tools.mcp.servers)) {
-        next.tools.mcp.servers = {};
-      }
-      if (!next.tools.mcp.servers[name]) {
-        next.tools.mcp.servers[name] = {
-          enabled: true,
-          transport: 'stdio',
-          url: '',
-          command: '',
-          args: [],
-          env: {},
-          permission: 'workspace',
-          working_dir: '',
-          description: '',
-          package: '',
-        };
-      }
-      return next;
-    });
-    setNewMCPServerName('');
-    setArgInputs((prev) => ({ ...prev, [name]: '' }));
+  function inferMCPInstallSpec(server: MCPDraftServer): { installer: string; packageName: string } {
+    if (typeof server.installer === 'string' && server.installer.trim() && typeof server.package === 'string' && server.package.trim()) {
+      return { installer: server.installer.trim(), packageName: server.package.trim() };
+    }
+    if (typeof server.package === 'string' && server.package.trim()) {
+      return { installer: 'npm', packageName: server.package.trim() };
+    }
+    const command = String(server.command || '').trim().split('/').pop() || '';
+    const args = Array.isArray(server.args) ? server.args.map((x) => String(x).trim()).filter(Boolean) : [];
+    const pkg = args.find((arg) => !arg.startsWith('-')) || '';
+    if (command === 'npx') return { installer: 'npm', packageName: pkg };
+    if (command === 'uvx') return { installer: 'uv', packageName: pkg };
+    if (command === 'bunx') return { installer: 'bun', packageName: pkg };
+    return { installer: 'npm', packageName: '' };
   }
 
-  async function removeMCPServer(name: string) {
+  async function persistConfig(nextCfg: any) {
+    const submit = async (payload: any, confirmRisky: boolean) => {
+      const body = confirmRisky ? { ...payload, confirm_risky: true } : payload;
+      return ui.withLoading(async () => {
+        const r = await fetch(`/webui/api/config${q}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await r.text();
+        let data: any = null;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {
+          data = null;
+        }
+        return { ok: r.ok, text, data };
+      }, t('saving'));
+    };
+
+    let result = await submit(nextCfg, false);
+    if (!result.ok && result.data?.requires_confirm) {
+      const changedFields = Array.isArray(result.data?.changed_fields) ? result.data.changed_fields.join(', ') : '';
+      const ok = await ui.confirmDialog({
+        title: t('configRiskyChangeConfirmTitle'),
+        message: t('configRiskyChangeConfirmMessage', { fields: changedFields || '-' }),
+        danger: true,
+        confirmText: t('saveChanges'),
+      });
+      if (!ok) return false;
+      result = await submit(nextCfg, true);
+    }
+
+    if (!result.ok) {
+      throw new Error(result.data?.error || result.text || 'save failed');
+    }
+
+    setCfg(nextCfg);
+    await loadConfig(true);
+    await refreshMCPTools();
+    return true;
+  }
+
+  async function saveServer() {
+    const name = draftName.trim();
+    if (!name) {
+      await ui.notify({ title: t('requestFailed'), message: t('configNewMCPServerName') });
+      return;
+    }
+    if (editingName !== name && servers[name]) {
+      await ui.notify({ title: t('requestFailed'), message: `${name} already exists` });
+      return;
+    }
+
+    const next = cloneDeep(cfg || {});
+    if (!next.tools || typeof next.tools !== 'object') next.tools = {};
+    if (!next.tools.mcp || typeof next.tools.mcp !== 'object') {
+      next.tools.mcp = { enabled: true, request_timeout_sec: 20, servers: {} };
+    }
+    if (!next.tools.mcp.servers || typeof next.tools.mcp.servers !== 'object' || Array.isArray(next.tools.mcp.servers)) {
+      next.tools.mcp.servers = {};
+    }
+    if (editingName && editingName !== name) {
+      delete next.tools.mcp.servers[editingName];
+    }
+    next.tools.mcp.servers[name] = {
+      enabled: draft.enabled,
+      transport: draft.transport,
+      url: draft.url,
+      command: draft.command,
+      args: draft.args.map((x) => x.trim()).filter(Boolean),
+      env: draft.env,
+      permission: draft.permission,
+      working_dir: draft.working_dir,
+      description: draft.description,
+      package: draft.package,
+      installer: draft.installer,
+    };
+
+    try {
+      const ok = await persistConfig(next);
+      if (!ok) return;
+      await ui.notify({ title: t('saved'), message: t('configSaved') });
+      closeModal();
+    } catch (e) {
+      await ui.notify({ title: t('requestFailed'), message: `${t('saveConfigFailed')}: ${e}` });
+    }
+  }
+
+  async function removeServer(name: string) {
     const ok = await ui.confirmDialog({
       title: t('configDeleteMCPServerConfirmTitle'),
       message: t('configDeleteMCPServerConfirmMessage', { name }),
@@ -130,42 +244,26 @@ const MCP: React.FC = () => {
       confirmText: t('delete'),
     });
     if (!ok) return;
-    setCfg((v) => {
-      const next = JSON.parse(JSON.stringify(v || {}));
+    try {
+      const next = cloneDeep(cfg || {});
       if (next?.tools?.mcp?.servers && typeof next.tools.mcp.servers === 'object') {
         delete next.tools.mcp.servers[name];
       }
-      return next;
-    });
-    setArgInputs((prev) => {
-      const next = { ...prev };
-      delete next[name];
-      return next;
-    });
+      const saved = await persistConfig(next);
+      if (!saved) return;
+      await ui.notify({ title: t('saved'), message: t('configSaved') });
+      if (editingName === name) closeModal();
+    } catch (e) {
+      await ui.notify({ title: t('requestFailed'), message: `${t('saveConfigFailed')}: ${e}` });
+    }
   }
 
-  function inferMCPInstallSpec(server: any): { installer: string; packageName: string } {
-    if (typeof server?.installer === 'string' && server.installer.trim() && typeof server?.package === 'string' && server.package.trim()) {
-      return { installer: server.installer.trim(), packageName: server.package.trim() };
-    }
-    if (typeof server?.package === 'string' && server.package.trim()) {
-      return { installer: 'npm', packageName: server.package.trim() };
-    }
-    const command = String(server?.command || '').trim().split('/').pop() || '';
-    const args = Array.isArray(server?.args) ? server.args.map((x: any) => String(x).trim()).filter(Boolean) : [];
-    const pkg = args.find((arg: string) => !arg.startsWith('-')) || '';
-    if (command === 'npx') return { installer: 'npm', packageName: pkg };
-    if (command === 'uvx') return { installer: 'uv', packageName: pkg };
-    if (command === 'bunx') return { installer: 'bun', packageName: pkg };
-    return { installer: 'npm', packageName: '' };
-  }
-
-  async function installMCPServerPackage(name: string, server: any) {
-    const inferred = inferMCPInstallSpec(server);
+  async function installDraftPackage() {
+    const inferred = inferMCPInstallSpec(draft);
     const defaultPkg = inferred.packageName;
     const pkg = await ui.promptDialog({
       title: t('configMCPInstallTitle'),
-      message: t('configMCPInstallMessage', { name }),
+      message: t('configMCPInstallMessage', { name: draftName.trim() || t('configMCPServers') }),
       inputPlaceholder: defaultPkg || t('configMCPInstallPlaceholder'),
       initialValue: defaultPkg,
       confirmText: t('install'),
@@ -191,13 +289,12 @@ const MCP: React.FC = () => {
       } catch {
         data = null;
       }
-      if (data?.bin_path) {
-        updateMCPServerField(name, 'command', data.bin_path);
-        updateMCPServerField(name, 'args', []);
-        updateMCPServerField(name, 'package', packageName);
-      } else {
-        updateMCPServerField(name, 'package', packageName);
-      }
+      setDraft((prev) => ({
+        ...prev,
+        command: data?.bin_path ? String(data.bin_path) : prev.command,
+        args: data?.bin_path ? [] : prev.args,
+        package: packageName,
+      }));
       await ui.notify({
         title: t('configMCPInstallDoneTitle'),
         message: data?.bin_path
@@ -209,62 +306,50 @@ const MCP: React.FC = () => {
     }
   }
 
-  async function installMCPServerCheckPackage(check: { name: string; package?: string; installer?: string }) {
-    const server = (((cfg as any)?.tools?.mcp?.servers?.[check.name]) || {}) as any;
-    if (check.package && !String(server?.package || '').trim()) {
-      updateMCPServerField(check.name, 'package', check.package);
-    }
-    await installMCPServerPackage(check.name, { ...server, package: check.package || server?.package, installer: check.installer });
-  }
-
-  async function saveConfig() {
+  async function installCheckPackage(check: { package?: string; installer?: string }) {
+    const inferred = inferMCPInstallSpec({ ...draft, package: check.package || draft.package, installer: check.installer || draft.installer });
+    const packageName = String(check.package || draft.package || '').trim();
+    if (!packageName) return;
+    ui.showLoading(t('configMCPInstalling'));
     try {
-      const payload = cfg;
-      const submit = async (confirmRisky: boolean) => {
-        const body = confirmRisky ? { ...payload, confirm_risky: true } : payload;
-        return ui.withLoading(async () => {
-          const r = await fetch(`/webui/api/config${q}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          const text = await r.text();
-          let data: any = null;
-          try {
-            data = text ? JSON.parse(text) : null;
-          } catch {
-            data = null;
-          }
-          return { ok: r.ok, text, data };
-        }, t('saving'));
-      };
-
-      let result = await submit(false);
-      if (!result.ok && result.data?.requires_confirm) {
-        const changedFields = Array.isArray(result.data?.changed_fields) ? result.data.changed_fields.join(', ') : '';
-        const ok = await ui.confirmDialog({
-          title: t('configRiskyChangeConfirmTitle'),
-          message: t('configRiskyChangeConfirmMessage', { fields: changedFields || '-' }),
-          danger: true,
-          confirmText: t('saveChanges'),
-        });
-        if (!ok) return;
-        result = await submit(true);
+      const r = await fetch(`/webui/api/mcp/install${q}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ package: packageName, installer: check.installer || inferred.installer }),
+      });
+      const text = await r.text();
+      if (!r.ok) {
+        await ui.notify({ title: t('configMCPInstallFailedTitle'), message: text || t('configMCPInstallFailedMessage') });
+        return;
       }
-
-      if (!result.ok) {
-        throw new Error(result.data?.error || result.text || 'save failed');
+      let data: any = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = null;
       }
-
-      await ui.notify({ title: t('saved'), message: t('configSaved') });
-      setBaseline(JSON.parse(JSON.stringify(payload)));
-      setConfigEditing(false);
-      await loadConfig(true);
-      await refreshMCPTools();
-    } catch (e) {
-      await ui.notify({ title: t('requestFailed'), message: `${t('saveConfigFailed')}: ${e}` });
+      setDraft((prev) => ({
+        ...prev,
+        command: data?.bin_path ? String(data.bin_path) : prev.command,
+        args: data?.bin_path ? [] : prev.args,
+        package: packageName,
+        installer: check.installer || prev.installer,
+      }));
+      await ui.notify({
+        title: t('configMCPInstallDoneTitle'),
+        message: data?.bin_path
+          ? t('configMCPInstallDoneMessage', { package: packageName, bin: data.bin_path })
+          : (text || t('configMCPInstallDoneFallback')),
+      });
+    } finally {
+      ui.hideLoading();
     }
   }
+
+  const activeCheck = useMemo(() => {
+    if (!draftName.trim()) return null;
+    return mcpServerChecks.find((item) => item.name === draftName.trim()) || null;
+  }, [draftName, mcpServerChecks]);
 
   return (
     <div className="p-4 md:p-8 w-full space-y-6">
@@ -273,117 +358,98 @@ const MCP: React.FC = () => {
           <h1 className="text-2xl font-semibold tracking-tight">{t('mcpServices')}</h1>
           <p className="text-sm text-zinc-500 mt-1">{t('mcpServicesHint')}</p>
         </div>
-        <button
-          onClick={async () => { setBaseline(null); await loadConfig(true); }}
-          className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium"
-        >
-          <RefreshCw className="w-4 h-4" /> {t('reload')}
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={async () => { await loadConfig(true); await refreshMCPTools(); }}
+            className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium"
+          >
+            <RefreshCw className="w-4 h-4" /> {t('reload')}
+          </button>
+          <button
+            onClick={openCreateModal}
+            className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" /> {t('add')}
+          </button>
+        </div>
       </div>
 
-      <div className="flex items-center justify-end gap-3 flex-wrap">
-        <button
-          onClick={saveConfig}
-          disabled={!isDirty}
-          className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium"
-        >
-          <Save className="w-4 h-4" /> {t('saveChanges')}
-        </button>
-      </div>
-
-      <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-3 space-y-3">
+      <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4 space-y-4">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="text-sm font-semibold text-zinc-200">{t('configMCPServers')}</div>
-          <div className="flex items-center gap-2">
-            <input value={newMCPServerName} onChange={(e)=>setNewMCPServerName(e.target.value)} placeholder={t('configNewMCPServerName')} className="px-2 py-1 rounded-lg bg-zinc-900/70 border border-zinc-700 text-xs" />
-            <button onClick={addMCPServer} className="ui-button ui-button-primary px-2 py-1 rounded-lg text-xs">{t('add')}</button>
-          </div>
+          <div className="text-xs text-zinc-500">{serverEntries.length}</div>
         </div>
-        <div className="space-y-2">
-          {Object.entries((((cfg as any)?.tools?.mcp?.servers) || {}) as Record<string, any>).map(([name, server]) => {
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {serverEntries.map(([name, server]) => {
             const transport = String(server?.transport || 'stdio');
-            const isStdio = transport === 'stdio';
-            const usesURL = transport === 'http' || transport === 'streamable_http' || transport === 'sse';
+            const check = mcpServerChecks.find((item) => item.name === name);
+            const discoveredCount = mcpTools.filter((tool) => tool.mcp?.server === name).length;
             return (
-            <div key={name} className="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
-              <div className="md:col-span-2 font-mono text-zinc-300 flex items-center">{name}</div>
-              <label className="md:col-span-1 flex items-center gap-2 text-zinc-300">
-                <input type="checkbox" checked={!!server?.enabled} onChange={(e)=>updateMCPServerField(name, 'enabled', e.target.checked)} />
-                {t('enable')}
-              </label>
-              <select value={transport} onChange={(e)=>updateMCPServerField(name, 'transport', e.target.value)} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800">
-                <option value="stdio">stdio</option>
-                <option value="http">http</option>
-                <option value="streamable_http">streamable_http</option>
-                <option value="sse">sse</option>
-              </select>
-              {isStdio && (
-                <>
-                  <input value={String(server?.command || '')} onChange={(e)=>updateMCPServerField(name, 'command', e.target.value)} placeholder={t('configLabels.command')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                  <select value={String(server?.permission || 'workspace')} onChange={(e)=>updateMCPServerField(name, 'permission', e.target.value)} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800">
-                    <option value="workspace">workspace</option>
-                    <option value="full">full</option>
-                  </select>
-                  <input value={String(server?.working_dir || '')} onChange={(e)=>updateMCPServerField(name, 'working_dir', e.target.value)} placeholder={t('configLabels.working_dir')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                  <div className="md:col-span-2 rounded-lg bg-zinc-950/70 border border-zinc-800 p-2 space-y-2">
-                    <div className="flex flex-wrap gap-2">
-                      {(Array.isArray(server?.args) ? server.args : []).map((arg: any, index: number) => (
-                        <span key={`${name}-arg-${index}`} className="inline-flex items-center gap-2 rounded-md bg-zinc-800 px-2 py-1 text-[11px] text-zinc-200">
-                          <span className="font-mono">{String(arg)}</span>
-                          <button type="button" onClick={() => removeMCPArg(name, index)} className="text-zinc-400 hover:text-zinc-100">x</button>
-                        </span>
-                      ))}
+              <div key={name} className="brand-card rounded-[24px] border border-zinc-800/80 p-4 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-mono text-sm text-zinc-100">{name}</div>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ${server?.enabled ? 'bg-emerald-500/12 text-emerald-300 border border-emerald-500/20' : 'bg-zinc-800 text-zinc-400 border border-zinc-700/70'}`}>
+                        {server?.enabled ? t('enable') : t('paused')}
+                      </span>
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-zinc-900/70 text-zinc-400 border border-zinc-800">
+                        {transport}
+                      </span>
                     </div>
-                    <input
-                      value={argInputs[name] || ''}
-                      onChange={(e) => setArgInputs((prev) => ({ ...prev, [name]: e.target.value }))}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          addMCPArg(name, argInputs[name] || '');
-                        }
-                      }}
-                      onBlur={() => addMCPArg(name, argInputs[name] || '')}
-                      placeholder={t('configMCPArgsEnterHint')}
-                      className="w-full px-2 py-1 rounded-lg bg-zinc-900/80 border border-zinc-800"
-                    />
-                  </div>
-                  <input value={String(server?.package || '')} onChange={(e)=>updateMCPServerField(name, 'package', e.target.value)} placeholder={t('configLabels.package')} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                </>
-              )}
-              {usesURL && (
-                <input value={String(server?.url || '')} onChange={(e)=>updateMCPServerField(name, 'url', e.target.value)} placeholder={t('configLabels.url')} className="md:col-span-5 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-              )}
-              <input value={String(server?.description || '')} onChange={(e)=>updateMCPServerField(name, 'description', e.target.value)} placeholder={t('configLabels.description')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-              {isStdio && (
-                <button onClick={()=>installMCPServerPackage(name, server)} className="ui-button ui-button-success md:col-span-1 px-2 py-1 rounded text-xs">{t('install')}</button>
-              )}
-              <button onClick={()=>removeMCPServer(name)} className="ui-button ui-button-danger md:col-span-1 px-2 py-1 rounded text-xs">{t('delete')}</button>
-              {(() => {
-                const check = mcpServerChecks.find((item) => item.name === name);
-                if (!check || check.status === 'ok' || check.status === 'disabled' || check.status === 'not_applicable') return null;
-                return (
-                  <div className="md:col-span-12 rounded-lg border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100 flex items-center justify-between gap-3 flex-wrap">
-                    <div>
-                      <div>{check.message || t('configMCPCommandMissing')}</div>
-                      {check.package && (
-                        <div className="text-amber-300/80">{t('configMCPInstallSuggested', { pkg: check.package })} {check.installer ? `(${check.installer})` : ''}</div>
-                      )}
+                    <div className="text-sm text-zinc-400 break-all">
+                      {transport === 'stdio' ? String(server?.command || '-') : String(server?.url || '-')}
                     </div>
-                    {check.installable && (
-                      <button onClick={() => installMCPServerCheckPackage(check)} className="ui-button ui-button-warning px-2 py-1 rounded text-xs">
-                        {t('install')}
-                      </button>
+                    {server?.description && (
+                      <div className="text-xs text-zinc-500 line-clamp-2">{String(server.description)}</div>
                     )}
                   </div>
-                );
-              })()}
-            </div>
-          )})}
-          {Object.keys((((cfg as any)?.tools?.mcp?.servers) || {}) as Record<string, any>).length === 0 && (
-            <div className="text-xs text-zinc-500">{t('configNoMCPServers')}</div>
-          )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => openEditModal(name, server)} className="ui-button ui-button-neutral p-2 rounded-xl" title={t('edit')}>
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => removeServer(name)} className="ui-button ui-button-danger p-2 rounded-xl" title={t('delete')}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                    <div className="text-zinc-500">package</div>
+                    <div className="mt-1 text-zinc-200 break-all">{String(server?.package || '-')}</div>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                    <div className="text-zinc-500">args</div>
+                    <div className="mt-1 text-zinc-200">{Array.isArray(server?.args) ? server.args.length : 0}</div>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                    <div className="text-zinc-500">permission</div>
+                    <div className="mt-1 text-zinc-200">{String(server?.permission || 'workspace')}</div>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 px-3 py-2">
+                    <div className="text-zinc-500">{t('configMCPDiscoveredTools')}</div>
+                    <div className="mt-1 text-zinc-200">{discoveredCount}</div>
+                  </div>
+                </div>
+
+                {check && check.status !== 'ok' && check.status !== 'disabled' && check.status !== 'not_applicable' && (
+                  <div className="rounded-2xl border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100">
+                    <div>{check.message || t('configMCPCommandMissing')}</div>
+                    {check.package && (
+                      <div className="mt-1 text-amber-300/80">{t('configMCPInstallSuggested', { pkg: check.package })}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+        {serverEntries.length === 0 && (
+          <div className="rounded-[24px] border border-dashed border-zinc-800 px-6 py-10 text-center text-sm text-zinc-500">
+            {t('configNoMCPServers')}
+          </div>
+        )}
       </div>
 
       <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-3 space-y-3">
@@ -410,6 +476,174 @@ const MCP: React.FC = () => {
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {modalOpen && (
+          <motion.div
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={closeModal}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            />
+            <motion.div
+              className="brand-card relative z-[1] w-full max-w-4xl border border-zinc-800 shadow-2xl overflow-hidden"
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-6 py-4">
+                <div>
+                  <div className="text-lg font-semibold text-zinc-100">
+                    {editingName ? `${t('edit')} MCP` : `${t('add')} MCP`}
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-1">{t('mcpServicesHint')}</div>
+                </div>
+                <button onClick={closeModal} className="ui-button ui-button-neutral p-2 rounded-xl">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="max-h-[80vh] overflow-y-auto px-6 py-5 space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">{t('configNewMCPServerName')}</div>
+                    <input value={draftName} onChange={(e) => setDraftName(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                  </label>
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">{t('configLabels.description')}</div>
+                    <input value={draft.description} onChange={(e) => updateDraftField('description', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">transport</div>
+                    <select value={draft.transport} onChange={(e) => updateDraftField('transport', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3">
+                      <option value="stdio">stdio</option>
+                      <option value="http">http</option>
+                      <option value="streamable_http">streamable_http</option>
+                      <option value="sse">sse</option>
+                    </select>
+                  </label>
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">enabled</div>
+                    <div className="flex h-11 items-center rounded-xl border border-zinc-800 bg-zinc-950/70 px-3">
+                      <input type="checkbox" checked={draft.enabled} onChange={(e) => updateDraftField('enabled', e.target.checked)} />
+                    </div>
+                  </label>
+                  {draft.transport === 'stdio' && (
+                    <label className="space-y-2">
+                      <div className="text-xs text-zinc-400">permission</div>
+                      <select value={draft.permission} onChange={(e) => updateDraftField('permission', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3">
+                        <option value="workspace">workspace</option>
+                        <option value="full">full</option>
+                      </select>
+                    </label>
+                  )}
+                  {draft.transport === 'stdio' && (
+                    <label className="space-y-2">
+                      <div className="text-xs text-zinc-400">{t('configLabels.package')}</div>
+                      <input value={draft.package} onChange={(e) => updateDraftField('package', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                    </label>
+                  )}
+                </div>
+
+                {draft.transport === 'stdio' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="space-y-2">
+                      <div className="text-xs text-zinc-400">{t('configLabels.command')}</div>
+                      <input value={draft.command} onChange={(e) => updateDraftField('command', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                    </label>
+                    <label className="space-y-2">
+                      <div className="text-xs text-zinc-400">{t('configLabels.working_dir')}</div>
+                      <input value={draft.working_dir} onChange={(e) => updateDraftField('working_dir', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                    </label>
+                  </div>
+                ) : (
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">{t('configLabels.url')}</div>
+                    <input value={draft.url} onChange={(e) => updateDraftField('url', e.target.value)} className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3" />
+                  </label>
+                )}
+
+                {draft.transport === 'stdio' && (
+                  <div className="rounded-[24px] border border-zinc-800 bg-zinc-950/45 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <div className="text-sm font-medium text-zinc-200">Args</div>
+                        <div className="text-xs text-zinc-500">{t('configMCPArgsEnterHint')}</div>
+                      </div>
+                      <button onClick={installDraftPackage} className="ui-button ui-button-success flex items-center gap-2 px-3 py-2 text-xs">
+                        <Package className="w-4 h-4" /> {t('install')}
+                      </button>
+                    </div>
+
+                    <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto pr-1">
+                      {draft.args.map((arg, index) => (
+                        <span key={`draft-arg-${index}`} className="inline-flex max-w-full items-center gap-2 rounded-xl bg-zinc-800 px-2.5 py-1.5 text-[11px] text-zinc-200">
+                          <span className="font-mono break-all">{arg}</span>
+                          <button type="button" onClick={() => removeDraftArg(index)} className="shrink-0 text-zinc-400 hover:text-zinc-100">x</button>
+                        </span>
+                      ))}
+                    </div>
+                    <input
+                      value={draftArgInput}
+                      onChange={(e) => setDraftArgInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addDraftArg(draftArgInput);
+                        }
+                      }}
+                      onBlur={() => addDraftArg(draftArgInput)}
+                      placeholder={t('configMCPArgsEnterHint')}
+                      className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-3"
+                    />
+                  </div>
+                )}
+
+                {activeCheck && activeCheck.status !== 'ok' && activeCheck.status !== 'disabled' && activeCheck.status !== 'not_applicable' && (
+                  <div className="rounded-2xl border border-amber-800/60 bg-amber-950/30 px-4 py-3 text-xs text-amber-100 space-y-2">
+                    <div>{activeCheck.message || t('configMCPCommandMissing')}</div>
+                    {activeCheck.package && (
+                      <div className="text-amber-300/80">{t('configMCPInstallSuggested', { pkg: activeCheck.package })}</div>
+                    )}
+                    {activeCheck.installable && (
+                      <button onClick={() => installCheckPackage(activeCheck)} className="ui-button ui-button-warning px-3 py-2 text-xs">
+                        <Wrench className="w-4 h-4" /> {t('install')}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-t border-zinc-800 px-6 py-4">
+                <div className="text-xs text-zinc-500">
+                  {activeCheck?.resolved ? activeCheck.resolved : ''}
+                </div>
+                <div className="flex items-center gap-2">
+                  {editingName && (
+                    <button onClick={() => removeServer(editingName)} className="ui-button ui-button-danger flex items-center gap-2 px-3 py-2 text-sm">
+                      <Trash2 className="w-4 h-4" /> {t('delete')}
+                    </button>
+                  )}
+                  <button onClick={closeModal} className="ui-button ui-button-neutral px-3 py-2 text-sm">{t('cancel')}</button>
+                  <button onClick={saveServer} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm">
+                    <Save className="w-4 h-4" /> {t('saveChanges')}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
