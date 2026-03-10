@@ -450,7 +450,7 @@ func (s *WhatsAppBridgeService) ServeWS(w http.ResponseWriter, r *http.Request) 
 
 func (s *WhatsAppBridgeService) wrapHandler(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.localOnly && !isLoopbackRequest(r) {
+		if s.localOnly && !isLocalRequest(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -954,14 +954,43 @@ func joinBridgeRoute(basePath, endpoint string) string {
 	return basePath + "/" + strings.TrimPrefix(endpoint, "/")
 }
 
-func isLoopbackRequest(r *http.Request) bool {
+func isLocalRequest(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		host = strings.TrimSpace(r.RemoteAddr)
+		return false
+	}
+	return isLocalRemoteAddr(strings.TrimSpace(r.RemoteAddr), addrs)
+}
+
+func isLocalRemoteAddr(remoteAddr string, localAddrs []net.Addr) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(remoteAddr)
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	for _, addr := range localAddrs {
+		if addr == nil {
+			continue
+		}
+		switch v := addr.(type) {
+		case *net.IPNet:
+			if v.IP != nil && v.IP.Equal(ip) {
+				return true
+			}
+		case *net.IPAddr:
+			if v.IP != nil && v.IP.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }

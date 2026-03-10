@@ -122,44 +122,49 @@ const Dashboard: React.FC = () => {
             {t('webui')}: <span className="font-mono text-zinc-300">{webuiVersion}</span>
           </div>
         </div>
-        <button onClick={refreshAll} className="brand-button flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors shrink-0 text-zinc-950">
-          <RefreshCw className="w-4 h-4" /> {t('refreshAll')}
+        <button
+          onClick={refreshAll}
+          className="ui-button ui-button-primary ui-button-icon shrink-0"
+          title={t('refreshAll')}
+          aria-label={t('refreshAll')}
+        >
+          <RefreshCw className="w-4 h-4" />
         </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
-        <StatCard title={t('gatewayStatus')} value={isGatewayOnline ? t('online') : t('offline')} icon={<Activity className={`w-6 h-6 ${isGatewayOnline ? 'text-emerald-400' : 'text-red-400'}`} />} />
-        <StatCard title={t('activeSessions')} value={sessions.length} icon={<MessageSquare className="w-6 h-6 text-sky-400" />} />
-        <StatCard title={t('skills')} value={skills.length} icon={<Sparkles className="w-6 h-6 text-rose-300" />} />
-        <StatCard title={t('subagentsRuntime')} value={subagentCount} icon={<Wrench className="w-6 h-6 text-sky-300" />} />
-        <StatCard title={t('taskAudit')} value={recentTasks.length} icon={<Activity className="w-6 h-6 text-amber-400" />} />
-        <StatCard title={t('nodeP2P')} value={p2pEnabled ? `${p2pSessions} · ${p2pTransport}` : t('disabled')} icon={<Workflow className="w-6 h-6 text-violet-400" />} />
+        <StatCard title={t('gatewayStatus')} value={isGatewayOnline ? t('online') : t('offline')} icon={<Activity className={`w-6 h-6 ${isGatewayOnline ? 'ui-icon-success' : 'ui-text-danger'}`} />} />
+        <StatCard title={t('activeSessions')} value={sessions.length} icon={<MessageSquare className="ui-icon-info w-6 h-6" />} />
+        <StatCard title={t('skills')} value={skills.length} icon={<Sparkles className="ui-pill-danger w-6 h-6 rounded-full p-1" />} />
+        <StatCard title={t('subagentsRuntime')} value={subagentCount} icon={<Wrench className="ui-icon-info w-6 h-6" />} />
+        <StatCard title={t('taskAudit')} value={recentTasks.length} icon={<Activity className="ui-icon-warning w-6 h-6" />} />
+        <StatCard title={t('nodeP2P')} value={p2pEnabled ? `${p2pSessions} · ${p2pTransport}` : t('disabled')} icon={<Workflow className="ui-pill-accent w-6 h-6 rounded-full p-1" />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
-          <div className="flex items-center gap-2 text-zinc-200 mb-2">
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
+        <div className="brand-card ui-border-subtle rounded-[28px] border p-5 min-h-[148px]">
+          <div className="ui-text-secondary flex items-center gap-2 mb-2">
+            <AlertTriangle className="ui-icon-warning w-4 h-4" />
             <div className="text-sm font-medium">{t('ekgEscalations')}</div>
           </div>
-          <div className="text-3xl font-semibold text-zinc-100">{ekgEscalationCount}</div>
-          <div className="mt-2 text-xs text-zinc-500">{t('dashboardTopErrorSignature')}: {ekgTopErrSig}</div>
+          <div className="ui-text-primary text-3xl font-semibold">{ekgEscalationCount}</div>
+          <div className="ui-text-muted mt-2 text-xs">{t('dashboardTopErrorSignature')}: {ekgTopErrSig}</div>
         </div>
-        <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
-          <div className="flex items-center gap-2 text-zinc-200 mb-2">
-            <Sparkles className="w-4 h-4 text-sky-400" />
+        <div className="brand-card ui-border-subtle rounded-[28px] border p-5 min-h-[148px]">
+          <div className="ui-text-secondary flex items-center gap-2 mb-2">
+            <Sparkles className="ui-icon-info w-4 h-4" />
             <div className="text-sm font-medium">{t('ekgTopProvidersWorkload')}</div>
           </div>
-          <div className="text-2xl font-semibold text-zinc-100 truncate">{ekgTopProvider}</div>
-          <div className="mt-2 text-xs text-zinc-500">{t('dashboardWorkloadSnapshot')}</div>
+          <div className="ui-text-primary text-2xl font-semibold truncate">{ekgTopProvider}</div>
+          <div className="ui-text-muted mt-2 text-xs">{t('dashboardWorkloadSnapshot')}</div>
         </div>
-        <div className="brand-card rounded-[28px] border border-zinc-800 p-5 min-h-[148px]">
-          <div className="flex items-center gap-2 text-zinc-200 mb-2">
-            <Activity className="w-4 h-4 text-rose-400" />
+        <div className="brand-card ui-border-subtle rounded-[28px] border p-5 min-h-[148px]">
+          <div className="ui-text-secondary flex items-center gap-2 mb-2">
+            <Activity className="ui-text-danger w-4 h-4" />
             <div className="text-sm font-medium">{t('taskAudit')}</div>
           </div>
-          <div className="text-3xl font-semibold text-zinc-100">{recentFailures.length}</div>
-          <div className="mt-2 text-xs text-zinc-500">{t('dashboardRecentFailedTasks')}</div>
+          <div className="ui-text-primary text-3xl font-semibold">{recentFailures.length}</div>
+          <div className="ui-text-muted mt-2 text-xs">{t('dashboardRecentFailedTasks')}</div>
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
@@ -111,26 +112,41 @@ const Memory: React.FC = () => {
   }, [q]);
 
   return (
-    <div className="flex h-full flex-col lg:flex-row brand-card rounded-[30px] border border-zinc-800 overflow-hidden">
-      <aside className="w-full lg:w-72 border-b lg:border-b-0 lg:border-r border-zinc-800 p-4 space-y-2 overflow-y-auto bg-zinc-950/20">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">{t('memoryFiles')}</h2>
-          <button onClick={createFile} className="ui-button ui-button-primary px-2.5 py-1 rounded-xl">+</button>
-        </div>
-        {files.map((f) => (
-          <div key={f} className={`flex items-center justify-between p-2.5 rounded-2xl ${active === f ? 'nav-item-active' : 'hover:bg-zinc-900/30'}`}>
-            <button className="text-left flex-1" onClick={() => openFile(f)}>{f}</button>
-            <button className="ui-button ui-button-danger px-2 py-1 text-xs rounded-lg" onClick={() => removeFile(f)}>x</button>
+    <div className="h-full p-4 md:p-5 xl:p-6">
+      <div className="flex h-full flex-col overflow-hidden rounded-[30px] border brand-card ui-border-subtle lg:flex-row">
+        <aside className="ui-border-subtle w-full overflow-y-auto border-b p-2 md:p-3 lg:w-72 lg:border-r lg:border-b-0">
+          <div className="sidebar-section rounded-[24px] p-2 md:p-2.5 space-y-1">
+            <div className="flex items-center justify-between">
+              <h2 className="ui-text-primary font-semibold">{t('memoryFiles')}</h2>
+              <button onClick={createFile} className="ui-button ui-button-primary ui-button-square rounded-xl">+</button>
+            </div>
+            <div className="space-y-1">
+              {files.map((f) => (
+                <div key={f} className={`flex items-center justify-between px-2.5 py-2 rounded-2xl ${active === f ? 'nav-item-active' : 'ui-row-hover'}`}>
+                  <button className={`text-left flex-1 min-w-0 break-all pr-2 ${active === f ? 'ui-text-primary font-medium' : 'ui-text-primary'}`} onClick={() => openFile(f)}>{f}</button>
+                  <button
+                    className="ui-text-danger ui-text-danger-hover shrink-0 p-1"
+                    onClick={() => removeFile(f)}
+                    aria-label={t('delete')}
+                    title={t('delete')}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
-      </aside>
-      <main className="flex-1 p-4 md:p-6 space-y-3 min-h-0">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">{active || t('noFileSelected')}</h2>
-          <button onClick={saveFile} className="ui-button ui-button-primary px-3 py-1.5 rounded-xl">{t('save')}</button>
-        </div>
-        <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[50vh] lg:h-[80vh] bg-zinc-900/70 border border-zinc-800 rounded-[24px] p-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
-      </main>
+        </aside>
+        <main className="flex-1 overflow-y-auto p-4 md:p-5">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="ui-text-primary font-semibold">{active || t('noFileSelected')}</h2>
+              <button onClick={saveFile} className="ui-button ui-button-primary px-3 py-1.5 rounded-xl">{t('save')}</button>
+            </div>
+            <textarea value={content} onChange={(e) => setContent(e.target.value)} className="ui-textarea w-full h-[50vh] lg:h-[80vh] rounded-[24px] p-4" />
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

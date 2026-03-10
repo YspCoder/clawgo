@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Save } from 'lucide-react';
+import { Plus, RefreshCw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
@@ -278,46 +278,53 @@ const Config: React.FC = () => {
   }
 
   return (
-    <div className="p-4 md:p-8 w-full space-y-6 flex flex-col min-h-full">
+    <div className="p-4 md:p-6 xl:p-8 w-full space-y-4 flex flex-col min-h-full">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('configuration')}</h1>
-        <div className="flex items-center gap-1 bg-zinc-900/60 p-1 rounded-xl border border-zinc-800">
-          <button onClick={() => setShowRaw(false)} className={`ui-button px-4 py-1.5 text-sm font-medium rounded-lg ${!showRaw ? 'ui-button-primary' : 'ui-button-neutral'}`}>{t('form')}</button>
-          <button onClick={() => setShowRaw(true)} className={`ui-button px-4 py-1.5 text-sm font-medium rounded-lg ${showRaw ? 'ui-button-primary' : 'ui-button-neutral'}`}>{t('rawJson')}</button>
+        <h1 className="ui-text-primary text-2xl font-semibold tracking-tight">{t('configuration')}</h1>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="ui-toolbar-chip flex items-center gap-1 p-1 rounded-xl">
+            <button onClick={() => setShowRaw(false)} className={`ui-button px-4 py-1.5 text-sm font-medium rounded-lg ${!showRaw ? 'ui-button-primary' : 'ui-button-neutral'}`}>{t('form')}</button>
+            <button onClick={() => setShowRaw(true)} className={`ui-button px-4 py-1.5 text-sm font-medium rounded-lg ${showRaw ? 'ui-button-primary' : 'ui-button-neutral'}`}>{t('rawJson')}</button>
+          </div>
+          <button onClick={saveConfig} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium">
+            <Save className="w-4 h-4" /> {t('saveChanges')}
+          </button>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium">
-            <RefreshCw className="w-4 h-4" /> {t('reload')}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }}
+            className="ui-button ui-button-neutral ui-button-icon"
+            title={t('reload')}
+            aria-label={t('reload')}
+          >
+            <RefreshCw className="w-4 h-4" />
           </button>
           <button onClick={() => setShowDiff(true)} className="ui-button ui-button-neutral px-3 py-2 text-sm">{t('configDiffPreview')}</button>
           <button onClick={() => setBasicMode(v => !v)} className="ui-button ui-button-neutral px-3 py-2 text-sm">
             {basicMode ? t('configBasicMode') : t('configAdvancedMode')}
           </button>
-          <label className="flex items-center gap-2 text-sm text-zinc-300">
+          <label className="ui-text-primary flex items-center gap-2 text-sm">
             <input type="checkbox" checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
             {t('configHotOnly')}
           </label>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="px-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="ui-input min-w-[240px] flex-1 px-3 py-2 rounded-xl text-sm" />
         </div>
-        <button onClick={saveConfig} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium">
-          <Save className="w-4 h-4" /> {t('saveChanges')}
-        </button>
       </div>
 
-      <div className="flex-1 brand-card border border-zinc-800/80 rounded-[30px] overflow-hidden flex flex-col shadow-sm min-h-[420px]">
+      <div className="flex-1 brand-card ui-border-subtle border rounded-[30px] overflow-hidden flex flex-col shadow-sm min-h-[420px]">
         {!showRaw ? (
           <div className="flex-1 flex min-h-0">
-            <aside className="w-44 md:w-56 border-r border-zinc-800 bg-zinc-950/20 p-2 md:p-3 overflow-y-auto shrink-0">
-              <div className="text-xs text-zinc-500 uppercase tracking-widest mb-2 px-2">{t('configTopLevel')}</div>
+            <aside className="sidebar-section ui-border-subtle w-44 md:w-56 border-r p-2 md:p-3 overflow-y-auto shrink-0">
+              <div className="ui-text-secondary text-xs uppercase tracking-widest mb-2 px-2">{t('configTopLevel')}</div>
               <div className="space-y-1">
                 {filteredTopKeys.map((k) => (
                   <button
                     key={k}
                     onClick={() => setSelectedTop(k)}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-colors ${activeTop === k ? 'nav-item-active text-indigo-700 border border-indigo-500/30' : 'text-zinc-300 hover:bg-zinc-800/30'}`}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-colors ${activeTop === k ? 'nav-item-active ui-text-primary' : 'ui-text-primary ui-row-hover'}`}
                   >
                     {k === hotReloadTabKey ? t('configHotFieldsFull') : (configLabels[k] || k)}
                   </button>
@@ -328,12 +335,12 @@ const Config: React.FC = () => {
             <div className="flex-1 p-4 md:p-6 overflow-y-auto space-y-4">
               {activeTop === hotReloadTabKey && (
                 <div className="space-y-3">
-                  <div className="text-sm font-semibold text-zinc-300">{t('configHotFieldsFull')}</div>
+                  <div className="ui-text-primary text-sm font-semibold">{t('configHotFieldsFull')}</div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                     {hotReloadFieldDetails.map((it) => (
-                      <div key={it.path} className="p-2 rounded-xl bg-zinc-950/70 border border-zinc-800">
-                        <div className="font-mono text-zinc-200">{it.path}</div>
-                        <div className="text-zinc-400">{it.name || ''}{it.description ? ` · ${it.description}` : ''}</div>
+                      <div key={it.path} className="ui-soft-panel ui-border-subtle p-2 rounded-xl border">
+                        <div className="ui-text-primary font-mono">{it.path}</div>
+                        <div className="ui-text-secondary">{it.name || ''}{it.description ? ` · ${it.description}` : ''}</div>
                       </div>
                     ))}
                   </div>
@@ -345,7 +352,14 @@ const Config: React.FC = () => {
                     <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
                     <div className="flex items-center gap-2">
                       <input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder={t('configNewProviderName')} className="px-2 py-1 rounded-lg bg-zinc-900/70 border border-zinc-700 text-xs" />
-                      <button onClick={addProxy} className="ui-button ui-button-primary px-2 py-1 rounded-lg text-xs">{t('add')}</button>
+                      <button
+                        onClick={addProxy}
+                        className="ui-button ui-button-primary ui-button-icon"
+                        title={t('add')}
+                        aria-label={t('add')}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -384,7 +398,7 @@ const Config: React.FC = () => {
                       <select
                         value={String((cfg as any)?.gateway?.nodes?.p2p?.transport || 'websocket_tunnel')}
                         onChange={(e) => updateGatewayP2PField('transport', e.target.value)}
-                        className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
+                        className="ui-select w-full min-h-0 rounded-lg px-2 py-1 text-xs"
                       >
                         <option value="websocket_tunnel">websocket_tunnel</option>
                         <option value="webrtc">webrtc</option>
@@ -403,7 +417,14 @@ const Config: React.FC = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="text-sm font-medium text-zinc-200">{t('configNodeP2PIceServers')}</div>
-                      <button onClick={addGatewayIceServer} className="ui-button ui-button-primary px-2 py-1 rounded-lg text-xs">{t('add')}</button>
+                      <button
+                        onClick={addGatewayIceServer}
+                        className="ui-button ui-button-primary ui-button-icon"
+                        title={t('add')}
+                        aria-label={t('add')}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
                     </div>
                     {Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.ice_servers) && (cfg as any).gateway.nodes.p2p.ice_servers.length > 0 ? (
                       ((cfg as any).gateway.nodes.p2p.ice_servers as Array<any>).map((server, index) => (

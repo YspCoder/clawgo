@@ -447,13 +447,13 @@ func gatewayCmd() {
 			return
 		}
 
-		newWhatsAppBridge, _ := setupEmbeddedWhatsAppBridge(ctx, newCfg)
-
 		channelManager.StopAll(ctx)
 		agentLoop.Stop()
 		if whatsAppBridge != nil {
 			whatsAppBridge.Stop()
 		}
+
+		newWhatsAppBridge, _ := setupEmbeddedWhatsAppBridge(ctx, newCfg)
 
 		channelManager = newChannelManager
 		agentLoop = newAgentLoop

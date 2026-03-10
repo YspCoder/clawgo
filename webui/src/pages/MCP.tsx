@@ -358,15 +358,19 @@ const MCP: React.FC = () => {
         <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={async () => { await loadConfig(true); await refreshMCPTools(); }}
-            className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium"
+            className="ui-button ui-button-neutral ui-button-icon"
+            title={t('reload')}
+            aria-label={t('reload')}
           >
-            <RefreshCw className="w-4 h-4" /> {t('reload')}
+            <RefreshCw className="w-4 h-4" />
           </button>
           <button
             onClick={openCreateModal}
-            className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium"
+            className="ui-button ui-button-primary ui-button-icon"
+            title={t('add')}
+            aria-label={t('add')}
           >
-            <Plus className="w-4 h-4" /> {t('add')}
+            <Plus className="w-4 h-4" />
           </button>
         </div>
       </div>

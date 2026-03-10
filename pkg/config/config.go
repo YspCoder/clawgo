@@ -528,7 +528,7 @@ func DefaultConfig() *Config {
 			OutboundDedupeWindowSeconds:       12,
 			WhatsApp: WhatsAppConfig{
 				Enabled:                false,
-				BridgeURL:              "ws://localhost:3001",
+				BridgeURL:              "",
 				AllowFrom:              []string{},
 				EnableGroups:           true,
 				RequireMentionInGroups: true,

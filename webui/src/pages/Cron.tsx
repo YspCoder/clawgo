@@ -172,11 +172,21 @@ const Cron: React.FC = () => {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{t('cronJobs')}</h1>
         <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={() => refreshCron()} className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium">
-            <RefreshCw className="w-4 h-4" /> {t('refresh')}
+          <button
+            onClick={() => refreshCron()}
+            className="ui-button ui-button-neutral ui-button-icon"
+            title={t('refresh')}
+            aria-label={t('refresh')}
+          >
+            <RefreshCw className="w-4 h-4" />
           </button>
-          <button onClick={() => openCronModal()} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium">
-            <Plus className="w-4 h-4" /> {t('addJob')}
+          <button
+            onClick={() => openCronModal()}
+            className="ui-button ui-button-primary ui-button-icon"
+            title={t('addJob')}
+            aria-label={t('addJob')}
+          >
+            <Plus className="w-4 h-4" />
           </button>
         </div>
       </div>

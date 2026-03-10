@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
@@ -137,24 +138,29 @@ const NodeArtifacts: React.FC = () => {
     <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold">{t('nodeArtifacts')}</h1>
-          <div className="text-sm text-zinc-500 mt-1">{t('nodeArtifactsHint')}</div>
+          <h1 className="ui-text-primary text-xl md:text-2xl font-semibold">{t('nodeArtifacts')}</h1>
+          <div className="ui-text-muted text-sm mt-1">{t('nodeArtifactsHint')}</div>
         </div>
         <div className="flex items-center gap-2">
           <a href={exportURL()} className="ui-button ui-button-neutral px-3 py-1.5 text-sm">
             {t('export')}
           </a>
-          <button onClick={loadArtifacts} className="ui-button ui-button-primary px-3 py-1.5 text-sm">
-            {loading ? t('loading') : t('refresh')}
+          <button
+            onClick={loadArtifacts}
+            className="ui-button ui-button-primary ui-button-icon"
+            title={loading ? t('loading') : t('refresh')}
+            aria-label={loading ? t('loading') : t('refresh')}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-4 flex-1 min-h-0">
         <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
-          <div className="p-3 border-b border-zinc-800 dark:border-zinc-700 space-y-2">
-            <div className="ui-code-panel p-3 text-xs text-zinc-700 dark:text-zinc-300 space-y-1">
-              <div className="font-medium text-zinc-100">{t('nodeArtifactsRetention')}</div>
+          <div className="ui-border-subtle p-3 border-b space-y-2">
+            <div className="ui-code-panel ui-text-secondary p-3 text-xs space-y-1">
+              <div className="ui-text-primary font-medium">{t('nodeArtifactsRetention')}</div>
               <div>{t('nodeArtifactsRetentionKeepLatest')}: {Number(retentionSummary?.keep_latest || 0) || '-'}</div>
               <div>{t('nodeArtifactsRetentionRetainDays')}: {Number(retentionSummary?.retain_days || 0)}</div>
               <div>{t('nodeArtifactsRetentionPruned')}: {Number(retentionSummary?.pruned || retentionSummary?.manual_pruned || 0)}</div>
@@ -193,18 +199,18 @@ const NodeArtifacts: React.FC = () => {
           </div>
           <div className="overflow-y-auto min-h-0">
             {filteredItems.length === 0 ? (
-              <div className="p-4 text-sm text-zinc-500">{t('nodeArtifactsEmpty')}</div>
+              <div className="ui-text-muted p-4 text-sm">{t('nodeArtifactsEmpty')}</div>
             ) : filteredItems.map((item, index) => {
               const active = String(selected?.id || '') === String(item?.id || '');
               return (
                 <button
                   key={String(item?.id || index)}
                   onClick={() => setSelectedID(String(item?.id || ''))}
-                  className={`w-full text-left px-3 py-3 border-b border-zinc-800/60 hover:bg-zinc-800/20 ${active ? 'bg-indigo-500/15' : ''}`}
+                  className={`ui-border-subtle w-full text-left px-3 py-3 border-b ${active ? 'ui-card-active-warning' : 'ui-row-hover'}`}
                 >
-                  <div className="text-sm font-medium text-zinc-100 truncate">{String(item?.name || item?.source_path || `artifact-${index + 1}`)}</div>
-                  <div className="text-xs text-zinc-400 truncate">{String(item?.node || '-')} · {String(item?.action || '-')} · {String(item?.kind || '-')}</div>
-                  <div className="text-[11px] text-zinc-500 truncate">{formatLocalDateTime(item?.time)}</div>
+                  <div className="ui-text-primary text-sm font-medium truncate">{String(item?.name || item?.source_path || `artifact-${index + 1}`)}</div>
+                  <div className="ui-text-subtle text-xs truncate">{String(item?.node || '-')} · {String(item?.action || '-')} · {String(item?.kind || '-')}</div>
+                  <div className="ui-text-muted text-[11px] truncate">{formatLocalDateTime(item?.time)}</div>
                 </button>
               );
             })}
@@ -212,16 +218,16 @@ const NodeArtifacts: React.FC = () => {
         </div>
 
         <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
-          <div className="px-3 py-2 border-b border-zinc-800 dark:border-zinc-700 text-xs text-zinc-400 uppercase tracking-wider">{t('nodeArtifactDetail')}</div>
+          <div className="ui-border-subtle ui-text-subtle px-3 py-2 border-b text-xs uppercase tracking-wider">{t('nodeArtifactDetail')}</div>
           <div className="p-4 overflow-y-auto min-h-0 space-y-4 text-sm">
             {!selected ? (
-              <div className="text-zinc-500">{t('nodeArtifactsEmpty')}</div>
+              <div className="ui-text-muted">{t('nodeArtifactsEmpty')}</div>
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-lg font-medium text-zinc-100">{String(selected?.name || selected?.source_path || 'artifact')}</div>
-                    <div className="text-xs text-zinc-500 mt-1">{String(selected?.node || '-')} · {String(selected?.action || '-')} · {formatLocalDateTime(selected?.time)}</div>
+                    <div className="ui-text-primary text-lg font-medium">{String(selected?.name || selected?.source_path || 'artifact')}</div>
+                    <div className="ui-text-muted text-xs mt-1">{String(selected?.node || '-')} · {String(selected?.action || '-')} · {formatLocalDateTime(selected?.time)}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <a href={downloadURL(String(selected?.id || ''))} className="ui-button ui-button-neutral px-3 py-1.5 text-xs">
@@ -234,13 +240,13 @@ const NodeArtifacts: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div><div className="text-zinc-500 text-xs">{t('node')}</div><div>{String(selected?.node || '-')}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('action')}</div><div>{String(selected?.action || '-')}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('kind')}</div><div>{String(selected?.kind || '-')}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('size')}</div><div>{formatBytes(selected?.size_bytes)}</div></div>
+                  <div><div className="ui-text-muted text-xs">{t('node')}</div><div className="ui-text-secondary">{String(selected?.node || '-')}</div></div>
+                  <div><div className="ui-text-muted text-xs">{t('action')}</div><div className="ui-text-secondary">{String(selected?.action || '-')}</div></div>
+                  <div><div className="ui-text-muted text-xs">{t('kind')}</div><div className="ui-text-secondary">{String(selected?.kind || '-')}</div></div>
+                  <div><div className="ui-text-muted text-xs">{t('size')}</div><div className="ui-text-secondary">{formatBytes(selected?.size_bytes)}</div></div>
                 </div>
 
-                <div className="text-xs text-zinc-500 break-all">
+                <div className="ui-text-muted text-xs break-all">
                   {String(selected?.source_path || selected?.path || selected?.url || '-')}
                 </div>
 
@@ -259,7 +265,7 @@ const NodeArtifacts: React.FC = () => {
                   if (String(selected?.content_text || '').trim() !== '') {
                     return <pre className="ui-code-panel p-3 text-[12px] whitespace-pre-wrap overflow-auto max-h-[420px]">{String(selected?.content_text || '')}</pre>;
                   }
-                  return <div className="text-zinc-500">{t('nodeArtifactPreviewUnavailable')}</div>;
+                  return <div className="ui-text-muted">{t('nodeArtifactPreviewUnavailable')}</div>;
                 })()}
 
                 <pre className="ui-code-panel p-3 text-xs overflow-auto">{JSON.stringify(selected, null, 2)}</pre>

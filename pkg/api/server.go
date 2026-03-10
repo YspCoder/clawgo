@@ -1218,12 +1218,12 @@ func (s *Server) handleWebUIWhatsAppLogout(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	waCfg, err := s.loadWhatsAppConfig()
+	cfg, err := s.loadConfig()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	logoutURL, err := channels.BridgeLogoutURL(strings.TrimSpace(waCfg.BridgeURL))
+	logoutURL, err := channels.BridgeLogoutURL(s.resolveWhatsAppBridgeURL(cfg))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1272,14 +1272,15 @@ func (s *Server) handleWebUIWhatsAppQR(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) webUIWhatsAppStatusPayload(ctx context.Context) (map[string]interface{}, int) {
-	waCfg, err := s.loadWhatsAppConfig()
+	cfg, err := s.loadConfig()
 	if err != nil {
 		return map[string]interface{}{
 			"ok":    false,
 			"error": err.Error(),
 		}, http.StatusInternalServerError
 	}
-	bridgeURL := strings.TrimSpace(waCfg.BridgeURL)
+	waCfg := cfg.Channels.WhatsApp
+	bridgeURL := s.resolveWhatsAppBridgeURL(cfg)
 	statusURL, err := channels.BridgeStatusURL(bridgeURL)
 	if err != nil {
 		return map[string]interface{}{
@@ -1344,15 +1345,77 @@ func (s *Server) webUIWhatsAppStatusPayload(ctx context.Context) (map[string]int
 }
 
 func (s *Server) loadWhatsAppConfig() (cfgpkg.WhatsAppConfig, error) {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return cfgpkg.WhatsAppConfig{}, err
+	}
+	return cfg.Channels.WhatsApp, nil
+}
+
+func (s *Server) loadConfig() (*cfgpkg.Config, error) {
 	configPath := strings.TrimSpace(s.configPath)
 	if configPath == "" {
 		configPath = filepath.Join(cfgpkg.GetConfigDir(), "config.json")
 	}
 	cfg, err := cfgpkg.LoadConfig(configPath)
 	if err != nil {
-		return cfgpkg.WhatsAppConfig{}, err
+		return nil, err
 	}
-	return cfg.Channels.WhatsApp, nil
+	return cfg, nil
+}
+
+func (s *Server) resolveWhatsAppBridgeURL(cfg *cfgpkg.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	raw := strings.TrimSpace(cfg.Channels.WhatsApp.BridgeURL)
+	if raw == "" {
+		return embeddedWhatsAppBridgeURL(cfg.Gateway.Host, cfg.Gateway.Port)
+	}
+	hostPort := comparableBridgeHostPort(raw)
+	if hostPort == "" {
+		return raw
+	}
+	if hostPort == "127.0.0.1:3001" || hostPort == "localhost:3001" {
+		return embeddedWhatsAppBridgeURL(cfg.Gateway.Host, cfg.Gateway.Port)
+	}
+	if hostPort == comparableGatewayHostPort(cfg.Gateway.Host, cfg.Gateway.Port) {
+		return embeddedWhatsAppBridgeURL(cfg.Gateway.Host, cfg.Gateway.Port)
+	}
+	return raw
+}
+
+func embeddedWhatsAppBridgeURL(host string, port int) string {
+	host = strings.TrimSpace(host)
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("ws://%s:%d/whatsapp/ws", host, port)
+}
+
+func comparableBridgeHostPort(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, "://") {
+		return strings.ToLower(raw)
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(u.Host))
+}
+
+func comparableGatewayHostPort(host string, port int) string {
+	host = strings.TrimSpace(strings.ToLower(host))
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("%s:%d", host, port)
 }
 
 func renderQRCodeSVG(code *qr.Code, scale, quietZone int) string {

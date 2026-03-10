@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"testing"
 	"time"
 
@@ -60,6 +61,32 @@ func TestBridgeStatusURLWithNestedPath(t *testing.T) {
 	}
 	if got != "http://localhost:7788/whatsapp/status" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestIsLocalRemoteAddr(t *testing.T) {
+	ipv4Net := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(24, 32)}
+	ipv6Net := &net.IPNet{IP: net.ParseIP("fe80::1"), Mask: net.CIDRMask(64, 128)}
+
+	tests := []struct {
+		name       string
+		remoteAddr string
+		want       bool
+	}{
+		{name: "loopback", remoteAddr: "127.0.0.1:4321", want: true},
+		{name: "local interface ipv4", remoteAddr: "192.168.1.10:4321", want: true},
+		{name: "local interface ipv6", remoteAddr: "[fe80::1]:4321", want: true},
+		{name: "non local ip", remoteAddr: "192.168.1.11:4321", want: false},
+		{name: "invalid host", remoteAddr: "not-an-ip", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isLocalRemoteAddr(tt.remoteAddr, []net.Addr{ipv4Net, ipv6Net})
+			if got != tt.want {
+				t.Fatalf("got %v want %v", got, tt.want)
+			}
+		})
 	}
 }
 

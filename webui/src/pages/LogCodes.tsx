@@ -42,33 +42,35 @@ const LogCodes: React.FC = () => {
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('logCodes')}</h1>
+        <h1 className="ui-text-secondary text-2xl font-semibold tracking-tight">{t('logCodes')}</h1>
         <input
           value={kw}
           onChange={(e) => setKw(e.target.value)}
           placeholder={t('logCodesSearchPlaceholder')}
-          className="w-full sm:w-80 bg-zinc-900/70 border border-zinc-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+          className="ui-input w-full sm:w-80 rounded-xl px-3 py-2 text-sm"
         />
       </div>
 
-      <div className="brand-card border border-zinc-800 rounded-[30px] overflow-hidden">
+      <div className="brand-card ui-border-subtle border rounded-[30px] overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-900/70 border-b border-zinc-800">
-            <tr className="text-zinc-400">
+          <thead className="ui-soft-panel ui-border-subtle border-b">
+            <tr className="ui-text-secondary">
               <th className="text-left p-3 font-medium w-40">{t('code')}</th>
               <th className="text-left p-3 font-medium">{t('template')}</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((it) => (
-              <tr key={it.code} className="border-b border-zinc-900/70 hover:bg-zinc-900/20">
-                <td className="p-3 font-mono text-indigo-300">{it.code}</td>
-                <td className="p-3 text-zinc-200 break-all">{it.text}</td>
+              <tr key={it.code} className="ui-border-subtle ui-row-hover border-b">
+                <td className="p-3">
+                  <span className="ui-code-badge px-3 py-1 font-mono text-sm">{it.code}</span>
+                </td>
+                <td className="ui-text-secondary p-3 break-all">{it.text}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td className="p-6 text-zinc-500" colSpan={2}>{t('logCodesNoCodes')}</td>
+                <td className="ui-text-muted p-6" colSpan={2}>{t('logCodesNoCodes')}</td>
               </tr>
             )}
           </tbody>

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check } from 'lucide-react';
+import { Check, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatLocalDateTime } from '../utils/time';
 
@@ -128,7 +128,14 @@ const TaskAudit: React.FC = () => {
             <option value="error">{t('statusError')}</option>
             <option value="suppressed">{t('statusSuppressed')}</option>
           </select>
-          <button onClick={fetchData} className="ui-button ui-button-primary px-3 py-1.5 text-sm">{loading ? t('loading') : t('refresh')}</button>
+          <button
+            onClick={fetchData}
+            className="ui-button ui-button-primary ui-button-icon"
+            title={loading ? t('loading') : t('refresh')}
+            aria-label={loading ? t('loading') : t('refresh')}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 

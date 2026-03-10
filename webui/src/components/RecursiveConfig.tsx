@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface RecursiveConfigProps {
@@ -55,11 +56,11 @@ const PrimitiveArrayEditor: React.FC<{
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {value.length === 0 && <span className="text-xs text-zinc-500 italic">{t('empty')}</span>}
+        {value.length === 0 && <span className="ui-text-muted text-xs italic">{t('empty')}</span>}
         {value.map((item, idx) => (
-          <span key={`${item}-${idx}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-xl ui-soft-panel text-xs font-mono text-zinc-700 dark:text-zinc-200">
+          <span key={`${item}-${idx}`} className="ui-text-secondary inline-flex items-center gap-1 px-2 py-1 rounded-xl ui-soft-panel text-xs font-mono">
             {String(item)}
-            <button onClick={() => removeAt(idx)} className="ui-text-danger-hover text-zinc-400">×</button>
+            <button onClick={() => removeAt(idx)} className="ui-text-danger-hover ui-text-subtle">×</button>
           </span>
         ))}
       </div>
@@ -83,9 +84,11 @@ const PrimitiveArrayEditor: React.FC<{
             addValue(draft);
             setDraft('');
           }}
-          className="ui-button ui-button-neutral px-3 py-2 text-xs rounded-xl"
+          className="ui-button ui-button-neutral ui-button-icon rounded-xl"
+          title={t('add')}
+          aria-label={t('add')}
         >
-          {t('add')}
+          <Plus className="w-4 h-4" />
         </button>
 
         <select
@@ -126,8 +129,8 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
           return (
             <div key={currentPath} className="space-y-2 col-span-full">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-zinc-300 block capitalize">{label}</span>
-                <span className="text-[10px] text-zinc-600 font-mono">{currentPath}</span>
+                <span className="ui-text-secondary text-sm font-medium block capitalize">{label}</span>
+                <span className="ui-text-subtle text-[10px] font-mono">{currentPath}</span>
               </div>
               <div className="ui-soft-panel p-3">
                 {allPrimitive ? (
@@ -158,11 +161,11 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
         if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
           return (
             <div key={currentPath} className="space-y-6 col-span-full">
-              <h3 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-                <span className="w-1.5 h-4 bg-indigo-500 rounded-full" />
+              <h3 className="ui-text-subtle text-sm font-semibold uppercase tracking-wider flex items-center gap-2">
+                <span className="ui-icon-info w-1.5 h-4 rounded-full" />
                 {label}
               </h3>
-              <div className="pl-6 border-l border-zinc-800/50 dark:border-zinc-700/50">
+              <div className="ui-border-subtle pl-6 border-l">
                 <RecursiveConfig data={value} labels={labels} path={currentPath} onChange={onChange} hotPaths={hotPaths} onlyHot={onlyHot} />
               </div>
             </div>
@@ -172,8 +175,8 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
         return (
           <div key={currentPath} className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-zinc-300 block capitalize">{label}</span>
-              <span className="text-[10px] text-zinc-600 font-mono">{currentPath}</span>
+              <span className="ui-text-secondary text-sm font-medium block capitalize">{label}</span>
+              <span className="ui-text-subtle text-[10px] font-mono">{currentPath}</span>
             </div>
             {typeof value === 'boolean' ? (
               <label className="ui-toggle-card flex items-center gap-3 p-3 cursor-pointer transition-colors group">
@@ -181,9 +184,9 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                   type="checkbox"
                   checked={value}
                   onChange={(e) => onChange(currentPath, e.target.checked)}
-                  className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-950 bg-zinc-900"
+                  className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500"
                 />
-                <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors">
+                <span className="ui-text-subtle group-hover:ui-text-secondary text-sm transition-colors">
                   {value ? (labels['enabled_true'] || t('enabled_true')) : (labels['enabled_false'] || t('enabled_false'))}
                 </span>
               </label>

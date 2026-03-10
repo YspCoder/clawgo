@@ -154,18 +154,18 @@ const Logs: React.FC = () => {
 
   const getLevelColor = (level: string) => {
     switch ((level || 'INFO').toUpperCase()) {
-      case 'ERROR': return 'text-red-400';
-      case 'WARN': return 'text-amber-400';
-      case 'DEBUG': return 'text-sky-400';
-      default: return 'text-emerald-400';
+      case 'ERROR': return 'ui-text-danger';
+      case 'WARN': return 'ui-code-warning';
+      case 'DEBUG': return 'ui-icon-info';
+      default: return 'ui-icon-success';
     }
   };
 
   return (
-    <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 h-full flex flex-col">
+    <div className="p-4 md:p-5 xl:p-6 w-full space-y-4 h-full flex flex-col">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{t('logs')}</h1>
+          <h1 className="ui-text-primary text-2xl font-semibold tracking-tight">{t('logs')}</h1>
           <div className={`ui-pill flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
             isStreaming ? 'ui-pill-success' : 'ui-pill-neutral'
           }`}>
@@ -194,36 +194,36 @@ const Logs: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 brand-card border border-zinc-800 rounded-[30px] overflow-hidden flex flex-col shadow-2xl">
-        <div className="bg-zinc-900/20 px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
+      <div className="flex-1 brand-card ui-border-subtle border rounded-[30px] overflow-hidden flex flex-col shadow-2xl">
+        <div className="ui-soft-panel ui-border-subtle px-4 py-2 border-b flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-zinc-500" />
-            <span className="text-xs font-mono text-zinc-500">{t('systemLog')}</span>
+            <Terminal className="ui-icon-muted w-4 h-4" />
+            <span className="ui-text-primary text-xs font-mono">{t('systemLog')}</span>
           </div>
-          <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">{logs.length} {t('entries')}</span>
+          <span className="ui-text-secondary text-[10px] font-mono uppercase tracking-widest">{logs.length} {t('entries')}</span>
         </div>
         <div className="flex-1 overflow-auto selection:bg-indigo-500/30">
           {logs.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-zinc-700 space-y-2 p-4">
+            <div className="ui-text-primary h-full flex flex-col items-center justify-center space-y-2 p-4">
               <Terminal className="w-8 h-8 opacity-10" />
               <p>{t('waitingForLogs')}</p>
             </div>
           ) : showRaw ? (
             <div className="p-3 font-mono text-xs space-y-1">
               {logs.map((log, i) => (
-                <div key={i} className="border-b border-zinc-900/70 py-1 text-zinc-300 break-all">{log.__raw || JSON.stringify(log)}</div>
+                <div key={i} className="ui-border-subtle ui-text-primary border-b py-1 break-all">{log.__raw || JSON.stringify(log)}</div>
               ))}
               <div ref={logEndRef} />
             </div>
           ) : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-zinc-900/85 border-b border-zinc-800">
-                <tr className="text-zinc-400">
-                  <th className="text-left p-2 font-medium">{t('time')}</th>
-                  <th className="text-left p-2 font-medium">{t('level')}</th>
-                  <th className="text-left p-2 font-medium">{t('message')}</th>
-                  <th className="text-left p-2 font-medium">{t('error')}</th>
-                  <th className="text-left p-2 font-medium">{t('codeCaller')}</th>
+              <thead className="ui-soft-panel ui-border-subtle sticky top-0 border-b">
+                <tr className="ui-text-primary">
+                  <th className="text-left px-2 py-2 font-semibold">{t('time')}</th>
+                  <th className="text-left px-2 py-2 font-semibold">{t('level')}</th>
+                  <th className="text-left px-2 py-2 font-semibold">{t('message')}</th>
+                  <th className="text-left px-2 py-2 font-semibold">{t('error')}</th>
+                  <th className="text-left px-2 py-2 font-semibold">{t('codeCaller')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -236,12 +236,12 @@ const Logs: React.FC = () => {
                   const caller = (log as any).caller || (log as any).source || '';
                   const code = toCode(rawCode);
                   return (
-                    <tr key={i} className="border-b border-zinc-900/70 hover:bg-zinc-900/25 align-top">
-                      <td className="p-2 text-zinc-500 whitespace-nowrap">{formatLocalTime(log.time)}</td>
-                      <td className={`p-2 font-semibold whitespace-nowrap ${getLevelColor(lvl)}`}>{lvl}</td>
-                      <td className="p-2 text-zinc-200 break-all">{message}</td>
-                      <td className="p-2 text-red-300 break-all">{errText}</td>
-                      <td className="p-2 text-zinc-500 break-all">{code ? `${code} | ${caller}` : caller}</td>
+                    <tr key={i} className="ui-border-subtle ui-row-hover border-b align-top">
+                      <td className="ui-text-secondary px-2 py-1.5 whitespace-nowrap">{formatLocalTime(log.time)}</td>
+                      <td className={`px-2 py-1.5 font-semibold whitespace-nowrap ${getLevelColor(lvl)}`}>{lvl}</td>
+                      <td className="ui-text-primary px-2 py-1.5 break-all">{message}</td>
+                      <td className="ui-text-danger px-2 py-1.5 break-all">{errText}</td>
+                      <td className="ui-text-secondary px-2 py-1.5 break-all">{code ? `${code} | ${caller}` : caller}</td>
                     </tr>
                   );
                 })}

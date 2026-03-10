@@ -19,12 +19,12 @@ function StatCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="brand-card rounded-[28px] border border-zinc-800 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] uppercase tracking-widest text-zinc-500">{title}</div>
-          <div className="mt-2 text-3xl font-semibold text-zinc-100">{value}</div>
-          {subtitle && <div className="mt-1 text-xs text-zinc-500">{subtitle}</div>}
+    <div className="brand-card ui-border-subtle rounded-[28px] border p-5 min-h-[148px]">
+      <div className="flex h-full items-start justify-between gap-3">
+        <div className="flex min-h-full flex-1 flex-col">
+          <div className="ui-text-muted text-[11px] uppercase tracking-widest">{title}</div>
+          <div className="ui-text-primary mt-2 text-3xl font-semibold">{value}</div>
+          {subtitle && <div className="ui-text-muted mt-auto pt-4 text-xs">{subtitle}</div>}
         </div>
         <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${accent}`}>{icon}</div>
       </div>
@@ -45,18 +45,18 @@ function KVDistributionCard({
   const maxValue = entries.length > 0 ? Math.max(...entries.map(([, value]) => value)) : 0;
 
   return (
-    <div className="brand-card rounded-[28px] border border-zinc-800 p-5">
-      <div className="mb-4 text-sm font-medium text-zinc-200">{title}</div>
+    <div className="brand-card ui-border-subtle rounded-[28px] border p-5">
+      <div className="ui-text-secondary mb-4 text-sm font-medium">{title}</div>
       <div className="space-y-3">
         {entries.length === 0 ? (
-          <div className="text-sm text-zinc-500">-</div>
+          <div className="ui-text-muted text-sm">-</div>
         ) : entries.map(([key, value]) => (
           <div key={key} className="space-y-1">
             <div className="flex items-center justify-between gap-3 text-xs">
-              <div className="truncate text-zinc-300">{key}</div>
-              <div className="shrink-0 font-mono text-zinc-500">{value}</div>
+              <div className="ui-text-secondary truncate">{key}</div>
+              <div className="ui-text-muted shrink-0 font-mono">{value}</div>
             </div>
-            <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+            <div className="ui-surface-muted h-2 rounded-full overflow-hidden">
               <div
                 className="ekg-bar-fill h-full rounded-full"
                 style={{ width: `${maxValue > 0 ? (value / maxValue) * 100 : 0}%` }}
@@ -79,19 +79,19 @@ function RankingCard({
   valueMode: 'score' | 'count';
 }) {
   return (
-    <div className="brand-card rounded-[28px] border border-zinc-800 p-5">
-      <div className="mb-4 text-sm font-medium text-zinc-200">{title}</div>
+    <div className="brand-card ui-border-subtle rounded-[28px] border p-5">
+      <div className="ui-text-secondary mb-4 text-sm font-medium">{title}</div>
       <div className="space-y-2">
         {items.length === 0 ? (
-          <div className="text-sm text-zinc-500">-</div>
+          <div className="ui-text-muted text-sm">-</div>
         ) : items.map((item, index) => (
-          <div key={`${item.key || '-'}-${index}`} className="flex items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[11px] font-semibold text-zinc-300">
+          <div key={`${item.key || '-'}-${index}`} className="ui-border-subtle ui-surface-strong flex items-start gap-3 rounded-xl border px-3 py-2">
+            <div className="ui-surface-muted ui-text-secondary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold">
               {index + 1}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-zinc-200">{item.key || '-'}</div>
-              <div className="text-xs text-zinc-500">
+              <div className="ui-text-secondary truncate text-sm">{item.key || '-'}</div>
+              <div className="ui-text-muted text-xs">
                 {valueMode === 'score'
                   ? Number(item.score || 0).toFixed(2)
                   : `x${item.count || 0}`}
@@ -155,24 +155,28 @@ const EKG: React.FC = () => {
     <div className="h-full w-full p-4 md:p-6 xl:p-8 flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('ekg')}</h1>
-          <div className="mt-1 text-sm text-zinc-500">{t('ekgOverviewHint')}</div>
+          <h1 className="ui-text-primary text-2xl font-semibold tracking-tight">{t('ekg')}</h1>
+          <div className="ui-text-muted mt-1 text-sm">{t('ekgOverviewHint')}</div>
         </div>
         <div className="flex items-center gap-2">
-          <select value={ekgWindow} onChange={(e) => setEkgWindow(e.target.value as '6h' | '24h' | '7d')} className="bg-zinc-900/70 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
+          <select value={ekgWindow} onChange={(e) => setEkgWindow(e.target.value as '6h' | '24h' | '7d')} className="ui-select h-12 min-w-[96px] rounded-xl px-3 text-sm">
             <option value="6h">6h</option>
             <option value="24h">24h</option>
             <option value="7d">7d</option>
           </select>
-          <button onClick={fetchData} className="brand-button inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm text-zinc-950">
+          <button
+            onClick={fetchData}
+            className="ui-button ui-button-primary ui-button-icon h-10 w-10 rounded-xl"
+            title={loading ? t('loading') : t('refresh')}
+            aria-label={loading ? t('loading') : t('refresh')}
+          >
             <RefreshCw className="w-4 h-4" />
-            {loading ? t('loading') : t('refresh')}
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard title={t('ekgEscalations')} value={escalationCount} subtitle={`${ekgWindow} window`} accent="ui-pill ui-pill-warning border" icon={<AlertTriangle className="w-5 h-5" />} />
+        <StatCard title={t('ekgEscalations')} value={escalationCount} subtitle={t('ekgWindowLabel', { window: ekgWindow })} accent="ui-pill ui-pill-warning border" icon={<AlertTriangle className="w-5 h-5" />} />
         <StatCard title={t('ekgSourceStats')} value={sourceCount} subtitle={t('ekgActiveSources')} accent="ui-pill ui-pill-info border" icon={<Workflow className="w-5 h-5" />} />
         <StatCard title={t('ekgChannelStats')} value={channelCount} subtitle={t('ekgActiveChannels')} accent="ui-pill ui-pill-accent border" icon={<Route className="w-5 h-5" />} />
         <StatCard title={t('ekgTopProvidersWorkload')} value={topWorkloadProvider} subtitle={`${t('ekgErrorsCount')} ${totalErrorHits}`} accent="ui-pill ui-pill-danger border" icon={<ServerCrash className="w-5 h-5" />} />

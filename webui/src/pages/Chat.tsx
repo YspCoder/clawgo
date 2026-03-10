@@ -55,10 +55,10 @@ type AgentRuntimeBadge = {
   text: string;
 };
 
-function formatAgentName(agentID?: string): string {
+function formatAgentName(agentID: string | undefined, t: (key: string) => string): string {
   const normalized = String(agentID || '').trim();
-  if (!normalized) return 'Unknown Agent';
-  if (normalized === 'main') return 'Main Agent';
+  if (!normalized) return t('unknownAgent');
+  if (normalized === 'main') return t('mainAgent');
   return normalized
     .split(/[-_.:]+/)
     .filter(Boolean)
@@ -396,7 +396,7 @@ const Chat: React.FC = () => {
         label: t('system'),
         actorName: t('system'),
         avatarText: 'S',
-        avatarClassName: 'bg-zinc-700 text-zinc-100',
+        avatarClassName: 'avatar-system',
       }]);
     }
   }
@@ -436,7 +436,7 @@ const Chat: React.FC = () => {
       const messageID = String(item.message_id || '').trim();
       if (!messageID) return;
       replyIndex.set(messageID, {
-        actor: formatAgentName(item.from_agent || item.agent_id),
+        actor: formatAgentName(item.from_agent || item.agent_id, t),
         messageType: String(item.message_type || 'message'),
       });
     });
@@ -451,7 +451,7 @@ const Chat: React.FC = () => {
       })
       .map((item, index) => {
         const actorKey = messageActorKey(item);
-        const actorName = formatAgentName(actorKey);
+        const actorName = formatAgentName(actorKey, t);
         let metaLine = '';
 
         if (item.kind === 'message') {
@@ -461,7 +461,7 @@ const Chat: React.FC = () => {
           } else if (item.from_agent && item.to_agent && item.from_agent === item.to_agent) {
             metaLine = t('selfRefresh');
           } else if (item.to_agent) {
-            metaLine = `${t('toAgent')}: ${formatAgentName(item.to_agent)}`;
+            metaLine = `${t('toAgent')}: ${formatAgentName(item.to_agent, t)}`;
           }
           if (item.message_type) {
             metaLine = metaLine ? `${metaLine} · ${item.message_type}` : String(item.message_type);
@@ -565,10 +565,10 @@ const Chat: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full min-w-0">
+    <div className="flex h-full min-w-0 p-4 md:p-5 xl:p-6">
       <div className="flex-1 flex flex-col brand-card ui-panel rounded-[30px] overflow-hidden">
-        <div className="px-4 py-3 border-b border-zinc-800 dark:border-zinc-700 flex items-center justify-between gap-3 flex-wrap bg-zinc-900/15">
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
+        <div className="ui-surface-muted ui-border-subtle px-4 py-3 border-b flex items-center gap-2 min-w-0 overflow-x-auto">
+          <div className="flex items-center gap-2 min-w-0 shrink-0">
             <button
               onClick={() => setChatTab('main')}
               className={`ui-button px-3 py-1.5 text-xs ${chatTab === 'main' ? 'ui-button-primary' : 'ui-button-neutral'}`}
@@ -581,17 +581,30 @@ const Chat: React.FC = () => {
             >
               {t('subagentGroup')}
             </button>
-            {chatTab === 'main' && (
-              <select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="ui-select max-w-full rounded-xl px-2.5 py-1.5 text-xs">
-                {userSessions.map((s: any) => <option key={s.key} value={s.key}>{s.title || s.key}</option>)}
-              </select>
-            )}
           </div>
-          <button onClick={() => { if (chatTab === 'main') { void loadHistory(); } else { void loadSubagentGroup(); } }} className="ui-button ui-button-neutral flex items-center gap-1 px-2.5 py-1.5 text-xs"><RefreshCw className="w-3 h-3" />{t('reloadHistory')}</button>
+          {chatTab === 'main' && (
+            <select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="ui-select min-w-[220px] flex-1 rounded-xl px-2.5 py-1.5 text-xs">
+              {userSessions.map((s: any) => <option key={s.key} value={s.key}>{s.title || s.key}</option>)}
+            </select>
+          )}
+          <button
+            onClick={() => {
+              if (chatTab === 'main') {
+                void loadHistory();
+              } else {
+                void loadSubagentGroup();
+              }
+            }}
+            className="ui-button ui-button-neutral ui-button-icon ml-auto shrink-0"
+            title={t('reloadHistory')}
+            aria-label={t('reloadHistory')}
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
         </div>
 
         {chatTab === 'subagents' && (
-          <div className="px-4 py-3 border-b border-zinc-800 dark:border-zinc-700 bg-zinc-950/20 flex flex-wrap gap-2">
+          <div className="ui-surface-strong ui-border-subtle px-4 py-3 border-b flex flex-wrap gap-2">
             <button
               onClick={() => setSelectedStreamAgents([])}
               className={`ui-button px-2.5 py-1 rounded-full text-xs ${selectedStreamAgents.length === 0 ? 'ui-button-primary' : 'ui-button-neutral'}`}
@@ -604,7 +617,7 @@ const Chat: React.FC = () => {
                 onClick={() => toggleStreamAgent(agent)}
                 className={`ui-button px-2.5 py-1 rounded-full text-xs ${selectedStreamAgents.includes(agent) ? 'ui-button-primary' : 'ui-button-neutral'}`}
               >
-                {formatAgentName(agent)}
+                {formatAgentName(agent, t)}
               </button>
             ))}
           </div>
@@ -612,10 +625,10 @@ const Chat: React.FC = () => {
 
         <div className="flex-1 min-h-0 flex flex-col xl:flex-row">
           {chatTab === 'subagents' && (
-            <div className="w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r border-zinc-800 dark:border-zinc-700 bg-zinc-950/28 p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
+            <div className="ui-surface-strong ui-border-subtle w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
               <div>
-                <div className="text-xs uppercase tracking-wider text-zinc-500 mb-1">{t('subagentDispatch')}</div>
-                <div className="text-sm text-zinc-300">{t('subagentDispatchHint')}</div>
+                <div className="ui-text-muted text-xs uppercase tracking-wider mb-1">{t('subagentDispatch')}</div>
+                <div className="ui-text-secondary text-sm">{t('subagentDispatchHint')}</div>
               </div>
               <div className="space-y-3">
                 <select
@@ -625,7 +638,7 @@ const Chat: React.FC = () => {
                 >
                   {registryAgents.map((agent) => (
                     <option key={agent.agent_id} value={agent.agent_id}>
-                      {formatAgentName(agent.display_name || agent.agent_id)} · {agent.role || '-'}
+                      {formatAgentName(agent.display_name || agent.agent_id, t)} · {agent.role || '-'}
                     </option>
                   ))}
                 </select>
@@ -649,8 +662,8 @@ const Chat: React.FC = () => {
                   {t('dispatchToSubagent')}
                 </button>
               </div>
-              <div className="border-t border-zinc-800 dark:border-zinc-700 pt-4 min-h-0 flex flex-col">
-                <div className="text-xs uppercase tracking-wider text-zinc-500 mb-2">{t('agents')}</div>
+              <div className="ui-border-subtle border-t pt-4 min-h-0 flex flex-col">
+                <div className="ui-text-muted text-xs uppercase tracking-wider mb-2">{t('agents')}</div>
                 <div className="overflow-y-auto space-y-2 min-h-0">
                   {registryAgents.map((agent) => {
                     const active = dispatchAgentID === agent.agent_id;
@@ -668,13 +681,13 @@ const Chat: React.FC = () => {
                       <button
                         key={agent.agent_id}
                         onClick={() => setDispatchAgentID(String(agent.agent_id || ''))}
-                        className={`w-full text-left rounded-2xl border px-3 py-2.5 ${active ? 'ui-card-active-warning' : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-900/70'}`}
+                        className={`w-full text-left rounded-2xl border px-3 py-2.5 ${active ? 'ui-card-active-warning' : 'ui-border-subtle ui-surface-muted ui-row-hover'}`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-medium text-zinc-100">{formatAgentName(agent.display_name || agent.agent_id)}</div>
+                          <div className="ui-text-primary text-sm font-medium">{formatAgentName(agent.display_name || agent.agent_id, t)}</div>
                           <span className={`ui-pill inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${badgeClass}`}>{badge?.text || t('idle')}</span>
                         </div>
-                        <div className="text-xs text-zinc-500">{agent.agent_id} · {agent.role || '-'}</div>
+                        <div className="ui-text-muted text-xs">{agent.agent_id} · {agent.role || '-'}</div>
                       </button>
                     );
                   })}
@@ -690,9 +703,9 @@ const Chat: React.FC = () => {
             className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 min-w-0"
           >
             {displayedChat.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-zinc-500 space-y-4">
-                <div className="w-16 h-16 rounded-[24px] brand-card-subtle flex items-center justify-center border border-zinc-800">
-                  <MessageSquare className="w-8 h-8 text-zinc-600" />
+              <div className="ui-text-muted h-full flex flex-col items-center justify-center space-y-4">
+                <div className="ui-border-subtle w-16 h-16 rounded-[24px] brand-card-subtle flex items-center justify-center border">
+                  <MessageSquare className="ui-icon-muted w-8 h-8" />
                 </div>
                 <p className="text-sm font-medium">{chatTab === 'main' ? t('startConversation') : t('noSubagentStream')}</p>
               </div>
@@ -714,12 +727,12 @@ const Chat: React.FC = () => {
                   ? 'chat-meta-user'
                   : isExec
                     ? 'chat-meta-tool'
-                    : 'text-zinc-500 dark:text-zinc-400';
+                    : 'ui-text-muted';
                 const subLabelClass = isUser
                   ? 'chat-submeta-user'
                   : isExec
                     ? 'chat-submeta-tool'
-                    : 'text-zinc-500 dark:text-zinc-400';
+                    : 'ui-text-muted';
 
                 return (
                   <motion.div
@@ -749,8 +762,8 @@ const Chat: React.FC = () => {
           </div>
         </div>
 
-        <div className="p-3 sm:p-4 bg-zinc-950/20 border-t border-zinc-800 dark:border-zinc-700">
-          <div className="w-full relative flex items-center">
+        <div className="ui-soft-panel ui-border-subtle p-3 sm:p-4 border-t">
+          <div className="ui-composer w-full relative flex items-center px-2">
             <input
               type="file"
               id="file"
@@ -759,7 +772,7 @@ const Chat: React.FC = () => {
             />
             <label
               htmlFor="file"
-              className={`absolute left-3 p-2 rounded-full cursor-pointer transition-colors ${fileSelected ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200'}`}
+              className={`absolute left-3 p-2 rounded-full cursor-pointer transition-colors ${fileSelected ? 'ui-icon-info ui-surface-muted' : 'ui-text-muted ui-row-hover'}`}
             >
               <Paperclip className="w-5 h-5" />
             </label>
@@ -769,12 +782,12 @@ const Chat: React.FC = () => {
               onKeyDown={(e) => chatTab === 'main' && e.key === 'Enter' && send()}
               placeholder={chatTab === 'main' ? t('typeMessage') : t('subagentGroupReadonly')}
               disabled={chatTab !== 'main'}
-              className="ui-input w-full rounded-full pl-14 pr-14 py-3.5 text-[15px] transition-all shadow-sm disabled:opacity-60"
+              className="ui-composer-input w-full pl-14 pr-14 py-3.5 text-[15px] transition-all disabled:opacity-60"
             />
             <button
               onClick={send}
               disabled={chatTab !== 'main' || (!msg.trim() && !fileSelected)}
-              className="absolute right-2 p-2.5 brand-button disabled:opacity-50 text-zinc-950 rounded-full transition-colors"
+              className="absolute right-2 p-2.5 brand-button disabled:opacity-50 ui-text-primary rounded-full transition-colors"
             >
               <Send className="w-4 h-4 ml-0.5" />
             </button>

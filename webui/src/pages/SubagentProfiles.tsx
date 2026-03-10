@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check } from 'lucide-react';
+import { Check, Plus, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 
@@ -272,18 +272,28 @@ const SubagentProfiles: React.FC = () => {
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentProfiles')}</h1>
         <div className="flex items-center gap-2">
-          <button onClick={() => load()} className="ui-button ui-button-neutral px-3 py-1.5 text-sm">
-            {t('refresh')}
+          <button
+            onClick={() => load()}
+            className="ui-button ui-button-neutral ui-button-icon"
+            title={t('refresh')}
+            aria-label={t('refresh')}
+          >
+            <RefreshCw className="w-4 h-4" />
           </button>
-          <button onClick={onNew} className="ui-button ui-button-success px-3 py-1.5 text-sm">
-            {t('newProfile')}
+          <button
+            onClick={onNew}
+            className="ui-button ui-button-success ui-button-icon"
+            title={t('newProfile')}
+            aria-label={t('newProfile')}
+          >
+            <Plus className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
-        <div className="brand-card rounded-[28px] border border-zinc-800 overflow-hidden">
-          <div className="px-3 py-2 border-b border-zinc-800 text-xs text-zinc-400 uppercase tracking-wider">
+        <div className="brand-card ui-border-subtle rounded-[28px] border overflow-hidden">
+          <div className="ui-border-subtle ui-text-subtle px-3 py-2 border-b text-xs uppercase tracking-wider">
             {t('subagentProfiles')}
           </div>
           <div className="overflow-y-auto max-h-[70vh]">
@@ -291,17 +301,17 @@ const SubagentProfiles: React.FC = () => {
               <button
                 key={it.agent_id}
                 onClick={() => onSelect(it)}
-                className="w-full text-left px-3 py-2 border-b border-zinc-800/50 transition-colors"
+                className="ui-border-subtle ui-row-hover w-full text-left px-3 py-2 border-b transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-zinc-100 truncate">{it.agent_id || '-'}</div>
-                    <div className="text-xs text-zinc-400 truncate">
+                    <div className="ui-text-primary text-sm truncate">{it.agent_id || '-'}</div>
+                    <div className="ui-text-subtle text-xs truncate">
                       {(it.status || 'active')} · {it.role || '-'} · {(it.memory_namespace || '-')}
                     </div>
                   </div>
                   {selectedId === it.agent_id && (
-                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300 self-center">
+                    <span className="ui-pill ui-pill-info inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full self-center">
                       <Check className="w-3.5 h-3.5" />
                     </span>
                   )}
@@ -309,58 +319,58 @@ const SubagentProfiles: React.FC = () => {
               </button>
             ))}
             {items.length === 0 && (
-              <div className="px-3 py-4 text-sm text-zinc-500">No subagent profiles.</div>
+              <div className="ui-text-muted px-3 py-4 text-sm">No subagent profiles.</div>
             )}
           </div>
         </div>
 
-        <div className="brand-card rounded-[28px] border border-zinc-800 p-4 space-y-3">
+        <div className="brand-card ui-border-subtle rounded-[28px] border p-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <div className="text-xs text-zinc-400 mb-1">{t('id')}</div>
+              <div className="ui-text-subtle text-xs mb-1">{t('id')}</div>
               <input
                 value={draft.agent_id || ''}
                 disabled={!!selected}
                 onChange={(e) => setDraft({ ...draft, agent_id: e.target.value })}
-                className="w-full px-2 py-1.5 text-xs bg-zinc-900/70 border border-zinc-700 rounded-xl disabled:opacity-60"
+                className="ui-input w-full px-2 py-1.5 text-xs rounded-xl disabled:opacity-60"
                 placeholder="coder"
               />
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">{t('name')}</div>
+              <div className="ui-text-subtle text-xs mb-1">{t('name')}</div>
               <input
                 value={draft.name || ''}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
                 placeholder="Code Agent"
               />
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">Role</div>
+              <div className="ui-text-subtle text-xs mb-1">Role</div>
               <input
                 value={draft.role || ''}
                 onChange={(e) => setDraft({ ...draft, role: e.target.value })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
                 placeholder="coding"
               />
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">{t('status')}</div>
+              <div className="ui-text-subtle text-xs mb-1">{t('status')}</div>
               <select
                 value={draft.status || 'active'}
                 onChange={(e) => setDraft({ ...draft, status: e.target.value })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-select w-full px-2 py-1 text-xs rounded"
               >
                 <option value="active">active</option>
                 <option value="disabled">disabled</option>
               </select>
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">notify_main_policy</div>
+              <div className="ui-text-subtle text-xs mb-1">notify_main_policy</div>
               <select
                 value={draft.notify_main_policy || 'final_only'}
                 onChange={(e) => setDraft({ ...draft, notify_main_policy: e.target.value })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-select w-full px-2 py-1 text-xs rounded"
               >
                 <option value="final_only">final_only</option>
                 <option value="internal_only">internal_only</option>
@@ -370,33 +380,33 @@ const SubagentProfiles: React.FC = () => {
               </select>
             </div>
             <div className="md:col-span-2">
-              <div className="text-xs text-zinc-400 mb-1">system_prompt_file</div>
+              <div className="ui-text-subtle text-xs mb-1">system_prompt_file</div>
               <input
                 value={draft.system_prompt_file || ''}
                 onChange={(e) => setDraft({ ...draft, system_prompt_file: e.target.value })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
                 placeholder="agents/coder/AGENT.md"
               />
             </div>
             <div className="md:col-span-2">
-              <div className="text-xs text-zinc-400 mb-1">{t('memoryNamespace')}</div>
+              <div className="ui-text-subtle text-xs mb-1">{t('memoryNamespace')}</div>
               <input
                 value={draft.memory_namespace || ''}
                 onChange={(e) => setDraft({ ...draft, memory_namespace: e.target.value })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
                 placeholder="coder"
               />
             </div>
             <div className="md:col-span-2">
-              <div className="text-xs text-zinc-400 mb-1">{t('toolAllowlist')}</div>
+              <div className="ui-text-subtle text-xs mb-1">{t('toolAllowlist')}</div>
               <input
                 value={allowlistText}
                 onChange={(e) => setDraft({ ...draft, tool_allowlist: parseAllowlist(e.target.value) })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
                 placeholder="read_file, list_files, memory_search"
               />
-              <div className="mt-1 text-[11px] text-zinc-500">
-                <span className="font-mono text-zinc-400">skill_exec</span> is inherited automatically and does not need to be listed here.
+              <div className="ui-text-muted mt-1 text-[11px]">
+                <span className="ui-text-subtle font-mono">skill_exec</span> is inherited automatically and does not need to be listed here.
               </div>
               {groups.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -416,13 +426,13 @@ const SubagentProfiles: React.FC = () => {
             </div>
             <div className="md:col-span-2">
               <div className="flex items-center justify-between mb-1 gap-3">
-                <div className="text-xs text-zinc-400">system_prompt_file content</div>
-                <div className="text-[11px] text-zinc-500">{promptFileFound ? t('promptFileReady') : t('promptFileMissing')}</div>
+                <div className="ui-text-subtle text-xs">system_prompt_file content</div>
+                <div className="ui-text-muted text-[11px]">{promptFileFound ? t('promptFileReady') : t('promptFileMissing')}</div>
               </div>
               <textarea
                 value={promptFileContent}
                 onChange={(e) => setPromptFileContent(e.target.value)}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded min-h-[220px]"
+                className="ui-textarea w-full px-2 py-1 text-xs rounded min-h-[220px]"
                 placeholder={t('agentPromptContentPlaceholder')}
               />
               <div className="mt-2 flex items-center gap-2">
@@ -437,43 +447,43 @@ const SubagentProfiles: React.FC = () => {
               </div>
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">{t('maxRetries')}</div>
+              <div className="ui-text-subtle text-xs mb-1">{t('maxRetries')}</div>
               <input
                 type="number"
                 min={0}
                 value={Number(draft.max_retries || 0)}
                 onChange={(e) => setDraft({ ...draft, max_retries: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
               />
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">{t('retryBackoffMs')}</div>
+              <div className="ui-text-subtle text-xs mb-1">{t('retryBackoffMs')}</div>
               <input
                 type="number"
                 min={0}
                 value={Number(draft.retry_backoff_ms || 0)}
                 onChange={(e) => setDraft({ ...draft, retry_backoff_ms: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
               />
             </div>
             <div>
-              <div className="text-xs text-zinc-400 mb-1">Max Task Chars</div>
+              <div className="ui-text-subtle text-xs mb-1">Max Task Chars</div>
               <input
                 type="number"
                 min={0}
                 value={Number(draft.max_task_chars || 0)}
                 onChange={(e) => setDraft({ ...draft, max_task_chars: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
               />
             </div>
             <div className="md:col-span-2">
-              <div className="text-xs text-zinc-400 mb-1">Max Result Chars</div>
+              <div className="ui-text-subtle text-xs mb-1">Max Result Chars</div>
               <input
                 type="number"
                 min={0}
                 value={Number(draft.max_result_chars || 0)}
                 onChange={(e) => setDraft({ ...draft, max_result_chars: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded"
+                className="ui-input w-full px-2 py-1 text-xs rounded"
               />
             </div>
           </div>

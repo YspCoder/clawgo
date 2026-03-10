@@ -213,11 +213,21 @@ const Skills: React.FC = () => {
               <Zap className="w-4 h-4" /> {t('skillsInstallNow')}
             </button>
           )}
-          <button onClick={() => refreshSkills()} className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium">
-            <RefreshCw className="w-4 h-4" /> {t('refresh')}
+          <button
+            onClick={() => refreshSkills()}
+            className="ui-button ui-button-neutral ui-button-icon"
+            title={t('refresh')}
+            aria-label={t('refresh')}
+          >
+            <RefreshCw className="w-4 h-4" />
           </button>
-          <button onClick={onAddSkillClick} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium shadow-sm">
-            <Plus className="w-4 h-4" /> {t('skillsAdd')}
+          <button
+            onClick={onAddSkillClick}
+            className="ui-button ui-button-primary ui-button-icon shadow-sm"
+            title={t('skillsAdd')}
+            aria-label={t('skillsAdd')}
+          >
+            <Plus className="w-4 h-4" />
           </button>
         </div>
       </div>

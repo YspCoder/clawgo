@@ -223,9 +223,6 @@ func Validate(cfg *Config) []error {
 	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token == "" {
 		errs = append(errs, fmt.Errorf("channels.discord.token is required when channels.discord.enabled=true"))
 	}
-	if cfg.Channels.WhatsApp.Enabled && cfg.Channels.WhatsApp.BridgeURL == "" {
-		errs = append(errs, fmt.Errorf("channels.whatsapp.bridge_url is required when channels.whatsapp.enabled=true"))
-	}
 	if cfg.Channels.DingTalk.Enabled {
 		if cfg.Channels.DingTalk.ClientID == "" {
 			errs = append(errs, fmt.Errorf("channels.dingtalk.client_id is required when channels.dingtalk.enabled=true"))
