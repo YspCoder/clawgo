@@ -39,6 +39,7 @@ empty:=
 space:=$(empty) $(empty)
 comma:=,
 ALL_CHANNEL_OMIT_TAGS=$(subst $(space),$(comma),$(addprefix omit_,$(CHANNELS)))
+NOCHANNELS_TAGS=$(ALL_CHANNEL_OMIT_TAGS),with_tui
 
 # Installation
 INSTALL_PREFIX?=/usr/local
@@ -123,7 +124,7 @@ build-variants: sync-embed-workspace
 		tags=""; \
 		suffix=""; \
 		if [ "$$variant" = "none" ]; then \
-			tags="$(ALL_CHANNEL_OMIT_TAGS)"; \
+			tags="$(NOCHANNELS_TAGS)"; \
 			suffix="-nochannels"; \
 		elif [ "$$variant" != "full" ]; then \
 			for ch in $(CHANNELS); do \
@@ -192,7 +193,7 @@ build-all-variants: sync-embed-workspace
 			tags=""; \
 			suffix=""; \
 			if [ "$$variant" = "none" ]; then \
-				tags="$(ALL_CHANNEL_OMIT_TAGS)"; \
+				tags="$(NOCHANNELS_TAGS)"; \
 				suffix="-nochannels"; \
 			elif [ "$$variant" != "full" ]; then \
 				for ch in $(CHANNELS); do \

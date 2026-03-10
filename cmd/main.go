@@ -71,6 +71,8 @@ func main() {
 		nodeCmd()
 	case "skills":
 		skillsCmd()
+	case "tui":
+		tuiCmd()
 	case "version", "--version", "-v":
 		fmt.Printf("%s clawgo v%s\n", logo, version)
 	case "uninstall":

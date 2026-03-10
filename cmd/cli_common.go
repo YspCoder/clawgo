@@ -98,6 +98,9 @@ func printHelp() {
 	fmt.Println("  channel     Test and manage messaging channels")
 	fmt.Println("  node        Register remote node metadata and heartbeat")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
+	if tuiEnabled {
+		fmt.Println("  tui         Chat in terminal using the gateway chat API")
+	}
 	fmt.Println("  uninstall   Uninstall clawgo components")
 	fmt.Println("  version     Show version information")
 	fmt.Println()
