@@ -39,6 +39,7 @@ empty:=
 space:=$(empty) $(empty)
 comma:=,
 ALL_CHANNEL_OMIT_TAGS=$(subst $(space),$(comma),$(addprefix omit_,$(CHANNELS)))
+FULL_BUILD_TAGS=with_tui
 NOCHANNELS_TAGS=$(ALL_CHANNEL_OMIT_TAGS),with_tui
 
 # Installation
@@ -103,7 +104,7 @@ build: sync-embed-workspace
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
 	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
-	$(GO) build $(GOFLAGS) $(BUILD_FLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR); \
+	$(GO) build $(GOFLAGS) $(BUILD_FLAGS) -tags "$(FULL_BUILD_TAGS)" $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR); \
 	if [ "$(COMPRESS_BINARY)" = "1" ]; then \
 		if command -v upx >/dev/null 2>&1; then \
 			upx $(UPX_FLAGS) "$(BINARY_PATH)" >/dev/null; \
@@ -126,6 +127,8 @@ build-variants: sync-embed-workspace
 		if [ "$$variant" = "none" ]; then \
 			tags="$(NOCHANNELS_TAGS)"; \
 			suffix="-nochannels"; \
+		elif [ "$$variant" = "full" ]; then \
+			tags="$(FULL_BUILD_TAGS)"; \
 		elif [ "$$variant" != "full" ]; then \
 			for ch in $(CHANNELS); do \
 				if [ "$$ch" != "$$variant" ]; then \
@@ -174,7 +177,7 @@ build-all: sync-embed-workspace
 		out="$(BUILD_DIR)/$(BINARY_NAME)-$$goos-$$goarch"; \
 		if [ "$$goos" = "windows" ]; then out="$$out.exe"; fi; \
 		echo " -> $$goos/$$goarch"; \
-		CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch $(GO) build $(GOFLAGS) $(BUILD_FLAGS) $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
+		CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch $(GO) build $(GOFLAGS) $(BUILD_FLAGS) -tags "$(FULL_BUILD_TAGS)" $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
 		if [ "$(COMPRESS_BINARY)" = "1" ] && command -v upx >/dev/null 2>&1; then \
 			upx $(UPX_FLAGS) "$$out" >/dev/null; \
 		fi; \
@@ -195,6 +198,8 @@ build-all-variants: sync-embed-workspace
 			if [ "$$variant" = "none" ]; then \
 				tags="$(NOCHANNELS_TAGS)"; \
 				suffix="-nochannels"; \
+			elif [ "$$variant" = "full" ]; then \
+				tags="$(FULL_BUILD_TAGS)"; \
 			elif [ "$$variant" != "full" ]; then \
 				for ch in $(CHANNELS); do \
 					if [ "$$ch" != "$$variant" ]; then \
