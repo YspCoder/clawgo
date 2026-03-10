@@ -1156,7 +1156,7 @@ func buildHeartbeatService(cfg *config.Config, msgBus *bus.MessageBus) *heartbea
 }
 
 func setupEmbeddedWhatsAppBridge(ctx context.Context, cfg *config.Config) (*channels.WhatsAppBridgeService, bool) {
-	if cfg == nil || !cfg.Channels.WhatsApp.Enabled || !shouldEmbedWhatsAppBridge(cfg) {
+	if !shouldStartEmbeddedWhatsAppBridge(cfg) {
 		return nil, false
 	}
 	cfg.Channels.WhatsApp.BridgeURL = embeddedWhatsAppBridgeURL(cfg)
@@ -1167,6 +1167,10 @@ func setupEmbeddedWhatsAppBridge(ctx context.Context, cfg *config.Config) (*chan
 		return nil, false
 	}
 	return svc, true
+}
+
+func shouldStartEmbeddedWhatsAppBridge(cfg *config.Config) bool {
+	return cfg != nil && shouldEmbedWhatsAppBridge(cfg)
 }
 
 func shouldEmbedWhatsAppBridge(cfg *config.Config) bool {

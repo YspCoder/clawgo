@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { Button, FixedButton, LinkButton } from '../components/Button';
+import Input from '../components/Input';
+import Select from '../components/Select';
 import { formatLocalDateTime } from '../utils/time';
 
 function dataUrlForArtifact(artifact: any) {
@@ -161,26 +163,26 @@ const NodeArtifacts: React.FC = () => {
               <div>{t('nodeArtifactsRetentionRemaining')}: {Number(retentionSummary?.remaining || filteredItems.length || 0)}</div>
             </div>
             <div className="grid grid-cols-1 gap-2">
-              <select value={nodeFilter} onChange={(e) => setNodeFilter(e.target.value)} className="ui-select rounded-xl px-2 py-2 text-xs">
+              <Select value={nodeFilter} onChange={(e) => setNodeFilter(e.target.value)} className="rounded-xl px-2 py-2 text-xs">
                 <option value="all">{t('allNodes')}</option>
                 {nodes.map((node) => <option key={node} value={node}>{node}</option>)}
-              </select>
-              <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="ui-select rounded-xl px-2 py-2 text-xs">
+              </Select>
+              <Select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="rounded-xl px-2 py-2 text-xs">
                 <option value="all">{t('allActions')}</option>
                 {actions.map((action) => <option key={action} value={action}>{action}</option>)}
-              </select>
-              <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className="ui-select rounded-xl px-2 py-2 text-xs">
+              </Select>
+              <Select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)} className="rounded-xl px-2 py-2 text-xs">
                 <option value="all">{t('allKinds')}</option>
                 {kinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
-              </select>
+              </Select>
             </div>
             <div className="grid grid-cols-[1fr_auto] gap-2">
-              <input
+              <Input
                 value={keepLatest}
                 onChange={(e) => setKeepLatest(e.target.value)}
                 inputMode="numeric"
                 placeholder={t('nodeArtifactsKeepLatest')}
-                className="ui-input rounded-xl px-3 py-2 text-xs"
+                className="rounded-xl px-3 py-2 text-xs"
               />
               <Button onClick={pruneArtifacts} disabled={prunePending} variant="warning" size="xs_tall">
                 {prunePending ? t('loading') : t('nodeArtifactsPrune')}

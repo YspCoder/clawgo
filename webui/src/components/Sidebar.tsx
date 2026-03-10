@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, MessageSquare, Settings, Clock, Terminal, Zap, FolderOpen, ClipboardList, BrainCircuit, Hash, Bot, Boxes, PanelLeftClose, PanelLeftOpen, Plug, Smartphone, ChevronDown, Radio, MonitorSmartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import Input from './Input';
 import NavItem from './NavItem';
 
 const Sidebar: React.FC = () => {
@@ -154,7 +155,7 @@ const Sidebar: React.FC = () => {
       {!sidebarCollapsed ? (
         <div className="p-3 border-t border-zinc-800 bg-zinc-900/20">
           <div className="text-[11px] font-medium text-zinc-500 mb-1 uppercase tracking-wider px-1">{t('gatewayToken')}</div>
-          <input
+          <Input
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}

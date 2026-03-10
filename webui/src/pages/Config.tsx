@@ -4,7 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
+import Checkbox from '../components/Checkbox';
+import FieldCard from '../components/FieldCard';
+import FormField from '../components/FormField';
+import Input from '../components/Input';
 import RecursiveConfig from '../components/RecursiveConfig';
+import Select from '../components/Select';
+import Textarea from '../components/Textarea';
 
 function setPath(obj: any, path: string, value: any) {
   const keys = path.split('.');
@@ -305,11 +311,11 @@ const Config: React.FC = () => {
           <Button onClick={() => setBasicMode(v => !v)} size="sm">
             {basicMode ? t('configBasicMode') : t('configAdvancedMode')}
           </Button>
-          <label className="ui-text-primary flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
-            {t('configHotOnly')}
-          </label>
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="ui-input min-w-[240px] flex-1 px-3 py-2 rounded-xl text-sm" />
+            <label className="ui-text-primary flex items-center gap-2 text-sm">
+              <Checkbox checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
+              {t('configHotOnly')}
+            </label>
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="min-w-[240px] flex-1 px-3 py-2 rounded-xl text-sm" />
         </div>
       </div>
 
@@ -349,8 +355,14 @@ const Config: React.FC = () => {
                 <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-3 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
-                    <div className="flex items-center gap-2">
-                      <input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder={t('configNewProviderName')} className="px-2 py-1 rounded-lg bg-zinc-900/70 border border-zinc-700 text-xs" />
+                    <FormField
+                      label={t('configNewProviderName')}
+                      labelClassName="text-xs text-zinc-400"
+                      className="flex-1 min-w-[180px] space-y-1"
+                    >
+                      <Input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder={t('configNewProviderName')} className="px-2 py-1 rounded-lg bg-zinc-900/70 border border-zinc-700 text-xs" />
+                    </FormField>
+                    <div className="flex items-end gap-2">
                       <FixedButton onClick={addProxy} variant="primary" label={t('add')}>
                         <Plus className="w-4 h-4" />
                       </FixedButton>
@@ -360,9 +372,15 @@ const Config: React.FC = () => {
                     {Object.entries(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).map(([name, p]) => (
                       <div key={name} className="grid grid-cols-1 md:grid-cols-7 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
                         <div className="md:col-span-1 font-mono text-zinc-300 flex items-center">{name}</div>
-                        <input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                        <input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                        <input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`} className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                        <FormField label={t('configLabels.api_base')} labelClassName="text-[11px] text-zinc-500" className="md:col-span-2 space-y-1">
+                          <Input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                        </FormField>
+                        <FormField label={t('configLabels.api_key')} labelClassName="text-[11px] text-zinc-500" className="md:col-span-2 space-y-1">
+                          <Input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                        </FormField>
+                        <FormField label={t('configLabels.models')} labelClassName="text-[11px] text-zinc-500" className="md:col-span-1 space-y-1">
+                          <Input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`} className="px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
+                        </FormField>
                         <Button onClick={()=>removeProxy(name)} variant="danger" size="xs" radius="lg">{t('delete')}</Button>
                       </div>
                     ))}
@@ -379,34 +397,30 @@ const Config: React.FC = () => {
                     <div className="text-xs text-zinc-500">{t('configNodeP2PHint')}</div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                    <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                      <div className="text-zinc-300">{t('enable')}</div>
-                      <input
-                        type="checkbox"
+                    <FieldCard title={t('enable')}>
+                      <Checkbox
                         checked={Boolean((cfg as any)?.gateway?.nodes?.p2p?.enabled)}
                         onChange={(e) => updateGatewayP2PField('enabled', e.target.checked)}
                       />
-                    </label>
-                    <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                      <div className="text-zinc-300">{t('dashboardNodeP2PTransport')}</div>
-                      <select
+                    </FieldCard>
+                    <FieldCard title={t('dashboardNodeP2PTransport')}>
+                      <Select
                         value={String((cfg as any)?.gateway?.nodes?.p2p?.transport || 'websocket_tunnel')}
                         onChange={(e) => updateGatewayP2PField('transport', e.target.value)}
-                        className="ui-select w-full min-h-0 rounded-lg px-2 py-1 text-xs"
+                        className="w-full min-h-0 rounded-lg px-2 py-1 text-xs"
                       >
                         <option value="websocket_tunnel">websocket_tunnel</option>
                         <option value="webrtc">webrtc</option>
-                      </select>
-                    </label>
-                    <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                      <div className="text-zinc-300">{t('dashboardNodeP2PIce')}</div>
-                      <input
+                      </Select>
+                    </FieldCard>
+                    <FieldCard title={t('dashboardNodeP2PIce')}>
+                      <Input
                         value={Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.stun_servers) ? (cfg as any).gateway.nodes.p2p.stun_servers.join(', ') : ''}
                         onChange={(e) => updateGatewayP2PField('stun_servers', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
                         placeholder={t('configNodeP2PStunPlaceholder')}
                         className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
                       />
-                    </label>
+                    </FieldCard>
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -418,19 +432,19 @@ const Config: React.FC = () => {
                     {Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.ice_servers) && (cfg as any).gateway.nodes.p2p.ice_servers.length > 0 ? (
                       ((cfg as any).gateway.nodes.p2p.ice_servers as Array<any>).map((server, index) => (
                         <div key={`ice-${index}`} className="grid grid-cols-1 md:grid-cols-7 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
-                          <input
+                          <Input
                             value={Array.isArray(server?.urls) ? server.urls.join(', ') : ''}
                             onChange={(e) => updateGatewayIceServer(index, 'urls', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
                             placeholder={t('configNodeP2PIceUrlsPlaceholder')}
                             className="md:col-span-3 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
                           />
-                          <input
+                          <Input
                             value={String(server?.username || '')}
                             onChange={(e) => updateGatewayIceServer(index, 'username', e.target.value)}
                             placeholder={t('configNodeP2PIceUsername')}
                             className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
                           />
-                          <input
+                          <Input
                             value={String(server?.credential || '')}
                             onChange={(e) => updateGatewayIceServer(index, 'credential', e.target.value)}
                             placeholder={t('configNodeP2PIceCredential')}
@@ -449,90 +463,78 @@ const Config: React.FC = () => {
                       <div className="text-xs text-zinc-500">{t('configNodeDispatchHint')}</div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchPreferLocal')}</div>
-                        <input
-                          type="checkbox"
+                      <FieldCard title={t('configNodeDispatchPreferLocal')}>
+                        <Checkbox
                           checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.prefer_local)}
                           onChange={(e) => updateGatewayDispatchField('prefer_local', e.target.checked)}
                         />
-                      </label>
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchPreferP2P')}</div>
-                        <input
-                          type="checkbox"
+                      </FieldCard>
+                      <FieldCard title={t('configNodeDispatchPreferP2P')}>
+                        <Checkbox
                           checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.prefer_p2p ?? true)}
                           onChange={(e) => updateGatewayDispatchField('prefer_p2p', e.target.checked)}
                         />
-                      </label>
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchAllowRelay')}</div>
-                        <input
-                          type="checkbox"
+                      </FieldCard>
+                      <FieldCard title={t('configNodeDispatchAllowRelay')}>
+                        <Checkbox
                           checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.allow_relay_fallback ?? true)}
                           onChange={(e) => updateGatewayDispatchField('allow_relay_fallback', e.target.checked)}
                         />
-                      </label>
+                      </FieldCard>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchActionTags')}</div>
-                        <textarea
+                      <FieldCard title={t('configNodeDispatchActionTags')}>
+                        <Textarea
                           value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.action_tags)}
                           onChange={(e) => updateGatewayDispatchField('action_tags', parseTagRuleText(e.target.value))}
                           placeholder={t('configNodeDispatchActionTagsPlaceholder')}
                           className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
                         />
-                      </label>
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchAgentTags')}</div>
-                        <textarea
+                      </FieldCard>
+                      <FieldCard title={t('configNodeDispatchAgentTags')}>
+                        <Textarea
                           value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.agent_tags)}
                           onChange={(e) => updateGatewayDispatchField('agent_tags', parseTagRuleText(e.target.value))}
                           placeholder={t('configNodeDispatchAgentTagsPlaceholder')}
                           className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
                         />
-                      </label>
+                      </FieldCard>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchAllowActions')}</div>
-                        <textarea
+                      <FieldCard title={t('configNodeDispatchAllowActions')}>
+                        <Textarea
                           value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.allow_actions)}
                           onChange={(e) => updateGatewayDispatchField('allow_actions', parseTagRuleText(e.target.value))}
                           placeholder={t('configNodeDispatchAllowActionsPlaceholder')}
                           className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
                         />
-                      </label>
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchDenyActions')}</div>
-                        <textarea
+                      </FieldCard>
+                      <FieldCard title={t('configNodeDispatchDenyActions')}>
+                        <Textarea
                           value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.deny_actions)}
                           onChange={(e) => updateGatewayDispatchField('deny_actions', parseTagRuleText(e.target.value))}
                           placeholder={t('configNodeDispatchDenyActionsPlaceholder')}
                           className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
                         />
-                      </label>
+                      </FieldCard>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchAllowAgents')}</div>
-                        <textarea
+                      <FieldCard title={t('configNodeDispatchAllowAgents')}>
+                        <Textarea
                           value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.allow_agents)}
                           onChange={(e) => updateGatewayDispatchField('allow_agents', parseTagRuleText(e.target.value))}
                           placeholder={t('configNodeDispatchAllowAgentsPlaceholder')}
                           className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
                         />
-                      </label>
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeDispatchDenyAgents')}</div>
-                        <textarea
+                      </FieldCard>
+                      <FieldCard title={t('configNodeDispatchDenyAgents')}>
+                        <Textarea
                           value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.deny_agents)}
                           onChange={(e) => updateGatewayDispatchField('deny_agents', parseTagRuleText(e.target.value))}
                           placeholder={t('configNodeDispatchDenyAgentsPlaceholder')}
                           className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
                         />
-                      </label>
+                      </FieldCard>
                     </div>
                   </div>
                   <div className="border-t border-zinc-800/70 pt-3 space-y-3">
@@ -541,44 +543,38 @@ const Config: React.FC = () => {
                       <div className="text-xs text-zinc-500">{t('configNodeArtifactsHint')}</div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('enable')}</div>
-                        <input
-                          type="checkbox"
+                      <FieldCard title={t('enable')}>
+                        <Checkbox
                           checked={Boolean((cfg as any)?.gateway?.nodes?.artifacts?.enabled)}
                           onChange={(e) => updateGatewayArtifactsField('enabled', e.target.checked)}
                         />
-                      </label>
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeArtifactsKeepLatest')}</div>
-                        <input
+                      </FieldCard>
+                      <FieldCard title={t('configNodeArtifactsKeepLatest')}>
+                        <Input
                           type="number"
                           min={1}
                           value={Number((cfg as any)?.gateway?.nodes?.artifacts?.keep_latest || 500)}
                           onChange={(e) => updateGatewayArtifactsField('keep_latest', Math.max(1, Number.parseInt(e.target.value || '0', 10) || 1))}
                           className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
                         />
-                      </label>
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeArtifactsPruneOnRead')}</div>
-                        <input
-                          type="checkbox"
+                      </FieldCard>
+                      <FieldCard title={t('configNodeArtifactsPruneOnRead')}>
+                        <Checkbox
                           checked={Boolean((cfg as any)?.gateway?.nodes?.artifacts?.prune_on_read ?? true)}
                           onChange={(e) => updateGatewayArtifactsField('prune_on_read', e.target.checked)}
                         />
-                      </label>
+                      </FieldCard>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                      <label className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3 space-y-2">
-                        <div className="text-zinc-300">{t('configNodeArtifactsRetainDays')}</div>
-                        <input
+                      <FieldCard title={t('configNodeArtifactsRetainDays')}>
+                        <Input
                           type="number"
                           min={0}
                           value={Number((cfg as any)?.gateway?.nodes?.artifacts?.retain_days ?? 7)}
                           onChange={(e) => updateGatewayArtifactsField('retain_days', Math.max(0, Number.parseInt(e.target.value || '0', 10) || 0))}
                           className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
                         />
-                      </label>
+                      </FieldCard>
                     </div>
                   </div>
                 </div>
@@ -598,7 +594,7 @@ const Config: React.FC = () => {
             </div>
           </div>
         ) : (
-          <textarea
+          <Textarea
             value={cfgRaw}
             onChange={(e) => setCfgRaw(e.target.value)}
             className="flex-1 w-full bg-zinc-950/35 p-6 font-mono text-sm text-zinc-300 focus:outline-none resize-none"

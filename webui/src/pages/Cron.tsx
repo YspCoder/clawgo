@@ -5,6 +5,11 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
+import Checkbox from '../components/Checkbox';
+import FormField from '../components/FormField';
+import Input from '../components/Input';
+import Select from '../components/Select';
+import Textarea from '../components/Textarea';
 import { CronJob } from '../types';
 import { formatLocalDateTime } from '../utils/time';
 
@@ -265,41 +270,37 @@ const Cron: React.FC = () => {
 
               <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto relative z-[1]">
                 <div className="grid grid-cols-2 gap-4">
-                  <label className="block">
-                    <span className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('jobName')}</span>
-                    <input
+                  <FormField label={t('jobName')} labelClassName="text-sm font-medium text-zinc-400">
+                    <Input
                       type="text"
                       value={cronForm.name}
                       onChange={(e) => setCronForm({ ...cronForm, name: e.target.value })}
-                      className="ui-input rounded-xl px-3 py-2 text-sm"
+                      className="rounded-xl px-3 py-2 text-sm"
                     />
-                  </label>
-                  <label className="block">
-                    <span className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('cronExpression')}</span>
-                    <input
+                  </FormField>
+                  <FormField label={t('cronExpression')} labelClassName="text-sm font-medium text-zinc-400">
+                    <Input
                       type="text"
                       value={cronForm.expr}
                       onChange={(e) => setCronForm({ ...cronForm, expr: e.target.value })}
                       placeholder={t('cronExpressionPlaceholder')}
-                      className="ui-input rounded-xl px-3 py-2 text-sm"
+                      className="rounded-xl px-3 py-2 text-sm"
                     />
-                  </label>
+                  </FormField>
                 </div>
 
-                <label className="block">
-                  <span className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('message')}</span>
-                  <textarea
+                <FormField label={t('message')} labelClassName="text-sm font-medium text-zinc-400">
+                  <Textarea
                     value={cronForm.message}
                     onChange={(e) => setCronForm({ ...cronForm, message: e.target.value })}
                     rows={3}
-                    className="ui-textarea rounded-xl px-3 py-2 text-sm resize-none"
+                    className="rounded-xl px-3 py-2 text-sm resize-none"
                   />
-                </label>
+                </FormField>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <label className="block">
-                    <span className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('channel')}</span>
-                    <select
+                  <FormField label={t('channel')} labelClassName="text-sm font-medium text-zinc-400">
+                    <Select
                       value={cronForm.channel}
                       onChange={(e) => {
                         const nextChannel = e.target.value;
@@ -307,53 +308,50 @@ const Cron: React.FC = () => {
                         const nextTo = candidates.includes(cronForm.to) ? cronForm.to : (candidates[0] || '');
                         setCronForm({ ...cronForm, channel: nextChannel, to: nextTo });
                       }}
-                      className="ui-select rounded-xl px-3 py-2 text-sm"
+                      className="rounded-xl px-3 py-2 text-sm"
                     >
                       {(enabledChannels.length > 0 ? enabledChannels : [cronForm.channel]).map((ch) => (
                         <option key={ch} value={ch}>{ch}</option>
                       ))}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="text-sm font-medium text-zinc-400 mb-1.5 block">{t('to')}</span>
+                    </Select>
+                  </FormField>
+                  <FormField label={t('to')} labelClassName="text-sm font-medium text-zinc-400">
                     {((channelRecipients[cronForm.channel] || []).length > 0) ? (
-                      <select
+                      <Select
                         value={cronForm.to}
                         onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
-                        className="ui-select rounded-xl px-3 py-2 text-sm"
+                        className="rounded-xl px-3 py-2 text-sm"
                       >
                         {(channelRecipients[cronForm.channel] || []).map((id) => (
                           <option key={id} value={id}>{id}</option>
                         ))}
-                      </select>
+                      </Select>
                     ) : (
-                      <input
+                      <Input
                         type="text"
                         value={cronForm.to}
                         onChange={(e) => setCronForm({ ...cronForm, to: e.target.value })}
                         placeholder={t('recipientId')}
-                        className="ui-input rounded-xl px-3 py-2 text-sm"
+                        className="rounded-xl px-3 py-2 text-sm"
                       />
                     )}
-                  </label>
+                  </FormField>
                 </div>
 
                 <div className="flex items-center gap-6 pt-2">
                   <label className="flex items-center gap-3 cursor-pointer group">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={cronForm.deliver}
                       onChange={(e) => setCronForm({ ...cronForm, deliver: e.target.checked })}
-                      className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 bg-zinc-950"
+                      className="w-4 h-4"
                     />
                     <span className="text-sm font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors">{t('deliver')}</span>
                   </label>
                   <label className="flex items-center gap-3 cursor-pointer group">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={cronForm.enabled}
                       onChange={(e) => setCronForm({ ...cronForm, enabled: e.target.checked })}
-                      className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 bg-zinc-950"
+                      className="w-4 h-4"
                     />
                     <span className="text-sm font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors">{t('active')}</span>
                   </label>

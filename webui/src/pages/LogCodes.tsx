@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import Input from '../components/Input';
 
 type CodeItem = {
   code: number;
@@ -43,11 +44,11 @@ const LogCodes: React.FC = () => {
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="ui-text-secondary text-2xl font-semibold tracking-tight">{t('logCodes')}</h1>
-        <input
+        <Input
           value={kw}
           onChange={(e) => setKw(e.target.value)}
           placeholder={t('logCodesSearchPlaceholder')}
-          className="ui-input w-full sm:w-80 rounded-xl px-3 py-2 text-sm"
+          className="w-full sm:w-80 rounded-xl px-3 py-2 text-sm"
         />
       </div>
 

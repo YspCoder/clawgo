@@ -5,6 +5,10 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
+import Checkbox from '../components/Checkbox';
+import FormField from '../components/FormField';
+import Input from '../components/Input';
+import Textarea from '../components/Textarea';
 
 type ChannelKey = 'telegram' | 'whatsapp' | 'discord' | 'feishu' | 'qq' | 'dingtalk' | 'maixcam';
 
@@ -526,11 +530,10 @@ const ChannelSettings: React.FC = () => {
                 {t(value ? 'enabled_true' : 'enabled_false')}
               </div>
             </div>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={!!value}
               onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.checked }))}
-              className="ui-checkbox mt-1"
+              className="mt-1"
             />
           </label>
         );
@@ -543,11 +546,9 @@ const ChannelSettings: React.FC = () => {
               {t(value ? 'enabled_true' : 'enabled_false')}
             </div>
           </div>
-          <input
-            type="checkbox"
+          <Checkbox
             checked={!!value}
             onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.checked }))}
-            className="ui-checkbox"
           />
         </label>
       );
@@ -564,33 +565,37 @@ const ChannelSettings: React.FC = () => {
             )}
           </div>
           {helper && <div className="ui-form-help">{helper}</div>}
-          <textarea
+          <Textarea
             value={formatList(value)}
             onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: parseList(e.target.value) }))}
             placeholder={field.placeholder || ''}
-            className={`ui-textarea px-4 py-3 text-sm ${isWhatsApp ? 'min-h-36 font-mono' : 'min-h-32'}`}
+            className={`px-4 py-3 text-sm ${isWhatsApp ? 'min-h-36 font-mono' : 'min-h-32'}`}
           />
           {isWhatsApp && <div className="ui-form-help text-[11px]">{t('whatsappFieldAllowFromFootnote')}</div>}
         </div>
       );
     }
     return (
-      <div key={field.key} className={`ui-form-field ${isWhatsApp && field.key === 'bridge_url' ? 'lg:col-span-2' : ''}`}>
-        <label className="ui-form-label">{label}</label>
-        {helper && <div className="ui-form-help">{helper}</div>}
-        <input
+      <FormField
+        key={field.key}
+        label={label}
+        help={helper}
+        className={`ui-form-field ${isWhatsApp && field.key === 'bridge_url' ? 'lg:col-span-2' : ''}`}
+      >
+        <Input
           type={field.type}
           value={value === null || value === undefined ? '' : String(value)}
           onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: field.type === 'number' ? Number(e.target.value || 0) : e.target.value }))}
           placeholder={field.placeholder || ''}
-          className={`ui-input px-4 py-3 text-sm ${isWhatsApp && field.key === 'bridge_url' ? 'font-mono' : ''}`}
+          className={`px-4 py-3 text-sm ${isWhatsApp && field.key === 'bridge_url' ? 'font-mono' : ''}`}
         />
-      </div>
+      </FormField>
     );
   };
 
   const wa = waStatus?.status;
   const stateLabel = wa?.connected ? t('online') : wa?.logged_in ? t('whatsappStateDisconnected') : wa?.qr_available ? t('whatsappStateAwaitingScan') : t('offline');
+  const canLogout = !!(wa?.logged_in || wa?.connected || wa?.user_jid);
 
   return (
     <div className="space-y-6 px-5 py-5 md:px-7 md:py-6 xl:px-8">
@@ -647,10 +652,12 @@ const ChannelSettings: React.FC = () => {
                     <div className="ui-text-primary mt-1 text-2xl font-semibold">{stateLabel}</div>
                   </div>
                 </div>
-                <Button onClick={handleLogout} variant="danger" gap="2">
-                  <LogOut className="h-4 w-4" />
-                  {t('logout')}
-                </Button>
+                {canLogout ? (
+                  <Button onClick={handleLogout} variant="danger" gap="2">
+                    <LogOut className="h-4 w-4" />
+                    {t('logout')}
+                  </Button>
+                ) : null}
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">

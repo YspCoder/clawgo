@@ -2,6 +2,7 @@ import React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './Button';
+import Input from './Input';
 
 type DialogOptions = {
   title?: string;
@@ -45,7 +46,7 @@ export const GlobalDialog: React.FC<{
               {kind === 'prompt' && (
                 <div className="space-y-2">
                   {options.inputLabel && <label className="text-xs text-zinc-400">{options.inputLabel}</label>}
-                  <input
+                  <Input
                     autoFocus
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
