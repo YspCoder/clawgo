@@ -1,0 +1,14 @@
+services:
+  clawgo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clawgo
+    restart: unless-stopped
+    ports:
+      - "18790:18790"
+    environment:
+      TZ: Asia/Shanghai
+      CLAWGO_CONFIG: /home/clawgo/.clawgo/config.json
+    volumes:
+      - ./.clawgo:/home/clawgo/.clawgo

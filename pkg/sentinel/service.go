@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"clawgo/pkg/channels"
-	"clawgo/pkg/config"
-	"clawgo/pkg/lifecycle"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/channels"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/lifecycle"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 type AlertFunc func(msg string)

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 type onboardOptions struct {

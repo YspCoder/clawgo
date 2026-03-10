@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/config"
-	"clawgo/pkg/runtimecfg"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
 func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, args map[string]interface{}) (interface{}, error) {

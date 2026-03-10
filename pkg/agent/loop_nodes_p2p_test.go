@@ -3,8 +3,8 @@ package agent
 import (
 	"testing"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 func TestNewAgentLoopDisablesNodeP2PByDefault(t *testing.T) {

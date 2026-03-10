@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/bus"
 )
 
 func TestPrepareOutboundSubagentNoReplyFallback(t *testing.T) {

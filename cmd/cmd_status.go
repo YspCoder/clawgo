@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"clawgo/pkg/nodes"
-	"clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
 func statusCmd() {
@@ -24,16 +24,16 @@ func statusCmd() {
 	fmt.Printf("%s clawgo Status\n\n", logo)
 
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println("Config:", configPath, "✓")
+		fmt.Println("Config:", configPath, "[ok]")
 	} else {
-		fmt.Println("Config:", configPath, "✗")
+		fmt.Println("Config:", configPath, "[missing]")
 	}
 
 	workspace := cfg.WorkspacePath()
 	if _, err := os.Stat(workspace); err == nil {
-		fmt.Println("Workspace:", workspace, "✓")
+		fmt.Println("Workspace:", workspace, "[ok]")
 	} else {
-		fmt.Println("Workspace:", workspace, "✗")
+		fmt.Println("Workspace:", workspace, "[missing]")
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
@@ -59,7 +59,7 @@ func statusCmd() {
 		hasKey := strings.TrimSpace(activeProvider.APIKey) != ""
 		status := "not set"
 		if hasKey {
-			status = "✓"
+			status = "configured"
 		}
 		fmt.Printf("Provider API Key: %s\n", status)
 		fmt.Printf("Logging: %v\n", cfg.Logging.Enabled)

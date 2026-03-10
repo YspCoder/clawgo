@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"clawgo/pkg/cron"
+	"github.com/YspCoder/clawgo/pkg/cron"
 )
 
 func TestRemindTool_UsesToolContextForDeliveryTarget(t *testing.T) {
@@ -15,7 +15,7 @@ func TestRemindTool_UsesToolContextForDeliveryTarget(t *testing.T) {
 	tool.SetContext("telegram", "chat-123")
 
 	_, err := tool.Execute(context.Background(), map[string]interface{}{
-		"message":   "喝水",
+		"message":   "鍠濇按",
 		"time_expr": "10m",
 	})
 	if err != nil {

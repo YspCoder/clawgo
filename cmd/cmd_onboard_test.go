@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 func TestParseOnboardOptionsSyncWebUI(t *testing.T) {

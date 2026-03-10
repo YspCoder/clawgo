@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/runtimecfg"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
 func TestResolveAutoRouteTarget(t *testing.T) {
@@ -27,9 +27,9 @@ func TestResolveAutoRouteTargetRulesFirst(t *testing.T) {
 	cfg.Agents.Router.Strategy = "rules_first"
 	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, Role: "coding", SystemPromptFile: "agents/coder/AGENT.md"}
 	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing", SystemPromptFile: "agents/tester/AGENT.md"}
-	cfg.Agents.Router.Rules = []config.AgentRouteRule{{AgentID: "coder", Keywords: []string{"登录", "bug"}}}
+	cfg.Agents.Router.Rules = []config.AgentRouteRule{{AgentID: "coder", Keywords: []string{"鐧诲綍", "bug"}}}
 
-	agentID, task := resolveAutoRouteTarget(cfg, "请帮我修复登录接口的 bug 并改代码")
+	agentID, task := resolveAutoRouteTarget(cfg, "璇峰府鎴戜慨澶嶇櫥褰曟帴鍙ｇ殑 bug 骞舵敼浠ｇ爜")
 	if agentID != "coder" || task == "" {
 		t.Fatalf("expected coder route, got %s / %s", agentID, task)
 	}
@@ -113,7 +113,7 @@ func TestMaybeAutoRouteDispatchesRulesFirstMatch(t *testing.T) {
 		Channel:    "cli",
 		ChatID:     "direct",
 		SessionKey: "main",
-		Content:    "请做一次回归测试并验证这个修复",
+		Content:    "璇峰仛涓€娆″洖褰掓祴璇曞苟楠岃瘉杩欎釜淇",
 	})
 	if err != nil {
 		t.Fatalf("rules-first auto route failed: %v", err)

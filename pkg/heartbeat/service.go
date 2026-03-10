@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/lifecycle"
+	"github.com/YspCoder/clawgo/pkg/lifecycle"
 )
 
 type HeartbeatService struct {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"clawgo/pkg/cron"
+	"github.com/YspCoder/clawgo/pkg/cron"
 )
 
 type CronTool struct {

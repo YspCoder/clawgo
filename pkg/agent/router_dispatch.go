@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/runtimecfg"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
 func (al *AgentLoop) maybeAutoRoute(ctx context.Context, msg bus.InboundMessage) (string, bool, error) {

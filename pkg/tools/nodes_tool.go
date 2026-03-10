@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/nodes"
 )
 
 // NodesTool provides an OpenClaw-style control surface for paired nodes.

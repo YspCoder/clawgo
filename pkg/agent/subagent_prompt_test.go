@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
 func TestBuildSubagentTaskInputPrefersPromptFile(t *testing.T) {

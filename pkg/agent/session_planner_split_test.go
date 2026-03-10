@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
 func TestSplitPlannedSegmentsDoesNotSplitPlainNewlines(t *testing.T) {

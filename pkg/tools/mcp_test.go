@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 func TestMCPToolListServers(t *testing.T) {

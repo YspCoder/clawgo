@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"clawgo/pkg/nodes"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
 func TestDispatchNodeSubagentTaskUsesNodeAgentTask(t *testing.T) {

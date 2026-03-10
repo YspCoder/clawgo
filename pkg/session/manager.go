@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
 type Session struct {

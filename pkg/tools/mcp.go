@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 const mcpProtocolVersion = "2025-06-18"

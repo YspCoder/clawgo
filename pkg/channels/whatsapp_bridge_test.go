@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/bus"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
@@ -49,6 +49,16 @@ func TestBridgeStatusURL(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got != "http://localhost:3001/status" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestBridgeStatusURLWithNestedPath(t *testing.T) {
+	got, err := BridgeStatusURL("ws://localhost:7788/whatsapp/ws")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "http://localhost:7788/whatsapp/status" {
 		t.Fatalf("got %q", got)
 	}
 }

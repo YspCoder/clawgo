@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
 func (al *AgentLoop) maybeHandleSubagentConfigIntent(ctx context.Context, msg bus.InboundMessage) (string, bool, error) {

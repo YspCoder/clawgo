@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"clawgo/pkg/events"
+	"github.com/YspCoder/clawgo/pkg/events"
 )
 
 type processSession struct {

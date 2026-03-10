@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 func TestStatusCmdUsesActiveProviderDetails(t *testing.T) {
@@ -71,7 +71,7 @@ func TestStatusCmdUsesActiveProviderDetails(t *testing.T) {
 	if !strings.Contains(out, "Provider API Base: https://backup.example/v1") {
 		t.Fatalf("expected active provider api base in output, got: %s", out)
 	}
-	if !strings.Contains(out, "Provider API Key: ✓") {
+	if !strings.Contains(out, "Provider API Key: configured") {
 		t.Fatalf("expected active provider api key status in output, got: %s", out)
 	}
 	if !strings.Contains(out, "Nodes P2P: enabled=true transport=webrtc") {

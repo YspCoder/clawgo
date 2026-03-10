@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"clawgo/pkg/agent"
-	"clawgo/pkg/config"
-	"clawgo/pkg/nodes"
-	"clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/agent"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
 type stubNodeProvider struct {

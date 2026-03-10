@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/bus"
 )
 
 type SendCallback func(channel, chatID, action, content, media, messageID, emoji string, buttons [][]bus.Button) error

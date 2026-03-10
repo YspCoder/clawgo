@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"clawgo/pkg/config"
-	"clawgo/pkg/nodes"
-	"clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/nodes"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 )
 
 type SubagentProfile struct {

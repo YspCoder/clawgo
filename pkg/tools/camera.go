@@ -46,13 +46,13 @@ func (t *CameraTool) Execute(ctx context.Context, args map[string]interface{}) (
 	} else {
 		filename = fmt.Sprintf("snap_%d.jpg", time.Now().Unix())
 	}
-	
+
 	// Ensure filename is safe and within workspace
 	filename = filepath.Clean(filename)
 	if filepath.IsAbs(filename) {
 		return "", fmt.Errorf("filename must be relative to workspace")
 	}
-	
+
 	outputPath := filepath.Join(t.workspace, filename)
 
 	// Check if video device exists

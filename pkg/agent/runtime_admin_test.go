@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"clawgo/pkg/config"
-	"clawgo/pkg/runtimecfg"
-	"clawgo/pkg/tools"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/runtimecfg"
+	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
 func TestHandleSubagentRuntimeDispatchAndWait(t *testing.T) {

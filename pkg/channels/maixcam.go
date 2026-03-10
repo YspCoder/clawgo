@@ -7,9 +7,9 @@ import (
 	"net"
 	"sync"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 type MaixCamChannel struct {
@@ -161,7 +161,7 @@ func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
 	w, _ := msg.Data["w"].(float64)
 	h, _ := msg.Data["h"].(float64)
 
-	content := fmt.Sprintf("📷 Person detected!\nClass: %s\nConfidence: %.2f%%\nPosition: (%.0f, %.0f)\nSize: %.0fx%.0f",
+	content := fmt.Sprintf("馃摲 Person detected!\nClass: %s\nConfidence: %.2f%%\nPosition: (%.0f, %.0f)\nSize: %.0fx%.0f",
 		classInfo, score*100, x, y, w, h)
 
 	metadata := map[string]string{

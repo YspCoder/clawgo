@@ -1,8 +1,8 @@
 package bus
 
 import (
-	"clawgo/pkg/logger"
 	"context"
+	"github.com/YspCoder/clawgo/pkg/logger"
 	"sync"
 	"time"
 )

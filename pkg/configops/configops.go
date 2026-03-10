@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 func LoadConfigAsMap(path string) (map[string]interface{}, error) {

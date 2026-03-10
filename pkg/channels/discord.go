@@ -1,11 +1,11 @@
 package channels
 
 import (
-	"clawgo/pkg/bus"
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
 	"context"
 	"fmt"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 	"io"
 	"net/http"
 	"os"

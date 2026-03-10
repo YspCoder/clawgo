@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 type Channel interface {

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/ekg"
-	"clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/ekg"
+	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
 type SubagentTask struct {

@@ -3,7 +3,7 @@ package runtimecfg
 import (
 	"sync/atomic"
 
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 var current atomic.Value // *config.Config

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/logger"
-	"clawgo/pkg/providers"
-	"clawgo/pkg/skills"
+	"github.com/YspCoder/clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/skills"
 )
 
 type ContextBuilder struct {

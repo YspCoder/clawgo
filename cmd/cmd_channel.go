@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"clawgo/pkg/bus"
-	"clawgo/pkg/channels"
-	"clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/bus"
+	"github.com/YspCoder/clawgo/pkg/channels"
+	"github.com/YspCoder/clawgo/pkg/config"
 
 	qrterminal "github.com/mdp/qrterminal/v3"
 )
@@ -55,7 +55,7 @@ func channelHelp() {
 func channelTestCmd() {
 	to := ""
 	channelName := ""
-	message := "This is a test message from ClawGo 🦞"
+	message := "This is a test message from ClawGo 馃"
 
 	args := os.Args[3:]
 	for i := 0; i < len(args); i++ {
@@ -104,11 +104,11 @@ func channelTestCmd() {
 
 	fmt.Printf("Sending test message to %s (%s)...\n", channelName, to)
 	if err := mgr.SendToChannel(ctx, channelName, to, message); err != nil {
-		fmt.Printf("✗ Failed to send message: %v\n", err)
+		fmt.Printf("鉁?Failed to send message: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("✓ Test message sent successfully!")
+	fmt.Println("鉁?Test message sent successfully!")
 }
 
 func whatsAppChannelCmd() {

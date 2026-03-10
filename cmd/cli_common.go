@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"clawgo/pkg/config"
-	"clawgo/pkg/logger"
+	"github.com/YspCoder/clawgo/pkg/config"
+	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
 func copyDirectory(src, dst string) error {
