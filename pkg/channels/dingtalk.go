@@ -30,6 +30,8 @@ type DingTalkChannel struct {
 	sessionWebhooks sync.Map // chatID -> sessionWebhook
 }
 
+const dingtalkCompiled = true
+
 // NewDingTalkChannel creates a new DingTalk channel instance
 func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (*DingTalkChannel, error) {
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {

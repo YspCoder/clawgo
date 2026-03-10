@@ -7,7 +7,7 @@ import NavItem from './NavItem';
 
 const Sidebar: React.FC = () => {
   const { t } = useTranslation();
-  const { token, setToken, sidebarOpen, sidebarCollapsed, setSidebarCollapsed } = useAppContext();
+  const { token, setToken, sidebarOpen, sidebarCollapsed, setSidebarCollapsed, compiledChannels } = useAppContext();
   const location = useLocation();
   const [expandedSections, setExpandedSections] = React.useState<Record<string, boolean>>({
     main: true,
@@ -18,6 +18,16 @@ const Sidebar: React.FC = () => {
     insights: false,
     channels: false,
   });
+
+  const channelChildren = [
+    { id: 'whatsapp', icon: <Smartphone className="w-4 h-4" />, label: t('whatsappBridge'), to: '/channels/whatsapp' },
+    { id: 'telegram', icon: <Radio className="w-4 h-4" />, label: t('telegram'), to: '/channels/telegram' },
+    { id: 'discord', icon: <MonitorSmartphone className="w-4 h-4" />, label: t('discord'), to: '/channels/discord' },
+    { id: 'feishu', icon: <MonitorSmartphone className="w-4 h-4" />, label: t('feishu'), to: '/channels/feishu' },
+    { id: 'qq', icon: <MonitorSmartphone className="w-4 h-4" />, label: t('qq'), to: '/channels/qq' },
+    { id: 'dingtalk', icon: <MonitorSmartphone className="w-4 h-4" />, label: t('dingtalk'), to: '/channels/dingtalk' },
+    { id: 'maixcam', icon: <MonitorSmartphone className="w-4 h-4" />, label: t('maixcam'), to: '/channels/maixcam' },
+  ].filter((item) => compiledChannels.includes(item.id));
 
   const sections = [
     {
@@ -54,15 +64,7 @@ const Sidebar: React.FC = () => {
           icon: <Smartphone className="w-5 h-5" />,
           label: t('channelsGroup'),
           childrenId: 'channels',
-          children: [
-            { icon: <Smartphone className="w-4 h-4" />, label: t('whatsappBridge'), to: '/channels/whatsapp' },
-            { icon: <Radio className="w-4 h-4" />, label: t('telegram'), to: '/channels/telegram' },
-            { icon: <MonitorSmartphone className="w-4 h-4" />, label: t('discord'), to: '/channels/discord' },
-            { icon: <MonitorSmartphone className="w-4 h-4" />, label: t('feishu'), to: '/channels/feishu' },
-            { icon: <MonitorSmartphone className="w-4 h-4" />, label: t('qq'), to: '/channels/qq' },
-            { icon: <MonitorSmartphone className="w-4 h-4" />, label: t('dingtalk'), to: '/channels/dingtalk' },
-            { icon: <MonitorSmartphone className="w-4 h-4" />, label: t('maixcam'), to: '/channels/maixcam' },
-          ],
+          children: channelChildren,
         },
         { icon: <Plug className="w-5 h-5" />, label: t('mcpServices'), to: '/mcp' },
         { icon: <Clock className="w-5 h-5" />, label: t('cronJobs'), to: '/cron' },
@@ -86,6 +88,10 @@ const Sidebar: React.FC = () => {
       ],
     },
   ];
+  const normalizedSections = sections.map((sec) => ({
+    ...sec,
+    items: sec.items.filter((item: any) => !item.children || item.children.length > 0),
+  }));
 
   const toggle = (id: string) => setExpandedSections((prev) => ({ ...prev, [id]: !prev[id] }));
   const isSubmenuActive = (items: Array<{ to: string }>) => items.some((item) => location.pathname === item.to);
@@ -93,7 +99,7 @@ const Sidebar: React.FC = () => {
   return (
     <aside className={`sidebar-shell fixed md:static inset-y-14 md:inset-y-16 left-0 z-40 ${sidebarCollapsed ? 'md:w-20' : 'md:w-64'} w-[86vw] max-w-72 border-r border-zinc-800 backdrop-blur-xl flex flex-col shrink-0 transform transition-all duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
       <nav className={`flex-1 ${sidebarCollapsed ? 'px-2' : 'px-3'} py-3 space-y-2 overflow-y-auto`}>
-        {sections.map((sec) => (
+        {normalizedSections.map((sec) => (
           <div key={sec.title} className={`sidebar-section rounded-2xl border border-zinc-800/60 ${sidebarCollapsed ? 'p-2' : 'p-2'}`}>
             {!sidebarCollapsed && (
               <button

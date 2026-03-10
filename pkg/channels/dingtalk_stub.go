@@ -9,6 +9,8 @@ import (
 
 type DingTalkChannel struct{ disabledChannel }
 
+const dingtalkCompiled = false
+
 func NewDingTalkChannel(cfg config.DingTalkConfig, bus *bus.MessageBus) (*DingTalkChannel, error) {
 	return nil, errChannelDisabled("dingtalk")
 }

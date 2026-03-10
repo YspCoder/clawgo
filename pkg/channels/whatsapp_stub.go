@@ -9,6 +9,8 @@ import (
 
 type WhatsAppChannel struct{ disabledChannel }
 
+const whatsappCompiled = false
+
 func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsAppChannel, error) {
 	return nil, errChannelDisabled("whatsapp")
 }

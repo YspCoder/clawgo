@@ -9,6 +9,8 @@ import (
 
 type TelegramChannel struct{ disabledChannel }
 
+const telegramCompiled = false
+
 func NewTelegramChannel(cfg config.TelegramConfig, bus *bus.MessageBus) (*TelegramChannel, error) {
 	return nil, errChannelDisabled("telegram")
 }

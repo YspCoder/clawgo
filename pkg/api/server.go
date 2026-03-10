@@ -1188,9 +1188,10 @@ func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":              true,
-		"gateway_version": firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
-		"webui_version":   firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
+		"ok":                true,
+		"gateway_version":   firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
+		"webui_version":     firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
+		"compiled_channels": channels.CompiledChannelKeys(),
 	})
 }
 
@@ -1523,8 +1524,9 @@ func (s *Server) webUISubagentsRuntimePayload(ctx context.Context) map[string]in
 
 func (s *Server) webUIVersionPayload() map[string]interface{} {
 	return map[string]interface{}{
-		"gateway_version": firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
-		"webui_version":   firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
+		"gateway_version":   firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
+		"webui_version":     firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
+		"compiled_channels": channels.CompiledChannelKeys(),
 	}
 }
 

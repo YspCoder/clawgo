@@ -9,6 +9,8 @@ import (
 
 type QQChannel struct{ disabledChannel }
 
+const qqCompiled = false
+
 func NewQQChannel(cfg config.QQConfig, bus *bus.MessageBus) (*QQChannel, error) {
 	return nil, errChannelDisabled("qq")
 }

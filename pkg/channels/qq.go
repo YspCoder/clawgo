@@ -31,6 +31,8 @@ type QQChannel struct {
 	mu             sync.RWMutex
 }
 
+const qqCompiled = true
+
 func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
 	base := NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom)
 

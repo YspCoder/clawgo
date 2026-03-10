@@ -400,8 +400,13 @@ const ChannelSettings: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const ui = useUI();
-  const { cfg, setCfg, q, loadConfig } = useAppContext();
-  const key = (channelId || 'whatsapp') as ChannelKey;
+  const { cfg, setCfg, q, loadConfig, compiledChannels } = useAppContext();
+  const availableChannelKeys = useMemo(
+    () => (Object.keys(channelDefinitions) as ChannelKey[]).filter((item) => compiledChannels.includes(item)),
+    [compiledChannels],
+  );
+  const fallbackChannel = availableChannelKeys[0];
+  const key = (channelId || fallbackChannel || 'whatsapp') as ChannelKey;
   const definition = channelDefinitions[key];
 
   const [draft, setDraft] = useState<Record<string, any>>({});
@@ -409,13 +414,17 @@ const ChannelSettings: React.FC = () => {
   const [waStatus, setWaStatus] = useState<WhatsAppStatusPayload | null>(null);
 
   useEffect(() => {
-    if (!definition) {
-      navigate('/channels/whatsapp', { replace: true });
+    if (!fallbackChannel) {
+      navigate('/config', { replace: true });
+      return;
+    }
+    if (!definition || !availableChannelKeys.includes(key)) {
+      navigate(`/channels/${fallbackChannel}`, { replace: true });
       return;
     }
     const next = clone(((cfg as any)?.channels?.[definition.id] || {}) as Record<string, any>);
     setDraft(next);
-  }, [cfg, definition, navigate]);
+  }, [availableChannelKeys, cfg, definition, fallbackChannel, key, navigate]);
 
   useEffect(() => {
     if (key !== 'whatsapp') return;
@@ -443,7 +452,7 @@ const ChannelSettings: React.FC = () => {
     return `/webui/api/whatsapp/qr.svg${q}${sep}ts=${encodeURIComponent(String(updatedAt))}`;
   }, [q, waStatus?.status?.updated_at]);
 
-  if (!definition) return null;
+  if (!definition || !availableChannelKeys.includes(key)) return null;
 
   const saveChannel = async () => {
     setSaving(true);

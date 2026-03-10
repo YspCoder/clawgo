@@ -45,6 +45,8 @@ type FeishuChannel struct {
 	tenantTokenErr    error
 }
 
+const feishuCompiled = true
+
 func (c *FeishuChannel) SupportsAction(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "", "send":

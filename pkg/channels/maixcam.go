@@ -22,6 +22,8 @@ type MaixCamChannel struct {
 	clientsMux sync.RWMutex
 }
 
+const maixcamCompiled = true
+
 type MaixCamMessage struct {
 	Type      string                 `json:"type"`
 	Tips      string                 `json:"tips"`

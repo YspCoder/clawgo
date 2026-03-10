@@ -38,6 +38,8 @@ const (
 	telegramStreamMaxRetries       = 4
 )
 
+const telegramCompiled = true
+
 type TelegramChannel struct {
 	*BaseChannel
 	bot         *telego.Bot

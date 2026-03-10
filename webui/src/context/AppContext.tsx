@@ -5,6 +5,7 @@ type RuntimeSnapshot = {
   version?: {
     gateway_version?: string;
     webui_version?: string;
+    compiled_channels?: string[];
   };
   nodes?: {
     nodes?: any[];
@@ -84,6 +85,7 @@ interface AppContextType {
   loadConfig: (force?: boolean) => Promise<void>;
   gatewayVersion: string;
   webuiVersion: string;
+  compiledChannels: string[];
   hotReloadFields: string[];
   hotReloadFieldDetails: Array<{ path: string; name?: string; description?: string }>;
   q: string;
@@ -131,6 +133,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [subagentStreamItems, setSubagentStreamItems] = useState<any[]>([]);
   const [gatewayVersion, setGatewayVersion] = useState('unknown');
   const [webuiVersion, setWebuiVersion] = useState('unknown');
+  const [compiledChannels, setCompiledChannels] = useState<string[]>(['telegram', 'whatsapp', 'discord', 'feishu', 'qq', 'dingtalk', 'maixcam']);
   const [hotReloadFields, setHotReloadFields] = useState<string[]>([]);
   const [hotReloadFieldDetails, setHotReloadFieldDetails] = useState<Array<{ path: string; name?: string; description?: string }>>([]);
 
@@ -237,6 +240,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const j = await r.json();
       setGatewayVersion(j.gateway_version || 'unknown');
       setWebuiVersion(j.webui_version || 'unknown');
+      setCompiledChannels(Array.isArray(j.compiled_channels) ? j.compiled_channels : []);
     } catch (e) {
       console.error(e);
     }
@@ -281,6 +285,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (snapshot.version) {
         setGatewayVersion(snapshot.version.gateway_version || 'unknown');
         setWebuiVersion(snapshot.version.webui_version || 'unknown');
+        setCompiledChannels(Array.isArray(snapshot.version.compiled_channels) ? snapshot.version.compiled_channels : []);
       }
       if (snapshot.nodes) {
         setNodes(JSON.stringify(Array.isArray(snapshot.nodes.nodes) ? snapshot.nodes.nodes : [], null, 2));
@@ -373,7 +378,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       taskQueueItems, setTaskQueueItems, ekgSummary, setEkgSummary,
       subagentRuntimeItems, setSubagentRuntimeItems, subagentRegistryItems, setSubagentRegistryItems, subagentStreamItems, setSubagentStreamItems,
       refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshTaskQueue, refreshEKGSummary, refreshVersion, loadConfig,
-      gatewayVersion, webuiVersion, hotReloadFields, hotReloadFieldDetails, q
+      gatewayVersion, webuiVersion, compiledChannels, hotReloadFields, hotReloadFieldDetails, q
     }}>
       {children}
     </AppContext.Provider>

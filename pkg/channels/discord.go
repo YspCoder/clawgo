@@ -23,6 +23,8 @@ type DiscordChannel struct {
 	config  config.DiscordConfig
 }
 
+const discordCompiled = true
+
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {

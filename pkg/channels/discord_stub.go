@@ -9,6 +9,8 @@ import (
 
 type DiscordChannel struct{ disabledChannel }
 
+const discordCompiled = false
+
 func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
 	return nil, errChannelDisabled("discord")
 }

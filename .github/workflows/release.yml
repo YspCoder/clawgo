@@ -83,10 +83,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
-          path: |
-            build/*.tar.gz
-            build/*.zip
-            build/checksums.txt
+          path: build
           if-no-files-found: error
 
   publish-release:
@@ -99,6 +96,9 @@ jobs:
         with:
           name: release-artifacts
           path: build
+
+      - name: List downloaded artifacts
+        run: find build -maxdepth 4 -type f | sort
 
       - name: Resolve tag
         id: tag
@@ -116,6 +116,6 @@ jobs:
           name: ${{ steps.tag.outputs.name }}
           generate_release_notes: true
           files: |
-            build/*.tar.gz
-            build/*.zip
-            build/checksums.txt
+            build/**/*.tar.gz
+            build/**/*.zip
+            build/**/checksums.txt

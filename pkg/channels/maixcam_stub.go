@@ -9,6 +9,8 @@ import (
 
 type MaixCamChannel struct{ disabledChannel }
 
+const maixcamCompiled = false
+
 func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamChannel, error) {
 	return nil, errChannelDisabled("maixcam")
 }

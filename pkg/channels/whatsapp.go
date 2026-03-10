@@ -30,6 +30,8 @@ type WhatsAppChannel struct {
 	connected bool
 }
 
+const whatsappCompiled = true
+
 func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsAppChannel, error) {
 	base := NewBaseChannel("whatsapp", cfg, bus, cfg.AllowFrom)
 
