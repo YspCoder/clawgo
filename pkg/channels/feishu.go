@@ -1,3 +1,5 @@
+//go:build !omit_feishu
+
 package channels
 
 import (

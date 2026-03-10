@@ -1,3 +1,5 @@
+//go:build !omit_telegram
+
 package channels
 
 import (

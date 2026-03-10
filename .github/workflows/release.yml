@@ -10,6 +10,14 @@ on:
         description: 'Release tag (e.g. v1.2.3). If empty, uses current ref name.'
         required: false
         type: string
+      build_targets:
+        description: 'Space-separated GOOS/GOARCH targets. Leave empty to use Makefile defaults.'
+        required: false
+        type: string
+      channel_variants:
+        description: 'Space-separated package variants. Leave empty to use full none and all single-channel variants.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -17,6 +25,9 @@ permissions:
 jobs:
   build-and-package:
     runs-on: ubuntu-latest
+    env:
+      BUILD_TARGETS: ${{ inputs.build_targets }}
+      CHANNEL_PACKAGE_VARIANTS: ${{ inputs.channel_variants }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,7 +69,15 @@ jobs:
         run: |
           set -euo pipefail
           make clean
-          make package-all VERSION="${{ steps.ver.outputs.version }}"
+          if [ -n "${BUILD_TARGETS:-}" ] && [ -n "${CHANNEL_PACKAGE_VARIANTS:-}" ]; then
+            make package-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="${BUILD_TARGETS}" CHANNEL_PACKAGE_VARIANTS="${CHANNEL_PACKAGE_VARIANTS}"
+          elif [ -n "${BUILD_TARGETS:-}" ]; then
+            make package-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="${BUILD_TARGETS}"
+          elif [ -n "${CHANNEL_PACKAGE_VARIANTS:-}" ]; then
+            make package-all VERSION="${{ steps.ver.outputs.version }}" CHANNEL_PACKAGE_VARIANTS="${CHANNEL_PACKAGE_VARIANTS}"
+          else
+            make package-all VERSION="${{ steps.ver.outputs.version }}"
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -1,3 +1,5 @@
+//go:build !omit_qq
+
 package channels
 
 import (

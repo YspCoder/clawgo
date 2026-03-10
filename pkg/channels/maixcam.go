@@ -1,3 +1,5 @@
+//go:build !omit_maixcam
+
 package channels
 
 import (

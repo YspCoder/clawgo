@@ -1,3 +1,5 @@
+//go:build !omit_dingtalk
+
 // ClawGo - Ultra-lightweight personal AI agent
 // DingTalk channel implementation using Stream Mode
 

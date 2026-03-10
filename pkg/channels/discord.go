@@ -1,3 +1,5 @@
+//go:build !omit_discord
+
 package channels
 
 import (

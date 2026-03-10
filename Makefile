@@ -1,4 +1,4 @@
-.PHONY: all build build-linux-slim build-all build-webui package-all install install-win uninstall clean help test test-docker install-bootstrap-docs sync-embed-workspace sync-embed-workspace-base sync-embed-webui cleanup-embed-workspace test-only clean-test-artifacts dev
+.PHONY: all build build-variants build-linux-slim build-all build-all-variants build-webui package-all install install-win uninstall clean help test test-docker install-bootstrap-docs sync-embed-workspace sync-embed-workspace-base sync-embed-webui cleanup-embed-workspace test-only clean-test-artifacts dev
 
 # Build variables
 BINARY_NAME=clawgo
@@ -33,6 +33,12 @@ LINUX_SLIM_PATH=$(BUILD_DIR)/$(BINARY_NAME)-linux-$(ARCH)-slim
 
 # Cross-platform build matrix (space-separated GOOS/GOARCH pairs)
 BUILD_TARGETS?=linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+CHANNELS?=telegram discord feishu maixcam qq dingtalk whatsapp
+CHANNEL_PACKAGE_VARIANTS?=full none $(CHANNELS)
+empty:=
+space:=$(empty) $(empty)
+comma:=,
+ALL_CHANNEL_OMIT_TAGS=$(subst $(space),$(comma),$(addprefix omit_,$(CHANNELS)))
 
 # Installation
 INSTALL_PREFIX?=/usr/local
@@ -108,6 +114,38 @@ build: sync-embed-workspace
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
+## build-variants: Build current-platform full, no-channel, and per-channel binaries
+build-variants: sync-embed-workspace
+	@echo "Building channel variants for $(PLATFORM)/$(ARCH): $(CHANNEL_PACKAGE_VARIANTS)"
+	@mkdir -p $(BUILD_DIR)
+	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
+	for variant in $(CHANNEL_PACKAGE_VARIANTS); do \
+		tags=""; \
+		suffix=""; \
+		if [ "$$variant" = "none" ]; then \
+			tags="$(ALL_CHANNEL_OMIT_TAGS)"; \
+			suffix="-nochannels"; \
+		elif [ "$$variant" != "full" ]; then \
+			for ch in $(CHANNELS); do \
+				if [ "$$ch" != "$$variant" ]; then \
+					tags="$${tags:+$$tags,}omit_$$ch"; \
+				fi; \
+			done; \
+			suffix="-$$variant"; \
+		fi; \
+		out="$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)$$suffix"; \
+		echo " -> $$variant"; \
+		if [ -n "$$tags" ]; then \
+			$(GO) build $(GOFLAGS) $(BUILD_FLAGS) -tags "$$tags" $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
+		else \
+			$(GO) build $(GOFLAGS) $(BUILD_FLAGS) $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
+		fi; \
+		if [ "$(COMPRESS_BINARY)" = "1" ] && command -v upx >/dev/null 2>&1; then \
+			upx $(UPX_FLAGS) "$$out" >/dev/null; \
+		fi; \
+	done
+	@echo "Variant builds complete: $(BUILD_DIR)"
+
 ## build-linux-slim: Build a Linux-only slim binary (no feature trimming, no channel disabling)
 build-linux-slim: sync-embed-workspace
 	@echo "Building $(BINARY_NAME) slim profile for linux/$(ARCH)..."
@@ -142,6 +180,43 @@ build-all: sync-embed-workspace
 	done
 	@echo "All builds complete"
 
+## build-all-variants: Build full, no-channel, and per-channel binaries for all configured platforms
+build-all-variants: sync-embed-workspace
+	@echo "Building all channel variants for multiple platforms: $(BUILD_TARGETS)"
+	@mkdir -p $(BUILD_DIR)
+	@set -e; trap '$(MAKE) cleanup-embed-workspace' EXIT; \
+	for target in $(BUILD_TARGETS); do \
+		goos="$${target%/*}"; \
+		goarch="$${target#*/}"; \
+		for variant in $(CHANNEL_PACKAGE_VARIANTS); do \
+			tags=""; \
+			suffix=""; \
+			if [ "$$variant" = "none" ]; then \
+				tags="$(ALL_CHANNEL_OMIT_TAGS)"; \
+				suffix="-nochannels"; \
+			elif [ "$$variant" != "full" ]; then \
+				for ch in $(CHANNELS); do \
+					if [ "$$ch" != "$$variant" ]; then \
+						tags="$${tags:+$$tags,}omit_$$ch"; \
+					fi; \
+				done; \
+				suffix="-$$variant"; \
+			fi; \
+			out="$(BUILD_DIR)/$(BINARY_NAME)-$$goos-$$goarch$$suffix"; \
+			if [ "$$goos" = "windows" ]; then out="$$out.exe"; fi; \
+			echo " -> $$goos/$$goarch [$$variant]"; \
+			if [ -n "$$tags" ]; then \
+				CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch $(GO) build $(GOFLAGS) $(BUILD_FLAGS) -tags "$$tags" $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
+			else \
+				CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch $(GO) build $(GOFLAGS) $(BUILD_FLAGS) $(LDFLAGS) -o "$$out" ./$(CMD_DIR); \
+			fi; \
+			if [ "$(COMPRESS_BINARY)" = "1" ] && command -v upx >/dev/null 2>&1; then \
+				upx $(UPX_FLAGS) "$$out" >/dev/null; \
+			fi; \
+		done; \
+	done
+	@echo "All variant builds complete"
+
 ## build-webui: Install WebUI dependencies when needed and build dist assets
 build-webui:
 	@echo "Building WebUI..."
@@ -164,22 +239,33 @@ build-webui:
 	fi; \
 	(cd "$(DEV_WEBUI_DIR)" && "$(NPM)" run build)
 
-## package-all: Create compressed archives and checksums for all build targets
-package-all: build-all
+## package-all: Create compressed archives and checksums for full, no-channel, and per-channel build variants
+package-all: build-all-variants
 	@echo "Packaging build artifacts..."
 	@set -e; cd $(BUILD_DIR); \
 	for target in $(BUILD_TARGETS); do \
 		goos="$${target%/*}"; \
 		goarch="$${target#*/}"; \
-		bin="$(BINARY_NAME)-$$goos-$$goarch"; \
-		if [ "$$goos" = "windows" ]; then \
-			bin="$$bin.exe"; \
-			archive="$(BINARY_NAME)-$$goos-$$goarch.zip"; \
-			zip -q -j "$$archive" "$$bin"; \
-		else \
-			archive="$(BINARY_NAME)-$$goos-$$goarch.tar.gz"; \
-			tar -czf "$$archive" "$$bin"; \
-		fi; \
+		for variant in $(CHANNEL_PACKAGE_VARIANTS); do \
+			suffix=""; \
+			archive_suffix=""; \
+			if [ "$$variant" = "none" ]; then \
+				suffix="-nochannels"; \
+				archive_suffix="-nochannels"; \
+			elif [ "$$variant" != "full" ]; then \
+				suffix="-$$variant"; \
+				archive_suffix="-$$variant"; \
+			fi; \
+			bin="$(BINARY_NAME)-$$goos-$$goarch$$suffix"; \
+			if [ "$$goos" = "windows" ]; then \
+				bin="$$bin.exe"; \
+				archive="$(BINARY_NAME)-$$goos-$$goarch$$archive_suffix.zip"; \
+				zip -q -j "$$archive" "$$bin"; \
+			else \
+				archive="$(BINARY_NAME)-$$goos-$$goarch$$archive_suffix.tar.gz"; \
+				tar -czf "$$archive" "$$bin"; \
+			fi; \
+		done; \
 	done
 	@set -e; cd $(BUILD_DIR); \
 	if command -v sha256sum >/dev/null 2>&1; then \

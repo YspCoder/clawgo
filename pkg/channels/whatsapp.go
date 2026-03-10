@@ -1,3 +1,5 @@
+//go:build !omit_whatsapp
+
 package channels
 
 import (
