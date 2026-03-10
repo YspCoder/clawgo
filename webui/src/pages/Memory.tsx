@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import { Button, FixedButton } from '../components/Button';
 
 const Memory: React.FC = () => {
   const { t } = useTranslation();
@@ -118,7 +119,9 @@ const Memory: React.FC = () => {
           <div className="sidebar-section rounded-[24px] p-2 md:p-2.5 space-y-1">
             <div className="flex items-center justify-between">
               <h2 className="ui-text-primary font-semibold">{t('memoryFiles')}</h2>
-              <button onClick={createFile} className="ui-button ui-button-primary ui-button-square rounded-xl">+</button>
+              <FixedButton onClick={createFile} variant="primary" shape="square" radius="xl" label={t('add')}>
+                +
+              </FixedButton>
             </div>
             <div className="space-y-1">
               {files.map((f) => (
@@ -141,7 +144,7 @@ const Memory: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="ui-text-primary font-semibold">{active || t('noFileSelected')}</h2>
-              <button onClick={saveFile} className="ui-button ui-button-primary px-3 py-1.5 rounded-xl">{t('save')}</button>
+              <Button onClick={saveFile} variant="primary" size="sm" radius="xl">{t('save')}</Button>
             </div>
             <textarea value={content} onChange={(e) => setContent(e.target.value)} className="ui-textarea w-full h-[50vh] lg:h-[80vh] rounded-[24px] p-4" />
           </div>

@@ -4,6 +4,7 @@ import { Package, Pencil, Plus, RefreshCw, Save, Trash2, Wrench, X } from 'lucid
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import { Button, FixedButton } from '../components/Button';
 
 type MCPDraftServer = {
   enabled: boolean;
@@ -356,22 +357,12 @@ const MCP: React.FC = () => {
           <p className="text-sm text-zinc-500 mt-1">{t('mcpServicesHint')}</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <button
-            onClick={async () => { await loadConfig(true); await refreshMCPTools(); }}
-            className="ui-button ui-button-neutral ui-button-icon"
-            title={t('reload')}
-            aria-label={t('reload')}
-          >
+          <FixedButton onClick={async () => { await loadConfig(true); await refreshMCPTools(); }} label={t('reload')}>
             <RefreshCw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={openCreateModal}
-            className="ui-button ui-button-primary ui-button-icon"
-            title={t('add')}
-            aria-label={t('add')}
-          >
+          </FixedButton>
+          <FixedButton onClick={openCreateModal} variant="primary" label={t('add')}>
             <Plus className="w-4 h-4" />
-          </button>
+          </FixedButton>
         </div>
       </div>
 
@@ -405,12 +396,12 @@ const MCP: React.FC = () => {
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={() => openEditModal(name, server)} className="ui-button ui-button-neutral p-2 rounded-xl" title={t('edit')}>
+                    <FixedButton onClick={() => openEditModal(name, server)} radius="xl" label={t('edit')}>
                       <Pencil className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => removeServer(name)} className="ui-button ui-button-danger p-2 rounded-xl" title={t('delete')}>
+                    </FixedButton>
+                    <FixedButton onClick={() => removeServer(name)} variant="danger" radius="xl" label={t('delete')}>
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </FixedButton>
                   </div>
                 </div>
 
@@ -476,9 +467,9 @@ const MCP: React.FC = () => {
                   </div>
                   <div className="text-xs text-zinc-500 mt-1">{t('mcpServicesHint')}</div>
                 </div>
-                <button onClick={closeModal} className="ui-button ui-button-neutral p-2 rounded-xl">
+                <FixedButton onClick={closeModal} radius="xl" label={t('close')}>
                   <X className="w-4 h-4" />
-                </button>
+                </FixedButton>
               </div>
 
               <div className="max-h-[80vh] overflow-y-auto px-6 py-5 space-y-5">
@@ -551,9 +542,9 @@ const MCP: React.FC = () => {
                         <div className="text-sm font-medium text-zinc-200">Args</div>
                         <div className="text-xs text-zinc-500">{t('configMCPArgsEnterHint')}</div>
                       </div>
-                      <button onClick={installDraftPackage} className="ui-button ui-button-success flex items-center gap-2 px-3 py-2 text-xs">
+                      <Button onClick={installDraftPackage} variant="success" size="xs_tall" gap="2">
                         <Package className="w-4 h-4" /> {t('install')}
-                      </button>
+                      </Button>
                     </div>
 
                     <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto pr-1">
@@ -587,9 +578,9 @@ const MCP: React.FC = () => {
                       <div className="text-amber-300/80">{t('configMCPInstallSuggested', { pkg: activeCheck.package })}</div>
                     )}
                     {activeCheck.installable && (
-                      <button onClick={() => installCheckPackage(activeCheck)} className="ui-button ui-button-warning px-3 py-2 text-xs">
+                      <Button onClick={() => installCheckPackage(activeCheck)} variant="warning" size="xs_tall">
                         <Wrench className="w-4 h-4" /> {t('install')}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )}
@@ -601,14 +592,14 @@ const MCP: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   {editingName && (
-                    <button onClick={() => removeServer(editingName)} className="ui-button ui-button-danger flex items-center gap-2 px-3 py-2 text-sm">
+                    <Button onClick={() => removeServer(editingName)} variant="danger" gap="2">
                       <Trash2 className="w-4 h-4" /> {t('delete')}
-                    </button>
+                    </Button>
                   )}
-                  <button onClick={closeModal} className="ui-button ui-button-neutral px-3 py-2 text-sm">{t('cancel')}</button>
-                  <button onClick={saveServer} className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm">
+                  <Button onClick={closeModal} size="sm">{t('cancel')}</Button>
+                  <Button onClick={saveServer} variant="primary" gap="2">
                     <Save className="w-4 h-4" /> {t('saveChanges')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </motion.div>

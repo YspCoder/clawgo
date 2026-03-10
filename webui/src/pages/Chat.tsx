@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import { Button, FixedButton } from '../components/Button';
 import { ChatItem } from '../types';
 
 type StreamItem = {
@@ -569,25 +570,15 @@ const Chat: React.FC = () => {
       <div className="flex-1 flex flex-col brand-card ui-panel rounded-[30px] overflow-hidden">
         <div className="ui-surface-muted ui-border-subtle px-4 py-3 border-b flex items-center gap-2 min-w-0 overflow-x-auto">
           <div className="flex items-center gap-2 min-w-0 shrink-0">
-            <button
-              onClick={() => setChatTab('main')}
-              className={`ui-button px-3 py-1.5 text-xs ${chatTab === 'main' ? 'ui-button-primary' : 'ui-button-neutral'}`}
-            >
-              {t('mainChat')}
-            </button>
-            <button
-              onClick={() => setChatTab('subagents')}
-              className={`ui-button px-3 py-1.5 text-xs ${chatTab === 'subagents' ? 'ui-button-primary' : 'ui-button-neutral'}`}
-            >
-              {t('subagentGroup')}
-            </button>
+            <Button onClick={() => setChatTab('main')} variant={chatTab === 'main' ? 'primary' : 'neutral'} size="xs">{t('mainChat')}</Button>
+            <Button onClick={() => setChatTab('subagents')} variant={chatTab === 'subagents' ? 'primary' : 'neutral'} size="xs">{t('subagentGroup')}</Button>
           </div>
           {chatTab === 'main' && (
             <select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="ui-select min-w-[220px] flex-1 rounded-xl px-2.5 py-1.5 text-xs">
               {userSessions.map((s: any) => <option key={s.key} value={s.key}>{s.title || s.key}</option>)}
             </select>
           )}
-          <button
+          <FixedButton
             onClick={() => {
               if (chatTab === 'main') {
                 void loadHistory();
@@ -595,30 +586,26 @@ const Chat: React.FC = () => {
                 void loadSubagentGroup();
               }
             }}
-            className="ui-button ui-button-neutral ui-button-icon ml-auto shrink-0"
-            title={t('reloadHistory')}
-            aria-label={t('reloadHistory')}
+            noShrink
+            label={t('reloadHistory')}
           >
             <RefreshCw className="h-4 w-4" />
-          </button>
+          </FixedButton>
         </div>
 
         {chatTab === 'subagents' && (
           <div className="ui-surface-strong ui-border-subtle px-4 py-3 border-b flex flex-wrap gap-2">
-            <button
-              onClick={() => setSelectedStreamAgents([])}
-              className={`ui-button px-2.5 py-1 rounded-full text-xs ${selectedStreamAgents.length === 0 ? 'ui-button-primary' : 'ui-button-neutral'}`}
-            >
-              {t('allAgents')}
-            </button>
+            <Button onClick={() => setSelectedStreamAgents([])} variant={selectedStreamAgents.length === 0 ? 'primary' : 'neutral'} size="xs" radius="full">{t('allAgents')}</Button>
             {streamActors.map((agent) => (
-              <button
+              <Button
                 key={agent}
                 onClick={() => toggleStreamAgent(agent)}
-                className={`ui-button px-2.5 py-1 rounded-full text-xs ${selectedStreamAgents.includes(agent) ? 'ui-button-primary' : 'ui-button-neutral'}`}
+                variant={selectedStreamAgents.includes(agent) ? 'primary' : 'neutral'}
+                size="xs"
+                radius="full"
               >
                 {formatAgentName(agent, t)}
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -654,13 +641,9 @@ const Chat: React.FC = () => {
                   placeholder={t('subagentLabelPlaceholder')}
                   className="ui-input w-full rounded-2xl px-3 py-2.5 text-sm"
                 />
-                <button
-                  onClick={dispatchSubagentTask}
-                  disabled={!dispatchAgentID.trim() || !dispatchTask.trim()}
-                  className="ui-button ui-button-primary w-full px-3 py-2.5 text-sm font-medium"
-                >
+                <Button onClick={dispatchSubagentTask} disabled={!dispatchAgentID.trim() || !dispatchTask.trim()} variant="primary" size="md_tall" fullWidth>
                   {t('dispatchToSubagent')}
-                </button>
+                </Button>
               </div>
               <div className="ui-border-subtle border-t pt-4 min-h-0 flex flex-col">
                 <div className="ui-text-muted text-xs uppercase tracking-wider mb-2">{t('agents')}</div>

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 func uninstallCmd() {
@@ -52,6 +53,28 @@ func uninstallCmd() {
 }
 
 func uninstallGatewayService() error {
+	switch runtime.GOOS {
+	case "darwin":
+		scope, plistPath, err := detectInstalledLaunchdService()
+		if err != nil {
+			return nil
+		}
+		_ = runLaunchctl(scope, "bootout", launchdDomainTarget(scope), plistPath)
+		if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove launchd plist failed: %w", err)
+		}
+		return nil
+	case "windows":
+		_, taskName, err := detectInstalledWindowsTask()
+		if err != nil {
+			return nil
+		}
+		_ = stopGatewayProcessByPIDFile()
+		if err := runSCHTASKS("/Delete", "/TN", taskName, "/F"); err != nil {
+			return err
+		}
+		return nil
+	}
 	scope, unitPath, err := detectInstalledGatewayService()
 	if err != nil {
 		return nil

@@ -3,6 +3,7 @@ import { RefreshCw, Activity, MessageSquare, Wrench, Sparkles, AlertTriangle, Wo
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import StatCard from '../components/StatCard';
+import { FixedButton } from '../components/Button';
 
 function formatRuntimeTime(value: unknown) {
   const raw = String(value || '').trim();
@@ -122,14 +123,9 @@ const Dashboard: React.FC = () => {
             {t('webui')}: <span className="font-mono text-zinc-300">{webuiVersion}</span>
           </div>
         </div>
-        <button
-          onClick={refreshAll}
-          className="ui-button ui-button-primary ui-button-icon shrink-0"
-          title={t('refreshAll')}
-          aria-label={t('refreshAll')}
-        >
+        <FixedButton onClick={refreshAll} variant="primary" noShrink label={t('refreshAll')}>
           <RefreshCw className="w-4 h-4" />
-        </button>
+        </FixedButton>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">

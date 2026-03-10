@@ -4,6 +4,7 @@ import { Check, KeyRound, ListFilter, LogOut, QrCode, RefreshCw, ShieldCheck, Sm
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import { Button, FixedButton } from '../components/Button';
 
 type ChannelKey = 'telegram' | 'whatsapp' | 'discord' | 'feishu' | 'qq' | 'dingtalk' | 'maixcam';
 
@@ -600,18 +601,13 @@ const ChannelSettings: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           {key === 'whatsapp' && (
-            <button
-              onClick={() => window.location.reload()}
-              className="ui-button ui-button-neutral ui-button-icon"
-              title={t('refresh')}
-              aria-label={t('refresh')}
-            >
+            <FixedButton onClick={() => window.location.reload()} label={t('refresh')}>
               <RefreshCw className="h-4 w-4" />
-            </button>
+            </FixedButton>
           )}
-          <button onClick={saveChannel} disabled={saving} className="ui-button ui-button-primary px-4 py-2 text-sm font-medium">
+          <Button onClick={saveChannel} disabled={saving} variant="primary">
             {saving ? t('loading') : t('saveChanges')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -651,10 +647,10 @@ const ChannelSettings: React.FC = () => {
                     <div className="ui-text-primary mt-1 text-2xl font-semibold">{stateLabel}</div>
                   </div>
                 </div>
-                <button onClick={handleLogout} className="ui-button ui-button-danger flex items-center gap-2 px-4 py-2 text-sm font-medium">
+                <Button onClick={handleLogout} variant="danger" gap="2">
                   <LogOut className="h-4 w-4" />
                   {t('logout')}
-                </button>
+                </Button>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">

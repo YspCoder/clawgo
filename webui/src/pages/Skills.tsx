@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import { Button, FixedButton } from '../components/Button';
 
 const Skills: React.FC = () => {
   const { t } = useTranslation();
@@ -190,7 +191,7 @@ const Skills: React.FC = () => {
         <h1 className="text-2xl font-semibold tracking-tight">{t('skills')}</h1>
         <div className="flex items-center gap-2 flex-wrap w-full xl:w-auto">
           <input disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 px-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm disabled:opacity-60" />
-          <button disabled={installingSkill} onClick={installSkill} className="ui-button ui-button-success px-3 py-2 text-sm font-medium">{installingSkill ? t('loading') : t('install')}</button>
+          <Button disabled={installingSkill} onClick={installSkill} variant="success">{installingSkill ? t('loading') : t('install')}</Button>
           <label className="flex items-center gap-2 text-xs text-zinc-400">
             <input
               type="checkbox"
@@ -206,29 +207,16 @@ const Skills: React.FC = () => {
             {t('skillsClawhubStatus')}: {clawhubInstalled ? t('installed') : t('notInstalled')}
           </div>
           {!clawhubInstalled && (
-            <button
-              onClick={installClawHubIfNeeded}
-              className="ui-button ui-button-primary flex items-center gap-2 px-4 py-2 text-sm font-medium shadow-sm"
-            >
+            <Button onClick={installClawHubIfNeeded} variant="primary" gap="2" shadow>
               <Zap className="w-4 h-4" /> {t('skillsInstallNow')}
-            </button>
+            </Button>
           )}
-          <button
-            onClick={() => refreshSkills()}
-            className="ui-button ui-button-neutral ui-button-icon"
-            title={t('refresh')}
-            aria-label={t('refresh')}
-          >
+          <FixedButton onClick={() => refreshSkills()} label={t('refresh')}>
             <RefreshCw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onAddSkillClick}
-            className="ui-button ui-button-primary ui-button-icon shadow-sm"
-            title={t('skillsAdd')}
-            aria-label={t('skillsAdd')}
-          >
+          </FixedButton>
+          <FixedButton onClick={onAddSkillClick} variant="primary" shadow label={t('skillsAdd')}>
             <Plus className="w-4 h-4" />
-          </button>
+          </FixedButton>
         </div>
       </div>
 
@@ -276,19 +264,12 @@ const Skills: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2 pt-4 border-t border-zinc-800/50 mt-auto">
-              <button
-                onClick={() => openFileManager(s.id)}
-                className="flex-1 flex items-center justify-center gap-2 py-2 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 rounded-lg text-xs font-medium transition-colors"
-                title={t('files')}
-              >
+              <Button onClick={() => openFileManager(s.id)} variant="accent" size="xs_tall" radius="lg" gap="2" grow title={t('files')}>
                 <FileText className="w-4 h-4" /> {t('skillsFileEdit')}
-              </button>
-              <button
-                onClick={() => deleteSkill(s.id)}
-                className="ui-pill ui-pill-danger p-2 rounded-lg transition-colors"
-              >
+              </Button>
+              <FixedButton onClick={() => deleteSkill(s.id)} variant="danger" radius="lg" label={t('delete')}>
                 <Trash2 className="w-4 h-4" />
-              </button>
+              </FixedButton>
             </div>
           </div>
         ))}
@@ -311,8 +292,10 @@ const Skills: React.FC = () => {
                 <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
                   <div className="text-sm text-zinc-300 font-mono truncate">{activeFile || t('noFileSelected')}</div>
                   <div className="flex items-center gap-2">
-                    <button onClick={saveFile} className="ui-button ui-button-success px-3 py-1.5 rounded text-xs flex items-center gap-1"><Save className="w-3 h-3"/>{t('save')}</button>
-                    <button onClick={() => setIsFileModalOpen(false)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400"><X className="w-4 h-4" /></button>
+                    <Button onClick={saveFile} variant="success" size="xs" radius="lg" gap="1"><Save className="w-3 h-3"/>{t('save')}</Button>
+                    <FixedButton onClick={() => setIsFileModalOpen(false)} radius="full" label={t('close')}>
+                      <X className="w-4 h-4" />
+                    </FixedButton>
                   </div>
                 </div>
                 <textarea value={fileContent} onChange={(e)=>setFileContent(e.target.value)} className="flex-1 bg-zinc-950 text-zinc-200 font-mono text-sm p-4 resize-none outline-none" />

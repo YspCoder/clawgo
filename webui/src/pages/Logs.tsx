@@ -5,6 +5,7 @@ import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { LogEntry } from '../types';
 import { formatLocalTime } from '../utils/time';
+import { Button } from '../components/Button';
 
 const Logs: React.FC = () => {
   const { t } = useTranslation();
@@ -174,23 +175,15 @@ const Logs: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setShowRaw(!showRaw)}
-            className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium"
-          >
+          <Button onClick={() => setShowRaw(!showRaw)} gap="2">
             {showRaw ? t('pretty') : t('raw')}
-          </button>
-          <button 
-            onClick={() => setIsStreaming(!isStreaming)}
-            className={`ui-button flex items-center gap-2 px-4 py-2 text-sm font-medium ${
-              isStreaming ? 'ui-button-neutral' : 'ui-button-primary'
-            }`}
-          >
+          </Button>
+          <Button onClick={() => setIsStreaming(!isStreaming)} variant={isStreaming ? 'neutral' : 'primary'} gap="2">
             {isStreaming ? <><Square className="w-4 h-4" /> {t('pause')}</> : <><Play className="w-4 h-4" /> {t('resume')}</>}
-          </button>
-          <button onClick={clearLogs} className="ui-button ui-button-neutral flex items-center gap-2 px-4 py-2 text-sm font-medium">
+          </Button>
+          <Button onClick={clearLogs} gap="2">
             <Trash2 className="w-4 h-4" /> {t('clear')}
-          </button>
+          </Button>
         </div>
       </div>
 

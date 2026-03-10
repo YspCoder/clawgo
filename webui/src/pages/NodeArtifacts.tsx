@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
+import { Button, FixedButton, LinkButton } from '../components/Button';
 import { formatLocalDateTime } from '../utils/time';
 
 function dataUrlForArtifact(artifact: any) {
@@ -142,17 +143,10 @@ const NodeArtifacts: React.FC = () => {
           <div className="ui-text-muted text-sm mt-1">{t('nodeArtifactsHint')}</div>
         </div>
         <div className="flex items-center gap-2">
-          <a href={exportURL()} className="ui-button ui-button-neutral px-3 py-1.5 text-sm">
-            {t('export')}
-          </a>
-          <button
-            onClick={loadArtifacts}
-            className="ui-button ui-button-primary ui-button-icon"
-            title={loading ? t('loading') : t('refresh')}
-            aria-label={loading ? t('loading') : t('refresh')}
-          >
+          <LinkButton href={exportURL()} size="sm">{t('export')}</LinkButton>
+          <FixedButton onClick={loadArtifacts} variant="primary" label={loading ? t('loading') : t('refresh')}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          </FixedButton>
         </div>
       </div>
 
@@ -188,13 +182,9 @@ const NodeArtifacts: React.FC = () => {
                 placeholder={t('nodeArtifactsKeepLatest')}
                 className="ui-input rounded-xl px-3 py-2 text-xs"
               />
-              <button
-                onClick={pruneArtifacts}
-                disabled={prunePending}
-                className="ui-button ui-button-warning px-3 py-2 text-xs"
-              >
+              <Button onClick={pruneArtifacts} disabled={prunePending} variant="warning" size="xs_tall">
                 {prunePending ? t('loading') : t('nodeArtifactsPrune')}
-              </button>
+              </Button>
             </div>
           </div>
           <div className="overflow-y-auto min-h-0">
@@ -230,12 +220,8 @@ const NodeArtifacts: React.FC = () => {
                     <div className="ui-text-muted text-xs mt-1">{String(selected?.node || '-')} · {String(selected?.action || '-')} · {formatLocalDateTime(selected?.time)}</div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <a href={downloadURL(String(selected?.id || ''))} className="ui-button ui-button-neutral px-3 py-1.5 text-xs">
-                      {t('download')}
-                    </a>
-                    <button onClick={() => deleteArtifact(String(selected?.id || ''))} className="ui-button ui-button-danger px-3 py-1.5 text-xs">
-                      {t('delete')}
-                    </button>
+                    <LinkButton href={downloadURL(String(selected?.id || ''))} size="xs">{t('download')}</LinkButton>
+                    <Button onClick={() => deleteArtifact(String(selected?.id || ''))} variant="danger" size="xs">{t('delete')}</Button>
                   </div>
                 </div>
 

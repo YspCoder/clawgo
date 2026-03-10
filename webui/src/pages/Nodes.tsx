@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Check, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatLocalDateTime } from '../utils/time';
+import { Button, FixedButton, LinkButton } from '../components/Button';
 
 function dataUrlForArtifact(artifact: any) {
   const mime = String(artifact?.mime_type || '').trim() || 'application/octet-stream';
@@ -221,14 +222,13 @@ const Nodes: React.FC = () => {
           <h1 className="text-xl md:text-2xl font-semibold">{t('nodes')}</h1>
           <div className="text-sm text-zinc-500 mt-1">{t('nodesDetailHint')}</div>
         </div>
-        <button
+        <FixedButton
           onClick={() => { refreshNodes(); setReloadTick((value) => value + 1); }}
-          className="ui-button ui-button-primary ui-button-icon"
-          title={loading ? t('loading') : t('refresh')}
-          aria-label={loading ? t('loading') : t('refresh')}
+          variant="primary"
+          label={loading ? t('loading') : t('refresh')}
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        </FixedButton>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr_1.1fr] gap-4 flex-1 min-h-0">
@@ -298,18 +298,12 @@ const Nodes: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Link
-                    to={`/node-artifacts?node=${encodeURIComponent(String(selectedNode.id || ''))}`}
-                    className="ui-button ui-button-neutral px-3 py-1.5 text-xs"
-                  >
-                    {t('nodeArtifacts')}
+                  <Link to={`/node-artifacts?node=${encodeURIComponent(String(selectedNode.id || ''))}`} className="contents">
+                    <Button size="xs">{t('nodeArtifacts')}</Button>
                   </Link>
-                  <a
-                    href={`/webui/api/node_artifacts/export${q ? `${q}&node=${encodeURIComponent(String(selectedNode.id || ''))}` : `?node=${encodeURIComponent(String(selectedNode.id || ''))}`}`}
-                    className="ui-button ui-button-neutral px-3 py-1.5 text-xs"
-                  >
+                  <LinkButton href={`/webui/api/node_artifacts/export${q ? `${q}&node=${encodeURIComponent(String(selectedNode.id || ''))}` : `?node=${encodeURIComponent(String(selectedNode.id || ''))}`}`} size="xs">
                     {t('export')}
-                  </a>
+                  </LinkButton>
                 </div>
 
                 <div>
@@ -455,20 +449,10 @@ const Nodes: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium text-zinc-200">{t('nodeDispatchDetail')}</div>
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={resetReplayDraft}
-                        disabled={replayPending}
-                        className="ui-button ui-button-neutral px-3 py-1.5 text-xs"
-                      >
-                        {t('resetReplayDraft')}
-                      </button>
-                      <button
-                        onClick={replayDispatch}
-                        disabled={replayPending}
-                        className="ui-button ui-button-primary px-3 py-1.5 text-xs"
-                      >
+                      <Button onClick={resetReplayDraft} disabled={replayPending} size="xs">{t('resetReplayDraft')}</Button>
+                      <Button onClick={replayDispatch} disabled={replayPending} variant="primary" size="xs">
                         {replayPending ? t('replaying') : t('replayDispatch')}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">

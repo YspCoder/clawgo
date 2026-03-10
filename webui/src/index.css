@@ -801,6 +801,8 @@ html.theme-dark .brand-button {
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
+/* Fixed-width buttons must opt in explicitly via ui-button-icon / ui-button-square. */
+
 .ui-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -824,6 +826,16 @@ html.theme-dark .brand-button {
 
 .ui-button-primary:hover:not(:disabled) {
   background: var(--button-primary-bg-hover);
+}
+
+.ui-button-accent {
+  background: var(--pill-accent-bg);
+  border-color: var(--pill-accent-border);
+  color: var(--pill-accent-text);
+}
+
+.ui-button-accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pill-accent-bg) 78%, white);
 }
 
 .ui-button-success {
@@ -860,17 +872,16 @@ html.theme-dark .brand-button {
   height: 40px;
   min-height: 40px;
   width: 40px;
-  border-radius: var(--radius-button);
-}
-
-.ui-button:has(> svg:only-child) {
-  width: 40px;
+  min-width: 40px;
+  flex: 0 0 40px;
   padding-inline: 0;
+  border-radius: var(--radius-button);
 }
 
 .ui-button-square {
   width: 40px;
   min-width: 40px;
+  flex: 0 0 40px;
   padding-inline: 0;
 }
 

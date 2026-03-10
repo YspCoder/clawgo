@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { FixedButton } from './Button';
 
 interface RecursiveConfigProps {
   data: any;
@@ -79,17 +80,16 @@ const PrimitiveArrayEditor: React.FC<{
           ))}
         </datalist>
 
-        <button
+        <FixedButton
           onClick={() => {
             addValue(draft);
             setDraft('');
           }}
-          className="ui-button ui-button-neutral ui-button-icon rounded-xl"
-          title={t('add')}
-          aria-label={t('add')}
+          radius="xl"
+          label={t('add')}
         >
           <Plus className="w-4 h-4" />
-        </button>
+        </FixedButton>
 
         <select
           value={selected}

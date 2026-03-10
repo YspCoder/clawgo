@@ -3,6 +3,7 @@ import { Github, Moon, RefreshCw, SunMedium, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import { FixedButton, FixedLinkButton } from './Button';
 
 const REPO_URL = 'https://github.com/YspCoder/clawgo';
 
@@ -88,41 +89,21 @@ const Header: React.FC = () => {
         
         <div className="ui-border-subtle hidden md:block h-5 w-px bg-transparent border-l" />
 
-        <a
-          href={REPO_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="ui-button ui-button-neutral ui-button-icon text-sm font-medium"
-          title={t('githubRepo')}
-        >
+        <FixedLinkButton href={REPO_URL} target="_blank" rel="noreferrer" label={t('githubRepo')}>
           <Github className="w-4 h-4" />
-        </a>
+        </FixedLinkButton>
 
-        <button
-          onClick={checkVersion}
-          disabled={checkingVersion}
-          className="ui-button ui-button-neutral ui-button-icon text-sm font-medium disabled:opacity-60"
-          title={t('checkVersion')}
-        >
+        <FixedButton onClick={checkVersion} disabled={checkingVersion} label={t('checkVersion')}>
           <RefreshCw className={`w-4 h-4 ${checkingVersion ? 'animate-spin' : ''}`} />
-        </button>
+        </FixedButton>
 
-        <button
-          onClick={toggleTheme}
-          className="ui-button ui-button-neutral ui-button-icon text-sm font-medium"
-          title={theme === 'dark' ? t('themeLight') : t('themeDark')}
-        >
+        <FixedButton onClick={toggleTheme} label={theme === 'dark' ? t('themeLight') : t('themeDark')}>
           {theme === 'dark' ? <SunMedium className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
+        </FixedButton>
         
-        <button
-          onClick={toggleLang}
-          className="ui-button ui-button-neutral ui-button-square text-sm font-semibold"
-          title={i18n.language === 'en' ? t('languageZh') : t('languageEn')}
-          aria-label={i18n.language === 'en' ? t('languageZh') : t('languageEn')}
-        >
+        <FixedButton onClick={toggleLang} shape="square" label={i18n.language === 'en' ? t('languageZh') : t('languageEn')}>
           {i18n.language === 'en' ? '中' : 'EN'}
-        </button>
+        </FixedButton>
       </div>
     </header>
   );

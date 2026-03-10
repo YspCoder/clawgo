@@ -4,6 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Activity, Server, Cpu, Network, RefreshCw } from 'lucide-react';
 import { SpaceParticles } from '../components/SpaceParticles';
+import { FixedButton } from '../components/Button';
 
 type SubagentTask = {
   id: string;
@@ -1158,14 +1159,9 @@ const Subagents: React.FC = () => {
     <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentsRuntime')}</h1>
-        <button
-          onClick={() => load()}
-          className="ui-button ui-button-primary ui-button-icon"
-          title={t('refresh')}
-          aria-label={t('refresh')}
-        >
+        <FixedButton onClick={() => load()} variant="primary" label={t('refresh')}>
           <RefreshCw className="w-4 h-4" />
-        </button>
+        </FixedButton>
       </div>
 
       <div className="flex-1 min-h-0 brand-card border border-zinc-800 p-4 flex flex-col gap-3">

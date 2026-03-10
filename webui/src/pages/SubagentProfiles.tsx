@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, Plus, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import { Button, FixedButton } from '../components/Button';
 
 type SubagentProfile = {
   agent_id: string;
@@ -272,22 +273,12 @@ const SubagentProfiles: React.FC = () => {
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-semibold">{t('subagentProfiles')}</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => load()}
-            className="ui-button ui-button-neutral ui-button-icon"
-            title={t('refresh')}
-            aria-label={t('refresh')}
-          >
+          <FixedButton onClick={() => load()} label={t('refresh')}>
             <RefreshCw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onNew}
-            className="ui-button ui-button-success ui-button-icon"
-            title={t('newProfile')}
-            aria-label={t('newProfile')}
-          >
+          </FixedButton>
+          <FixedButton onClick={onNew} variant="success" label={t('newProfile')}>
             <Plus className="w-4 h-4" />
-          </button>
+          </FixedButton>
         </div>
       </div>
 
@@ -411,15 +402,9 @@ const SubagentProfiles: React.FC = () => {
               {groups.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {groups.map((g) => (
-                    <button
-                      key={g.name}
-                      type="button"
-                      onClick={() => addAllowlistToken(`group:${g.name}`)}
-                      className="ui-button ui-button-neutral px-2 py-1 text-[11px] rounded"
-                      title={g.description || g.name}
-                    >
+                    <Button key={g.name} type="button" onClick={() => addAllowlistToken(`group:${g.name}`)} size="xs" radius="lg" title={g.description || g.name}>
                       {`group:${g.name}`}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -436,14 +421,9 @@ const SubagentProfiles: React.FC = () => {
                 placeholder={t('agentPromptContentPlaceholder')}
               />
               <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={savePromptFile}
-                  disabled={!String(draft.system_prompt_file || '').trim()}
-                  className="ui-button ui-button-neutral px-3 py-1.5 text-xs rounded disabled:opacity-50"
-                >
+                <Button type="button" onClick={savePromptFile} disabled={!String(draft.system_prompt_file || '').trim()} size="xs" radius="lg">
                   {t('savePromptFile')}
-                </button>
+                </Button>
               </div>
             </div>
             <div>
@@ -489,34 +469,18 @@ const SubagentProfiles: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={save}
-              disabled={saving}
-              className="ui-button ui-button-primary px-3 py-1.5 text-xs"
-            >
+            <Button onClick={save} disabled={saving} variant="primary" size="xs">
               {selected ? t('update') : t('create')}
-            </button>
-            <button
-              onClick={() => setStatus('active')}
-              disabled={!draft.agent_id}
-              className="ui-button ui-button-success px-3 py-1.5 text-xs"
-            >
+            </Button>
+            <Button onClick={() => setStatus('active')} disabled={!draft.agent_id} variant="success" size="xs">
               {t('enable')}
-            </button>
-            <button
-              onClick={() => setStatus('disabled')}
-              disabled={!draft.agent_id}
-              className="ui-button ui-button-warning px-3 py-1.5 text-xs"
-            >
+            </Button>
+            <Button onClick={() => setStatus('disabled')} disabled={!draft.agent_id} variant="warning" size="xs">
               {t('disable')}
-            </button>
-            <button
-              onClick={remove}
-              disabled={!draft.agent_id}
-              className="ui-button ui-button-danger px-3 py-1.5 text-xs"
-            >
+            </Button>
+            <Button onClick={remove} disabled={!draft.agent_id} variant="danger" size="xs">
               {t('delete')}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

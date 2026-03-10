@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { FixedButton } from '../components/Button';
 import { formatLocalDateTime } from '../utils/time';
 
 type TaskAuditItem = {
@@ -128,14 +129,9 @@ const TaskAudit: React.FC = () => {
             <option value="error">{t('statusError')}</option>
             <option value="suppressed">{t('statusSuppressed')}</option>
           </select>
-          <button
-            onClick={fetchData}
-            className="ui-button ui-button-primary ui-button-icon"
-            title={loading ? t('loading') : t('refresh')}
-            aria-label={loading ? t('loading') : t('refresh')}
-          >
+          <FixedButton onClick={fetchData} variant="primary" label={loading ? t('loading') : t('refresh')}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          </FixedButton>
         </div>
       </div>
 

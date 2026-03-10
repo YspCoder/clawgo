@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, RefreshCw, Route, ServerCrash, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import { FixedButton } from '../components/Button';
 
 type EKGKV = { key?: string; score?: number; count?: number };
 
@@ -164,14 +165,14 @@ const EKG: React.FC = () => {
             <option value="24h">24h</option>
             <option value="7d">7d</option>
           </select>
-          <button
+          <FixedButton
             onClick={fetchData}
-            className="ui-button ui-button-primary ui-button-icon h-10 w-10 rounded-xl"
-            title={loading ? t('loading') : t('refresh')}
-            aria-label={loading ? t('loading') : t('refresh')}
+            variant="primary"
+            radius="xl"
+            label={loading ? t('loading') : t('refresh')}
           >
             <RefreshCw className="w-4 h-4" />
-          </button>
+          </FixedButton>
         </div>
       </div>
 
