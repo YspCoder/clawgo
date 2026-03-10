@@ -25,9 +25,6 @@ permissions:
 jobs:
   build-and-package:
     runs-on: ubuntu-latest
-    env:
-      BUILD_TARGETS: ${{ inputs.build_targets }}
-      CHANNEL_PACKAGE_VARIANTS: ${{ inputs.channel_variants }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,15 +66,17 @@ jobs:
         run: |
           set -euo pipefail
           make clean
-          if [ -n "${BUILD_TARGETS:-}" ] && [ -n "${CHANNEL_PACKAGE_VARIANTS:-}" ]; then
-            make package-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="${BUILD_TARGETS}" CHANNEL_PACKAGE_VARIANTS="${CHANNEL_PACKAGE_VARIANTS}"
-          elif [ -n "${BUILD_TARGETS:-}" ]; then
-            make package-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="${BUILD_TARGETS}"
-          elif [ -n "${CHANNEL_PACKAGE_VARIANTS:-}" ]; then
-            make package-all VERSION="${{ steps.ver.outputs.version }}" CHANNEL_PACKAGE_VARIANTS="${CHANNEL_PACKAGE_VARIANTS}"
-          else
-            make package-all VERSION="${{ steps.ver.outputs.version }}"
+          build_targets="${{ inputs.build_targets || '' }}"
+          channel_variants="${{ inputs.channel_variants || '' }}"
+          if [ -z "$build_targets" ]; then
+            build_targets="linux/amd64 linux/arm64 linux/riscv64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
           fi
+          if [ -z "$channel_variants" ]; then
+            channel_variants="full none telegram discord feishu maixcam qq dingtalk whatsapp"
+          fi
+          echo "BUILD_TARGETS=$build_targets"
+          echo "CHANNEL_PACKAGE_VARIANTS=$channel_variants"
+          make package-all VERSION="${{ steps.ver.outputs.version }}" BUILD_TARGETS="$build_targets" CHANNEL_PACKAGE_VARIANTS="$channel_variants"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
