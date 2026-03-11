@@ -1,10 +1,10 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, MessageSquare, Settings, Clock, Terminal, Zap, FolderOpen, ClipboardList, BrainCircuit, Hash, Bot, Boxes, PanelLeftClose, PanelLeftOpen, Plug, Smartphone, ChevronDown, Radio, MonitorSmartphone } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Settings, Clock, Terminal, Zap, FolderOpen, ClipboardList, BrainCircuit, Hash, Bot, Boxes, PanelLeftClose, PanelLeftOpen, Plug, Smartphone, ChevronDown, Radio, MonitorSmartphone, Cpu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
-import Input from './Input';
 import NavItem from './NavItem';
+import { TextField } from './FormControls';
 
 const Sidebar: React.FC = () => {
   const { t } = useTranslation();
@@ -61,13 +61,13 @@ const Sidebar: React.FC = () => {
       title: t('sidebarConfig'),
       items: [
         { icon: <Settings className="w-5 h-5" />, label: t('config'), to: '/config' },
+        { icon: <Cpu className="w-5 h-5" />, label: t('providers'), to: '/providers' },
         {
           icon: <Smartphone className="w-5 h-5" />,
           label: t('channelsGroup'),
           childrenId: 'channels',
           children: channelChildren,
         },
-        { icon: <Plug className="w-5 h-5" />, label: t('mcpServices'), to: '/mcp' },
         { icon: <Clock className="w-5 h-5" />, label: t('cronJobs'), to: '/cron' },
       ],
     },
@@ -75,6 +75,7 @@ const Sidebar: React.FC = () => {
       id: 'knowledge',
       title: t('sidebarKnowledge'),
       items: [
+        { icon: <Plug className="w-5 h-5" />, label: t('mcpServices'), to: '/mcp' },
         { icon: <FolderOpen className="w-5 h-5" />, label: t('memory'), to: '/memory' },
         { icon: <Zap className="w-5 h-5" />, label: t('skills'), to: '/skills' },
       ],
@@ -155,12 +156,12 @@ const Sidebar: React.FC = () => {
       {!sidebarCollapsed ? (
         <div className="p-3 border-t border-zinc-800 bg-zinc-900/20">
           <div className="text-[11px] font-medium text-zinc-500 mb-1 uppercase tracking-wider px-1">{t('gatewayToken')}</div>
-          <Input
+          <TextField
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder={t('enterToken')}
-            className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors placeholder:text-zinc-600"
+            className="w-full py-2.5 placeholder:text-zinc-600"
           />
         </div>
       ) : (

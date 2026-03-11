@@ -5,9 +5,7 @@ import { Check, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatLocalDateTime } from '../utils/time';
 import { Button, FixedButton, LinkButton } from '../components/Button';
-import Input from '../components/Input';
-import Select from '../components/Select';
-import Textarea from '../components/Textarea';
+import { SelectField, TextField, TextareaField } from '../components/FormControls';
 
 function dataUrlForArtifact(artifact: any) {
   const mime = String(artifact?.mime_type || '').trim() || 'application/octet-stream';
@@ -237,11 +235,10 @@ const Nodes: React.FC = () => {
       <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr_1.1fr] gap-4 flex-1 min-h-0">
         <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
           <div className="px-3 py-2 border-b border-zinc-800 dark:border-zinc-700 space-y-2">
-            <Input
+            <TextField
               value={nodeFilter}
               onChange={(e) => setNodeFilter(e.target.value)}
               placeholder={t('nodesFilterPlaceholder')}
-              className="rounded-xl px-3 py-2 text-sm"
             />
           </div>
           <div className="overflow-y-auto min-h-0">
@@ -401,19 +398,19 @@ const Nodes: React.FC = () => {
           <div className="px-3 py-2 border-b border-zinc-800 dark:border-zinc-700 space-y-2">
             <div className="text-xs text-zinc-400 uppercase tracking-wider">{t('nodeDispatchDetail')}</div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <Select value={dispatchActionFilter} onChange={(e) => setDispatchActionFilter(e.target.value)} className="rounded-xl px-2 py-2 text-xs">
+              <SelectField dense value={dispatchActionFilter} onChange={(e) => setDispatchActionFilter(e.target.value)}>
                 <option value="all">{t('allActions')}</option>
                 {dispatchActions.map((action) => <option key={action} value={action}>{action}</option>)}
-              </Select>
-              <Select value={dispatchTransportFilter} onChange={(e) => setDispatchTransportFilter(e.target.value)} className="rounded-xl px-2 py-2 text-xs">
+              </SelectField>
+              <SelectField dense value={dispatchTransportFilter} onChange={(e) => setDispatchTransportFilter(e.target.value)}>
                 <option value="all">{t('allTransports')}</option>
                 {dispatchTransports.map((transport) => <option key={transport} value={transport}>{transport}</option>)}
-              </Select>
-              <Select value={dispatchStatusFilter} onChange={(e) => setDispatchStatusFilter(e.target.value)} className="rounded-xl px-2 py-2 text-xs">
+              </SelectField>
+              <SelectField dense value={dispatchStatusFilter} onChange={(e) => setDispatchStatusFilter(e.target.value)}>
                 <option value="all">{t('allStatus')}</option>
                 <option value="ok">ok</option>
                 <option value="error">error</option>
-              </Select>
+              </SelectField>
             </div>
           </div>
           <div className="grid grid-rows-[220px_1fr] min-h-0 flex-1">
@@ -479,24 +476,24 @@ const Nodes: React.FC = () => {
                         <div className="grid grid-cols-3 gap-2">
                           <label className="space-y-1">
                             <div className="text-zinc-500 text-[11px]">{t('mode')}</div>
-                            <Select value={replayModeDraft} onChange={(e) => setReplayModeDraft(e.target.value)} className="w-full rounded-xl px-2 py-2 text-xs">
+                            <SelectField dense value={replayModeDraft} onChange={(e) => setReplayModeDraft(e.target.value)} className="w-full">
                               <option value="auto">auto</option>
                               <option value="p2p">p2p</option>
                               <option value="relay">relay</option>
-                            </Select>
+                            </SelectField>
                           </label>
                           <label className="space-y-1 col-span-2">
                             <div className="text-zinc-500 text-[11px]">{t('model')}</div>
-                            <Input value={replayModelDraft} onChange={(e) => setReplayModelDraft(e.target.value)} className="w-full rounded-xl px-3 py-2 text-xs" />
+                            <TextField dense value={replayModelDraft} onChange={(e) => setReplayModelDraft(e.target.value)} className="w-full" />
                           </label>
                         </div>
                         <label className="space-y-1 block">
                           <div className="text-zinc-500 text-[11px]">{t('task')}</div>
-                          <Textarea value={replayTaskDraft} onChange={(e) => setReplayTaskDraft(e.target.value)} className="min-h-24 w-full p-3 text-xs" />
+                          <TextareaField dense value={replayTaskDraft} onChange={(e) => setReplayTaskDraft(e.target.value)} className="min-h-24 w-full p-3" />
                         </label>
                         <label className="space-y-1 block">
                           <div className="text-zinc-500 text-[11px]">{t('args')}</div>
-                          <Textarea value={replayArgsDraft} onChange={(e) => setReplayArgsDraft(e.target.value)} className="min-h-40 w-full p-3 text-xs font-mono" />
+                          <TextareaField dense monospace value={replayArgsDraft} onChange={(e) => setReplayArgsDraft(e.target.value)} className="min-h-40 w-full p-3" />
                         </label>
                       </div>
                     </div>

@@ -1,52 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { Button, FixedButton } from '../components/Button';
-import Checkbox from '../components/Checkbox';
-import FieldCard from '../components/FieldCard';
-import FormField from '../components/FormField';
-import Input from '../components/Input';
+import { TextareaField } from '../components/FormControls';
+import { GatewayArtifactsSection, GatewayDispatchSection, GatewayP2PSection } from '../components/config/GatewayConfigSection';
+import { ConfigDiffModal, ConfigHeader, ConfigSidebar, ConfigToolbar } from '../components/config/ConfigPageChrome';
+import { buildDiffRows, formatTagRuleText, parseTagRuleText, setPath } from '../components/config/configUtils';
+import { useConfigGatewayActions } from '../components/config/useConfigGatewayActions';
+import { useConfigNavigation } from '../components/config/useConfigNavigation';
+import { useConfigSaveAction } from '../components/config/useConfigSaveAction';
 import RecursiveConfig from '../components/RecursiveConfig';
-import Select from '../components/Select';
-import Textarea from '../components/Textarea';
-
-function setPath(obj: any, path: string, value: any) {
-  const keys = path.split('.');
-  const next = JSON.parse(JSON.stringify(obj || {}));
-  let cur = next;
-  for (let i = 0; i < keys.length - 1; i++) {
-    const k = keys[i];
-    if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {};
-    cur = cur[k];
-  }
-  cur[keys[keys.length - 1]] = value;
-  return next;
-}
-
-function parseTagRuleText(raw: string) {
-  const out: Record<string, string[]> = {};
-  for (const line of String(raw || '').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const idx = trimmed.indexOf('=');
-    if (idx <= 0) continue;
-    const key = trimmed.slice(0, idx).trim();
-    const tags = trimmed.slice(idx + 1).split(',').map((item) => item.trim()).filter(Boolean);
-    if (!key || tags.length === 0) continue;
-    out[key] = tags;
-  }
-  return out;
-}
-
-function formatTagRuleText(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
-  return Object.entries(value as Record<string, any>)
-    .map(([key, tags]) => `${key}=${Array.isArray(tags) ? tags.join(',') : ''}`)
-    .filter((line) => line !== '=')
-    .join('\n');
-}
 
 const Config: React.FC = () => {
   const { t } = useTranslation();
@@ -56,38 +19,37 @@ const Config: React.FC = () => {
   const [basicMode, setBasicMode] = useState(true);
   const [hotOnly, setHotOnly] = useState(false);
   const [search, setSearch] = useState('');
-  const [newProxyName, setNewProxyName] = useState('');
-
-  const configLabels = useMemo(
-    () => t('configLabels', { returnObjects: true }) as Record<string, string>,
-    [t]
-  );
-
-  const hotPrefixes = useMemo(() => hotReloadFieldDetails.map((x) => String(x.path || '').replace(/\.\*$/, '')).filter(Boolean), [hotReloadFieldDetails]);
-  const hotReloadTabKey = '__hot_reload__';
-
-  const allTopKeys = useMemo(() => Object.keys(cfg || {}).filter(k => typeof (cfg as any)?.[k] === 'object' && (cfg as any)?.[k] !== null), [cfg]);
-  const basicTopKeys = useMemo(() => {
-    const preferred = ['gateway', 'providers', 'channels', 'tools', 'cron', 'agents', 'logging'];
-    return preferred.filter((k) => allTopKeys.includes(k));
-  }, [allTopKeys]);
-
-  const filteredTopKeys = useMemo(() => {
-    let keys = basicMode ? basicTopKeys : allTopKeys;
-    if (hotOnly) {
-      keys = keys.filter((k) => hotPrefixes.some((p) => p === k || p.startsWith(`${k}.`) || k.startsWith(`${p}.`)));
-    }
-    if (search.trim()) {
-      const s = search.trim().toLowerCase();
-      keys = keys.filter((k) => k.toLowerCase().includes(s));
-    }
-    return [hotReloadTabKey, ...keys];
-  }, [allTopKeys, basicTopKeys, basicMode, hotOnly, search, hotPrefixes]);
-
   const [selectedTop, setSelectedTop] = useState<string>('');
-  const activeTop = filteredTopKeys.includes(selectedTop) ? selectedTop : (filteredTopKeys[0] || '');
   const [baseline, setBaseline] = useState<any>(null);
   const [showDiff, setShowDiff] = useState(false);
+  const { activeTop, configLabels, filteredTopKeys, hotReloadTabKey } = useConfigNavigation({
+    basicMode,
+    cfg,
+    hotOnly,
+    hotReloadFieldDetails,
+    search,
+    selectedTop,
+    t,
+  });
+  const {
+    addGatewayIceServer,
+    removeGatewayIceServer,
+    updateGatewayArtifactsField,
+    updateGatewayDispatchField,
+    updateGatewayIceServer,
+    updateGatewayP2PField,
+  } = useConfigGatewayActions({ setCfg });
+  const { saveConfig } = useConfigSaveAction({
+    cfg,
+    cfgRaw,
+    q,
+    setBaseline,
+    setConfigEditing,
+    setShowDiff,
+    showRaw,
+    t,
+    ui,
+  });
 
   const currentPayload = useMemo(() => {
     if (showRaw) {
@@ -97,24 +59,7 @@ const Config: React.FC = () => {
   }, [showRaw, cfgRaw, cfg]);
 
   const diffRows = useMemo(() => {
-    const out: Array<{ path: string; before: any; after: any }> = [];
-    const walk = (a: any, b: any, p: string) => {
-      const keys = new Set([...(a && typeof a === 'object' ? Object.keys(a) : []), ...(b && typeof b === 'object' ? Object.keys(b) : [])]);
-      if (keys.size === 0) {
-        if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ path: p || t('configRoot'), before: a, after: b });
-        return;
-      }
-      keys.forEach((k) => {
-        const pa = p ? `${p}.${k}` : k;
-        const av = a ? a[k] : undefined;
-        const bv = b ? b[k] : undefined;
-        const bothObj = av && bv && typeof av === 'object' && typeof bv === 'object' && !Array.isArray(av) && !Array.isArray(bv);
-        if (bothObj) walk(av, bv, pa);
-        else if (JSON.stringify(av) !== JSON.stringify(bv)) out.push({ path: pa, before: av, after: bv });
-      });
-    };
-    walk(baseline || {}, currentPayload || {}, '');
-    return out;
+    return buildDiffRows(baseline, currentPayload, t('configRoot'));
   }, [baseline, currentPayload]);
 
   const isDirty = useMemo(() => {
@@ -133,209 +78,33 @@ const Config: React.FC = () => {
     return () => setConfigEditing(false);
   }, [isDirty, setConfigEditing]);
 
-  function updateProxyField(name: string, field: string, value: any) {
-    setCfg((v) => setPath(v, `providers.proxies.${name}.${field}`, value));
-  }
-
-  function updateGatewayP2PField(field: string, value: any) {
-    setCfg((v) => setPath(v, `gateway.nodes.p2p.${field}`, value));
-  }
-
-  function updateGatewayDispatchField(field: string, value: any) {
-    setCfg((v) => setPath(v, `gateway.nodes.dispatch.${field}`, value));
-  }
-
-  function updateGatewayArtifactsField(field: string, value: any) {
-    setCfg((v) => setPath(v, `gateway.nodes.artifacts.${field}`, value));
-  }
-
-  function updateGatewayIceServer(index: number, field: string, value: any) {
-    setCfg((v) => {
-      const next = JSON.parse(JSON.stringify(v || {}));
-      if (!next.gateway || typeof next.gateway !== 'object') next.gateway = {};
-      if (!next.gateway.nodes || typeof next.gateway.nodes !== 'object') next.gateway.nodes = {};
-      if (!next.gateway.nodes.p2p || typeof next.gateway.nodes.p2p !== 'object') next.gateway.nodes.p2p = {};
-      if (!Array.isArray(next.gateway.nodes.p2p.ice_servers)) next.gateway.nodes.p2p.ice_servers = [];
-      if (!next.gateway.nodes.p2p.ice_servers[index] || typeof next.gateway.nodes.p2p.ice_servers[index] !== 'object') {
-        next.gateway.nodes.p2p.ice_servers[index] = { urls: [], username: '', credential: '' };
-      }
-      next.gateway.nodes.p2p.ice_servers[index][field] = value;
-      return next;
-    });
-  }
-
-  function addGatewayIceServer() {
-    setCfg((v) => {
-      const next = JSON.parse(JSON.stringify(v || {}));
-      if (!next.gateway || typeof next.gateway !== 'object') next.gateway = {};
-      if (!next.gateway.nodes || typeof next.gateway.nodes !== 'object') next.gateway.nodes = {};
-      if (!next.gateway.nodes.p2p || typeof next.gateway.nodes.p2p !== 'object') next.gateway.nodes.p2p = {};
-      if (!Array.isArray(next.gateway.nodes.p2p.ice_servers)) next.gateway.nodes.p2p.ice_servers = [];
-      next.gateway.nodes.p2p.ice_servers.push({ urls: [], username: '', credential: '' });
-      return next;
-    });
-  }
-
-  function removeGatewayIceServer(index: number) {
-    setCfg((v) => {
-      const next = JSON.parse(JSON.stringify(v || {}));
-      const iceServers = next?.gateway?.nodes?.p2p?.ice_servers;
-      if (Array.isArray(iceServers)) {
-        iceServers.splice(index, 1);
-      }
-      return next;
-    });
-  }
-
-  async function removeProxy(name: string) {
-    const ok = await ui.confirmDialog({
-      title: t('configDeleteProviderConfirmTitle'),
-      message: t('configDeleteProviderConfirmMessage', { name }),
-      danger: true,
-      confirmText: t('delete'),
-    });
-    if (!ok) return;
-    setCfg((v) => {
-      const next = JSON.parse(JSON.stringify(v || {}));
-      if (next?.providers?.proxies && typeof next.providers.proxies === 'object') {
-        delete next.providers.proxies[name];
-      }
-      return next;
-    });
-  }
-
-  function addProxy() {
-    const name = newProxyName.trim();
-    if (!name) return;
-    setCfg((v) => {
-      const next = JSON.parse(JSON.stringify(v || {}));
-      if (!next.providers || typeof next.providers !== 'object') next.providers = {};
-      if (!next.providers.proxies || typeof next.providers.proxies !== 'object' || Array.isArray(next.providers.proxies)) {
-        next.providers.proxies = {};
-      }
-      if (!next.providers.proxies[name]) {
-        next.providers.proxies[name] = {
-          api_key: '',
-          api_base: '',
-          models: [],
-          responses: {
-            web_search_enabled: false,
-            web_search_context_size: '',
-            file_search_vector_store_ids: [],
-            file_search_max_num_results: 0,
-            include: [],
-            stream_include_usage: false,
-          },
-          supports_responses_compact: false,
-          auth: 'bearer',
-          timeout_sec: 120,
-        };
-      }
-      return next;
-    });
-    setNewProxyName('');
-  }
-
-  async function saveConfig() {
-    try {
-      const payload = showRaw ? JSON.parse(cfgRaw) : cfg;
-      const submit = async (confirmRisky: boolean) => {
-        const body = confirmRisky ? { ...payload, confirm_risky: true } : payload;
-        return ui.withLoading(async () => {
-          const r = await fetch(`/webui/api/config${q}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          const text = await r.text();
-          let data: any = null;
-          try {
-            data = text ? JSON.parse(text) : null;
-          } catch {
-            data = null;
-          }
-          return { ok: r.ok, text, data };
-        }, t('saving'));
-      };
-
-      let result = await submit(false);
-      if (!result.ok && result.data?.requires_confirm) {
-        const changedFields = Array.isArray(result.data?.changed_fields) ? result.data.changed_fields.join(', ') : '';
-        const ok = await ui.confirmDialog({
-          title: t('configRiskyChangeConfirmTitle'),
-          message: t('configRiskyChangeConfirmMessage', { fields: changedFields || '-' }),
-          danger: true,
-          confirmText: t('saveChanges'),
-        });
-        if (!ok) return;
-        result = await submit(true);
-      }
-
-      if (!result.ok) {
-        throw new Error(result.data?.error || result.text || 'save failed');
-      }
-
-      await ui.notify({ title: t('saved'), message: t('configSaved') });
-      setBaseline(JSON.parse(JSON.stringify(payload)));
-      setConfigEditing(false);
-      setShowDiff(false);
-    } catch (e) {
-      await ui.notify({ title: t('requestFailed'), message: `${t('saveConfigFailed')}: ${e}` });
-    }
-  }
-
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-4 flex flex-col min-h-full">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="ui-text-primary text-2xl font-semibold tracking-tight">{t('configuration')}</h1>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div className="ui-toolbar-chip flex items-center gap-1 p-1 rounded-xl">
-            <Button onClick={() => setShowRaw(false)} variant={!showRaw ? 'primary' : 'neutral'} size="sm" radius="lg">{t('form')}</Button>
-            <Button onClick={() => setShowRaw(true)} variant={showRaw ? 'primary' : 'neutral'} size="sm" radius="lg">{t('rawJson')}</Button>
-          </div>
-          <Button onClick={saveConfig} variant="primary" gap="2">
-            <Save className="w-4 h-4" /> {t('saveChanges')}
-          </Button>
-        </div>
-      </div>
+      <ConfigHeader onSave={saveConfig} onShowForm={() => setShowRaw(false)} onShowRaw={() => setShowRaw(true)} showRaw={showRaw} t={t} />
 
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 flex-wrap">
-          <FixedButton
-            onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }}
-            label={t('reload')}
-          >
-            <RefreshCw className="w-4 h-4" />
-          </FixedButton>
-          <Button onClick={() => setShowDiff(true)} size="sm">{t('configDiffPreview')}</Button>
-          <Button onClick={() => setBasicMode(v => !v)} size="sm">
-            {basicMode ? t('configBasicMode') : t('configAdvancedMode')}
-          </Button>
-            <label className="ui-text-primary flex items-center gap-2 text-sm">
-              <Checkbox checked={hotOnly} onChange={(e) => setHotOnly(e.target.checked)} />
-              {t('configHotOnly')}
-            </label>
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('configSearchPlaceholder')} className="min-w-[240px] flex-1 px-3 py-2 rounded-xl text-sm" />
-        </div>
-      </div>
+      <ConfigToolbar
+        basicMode={basicMode}
+        hotOnly={hotOnly}
+        onHotOnlyChange={setHotOnly}
+        onReload={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }}
+        onSearchChange={setSearch}
+        onShowDiff={() => setShowDiff(true)}
+        onToggleBasicMode={() => setBasicMode((value) => !value)}
+        search={search}
+        t={t}
+      />
 
       <div className="flex-1 brand-card ui-border-subtle border rounded-[30px] overflow-hidden flex flex-col shadow-sm min-h-[420px]">
         {!showRaw ? (
           <div className="flex-1 flex min-h-0">
-            <aside className="sidebar-section ui-border-subtle w-44 md:w-56 border-r p-2 md:p-3 overflow-y-auto shrink-0">
-              <div className="ui-text-secondary text-xs uppercase tracking-widest mb-2 px-2">{t('configTopLevel')}</div>
-              <div className="space-y-1">
-                {filteredTopKeys.map((k) => (
-                  <button
-                    key={k}
-                    onClick={() => setSelectedTop(k)}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-colors ${activeTop === k ? 'nav-item-active ui-text-primary' : 'ui-text-primary ui-row-hover'}`}
-                  >
-                    {k === hotReloadTabKey ? t('configHotFieldsFull') : (configLabels[k] || k)}
-                  </button>
-                ))}
-              </div>
-            </aside>
+            <ConfigSidebar
+              activeTop={activeTop}
+              configLabels={configLabels}
+              filteredTopKeys={filteredTopKeys}
+              hotReloadTabKey={hotReloadTabKey}
+              onSelectTop={setSelectedTop}
+              t={t}
+            />
 
             <div className="flex-1 p-4 md:p-6 overflow-y-auto space-y-4">
               {activeTop === hotReloadTabKey && (
@@ -351,235 +120,32 @@ const Config: React.FC = () => {
                   </div>
                 </div>
               )}
-              {activeTop === 'providers' && !showRaw && (
-                <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-3 space-y-3">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
-                    <FormField
-                      label={t('configNewProviderName')}
-                      labelClassName="text-xs text-zinc-400"
-                      className="flex-1 min-w-[180px] space-y-1"
-                    >
-                      <Input value={newProxyName} onChange={(e)=>setNewProxyName(e.target.value)} placeholder={t('configNewProviderName')} className="px-2 py-1 rounded-lg bg-zinc-900/70 border border-zinc-700 text-xs" />
-                    </FormField>
-                    <div className="flex items-end gap-2">
-                      <FixedButton onClick={addProxy} variant="primary" label={t('add')}>
-                        <Plus className="w-4 h-4" />
-                      </FixedButton>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {Object.entries(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).map(([name, p]) => (
-                      <div key={name} className="grid grid-cols-1 md:grid-cols-7 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
-                        <div className="md:col-span-1 font-mono text-zinc-300 flex items-center">{name}</div>
-                        <FormField label={t('configLabels.api_base')} labelClassName="text-[11px] text-zinc-500" className="md:col-span-2 space-y-1">
-                          <Input value={String(p?.api_base || '')} onChange={(e)=>updateProxyField(name, 'api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                        </FormField>
-                        <FormField label={t('configLabels.api_key')} labelClassName="text-[11px] text-zinc-500" className="md:col-span-2 space-y-1">
-                          <Input value={String(p?.api_key || '')} onChange={(e)=>updateProxyField(name, 'api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                        </FormField>
-                        <FormField label={t('configLabels.models')} labelClassName="text-[11px] text-zinc-500" className="md:col-span-1 space-y-1">
-                          <Input value={Array.isArray(p?.models) ? p.models.join(',') : ''} onChange={(e)=>updateProxyField(name, 'models', e.target.value.split(',').map(s=>s.trim()).filter(Boolean))} placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`} className="px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800" />
-                        </FormField>
-                        <Button onClick={()=>removeProxy(name)} variant="danger" size="xs" radius="lg">{t('delete')}</Button>
-                      </div>
-                    ))}
-                    {Object.keys(((cfg as any)?.providers?.proxies || {}) as Record<string, any>).length === 0 && (
-                      <div className="text-xs text-zinc-500">{t('configNoCustomProviders')}</div>
-                    )}
-                  </div>
-                </div>
-              )}
               {activeTop === 'gateway' && !showRaw && (
                 <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-3 space-y-3">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="text-sm font-semibold text-zinc-200">{t('configNodeP2P')}</div>
-                    <div className="text-xs text-zinc-500">{t('configNodeP2PHint')}</div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                    <FieldCard title={t('enable')}>
-                      <Checkbox
-                        checked={Boolean((cfg as any)?.gateway?.nodes?.p2p?.enabled)}
-                        onChange={(e) => updateGatewayP2PField('enabled', e.target.checked)}
-                      />
-                    </FieldCard>
-                    <FieldCard title={t('dashboardNodeP2PTransport')}>
-                      <Select
-                        value={String((cfg as any)?.gateway?.nodes?.p2p?.transport || 'websocket_tunnel')}
-                        onChange={(e) => updateGatewayP2PField('transport', e.target.value)}
-                        className="w-full min-h-0 rounded-lg px-2 py-1 text-xs"
-                      >
-                        <option value="websocket_tunnel">websocket_tunnel</option>
-                        <option value="webrtc">webrtc</option>
-                      </Select>
-                    </FieldCard>
-                    <FieldCard title={t('dashboardNodeP2PIce')}>
-                      <Input
-                        value={Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.stun_servers) ? (cfg as any).gateway.nodes.p2p.stun_servers.join(', ') : ''}
-                        onChange={(e) => updateGatewayP2PField('stun_servers', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
-                        placeholder={t('configNodeP2PStunPlaceholder')}
-                        className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
-                      />
-                    </FieldCard>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="text-sm font-medium text-zinc-200">{t('configNodeP2PIceServers')}</div>
-                      <FixedButton onClick={addGatewayIceServer} variant="primary" label={t('add')}>
-                        <Plus className="w-4 h-4" />
-                      </FixedButton>
-                    </div>
-                    {Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.ice_servers) && (cfg as any).gateway.nodes.p2p.ice_servers.length > 0 ? (
-                      ((cfg as any).gateway.nodes.p2p.ice_servers as Array<any>).map((server, index) => (
-                        <div key={`ice-${index}`} className="grid grid-cols-1 md:grid-cols-7 gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
-                          <Input
-                            value={Array.isArray(server?.urls) ? server.urls.join(', ') : ''}
-                            onChange={(e) => updateGatewayIceServer(index, 'urls', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
-                            placeholder={t('configNodeP2PIceUrlsPlaceholder')}
-                            className="md:col-span-3 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
-                          />
-                          <Input
-                            value={String(server?.username || '')}
-                            onChange={(e) => updateGatewayIceServer(index, 'username', e.target.value)}
-                            placeholder={t('configNodeP2PIceUsername')}
-                            className="md:col-span-1 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
-                          />
-                          <Input
-                            value={String(server?.credential || '')}
-                            onChange={(e) => updateGatewayIceServer(index, 'credential', e.target.value)}
-                            placeholder={t('configNodeP2PIceCredential')}
-                            className="md:col-span-2 px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
-                          />
-                          <Button onClick={() => removeGatewayIceServer(index)} variant="danger" size="xs" radius="lg">{t('delete')}</Button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-zinc-500">{t('configNodeP2PIceServersEmpty')}</div>
-                    )}
-                  </div>
-                  <div className="border-t border-zinc-800/70 pt-3 space-y-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="text-sm font-semibold text-zinc-200">{t('configNodeDispatch')}</div>
-                      <div className="text-xs text-zinc-500">{t('configNodeDispatchHint')}</div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                      <FieldCard title={t('configNodeDispatchPreferLocal')}>
-                        <Checkbox
-                          checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.prefer_local)}
-                          onChange={(e) => updateGatewayDispatchField('prefer_local', e.target.checked)}
-                        />
-                      </FieldCard>
-                      <FieldCard title={t('configNodeDispatchPreferP2P')}>
-                        <Checkbox
-                          checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.prefer_p2p ?? true)}
-                          onChange={(e) => updateGatewayDispatchField('prefer_p2p', e.target.checked)}
-                        />
-                      </FieldCard>
-                      <FieldCard title={t('configNodeDispatchAllowRelay')}>
-                        <Checkbox
-                          checked={Boolean((cfg as any)?.gateway?.nodes?.dispatch?.allow_relay_fallback ?? true)}
-                          onChange={(e) => updateGatewayDispatchField('allow_relay_fallback', e.target.checked)}
-                        />
-                      </FieldCard>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <FieldCard title={t('configNodeDispatchActionTags')}>
-                        <Textarea
-                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.action_tags)}
-                          onChange={(e) => updateGatewayDispatchField('action_tags', parseTagRuleText(e.target.value))}
-                          placeholder={t('configNodeDispatchActionTagsPlaceholder')}
-                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
-                        />
-                      </FieldCard>
-                      <FieldCard title={t('configNodeDispatchAgentTags')}>
-                        <Textarea
-                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.agent_tags)}
-                          onChange={(e) => updateGatewayDispatchField('agent_tags', parseTagRuleText(e.target.value))}
-                          placeholder={t('configNodeDispatchAgentTagsPlaceholder')}
-                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
-                        />
-                      </FieldCard>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <FieldCard title={t('configNodeDispatchAllowActions')}>
-                        <Textarea
-                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.allow_actions)}
-                          onChange={(e) => updateGatewayDispatchField('allow_actions', parseTagRuleText(e.target.value))}
-                          placeholder={t('configNodeDispatchAllowActionsPlaceholder')}
-                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
-                        />
-                      </FieldCard>
-                      <FieldCard title={t('configNodeDispatchDenyActions')}>
-                        <Textarea
-                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.deny_actions)}
-                          onChange={(e) => updateGatewayDispatchField('deny_actions', parseTagRuleText(e.target.value))}
-                          placeholder={t('configNodeDispatchDenyActionsPlaceholder')}
-                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
-                        />
-                      </FieldCard>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <FieldCard title={t('configNodeDispatchAllowAgents')}>
-                        <Textarea
-                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.allow_agents)}
-                          onChange={(e) => updateGatewayDispatchField('allow_agents', parseTagRuleText(e.target.value))}
-                          placeholder={t('configNodeDispatchAllowAgentsPlaceholder')}
-                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
-                        />
-                      </FieldCard>
-                      <FieldCard title={t('configNodeDispatchDenyAgents')}>
-                        <Textarea
-                          value={formatTagRuleText((cfg as any)?.gateway?.nodes?.dispatch?.deny_agents)}
-                          onChange={(e) => updateGatewayDispatchField('deny_agents', parseTagRuleText(e.target.value))}
-                          placeholder={t('configNodeDispatchDenyAgentsPlaceholder')}
-                          className="min-h-28 w-full rounded-xl bg-zinc-950/70 border border-zinc-800 px-3 py-2"
-                        />
-                      </FieldCard>
-                    </div>
-                  </div>
-                  <div className="border-t border-zinc-800/70 pt-3 space-y-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="text-sm font-semibold text-zinc-200">{t('configNodeArtifacts')}</div>
-                      <div className="text-xs text-zinc-500">{t('configNodeArtifactsHint')}</div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                      <FieldCard title={t('enable')}>
-                        <Checkbox
-                          checked={Boolean((cfg as any)?.gateway?.nodes?.artifacts?.enabled)}
-                          onChange={(e) => updateGatewayArtifactsField('enabled', e.target.checked)}
-                        />
-                      </FieldCard>
-                      <FieldCard title={t('configNodeArtifactsKeepLatest')}>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={Number((cfg as any)?.gateway?.nodes?.artifacts?.keep_latest || 500)}
-                          onChange={(e) => updateGatewayArtifactsField('keep_latest', Math.max(1, Number.parseInt(e.target.value || '0', 10) || 1))}
-                          className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
-                        />
-                      </FieldCard>
-                      <FieldCard title={t('configNodeArtifactsPruneOnRead')}>
-                        <Checkbox
-                          checked={Boolean((cfg as any)?.gateway?.nodes?.artifacts?.prune_on_read ?? true)}
-                          onChange={(e) => updateGatewayArtifactsField('prune_on_read', e.target.checked)}
-                        />
-                      </FieldCard>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                      <FieldCard title={t('configNodeArtifactsRetainDays')}>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={Number((cfg as any)?.gateway?.nodes?.artifacts?.retain_days ?? 7)}
-                          onChange={(e) => updateGatewayArtifactsField('retain_days', Math.max(0, Number.parseInt(e.target.value || '0', 10) || 0))}
-                          className="w-full px-2 py-1 rounded-lg bg-zinc-950/70 border border-zinc-800"
-                        />
-                      </FieldCard>
-                    </div>
-                  </div>
+                  <GatewayP2PSection
+                    addGatewayIceServer={addGatewayIceServer}
+                    iceServers={Array.isArray((cfg as any)?.gateway?.nodes?.p2p?.ice_servers) ? (cfg as any).gateway.nodes.p2p.ice_servers : []}
+                    onP2PFieldChange={updateGatewayP2PField}
+                    onRemoveGatewayIceServer={removeGatewayIceServer}
+                    onUpdateGatewayIceServer={updateGatewayIceServer}
+                    p2p={(cfg as any)?.gateway?.nodes?.p2p}
+                    t={t}
+                  />
+                  <GatewayDispatchSection
+                    dispatch={(cfg as any)?.gateway?.nodes?.dispatch}
+                    formatTagRuleText={formatTagRuleText}
+                    onDispatchFieldChange={updateGatewayDispatchField}
+                    parseTagRuleText={parseTagRuleText}
+                    t={t}
+                  />
+                  <GatewayArtifactsSection
+                    artifacts={(cfg as any)?.gateway?.nodes?.artifacts}
+                    onArtifactsFieldChange={updateGatewayArtifactsField}
+                    t={t}
+                  />
                 </div>
               )}
-              {activeTop && activeTop !== hotReloadTabKey ? (
+              {activeTop && activeTop !== hotReloadTabKey && activeTop !== 'providers' && activeTop !== 'gateway' ? (
                 <RecursiveConfig
                   data={(cfg as any)?.[activeTop] || {}}
                   labels={configLabels}
@@ -589,50 +155,22 @@ const Config: React.FC = () => {
                   onChange={(path, val) => setCfg(v => setPath(v, path, val))}
                 />
               ) : (
-                <div className="text-zinc-500 text-sm">{t('configNoGroups')}</div>
+                activeTop !== 'providers' && activeTop !== 'gateway' && <div className="text-zinc-500 text-sm">{t('configNoGroups')}</div>
               )}
             </div>
           </div>
         ) : (
-          <Textarea
+          <TextareaField
             value={cfgRaw}
             onChange={(e) => setCfgRaw(e.target.value)}
-            className="flex-1 w-full bg-zinc-950/35 p-6 font-mono text-sm text-zinc-300 focus:outline-none resize-none"
+            monospace
+            className="flex-1 w-full bg-zinc-950/35 p-6 text-zinc-300 focus:outline-none resize-none border-0 rounded-none"
             spellCheck={false}
           />
         )}
       </div>
 
-      {showDiff && (
-        <div className="ui-overlay-strong fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl max-h-[85vh] brand-card border border-zinc-800 rounded-[30px] overflow-hidden flex flex-col">
-            <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-              <div className="font-semibold">{t('configDiffPreviewCount', { count: diffRows.length })}</div>
-              <Button onClick={() => setShowDiff(false)} size="xs" radius="xl">{t('close')}</Button>
-            </div>
-            <div className="overflow-auto text-xs">
-              <table className="w-full">
-                <thead className="sticky top-0 bg-zinc-900 text-zinc-300">
-                  <tr>
-                    <th className="text-left p-2">{t('path')}</th>
-                    <th className="text-left p-2">{t('before')}</th>
-                    <th className="text-left p-2">{t('after')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {diffRows.map((r, i) => (
-                    <tr key={i} className="border-t border-zinc-900 align-top">
-                      <td className="p-2 font-mono text-zinc-400">{r.path}</td>
-                      <td className="p-2 text-zinc-300 break-all">{JSON.stringify(r.before)}</td>
-                      <td className="p-2 text-emerald-300 break-all">{JSON.stringify(r.after)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+      {showDiff && <ConfigDiffModal diffRows={diffRows} onClose={() => setShowDiff(false)} t={t} />}
     </div>
   );
 };

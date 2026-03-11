@@ -438,8 +438,8 @@ deps:
 run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
-## dev: Run the local gateway in foreground for debugging
-dev: sync-embed-workspace
+## dev: Build WebUI, sync workspace, and run the local gateway in foreground for debugging
+dev: build-webui sync-embed-workspace
 	@if [ ! -f "$(DEV_CONFIG)" ]; then \
 		echo "✗ Missing config file: $(DEV_CONFIG)"; \
 		echo "  Override with: make dev DEV_CONFIG=/path/to/config.json"; \

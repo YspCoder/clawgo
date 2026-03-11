@@ -7,6 +7,7 @@ import Layout from './components/Layout';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Chat = lazy(() => import('./pages/Chat'));
 const Config = lazy(() => import('./pages/Config'));
+const Providers = lazy(() => import('./pages/Providers'));
 const Cron = lazy(() => import('./pages/Cron'));
 const Logs = lazy(() => import('./pages/Logs'));
 const Skills = lazy(() => import('./pages/Skills'));
@@ -44,6 +45,7 @@ export default function App() {
                 <Route path="whatsapp" element={<Navigate to="/channels/whatsapp" replace />} />
                 <Route path="channels/:channelId" element={<ChannelSettings />} />
                 <Route path="config" element={<Config />} />
+                <Route path="providers" element={<Providers />} />
                 <Route path="cron" element={<Cron />} />
                 <Route path="memory" element={<Memory />} />
                 <Route path="nodes" element={<Nodes />} />

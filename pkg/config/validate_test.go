@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDefaultConfigGeneratesGatewayToken(t *testing.T) {
 	t.Parallel()
@@ -204,6 +207,30 @@ func TestValidateGatewayNodeDispatchRejectsEmptyAllowNodeKey(t *testing.T) {
 	}
 }
 
+func TestValidateSentinelWebhookURLRejectsInvalidScheme(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Sentinel.WebhookURL = "ftp://example.com/hook"
+
+	if errs := Validate(cfg); len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+}
+
+func TestValidateSentinelWebhookURLAllowsHTTPS(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Sentinel.WebhookURL = "https://example.com/hook"
+
+	for _, err := range Validate(cfg) {
+		if strings.Contains(err.Error(), "sentinel.webhook_url") {
+			t.Fatalf("unexpected webhook validation error: %v", err)
+		}
+	}
+}
+
 func TestDefaultConfigSetsNodeArtifactRetentionDefaults(t *testing.T) {
 	t.Parallel()
 
@@ -242,5 +269,108 @@ func TestValidateNodeArtifactRetentionRejectsNegativeRetainDays(t *testing.T) {
 
 	if errs := Validate(cfg); len(errs) == 0 {
 		t.Fatalf("expected validation errors")
+	}
+}
+
+func TestValidateProviderOAuthAllowsEmptyModelsBeforeLogin(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Providers.Proxy.Auth = "oauth"
+	cfg.Providers.Proxy.Models = nil
+	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{Provider: "codex"}
+
+	if errs := Validate(cfg); len(errs) != 0 {
+		t.Fatalf("expected oauth provider config to be valid before model sync, got %v", errs)
+	}
+}
+
+func TestValidateProviderOAuthRequiresProviderName(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Providers.Proxy.Auth = "oauth"
+	cfg.Providers.Proxy.Models = nil
+	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{}
+
+	errs := Validate(cfg)
+	if len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "providers.proxy.oauth.provider") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected oauth.provider validation error, got %v", errs)
+	}
+}
+
+func TestValidateProviderHybridAllowsEmptyModels(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Providers.Proxy.Auth = "hybrid"
+	cfg.Providers.Proxy.APIKey = "sk-test"
+	cfg.Providers.Proxy.Models = nil
+	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{Provider: "codex"}
+
+	if errs := Validate(cfg); len(errs) != 0 {
+		t.Fatalf("expected hybrid provider config to be valid before model sync, got %v", errs)
+	}
+}
+
+func TestValidateProviderHybridRequiresOAuthProvider(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Providers.Proxy.Auth = "hybrid"
+	cfg.Providers.Proxy.APIKey = "sk-test"
+	cfg.Providers.Proxy.Models = nil
+	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{}
+
+	errs := Validate(cfg)
+	if len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "providers.proxy.oauth.provider") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected oauth.provider validation error, got %v", errs)
+	}
+}
+
+func TestValidateProviderHybridPriorityRejectsInvalidValue(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Providers.Proxy.Auth = "hybrid"
+	cfg.Providers.Proxy.APIKey = "sk-test"
+	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{
+		Provider:       "codex",
+		HybridPriority: "random_first",
+	}
+
+	errs := Validate(cfg)
+	if len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "oauth.hybrid_priority") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected oauth.hybrid_priority validation error, got %v", errs)
 	}
 }

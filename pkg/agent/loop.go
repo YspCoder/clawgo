@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -771,6 +772,23 @@ func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage,
 		"media_items":   msg.MediaItems,
 		"provider":      al.getSessionProvider(msg.SessionKey),
 		"model":         al.model,
+	}
+	if msg.Metadata != nil {
+		if v := strings.TrimSpace(msg.Metadata["context_extra_chars"]); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				row["context_extra_chars"] = n
+			}
+		}
+		if v := strings.TrimSpace(msg.Metadata["context_ekg_chars"]); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				row["context_ekg_chars"] = n
+			}
+		}
+		if v := strings.TrimSpace(msg.Metadata["context_memory_chars"]); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				row["context_memory_chars"] = n
+			}
+		}
 	}
 	if al.ekg != nil {
 		al.ekg.Record(ekg.Event{

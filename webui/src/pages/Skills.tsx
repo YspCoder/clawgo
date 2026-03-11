@@ -5,9 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import Checkbox from '../components/Checkbox';
-import Input from '../components/Input';
-import Textarea from '../components/Textarea';
+import { CheckboxField, TextField, TextareaField } from '../components/FormControls';
 
 const Skills: React.FC = () => {
   const { t } = useTranslation();
@@ -193,10 +191,10 @@ const Skills: React.FC = () => {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-semibold tracking-tight">{t('skills')}</h1>
         <div className="flex items-center gap-2 flex-wrap w-full xl:w-auto">
-          <Input disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 px-3 py-2 bg-zinc-950/70 border border-zinc-800 rounded-xl text-sm disabled:opacity-60" />
+          <TextField disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 disabled:opacity-60" />
           <Button disabled={installingSkill} onClick={installSkill} variant="success">{installingSkill ? t('loading') : t('install')}</Button>
           <label className="flex items-center gap-2 text-xs text-zinc-400">
-            <Checkbox
+            <CheckboxField
               checked={ignoreSuspicious}
               disabled={installingSkill}
               onChange={(e) => setIgnoreSuspicious(e.target.checked)}
@@ -300,7 +298,12 @@ const Skills: React.FC = () => {
                     </FixedButton>
                   </div>
                 </div>
-                <Textarea value={fileContent} onChange={(e)=>setFileContent(e.target.value)} className="flex-1 bg-zinc-950 text-zinc-200 font-mono text-sm p-4 resize-none outline-none" />
+                <TextareaField
+                  value={fileContent}
+                  onChange={(e)=>setFileContent(e.target.value)}
+                  monospace
+                  className="flex-1 rounded-none border-0 bg-zinc-950 text-zinc-200 p-4 resize-none outline-none"
+                />
               </main>
             </motion.div>
           </div>

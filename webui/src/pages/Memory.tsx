@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import Textarea from '../components/Textarea';
+import { TextareaField } from '../components/FormControls';
 
 const Memory: React.FC = () => {
   const { t } = useTranslation();
@@ -147,7 +147,7 @@ const Memory: React.FC = () => {
               <h2 className="ui-text-primary font-semibold">{active || t('noFileSelected')}</h2>
               <Button onClick={saveFile} variant="primary" size="sm" radius="xl">{t('save')}</Button>
             </div>
-            <Textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[50vh] lg:h-[80vh] rounded-[24px] p-4" />
+            <TextareaField value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[50vh] lg:h-[80vh] rounded-[24px] p-4" />
           </div>
         </main>
       </div>

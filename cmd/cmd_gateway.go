@@ -75,15 +75,7 @@ func gatewayCmd() {
 		cfg.WorkspacePath(),
 		cfg.Sentinel.IntervalSec,
 		cfg.Sentinel.AutoHeal,
-		func(message string) {
-			if cfg.Sentinel.NotifyChannel != "" && cfg.Sentinel.NotifyChatID != "" {
-				msgBus.PublishOutbound(bus.OutboundMessage{
-					Channel: cfg.Sentinel.NotifyChannel,
-					ChatID:  cfg.Sentinel.NotifyChatID,
-					Content: "[Sentinel] " + message,
-				})
-			}
-		},
+		buildSentinelAlertHandler(cfg, msgBus),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -421,15 +413,7 @@ func gatewayCmd() {
 				newCfg.WorkspacePath(),
 				newCfg.Sentinel.IntervalSec,
 				newCfg.Sentinel.AutoHeal,
-				func(message string) {
-					if newCfg.Sentinel.NotifyChannel != "" && newCfg.Sentinel.NotifyChatID != "" {
-						msgBus.PublishOutbound(bus.OutboundMessage{
-							Channel: newCfg.Sentinel.NotifyChannel,
-							ChatID:  newCfg.Sentinel.NotifyChatID,
-							Content: "[Sentinel] " + message,
-						})
-					}
-				},
+				buildSentinelAlertHandler(newCfg, msgBus),
 			)
 			if newCfg.Sentinel.Enabled {
 				sentinelService.SetManager(channelManager)
@@ -470,15 +454,7 @@ func gatewayCmd() {
 			newCfg.WorkspacePath(),
 			newCfg.Sentinel.IntervalSec,
 			newCfg.Sentinel.AutoHeal,
-			func(message string) {
-				if newCfg.Sentinel.NotifyChannel != "" && newCfg.Sentinel.NotifyChatID != "" {
-					msgBus.PublishOutbound(bus.OutboundMessage{
-						Channel: newCfg.Sentinel.NotifyChannel,
-						ChatID:  newCfg.Sentinel.NotifyChatID,
-						Content: "[Sentinel] " + message,
-					})
-				}
-			},
+			buildSentinelAlertHandler(newCfg, msgBus),
 		)
 		if newCfg.Sentinel.Enabled {
 			sentinelService.Start()

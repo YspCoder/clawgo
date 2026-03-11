@@ -108,6 +108,30 @@ clawgo onboard
 clawgo provider
 ```
 
+如果服务商使用 OAuth 登录，例如 `Codex`、`Anthropic`、`Antigravity`、`Gemini CLI`、`Kimi`、`Qwen`：
+
+```bash
+clawgo provider
+clawgo provider login codex-oauth
+clawgo provider login codex-oauth --manual
+```
+
+登录完成后会把 OAuth 凭证保存到本地，并自动同步该账号可用模型，后续可直接作为普通 provider 使用。
+回调型 OAuth（如 `codex` / `anthropic` / `antigravity` / `gemini`）在云服务器场景下可使用 `--manual`：服务端打印授权链接，你在桌面浏览器登录后，把最终回调 URL 粘贴回终端即可完成换取 token。
+设备码型 OAuth（如 `kimi` / `qwen`）会直接打印验证链接和用户码，桌面浏览器完成授权后，网关会自动轮询换取 token，无需回填 callback URL。
+对同一个 provider 重复执行 `clawgo provider login codex-oauth --manual` 会追加多个 OAuth 账号；当某个账号额度耗尽或触发限流时，会自动切换到下一个已登录账号重试。
+WebUI 也支持发起 OAuth 登录、回填 callback URL、设备码确认、上传 `auth.json`、查看账号列表、手动刷新和删除账号。
+
+如果你同时有 `API key` 和 `OAuth` 账号，推荐直接把同一个 provider 配成 `auth: "hybrid"`：
+
+- 优先使用 `api_key`
+- 当 `api_key` 触发额度不足、429、限流等错误时，自动切到该 provider 下的 OAuth 账号池
+- OAuth 账号仍然支持多账号轮换、后台预刷新、`auth.json` 导入和 WebUI 管理
+- `oauth.hybrid_priority` 可选 `api_first` / `oauth_first`
+- `oauth.cooldown_sec` 可控制某个 OAuth 账号被限流后暂时熔断多久，默认 `900`
+- provider runtime 面板会显示当前候选池排序、最近一次成功命中的凭证，以及最近命中/错误历史
+- 如需在重启后保留 runtime 历史，可给 provider 配置 `runtime_persist`、`runtime_history_file`、`runtime_history_max`
+
 ### 4. 启动
 
 交互模式：

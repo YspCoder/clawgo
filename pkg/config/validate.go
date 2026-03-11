@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 )
@@ -202,6 +203,18 @@ func Validate(cfg *Config) []error {
 
 	if cfg.Sentinel.Enabled && cfg.Sentinel.IntervalSec <= 0 {
 		errs = append(errs, fmt.Errorf("sentinel.interval_sec must be > 0 when sentinel.enabled=true"))
+	}
+	if raw := strings.TrimSpace(cfg.Sentinel.WebhookURL); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u == nil || u.Host == "" {
+			errs = append(errs, fmt.Errorf("sentinel.webhook_url must be a valid http/https URL"))
+		} else {
+			switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
+			case "http", "https":
+			default:
+				errs = append(errs, fmt.Errorf("sentinel.webhook_url must use http or https"))
+			}
+		}
 	}
 	if cfg.Memory.RecentDays <= 0 {
 		errs = append(errs, fmt.Errorf("memory.recent_days must be > 0"))
@@ -523,14 +536,41 @@ func containsString(items []string, target string) bool {
 
 func validateProviderConfig(path string, p ProviderConfig) []error {
 	var errs []error
+	authMode := strings.ToLower(strings.TrimSpace(p.Auth))
 	if p.APIBase == "" {
 		errs = append(errs, fmt.Errorf("%s.api_base is required", path))
 	}
 	if p.TimeoutSec <= 0 {
 		errs = append(errs, fmt.Errorf("%s.timeout_sec must be > 0", path))
 	}
-	if len(p.Models) == 0 {
+	switch authMode {
+	case "", "bearer", "oauth", "none", "hybrid":
+	default:
+		errs = append(errs, fmt.Errorf("%s.auth must be one of: bearer, oauth, hybrid, none", path))
+	}
+	if len(p.Models) == 0 && authMode != "oauth" && authMode != "hybrid" {
 		errs = append(errs, fmt.Errorf("%s.models must contain at least one model", path))
+	}
+	if authMode == "oauth" && strings.TrimSpace(p.OAuth.Provider) == "" {
+		errs = append(errs, fmt.Errorf("%s.oauth.provider is required when auth=oauth", path))
+	}
+	if authMode == "hybrid" {
+		if strings.TrimSpace(p.APIKey) == "" && strings.TrimSpace(p.OAuth.Provider) == "" {
+			errs = append(errs, fmt.Errorf("%s.hybrid auth requires api_key or oauth.provider", path))
+		}
+		if strings.TrimSpace(p.OAuth.Provider) == "" {
+			errs = append(errs, fmt.Errorf("%s.oauth.provider is required when auth=hybrid", path))
+		}
+	}
+	if p.OAuth.HybridPriority != "" {
+		switch strings.ToLower(strings.TrimSpace(p.OAuth.HybridPriority)) {
+		case "api_first", "oauth_first":
+		default:
+			errs = append(errs, fmt.Errorf("%s.oauth.hybrid_priority must be one of: api_first, oauth_first", path))
+		}
+	}
+	if p.OAuth.CooldownSec < 0 {
+		errs = append(errs, fmt.Errorf("%s.oauth.cooldown_sec must be >= 0", path))
 	}
 	if p.Responses.WebSearchContextSize != "" {
 		switch p.Responses.WebSearchContextSize {

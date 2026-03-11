@@ -5,9 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import Input from '../components/Input';
-import Select from '../components/Select';
-import Textarea from '../components/Textarea';
+import { SelectField, TextField, TextareaField } from '../components/FormControls';
 import { ChatItem } from '../types';
 
 type StreamItem = {
@@ -577,9 +575,9 @@ const Chat: React.FC = () => {
             <Button onClick={() => setChatTab('subagents')} variant={chatTab === 'subagents' ? 'primary' : 'neutral'} size="xs">{t('subagentGroup')}</Button>
           </div>
           {chatTab === 'main' && (
-            <Select value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="min-w-[220px] flex-1 rounded-xl px-2.5 py-1.5 text-xs">
+            <SelectField dense value={sessionKey} onChange={(e) => setSessionKey(e.target.value)} className="min-w-[220px] flex-1">
               {userSessions.map((s: any) => <option key={s.key} value={s.key}>{s.title || s.key}</option>)}
-            </Select>
+            </SelectField>
           )}
           <FixedButton
             onClick={() => {
@@ -621,28 +619,28 @@ const Chat: React.FC = () => {
                 <div className="ui-text-secondary text-sm">{t('subagentDispatchHint')}</div>
               </div>
               <div className="space-y-3">
-                <Select
+                <SelectField
                   value={dispatchAgentID}
                   onChange={(e) => setDispatchAgentID(e.target.value)}
-                  className="ui-select w-full rounded-2xl px-3 py-2.5 text-sm"
+                  className="w-full rounded-2xl py-2.5"
                 >
                   {registryAgents.map((agent) => (
                     <option key={agent.agent_id} value={agent.agent_id}>
                       {formatAgentName(agent.display_name || agent.agent_id, t)} · {agent.role || '-'}
                     </option>
                   ))}
-                </Select>
-                <Textarea
+                </SelectField>
+                <TextareaField
                   value={dispatchTask}
                   onChange={(e) => setDispatchTask(e.target.value)}
                   placeholder={t('subagentTaskPlaceholder')}
-                  className="w-full min-h-[180px] resize-none rounded-2xl px-3 py-3 text-sm"
+                  className="w-full min-h-[180px] resize-none rounded-2xl px-3 py-3"
                 />
-                <Input
+                <TextField
                   value={dispatchLabel}
                   onChange={(e) => setDispatchLabel(e.target.value)}
                   placeholder={t('subagentLabelPlaceholder')}
-                  className="w-full rounded-2xl px-3 py-2.5 text-sm"
+                  className="w-full rounded-2xl py-2.5"
                 />
                 <Button onClick={dispatchSubagentTask} disabled={!dispatchAgentID.trim() || !dispatchTask.trim()} variant="primary" size="md_tall" fullWidth>
                   {t('dispatchToSubagent')}
@@ -762,7 +760,7 @@ const Chat: React.FC = () => {
             >
               <Paperclip className="w-5 h-5" />
             </label>
-            <Input
+            <TextField
               value={msg}
               onChange={(e) => setMsg(e.target.value)}
               onKeyDown={(e) => chatTab === 'main' && e.key === 'Enter' && send()}

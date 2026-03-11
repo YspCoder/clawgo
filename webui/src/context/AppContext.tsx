@@ -27,6 +27,9 @@ type RuntimeSnapshot = {
     registry?: any[];
     stream?: any[];
   };
+  providers?: {
+    items?: any[];
+  };
 };
 
 interface AppContextType {
@@ -74,6 +77,8 @@ interface AppContextType {
   setSubagentRegistryItems: React.Dispatch<React.SetStateAction<any[]>>;
   subagentStreamItems: any[];
   setSubagentStreamItems: React.Dispatch<React.SetStateAction<any[]>>;
+  providerRuntimeItems: any[];
+  setProviderRuntimeItems: React.Dispatch<React.SetStateAction<any[]>>;
   refreshAll: () => Promise<void>;
   refreshCron: () => Promise<void>;
   refreshNodes: () => Promise<void>;
@@ -131,6 +136,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [subagentRuntimeItems, setSubagentRuntimeItems] = useState<any[]>([]);
   const [subagentRegistryItems, setSubagentRegistryItems] = useState<any[]>([]);
   const [subagentStreamItems, setSubagentStreamItems] = useState<any[]>([]);
+  const [providerRuntimeItems, setProviderRuntimeItems] = useState<any[]>([]);
   const [gatewayVersion, setGatewayVersion] = useState('unknown');
   const [webuiVersion, setWebuiVersion] = useState('unknown');
   const [compiledChannels, setCompiledChannels] = useState<string[]>(['telegram', 'whatsapp', 'discord', 'feishu', 'qq', 'dingtalk', 'maixcam']);
@@ -310,6 +316,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSubagentRegistryItems(Array.isArray(snapshot.subagents.registry) ? snapshot.subagents.registry : []);
         setSubagentStreamItems(Array.isArray(snapshot.subagents.stream) ? snapshot.subagents.stream : []);
       }
+      if (snapshot.providers) {
+        setProviderRuntimeItems(Array.isArray(snapshot.providers.items) ? snapshot.providers.items : []);
+      }
     };
 
     const connect = () => {
@@ -377,6 +386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sessions, setSessions,
       taskQueueItems, setTaskQueueItems, ekgSummary, setEkgSummary,
       subagentRuntimeItems, setSubagentRuntimeItems, subagentRegistryItems, setSubagentRegistryItems, subagentStreamItems, setSubagentStreamItems,
+      providerRuntimeItems, setProviderRuntimeItems,
       refreshAll, refreshCron, refreshNodes, refreshSkills, refreshSessions, refreshTaskQueue, refreshEKGSummary, refreshVersion, loadConfig,
       gatewayVersion, webuiVersion, compiledChannels, hotReloadFields, hotReloadFieldDetails, q
     }}>

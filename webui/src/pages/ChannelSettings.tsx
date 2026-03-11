@@ -5,10 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import Checkbox from '../components/Checkbox';
-import FormField from '../components/FormField';
-import Input from '../components/Input';
-import Textarea from '../components/Textarea';
+import { CheckboxField, FieldBlock, TextField, TextareaField } from '../components/FormControls';
 
 type ChannelKey = 'telegram' | 'whatsapp' | 'discord' | 'feishu' | 'qq' | 'dingtalk' | 'maixcam';
 
@@ -530,10 +527,10 @@ const ChannelSettings: React.FC = () => {
                 {t(value ? 'enabled_true' : 'enabled_false')}
               </div>
             </div>
-            <Checkbox
+            <CheckboxField
               checked={!!value}
               onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.checked }))}
-              className="mt-1"
+              className="ui-checkbox mt-1"
             />
           </label>
         );
@@ -546,56 +543,49 @@ const ChannelSettings: React.FC = () => {
               {t(value ? 'enabled_true' : 'enabled_false')}
             </div>
           </div>
-          <Checkbox
+          <CheckboxField
             checked={!!value}
             onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.checked }))}
+            className="ui-checkbox"
           />
         </label>
       );
     }
     if (field.type === 'list') {
       return (
-        <div key={field.key} className={`ui-form-field ${isWhatsApp ? 'lg:col-span-2' : ''}`}>
-          <div className="flex items-center justify-between gap-3">
-            <label className="ui-form-label">{label}</label>
-            {isWhatsApp && Array.isArray(value) && value.length > 0 && (
-              <span className="ui-pill ui-pill-neutral inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium">
-                {t('entries')}: {value.length}
-              </span>
-            )}
-          </div>
-          {helper && <div className="ui-form-help">{helper}</div>}
-          <Textarea
+        <FieldBlock
+          key={field.key}
+          className={`ui-form-field ${isWhatsApp ? 'lg:col-span-2' : ''}`}
+          label={label}
+          help={helper}
+          meta={isWhatsApp && Array.isArray(value) && value.length > 0 ? `${t('entries')}: ${value.length}` : undefined}
+        >
+          <TextareaField
             value={formatList(value)}
             onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: parseList(e.target.value) }))}
             placeholder={field.placeholder || ''}
-            className={`px-4 py-3 text-sm ${isWhatsApp ? 'min-h-36 font-mono' : 'min-h-32'}`}
+            monospace={isWhatsApp}
+            className={`${isWhatsApp ? 'min-h-36 px-4 py-3' : 'min-h-32 px-4 py-3'}`}
           />
           {isWhatsApp && <div className="ui-form-help text-[11px]">{t('whatsappFieldAllowFromFootnote')}</div>}
-        </div>
+        </FieldBlock>
       );
     }
     return (
-      <FormField
-        key={field.key}
-        label={label}
-        help={helper}
-        className={`ui-form-field ${isWhatsApp && field.key === 'bridge_url' ? 'lg:col-span-2' : ''}`}
-      >
-        <Input
+      <FieldBlock key={field.key} className={`ui-form-field ${isWhatsApp && field.key === 'bridge_url' ? 'lg:col-span-2' : ''}`} label={label} help={helper}>
+        <TextField
           type={field.type}
           value={value === null || value === undefined ? '' : String(value)}
           onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: field.type === 'number' ? Number(e.target.value || 0) : e.target.value }))}
           placeholder={field.placeholder || ''}
-          className={`px-4 py-3 text-sm ${isWhatsApp && field.key === 'bridge_url' ? 'font-mono' : ''}`}
+          className={`${isWhatsApp && field.key === 'bridge_url' ? 'font-mono' : ''}`}
         />
-      </FormField>
+      </FieldBlock>
     );
   };
 
   const wa = waStatus?.status;
   const stateLabel = wa?.connected ? t('online') : wa?.logged_in ? t('whatsappStateDisconnected') : wa?.qr_available ? t('whatsappStateAwaitingScan') : t('offline');
-  const canLogout = !!(wa?.logged_in || wa?.connected || wa?.user_jid);
 
   return (
     <div className="space-y-6 px-5 py-5 md:px-7 md:py-6 xl:px-8">
@@ -652,12 +642,10 @@ const ChannelSettings: React.FC = () => {
                     <div className="ui-text-primary mt-1 text-2xl font-semibold">{stateLabel}</div>
                   </div>
                 </div>
-                {canLogout ? (
-                  <Button onClick={handleLogout} variant="danger" gap="2">
-                    <LogOut className="h-4 w-4" />
-                    {t('logout')}
-                  </Button>
-                ) : null}
+                <Button onClick={handleLogout} variant="danger" gap="2">
+                  <LogOut className="h-4 w-4" />
+                  {t('logout')}
+                </Button>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">

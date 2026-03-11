@@ -4,10 +4,7 @@ import { Check, Plus, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import FormField from '../components/FormField';
-import Input from '../components/Input';
-import Select from '../components/Select';
-import Textarea from '../components/Textarea';
+import { FieldBlock, SelectField, TextField, TextareaField } from '../components/FormControls';
 
 type SubagentProfile = {
   agent_id: string;
@@ -321,75 +318,83 @@ const SubagentProfiles: React.FC = () => {
 
         <div className="brand-card ui-border-subtle rounded-[28px] border p-4 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <FormField label={t('id')} labelClassName="ui-text-subtle text-xs" className="space-y-1">
-              <Input
+            <FieldBlock label={t('id')}>
+              <TextField
                 value={draft.agent_id || ''}
                 disabled={!!selected}
                 onChange={(e) => setDraft({ ...draft, agent_id: e.target.value })}
-                className="w-full px-2 py-1.5 text-xs rounded-xl disabled:opacity-60"
+                dense
+                className="w-full disabled:opacity-60"
                 placeholder="coder"
               />
-            </FormField>
-            <FormField label={t('name')} labelClassName="ui-text-subtle text-xs" className="space-y-1">
-              <Input
+            </FieldBlock>
+            <FieldBlock label={t('name')}>
+              <TextField
                 value={draft.name || ''}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
                 placeholder="Code Agent"
               />
-            </FormField>
-            <FormField label="Role" labelClassName="ui-text-subtle text-xs" className="space-y-1">
-              <Input
+            </FieldBlock>
+            <FieldBlock label="Role">
+              <TextField
                 value={draft.role || ''}
                 onChange={(e) => setDraft({ ...draft, role: e.target.value })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
                 placeholder="coding"
               />
-            </FormField>
-            <FormField label={t('status')} labelClassName="ui-text-subtle text-xs" className="space-y-1">
-              <Select
+            </FieldBlock>
+            <FieldBlock label={t('status')}>
+              <SelectField
                 value={draft.status || 'active'}
                 onChange={(e) => setDraft({ ...draft, status: e.target.value })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
               >
                 <option value="active">active</option>
                 <option value="disabled">disabled</option>
-              </Select>
-            </FormField>
-            <FormField label="notify_main_policy" labelClassName="ui-text-subtle text-xs" className="space-y-1">
-              <Select
+              </SelectField>
+            </FieldBlock>
+            <FieldBlock label="notify_main_policy">
+              <SelectField
                 value={draft.notify_main_policy || 'final_only'}
                 onChange={(e) => setDraft({ ...draft, notify_main_policy: e.target.value })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
               >
                 <option value="final_only">final_only</option>
                 <option value="internal_only">internal_only</option>
                 <option value="milestone">milestone</option>
                 <option value="on_blocked">on_blocked</option>
                 <option value="always">always</option>
-              </Select>
-            </FormField>
-            <FormField label="system_prompt_file" labelClassName="ui-text-subtle text-xs" className="space-y-1 md:col-span-2">
-              <Input
+              </SelectField>
+            </FieldBlock>
+            <FieldBlock className="md:col-span-2" label="system_prompt_file">
+              <TextField
                 value={draft.system_prompt_file || ''}
                 onChange={(e) => setDraft({ ...draft, system_prompt_file: e.target.value })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
                 placeholder="agents/coder/AGENT.md"
               />
-            </FormField>
-            <FormField label={t('memoryNamespace')} labelClassName="ui-text-subtle text-xs" className="space-y-1 md:col-span-2">
-              <Input
+            </FieldBlock>
+            <FieldBlock className="md:col-span-2" label={t('memoryNamespace')}>
+              <TextField
                 value={draft.memory_namespace || ''}
                 onChange={(e) => setDraft({ ...draft, memory_namespace: e.target.value })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
                 placeholder="coder"
               />
-            </FormField>
-            <FormField label={t('toolAllowlist')} labelClassName="ui-text-subtle text-xs" className="space-y-1 md:col-span-2">
-              <Input
+            </FieldBlock>
+            <FieldBlock className="md:col-span-2" label={t('toolAllowlist')}>
+              <TextField
                 value={allowlistText}
                 onChange={(e) => setDraft({ ...draft, tool_allowlist: parseAllowlist(e.target.value) })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
                 placeholder="read_file, list_files, memory_search"
               />
               <div className="ui-text-muted mt-1 text-[11px]">
@@ -404,16 +409,13 @@ const SubagentProfiles: React.FC = () => {
                   ))}
                 </div>
               )}
-            </FormField>
-            <div className="md:col-span-2">
-              <div className="flex items-center justify-between mb-1 gap-3">
-                <div className="ui-text-subtle text-xs">system_prompt_file content</div>
-                <div className="ui-text-muted text-[11px]">{promptFileFound ? t('promptFileReady') : t('promptFileMissing')}</div>
-              </div>
-              <Textarea
+            </FieldBlock>
+            <FieldBlock className="md:col-span-2" label="system_prompt_file content" meta={promptFileFound ? t('promptFileReady') : t('promptFileMissing')}>
+              <TextareaField
                 value={promptFileContent}
                 onChange={(e) => setPromptFileContent(e.target.value)}
-                className="w-full px-2 py-1 text-xs rounded min-h-[220px]"
+                dense
+                className="w-full min-h-[220px]"
                 placeholder={t('agentPromptContentPlaceholder')}
               />
               <div className="mt-2 flex items-center gap-2">
@@ -421,43 +423,47 @@ const SubagentProfiles: React.FC = () => {
                   {t('savePromptFile')}
                 </Button>
               </div>
-            </div>
-            <FormField label={t('maxRetries')} labelClassName="ui-text-subtle text-xs" className="space-y-1">
-              <Input
+            </FieldBlock>
+            <FieldBlock label={t('maxRetries')}>
+              <TextField
                 type="number"
                 min={0}
                 value={Number(draft.max_retries || 0)}
                 onChange={(e) => setDraft({ ...draft, max_retries: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
               />
-            </FormField>
-            <FormField label={t('retryBackoffMs')} labelClassName="ui-text-subtle text-xs" className="space-y-1">
-              <Input
+            </FieldBlock>
+            <FieldBlock label={t('retryBackoffMs')}>
+              <TextField
                 type="number"
                 min={0}
                 value={Number(draft.retry_backoff_ms || 0)}
                 onChange={(e) => setDraft({ ...draft, retry_backoff_ms: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
               />
-            </FormField>
-            <FormField label="Max Task Chars" labelClassName="ui-text-subtle text-xs" className="space-y-1">
-              <Input
+            </FieldBlock>
+            <FieldBlock label="Max Task Chars">
+              <TextField
                 type="number"
                 min={0}
                 value={Number(draft.max_task_chars || 0)}
                 onChange={(e) => setDraft({ ...draft, max_task_chars: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
               />
-            </FormField>
-            <FormField label="Max Result Chars" labelClassName="ui-text-subtle text-xs" className="space-y-1 md:col-span-2">
-              <Input
+            </FieldBlock>
+            <FieldBlock className="md:col-span-2" label="Max Result Chars">
+              <TextField
                 type="number"
                 min={0}
                 value={Number(draft.max_result_chars || 0)}
                 onChange={(e) => setDraft({ ...draft, max_result_chars: Number(e.target.value) || 0 })}
-                className="w-full px-2 py-1 text-xs rounded"
+                dense
+                className="w-full"
               />
-            </FormField>
+            </FieldBlock>
           </div>
 
           <div className="flex items-center gap-2">

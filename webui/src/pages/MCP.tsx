@@ -5,10 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import Checkbox from '../components/Checkbox';
-import FormField from '../components/FormField';
-import Input from '../components/Input';
-import Select from '../components/Select';
+import { CheckboxField, SelectField, TextField } from '../components/FormControls';
 
 type MCPDraftServer = {
   enabled: boolean;
@@ -478,40 +475,46 @@ const MCP: React.FC = () => {
 
               <div className="max-h-[80vh] overflow-y-auto px-6 py-5 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField label={t('configNewMCPServerName')} labelClassName="text-xs text-zinc-400" className="space-y-2">
-                    <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} className="h-11 px-3" />
-                  </FormField>
-                  <FormField label={t('configLabels.description')} labelClassName="text-xs text-zinc-400" className="space-y-2">
-                    <Input value={draft.description} onChange={(e) => updateDraftField('description', e.target.value)} className="h-11 px-3" />
-                  </FormField>
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">{t('configNewMCPServerName')}</div>
+                    <TextField value={draftName} onChange={(e) => setDraftName(e.target.value)} className="h-11" />
+                  </label>
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">{t('configLabels.description')}</div>
+                    <TextField value={draft.description} onChange={(e) => updateDraftField('description', e.target.value)} className="h-11" />
+                  </label>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <FormField label="transport" labelClassName="text-xs text-zinc-400" className="space-y-2">
-                    <Select value={draft.transport} onChange={(e) => updateDraftField('transport', e.target.value)} className="h-11 px-3">
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">transport</div>
+                    <SelectField value={draft.transport} onChange={(e) => updateDraftField('transport', e.target.value)} className="h-11">
                       <option value="stdio">stdio</option>
                       <option value="http">http</option>
                       <option value="streamable_http">streamable_http</option>
                       <option value="sse">sse</option>
-                    </Select>
-                  </FormField>
-                  <FormField label="enabled" labelClassName="text-xs text-zinc-400" className="space-y-2">
+                    </SelectField>
+                  </label>
+                  <label className="space-y-2">
+                    <div className="text-xs text-zinc-400">enabled</div>
                     <div className="ui-toggle-card flex h-11 items-center rounded-xl px-3">
-                      <Checkbox checked={draft.enabled} onChange={(e) => updateDraftField('enabled', e.target.checked)} />
+                      <CheckboxField checked={draft.enabled} onChange={(e) => updateDraftField('enabled', e.target.checked)} />
                     </div>
-                  </FormField>
+                  </label>
                   {draft.transport === 'stdio' && (
-                    <FormField label="permission" labelClassName="text-xs text-zinc-400" className="space-y-2">
-                      <Select value={draft.permission} onChange={(e) => updateDraftField('permission', e.target.value)} className="h-11 px-3">
+                    <label className="space-y-2">
+                      <div className="text-xs text-zinc-400">permission</div>
+                      <SelectField value={draft.permission} onChange={(e) => updateDraftField('permission', e.target.value)} className="h-11">
                         <option value="workspace">workspace</option>
                         <option value="full">full</option>
-                      </Select>
-                    </FormField>
+                      </SelectField>
+                    </label>
                   )}
                   {draft.transport === 'stdio' && (
-                    <FormField label={t('configLabels.package')} labelClassName="text-xs text-zinc-400" className="space-y-2">
-                      <Input value={draft.package} onChange={(e) => updateDraftField('package', e.target.value)} className="h-11 px-3" />
-                    </FormField>
+                    <label className="space-y-2">
+                      <div className="text-xs text-zinc-400">{t('configLabels.package')}</div>
+                      <TextField value={draft.package} onChange={(e) => updateDraftField('package', e.target.value)} className="h-11" />
+                    </label>
                   )}
                 </div>
 
@@ -519,17 +522,17 @@ const MCP: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <label className="space-y-2">
                       <div className="text-xs text-zinc-400">{t('configLabels.command')}</div>
-                      <Input value={draft.command} onChange={(e) => updateDraftField('command', e.target.value)} className="h-11 px-3" />
+                      <TextField value={draft.command} onChange={(e) => updateDraftField('command', e.target.value)} className="h-11" />
                     </label>
                     <label className="space-y-2">
                       <div className="text-xs text-zinc-400">{t('configLabels.working_dir')}</div>
-                      <Input value={draft.working_dir} onChange={(e) => updateDraftField('working_dir', e.target.value)} className="h-11 px-3" />
+                      <TextField value={draft.working_dir} onChange={(e) => updateDraftField('working_dir', e.target.value)} className="h-11" />
                     </label>
                   </div>
                 ) : (
                   <label className="space-y-2">
                     <div className="text-xs text-zinc-400">{t('configLabels.url')}</div>
-                    <Input value={draft.url} onChange={(e) => updateDraftField('url', e.target.value)} className="h-11 px-3" />
+                    <TextField value={draft.url} onChange={(e) => updateDraftField('url', e.target.value)} className="h-11" />
                   </label>
                 )}
 
@@ -553,7 +556,7 @@ const MCP: React.FC = () => {
                         </span>
                       ))}
                     </div>
-                    <Input
+                    <TextField
                       value={draftArgInput}
                       onChange={(e) => setDraftArgInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -564,7 +567,7 @@ const MCP: React.FC = () => {
                       }}
                       onBlur={() => addDraftArg(draftArgInput)}
                       placeholder={t('configMCPArgsEnterHint')}
-                      className="h-11 px-3"
+                      className="h-11"
                     />
                   </div>
                 )}

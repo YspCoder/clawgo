@@ -218,6 +218,110 @@
       "timeout_sec": 90
     },
     "proxies": {
+      "codex-oauth": {
+        "api_base": "https://api.openai.com/v1",
+        "models": [],
+        "responses": {
+          "web_search_enabled": false,
+          "web_search_context_size": "",
+          "file_search_vector_store_ids": [],
+          "file_search_max_num_results": 0,
+          "include": [],
+          "stream_include_usage": false
+        },
+        "supports_responses_compact": true,
+        "auth": "oauth",
+        "oauth": {
+          "provider": "codex",
+          "credential_file": "~/.clawgo/auth/codex.json",
+          "credential_files": ["~/.clawgo/auth/codex.json"],
+          "callback_port": 1455,
+          "refresh_scan_sec": 600,
+          "refresh_lead_sec": 1800
+        },
+        "runtime_persist": true,
+        "runtime_history_file": "~/.clawgo/runtime/providers/codex-oauth.json",
+        "runtime_history_max": 24,
+        "timeout_sec": 90
+      },
+      "gemini-oauth": {
+        "api_base": "https://your-openai-compatible-gateway.example.com/v1",
+        "models": [],
+        "responses": {
+          "web_search_enabled": false,
+          "web_search_context_size": "",
+          "file_search_vector_store_ids": [],
+          "file_search_max_num_results": 0,
+          "include": [],
+          "stream_include_usage": false
+        },
+        "supports_responses_compact": true,
+        "auth": "oauth",
+        "oauth": {
+          "provider": "gemini",
+          "client_secret": "",
+          "credential_files": ["~/.clawgo/auth/gemini.json"],
+          "callback_port": 8085,
+          "refresh_scan_sec": 600,
+          "refresh_lead_sec": 1800
+        },
+        "runtime_persist": true,
+        "runtime_history_file": "~/.clawgo/runtime/providers/gemini-oauth.json",
+        "runtime_history_max": 24,
+        "timeout_sec": 90
+      },
+      "openai-hybrid": {
+        "api_key": "sk-your-primary-api-key",
+        "api_base": "https://api.openai.com/v1",
+        "models": [],
+        "responses": {
+          "web_search_enabled": false,
+          "web_search_context_size": "",
+          "file_search_vector_store_ids": [],
+          "file_search_max_num_results": 0,
+          "include": [],
+          "stream_include_usage": false
+        },
+        "supports_responses_compact": true,
+        "auth": "hybrid",
+        "oauth": {
+          "provider": "codex",
+          "credential_files": ["~/.clawgo/auth/codex.json"],
+          "callback_port": 1455,
+          "hybrid_priority": "api_first",
+          "cooldown_sec": 900,
+          "refresh_scan_sec": 600,
+          "refresh_lead_sec": 1800
+        },
+        "runtime_persist": true,
+        "runtime_history_file": "~/.clawgo/runtime/providers/openai-hybrid.json",
+        "runtime_history_max": 24,
+        "timeout_sec": 90
+      },
+      "qwen-oauth": {
+        "api_base": "https://your-openai-compatible-gateway.example.com/v1",
+        "models": [],
+        "responses": {
+          "web_search_enabled": false,
+          "web_search_context_size": "",
+          "file_search_vector_store_ids": [],
+          "file_search_max_num_results": 0,
+          "include": [],
+          "stream_include_usage": false
+        },
+        "supports_responses_compact": true,
+        "auth": "oauth",
+        "oauth": {
+          "provider": "qwen",
+          "credential_files": ["~/.clawgo/auth/qwen.json"],
+          "refresh_scan_sec": 600,
+          "refresh_lead_sec": 1800
+        },
+        "runtime_persist": true,
+        "runtime_history_file": "~/.clawgo/runtime/providers/qwen-oauth.json",
+        "runtime_history_max": 24,
+        "timeout_sec": 90
+      },
       "backup": {
         "api_key": "YOUR_BACKUP_PROXY_KEY",
         "api_base": "http://localhost:8081/v1",
@@ -305,5 +409,13 @@
     "filename": "clawgo.log",
     "max_size_mb": 20,
     "retention_days": 3
+  },
+  "sentinel": {
+    "enabled": true,
+    "interval_sec": 60,
+    "auto_heal": true,
+    "notify_channel": "",
+    "notify_chat_id": "",
+    "webhook_url": ""
   }
 }

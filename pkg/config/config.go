@@ -289,7 +289,28 @@ type ProviderConfig struct {
 	SupportsResponsesCompact bool                    `json:"supports_responses_compact" env:"CLAWGO_PROVIDERS_{{.Name}}_SUPPORTS_RESPONSES_COMPACT"`
 	Auth                     string                  `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
 	TimeoutSec               int                     `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`
+	RuntimePersist           bool                    `json:"runtime_persist,omitempty"`
+	RuntimeHistoryFile       string                  `json:"runtime_history_file,omitempty"`
+	RuntimeHistoryMax        int                     `json:"runtime_history_max,omitempty"`
+	OAuth                    ProviderOAuthConfig     `json:"oauth,omitempty"`
 	Responses                ProviderResponsesConfig `json:"responses"`
+}
+
+type ProviderOAuthConfig struct {
+	Provider        string   `json:"provider,omitempty"`
+	CredentialFile  string   `json:"credential_file,omitempty"`
+	CredentialFiles []string `json:"credential_files,omitempty"`
+	CallbackPort    int      `json:"callback_port,omitempty"`
+	ClientID        string   `json:"client_id,omitempty"`
+	ClientSecret    string   `json:"client_secret,omitempty"`
+	AuthURL         string   `json:"auth_url,omitempty"`
+	TokenURL        string   `json:"token_url,omitempty"`
+	RedirectURL     string   `json:"redirect_url,omitempty"`
+	Scopes          []string `json:"scopes,omitempty"`
+	HybridPriority  string   `json:"hybrid_priority,omitempty"`
+	CooldownSec     int      `json:"cooldown_sec,omitempty"`
+	RefreshScanSec  int      `json:"refresh_scan_sec,omitempty"`
+	RefreshLeadSec  int      `json:"refresh_lead_sec,omitempty"`
 }
 
 type ProviderResponsesConfig struct {
@@ -419,6 +440,7 @@ type SentinelConfig struct {
 	AutoHeal      bool   `json:"auto_heal" env:"CLAWGO_SENTINEL_AUTO_HEAL"`
 	NotifyChannel string `json:"notify_channel" env:"CLAWGO_SENTINEL_NOTIFY_CHANNEL"`
 	NotifyChatID  string `json:"notify_chat_id" env:"CLAWGO_SENTINEL_NOTIFY_CHAT_ID"`
+	WebhookURL    string `json:"webhook_url" env:"CLAWGO_SENTINEL_WEBHOOK_URL"`
 }
 
 type MemoryConfig struct {
@@ -659,6 +681,7 @@ func DefaultConfig() *Config {
 			AutoHeal:      true,
 			NotifyChannel: "",
 			NotifyChatID:  "",
+			WebhookURL:    "",
 		},
 		Memory: MemoryConfig{
 			Layered:    true,

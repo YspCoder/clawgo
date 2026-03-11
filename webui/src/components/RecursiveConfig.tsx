@@ -2,10 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FixedButton } from './Button';
-import Checkbox from './Checkbox';
-import Input from './Input';
-import Select from './Select';
-import Textarea from './Textarea';
+import { CheckboxField, SelectField, TextField, TextareaField } from './FormControls';
 
 interface RecursiveConfigProps {
   data: any;
@@ -71,12 +68,11 @@ const PrimitiveArrayEditor: React.FC<{
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2">
-        <Input
+        <TextField
           list={`${path}-suggestions`}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t('recursiveAddValuePlaceholder')}
-          className="rounded-xl px-3 py-2 text-sm"
         />
         <datalist id={`${path}-suggestions`}>
           {suggestions.map((s) => (
@@ -95,20 +91,20 @@ const PrimitiveArrayEditor: React.FC<{
           <Plus className="w-4 h-4" />
         </FixedButton>
 
-        <Select
+        <SelectField
           value={selected}
           onChange={(e) => {
             const v = e.target.value;
             setSelected(v);
             if (v) addValue(v);
           }}
-          className="ui-select px-3 py-2 text-xs rounded-xl"
+          dense
         >
           <option value="">{t('recursiveSelectOption')}</option>
           {suggestions.filter((s) => !value.includes(s)).map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
-        </Select>
+        </SelectField>
       </div>
     </div>
   );
@@ -144,7 +140,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                     onChange={(next) => onChange(currentPath, next)}
                   />
                 ) : (
-                  <Textarea
+                  <TextareaField
                     value={JSON.stringify(value, null, 2)}
                     onChange={(e) => {
                       try {
@@ -154,7 +150,8 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                         // ignore invalid json during typing
                       }
                     }}
-                    className="w-full min-h-28 rounded-xl px-3 py-2 text-sm font-mono"
+                    monospace
+                    className="w-full min-h-28"
                   />
                 )}
               </div>
@@ -184,21 +181,21 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
             </div>
             {typeof value === 'boolean' ? (
               <label className="ui-toggle-card flex items-center gap-3 p-3 cursor-pointer transition-colors group">
-                <Checkbox
+                <CheckboxField
                   checked={value}
                   onChange={(e) => onChange(currentPath, e.target.checked)}
-                  className="w-4 h-4"
+                  className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500"
                 />
                 <span className="ui-text-subtle group-hover:ui-text-secondary text-sm transition-colors">
                   {value ? (labels['enabled_true'] || t('enabled_true')) : (labels['enabled_false'] || t('enabled_false'))}
                 </span>
               </label>
             ) : (
-              <Input
+              <TextField
                 type={typeof value === 'number' ? 'number' : 'text'}
                 value={value === null || value === undefined ? '' : String(value)}
                 onChange={(e) => onChange(currentPath, typeof value === 'number' ? Number(e.target.value) : e.target.value)}
-                className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors font-mono"
+                className="w-full transition-colors font-mono"
               />
             )}
           </div>

@@ -3,7 +3,7 @@ import { AlertTriangle, RefreshCw, Route, ServerCrash, Workflow } from 'lucide-r
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { FixedButton } from '../components/Button';
-import Select from '../components/Select';
+import { SelectField } from '../components/FormControls';
 
 type EKGKV = { key?: string; score?: number; count?: number };
 
@@ -161,11 +161,11 @@ const EKG: React.FC = () => {
           <div className="ui-text-muted mt-1 text-sm">{t('ekgOverviewHint')}</div>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={ekgWindow} onChange={(e) => setEkgWindow(e.target.value as '6h' | '24h' | '7d')} className="h-12 min-w-[96px] rounded-xl px-3 text-sm">
+          <SelectField value={ekgWindow} onChange={(e) => setEkgWindow(e.target.value as '6h' | '24h' | '7d')} className="h-12 min-w-[96px]">
             <option value="6h">6h</option>
             <option value="24h">24h</option>
             <option value="7d">7d</option>
-          </Select>
+          </SelectField>
           <FixedButton
             onClick={fetchData}
             variant="primary"
