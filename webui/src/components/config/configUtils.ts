@@ -98,7 +98,7 @@ export function createDefaultProxyConfig() {
       stream_include_usage: false,
     },
     supports_responses_compact: false,
-    auth: 'bearer',
+    auth: 'oauth',
     timeout_sec: 120,
   };
 }

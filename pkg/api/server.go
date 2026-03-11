@@ -457,6 +457,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/provider/oauth/complete", s.handleWebUIProviderOAuthComplete)
 	mux.HandleFunc("/webui/api/provider/oauth/import", s.handleWebUIProviderOAuthImport)
 	mux.HandleFunc("/webui/api/provider/oauth/accounts", s.handleWebUIProviderOAuthAccounts)
+	mux.HandleFunc("/webui/api/provider/models", s.handleWebUIProviderModels)
 	mux.HandleFunc("/webui/api/provider/runtime", s.handleWebUIProviderRuntime)
 	mux.HandleFunc("/webui/api/provider/runtime/summary", s.handleWebUIProviderRuntimeSummary)
 	mux.HandleFunc("/webui/api/whatsapp/status", s.handleWebUIWhatsAppStatus)
@@ -1104,9 +1105,6 @@ func (s *Server) handleWebUIProviderOAuthComplete(w http.ResponseWriter, r *http
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if len(models) > 0 {
-		pc.Models = models
-	}
 	if session.CredentialFile != "" {
 		pc.OAuth.CredentialFile = session.CredentialFile
 		pc.OAuth.CredentialFiles = appendUniqueStrings(pc.OAuth.CredentialFiles, session.CredentialFile)
@@ -1180,9 +1178,6 @@ func (s *Server) handleWebUIProviderOAuthImport(w http.ResponseWriter, r *http.R
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
-	}
-	if len(models) > 0 {
-		pc.Models = models
 	}
 	if session.CredentialFile != "" {
 		pc.OAuth.CredentialFile = session.CredentialFile
@@ -1276,6 +1271,49 @@ func (s *Server) handleWebUIProviderOAuthAccounts(w http.ResponseWriter, r *http
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleWebUIProviderModels(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Provider string   `json:"provider"`
+		Model    string   `json:"model"`
+		Models   []string `json:"models"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	cfg, pc, err := s.loadProviderConfig(strings.TrimSpace(body.Provider))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	models := make([]string, 0, len(body.Models)+1)
+	for _, model := range body.Models {
+		models = appendUniqueStrings(models, model)
+	}
+	models = appendUniqueStrings(models, body.Model)
+	if len(models) == 0 {
+		http.Error(w, "model required", http.StatusBadRequest)
+		return
+	}
+	pc.Models = models
+	if err := s.saveProviderConfig(cfg, body.Provider, pc); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":     true,
+		"models": pc.Models,
+	})
 }
 
 func (s *Server) handleWebUIProviderRuntime(w http.ResponseWriter, r *http.Request) {

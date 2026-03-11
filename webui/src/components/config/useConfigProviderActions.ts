@@ -1,10 +1,13 @@
 import React, { useRef } from 'react';
 import { buildProviderRuntimeExportPayload, createDefaultProxyConfig, setPath } from './configUtils';
+import { ProviderModelPickerModal } from './ProviderModelPickerModal';
 import { cloneJSON } from '../../utils/object';
 
 type UI = {
+  closeModal: () => void;
   confirmDialog: (options: any) => Promise<boolean>;
   notify: (options: any) => Promise<void>;
+  openModal: (node: React.ReactNode, title?: string, onClose?: () => void) => void;
   promptDialog: (options: any) => Promise<string | null>;
   withLoading: <T>(fn: () => Promise<T>, label: string) => Promise<T>;
 };
@@ -49,6 +52,64 @@ export function useConfigProviderActions({
 
   function providerConfigPath(name: string) {
     return `models.providers.${name}`;
+  }
+
+  function normalizeModels(models: any): string[] {
+    const out: string[] = [];
+    for (const item of Array.isArray(models) ? models : []) {
+      const value = String(item || '').trim();
+      if (!value || out.includes(value)) continue;
+      out.push(value);
+    }
+    return out;
+  }
+
+  async function chooseProviderModel(name: string, proxy: any, models: string[]) {
+    const options = normalizeModels(models);
+    if (options.length === 0) return '';
+    const current = Array.isArray(proxy?.models) ? options.find((item) => item === String(proxy.models[0] || '').trim()) || '' : '';
+    if (options.length === 1) return options[0];
+    return new Promise<string | null>((resolve) => {
+      let settled = false;
+      const finish = (value: string | null, closedExternally = false) => {
+        if (settled) return;
+        settled = true;
+        if (!closedExternally) ui.closeModal();
+        resolve(value);
+      };
+      ui.openModal(
+        React.createElement(ProviderModelPickerModal, {
+          initialValue: current || options[0],
+          models: options,
+          onCancel: () => finish(null),
+          onConfirm: (value: string) => finish(value),
+          t,
+        }),
+        t('providersSelectModelTitle', { name }),
+        () => finish(null, true),
+      );
+    });
+  }
+
+  async function saveProviderModels(name: string, model: string) {
+    const trimmed = String(model || '').trim();
+    if (!trimmed) return;
+    const res = await fetch(`/webui/api/provider/models${q}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: name, model: trimmed }),
+    });
+    const { text, data } = await parseResponseBody(res);
+    if (!res.ok) throw new Error(data?.error || text || 'provider model save failed');
+  }
+
+  async function applyOAuthModels(name: string, proxy: any, models: any) {
+    const options = normalizeModels(models);
+    if (options.length === 0) return '';
+    const selected = await chooseProviderModel(name, proxy, options);
+    if (!selected) return '';
+    await ui.withLoading(() => saveProviderModels(name, selected), t('providersSavingSelectedModel'));
+    return selected;
   }
 
   async function removeProxy(name: string) {
@@ -126,6 +187,9 @@ export function useConfigProviderActions({
           title: t('providersOAuthLoginTitle'),
           message: `${started?.instructions || t('providersOAuthLoginMessage')}\n\n${started.auth_url}`,
           inputPlaceholder: t('providersOAuthCallbackPlaceholder'),
+          monospace: true,
+          multiline: true,
+          wide: true,
         });
         if (pasted == null) return;
         callbackURL = pasted;
@@ -138,8 +202,14 @@ export function useConfigProviderActions({
         });
         const { text, data } = await parseResponseBody(res);
         if (!res.ok) throw new Error(data?.error || text || 'oauth complete failed');
+        const selectedModel = await applyOAuthModels(name, proxy || {}, data?.models);
         await loadConfig(true);
-        await ui.notify({ title: t('providersOAuthAddedTitle'), message: data?.account ? t('providersOAuthAddedMessage', { account: data.account }) : t('providersOAuthAddedFallback') });
+        const message = selectedModel
+          ? t('providersOAuthAddedWithModel', { account: data?.account || '-', model: selectedModel })
+          : data?.account
+            ? t('providersOAuthAddedMessage', { account: data.account })
+            : t('providersOAuthAddedFallback');
+        await ui.notify({ title: t('providersOAuthAddedTitle'), message });
       }, t('providersCompletingOAuthLogin'));
     } catch (err: any) {
       await ui.notify({ title: t('requestFailed'), message: String(err?.message || err) });
@@ -190,8 +260,14 @@ export function useConfigProviderActions({
         const res = await fetch(`/webui/api/provider/oauth/import${q}`, { method: 'POST', body: form });
         const { text, data } = await parseResponseBody(res);
         if (!res.ok) throw new Error(data?.error || text || 'oauth import failed');
+        const selectedModel = await applyOAuthModels(providerName, providerConfig || {}, data?.models);
         await loadConfig(true);
-        await ui.notify({ title: t('providersAuthJsonImportedTitle'), message: data?.account ? t('providersOAuthAddedMessage', { account: data.account }) : t('providersAuthJsonImportedMessage') });
+        const message = selectedModel
+          ? t('providersOAuthAddedWithModel', { account: data?.account || '-', model: selectedModel })
+          : data?.account
+            ? t('providersOAuthAddedMessage', { account: data.account })
+            : t('providersAuthJsonImportedMessage');
+        await ui.notify({ title: t('providersAuthJsonImportedTitle'), message });
       }, t('providersImportingAuthJson'));
     } catch (err: any) {
       await ui.notify({ title: t('requestFailed'), message: String(err?.message || err) });

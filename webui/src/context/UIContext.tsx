@@ -16,7 +16,7 @@ type UIContextType = {
   notify: (opts: DialogOptions | string) => Promise<void>;
   confirmDialog: (opts: DialogOptions | string) => Promise<boolean>;
   promptDialog: (opts: DialogOptions | string) => Promise<string | null>;
-  openModal: (node: React.ReactNode, title?: string) => void;
+  openModal: (node: React.ReactNode, title?: string, onClose?: () => void) => void;
   closeModal: () => void;
 };
 
@@ -33,7 +33,7 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [loadingText, setLoadingText] = useState(t('loading'));
   const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
   const [dialog, setDialog] = useState<null | { kind: 'notice' | 'confirm' | 'prompt'; options: DialogOptions; resolve: (v: any) => void }>(null);
-  const [customModal, setCustomModal] = useState<null | { title?: string; node: React.ReactNode }>(null);
+  const [customModal, setCustomModal] = useState<null | { title?: string; node: React.ReactNode; onClose?: () => void }>(null);
   const loading = loadingCount > 0;
 
   useEffect(() => {
@@ -92,8 +92,11 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const options = typeof opts === 'string' ? { message: opts } : opts;
       setDialog({ kind: 'prompt', options, resolve });
     }),
-    openModal: (node, title) => setCustomModal({ node, title }),
-    closeModal: () => setCustomModal(null),
+    openModal: (node, title, onClose) => setCustomModal({ node, title, onClose }),
+    closeModal: () => setCustomModal((current) => {
+      current?.onClose?.();
+      return null;
+    }),
   }), [loading, t, theme]);
 
   const closeDialog = (result?: boolean | string | null) => {
@@ -136,11 +139,22 @@ export const UIProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         {customModal && (
           <motion.div className="ui-overlay-strong fixed inset-0 z-[125] backdrop-blur-sm flex items-center justify-center p-4"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <motion.div className="w-full max-w-4xl rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden"
+            <button
+              className="absolute inset-0"
+              onClick={() => setCustomModal((current) => {
+                current?.onClose?.();
+                return null;
+              })}
+              aria-label={t('close')}
+            />
+            <motion.div className="relative w-full max-w-4xl rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden"
               initial={{ scale: 0.96 }} animate={{ scale: 1 }} exit={{ scale: 0.96 }}>
               <div className="px-5 py-3 border-b border-zinc-800 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-zinc-100">{customModal.title || t('modal')}</h3>
-                <button onClick={() => setCustomModal(null)} className="text-zinc-400 hover:text-zinc-200">✕</button>
+                <button onClick={() => setCustomModal((current) => {
+                  current?.onClose?.();
+                  return null;
+                })} className="text-zinc-400 hover:text-zinc-200">✕</button>
               </div>
               <div className="p-4 max-h-[80vh] overflow-auto">{customModal.node}</div>
             </motion.div>

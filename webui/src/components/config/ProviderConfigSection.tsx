@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, FolderOpen, LogIn, Plus, RefreshCw, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { Download, FolderOpen, LogIn, Plus, RefreshCw, RotateCcw, Trash2, Upload, X } from 'lucide-react';
 import { Button, FixedButton } from '../Button';
 import { CheckboxField, PanelField, SelectField, TextField } from '../FormControls';
 
@@ -15,6 +15,71 @@ export function ProxyTextField({ className, ...props }: React.ComponentProps<typ
 
 export function ProxySelectField({ className, ...props }: React.ComponentProps<typeof SelectField>) {
   return <SelectField dense {...props} className={joinClasses(DENSE_PROXY_FIELD_CLASS, className)} />;
+}
+
+type TagInputFieldProps = {
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+  values: string[];
+};
+
+function TagInputField({ onChange, placeholder, values }: TagInputFieldProps) {
+  const [draft, setDraft] = React.useState('');
+
+  React.useEffect(() => {
+    setDraft('');
+  }, [values]);
+
+  function commit(raw: string) {
+    const value = String(raw || '').trim();
+    if (!value || values.includes(value)) {
+      setDraft('');
+      return;
+    }
+    onChange([...values, value]);
+    setDraft('');
+  }
+
+  function remove(value: string) {
+    onChange(values.filter((item) => item !== value));
+  }
+
+  return (
+    <div className="space-y-2">
+      {values.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {values.map((value) => (
+            <div key={value} className="flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-950/70 px-2 py-1 text-[11px] text-zinc-200">
+              <span className="font-mono">{value}</span>
+              <button type="button" onClick={() => remove(value)} className="text-zinc-400 transition hover:text-zinc-100" aria-label={`remove ${value}`}>
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <ProxyTextField
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit(draft);
+            return;
+          }
+          if (e.key === 'Backspace' && !draft && values.length > 0) {
+            e.preventDefault();
+            remove(values[values.length - 1]);
+          }
+        }}
+        onBlur={() => {
+          if (draft.trim()) commit(draft);
+        }}
+        placeholder={placeholder}
+        className="w-full"
+      />
+    </div>
+  );
 }
 
 type RuntimeSection = 'candidates' | 'hits' | 'errors' | 'changes';
@@ -50,9 +115,10 @@ export function ProviderRuntimeToolbar({
     <div className="flex items-center justify-between gap-2 flex-wrap">
       <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
       <div className="flex items-center gap-2">
-        <FixedButton onClick={onRefreshRuntime} variant="neutral" radius="lg" label={t('providersRefreshRuntime')}>
+        <Button onClick={onRefreshRuntime} size="xs" radius="lg" variant="neutral" gap="2">
           <RefreshCw className="w-4 h-4" />
-        </FixedButton>
+          {t('providersRefreshRuntime')}
+        </Button>
         <label className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 px-2 py-1.5 text-[11px] text-zinc-300">
           <CheckboxField checked={runtimeAutoRefresh} onChange={(e) => onRuntimeAutoRefreshChange(e.target.checked)} />
           {t('providersAutoRefresh')}
@@ -70,9 +136,10 @@ export function ProviderRuntimeToolbar({
           <option value="all">{t('providersRuntimeAll')}</option>
         </SelectField>
         <TextField dense value={newProxyName} onChange={(e) => onNewProxyNameChange(e.target.value)} placeholder={t('configNewProviderName')} className="bg-zinc-900/70 border-zinc-700" />
-        <FixedButton onClick={onAddProxy} variant="primary" radius="lg" label={t('add')}>
+        <Button onClick={onAddProxy} variant="primary" size="xs" radius="lg" gap="2">
           <Plus className="w-4 h-4" />
-        </FixedButton>
+          {t('add')}
+        </Button>
       </div>
     </div>
   );
@@ -311,7 +378,10 @@ export function ProviderProxyCard({
   runtimeSummary,
   t,
 }: ProviderProxyCardProps) {
-  const authMode = String(proxy?.auth || 'bearer');
+  const authMode = String(proxy?.auth || 'oauth');
+  const providerModels = Array.isArray(proxy?.models)
+    ? proxy.models.map((value: any) => String(value || '').trim()).filter(Boolean)
+    : [];
   const showOAuth = ['oauth', 'hybrid'].includes(authMode);
   const oauthProvider = String(proxy?.oauth?.provider || '');
   const [runtimeOpen, setRuntimeOpen] = React.useState(false);
@@ -369,12 +439,7 @@ export function ProviderProxyCard({
                 <ProxyTextField value={String(proxy?.api_base || '')} onChange={(e) => onFieldChange('api_base', e.target.value)} placeholder={t('configLabels.api_base')} className="w-full" />
               </PanelField>
               <PanelField label={t('providersModels')} help={t('providersModelsHelp')} dense>
-                <ProxyTextField
-                  value={Array.isArray(proxy?.models) ? proxy.models.join(',') : ''}
-                  onChange={(e) => onFieldChange('models', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
-                  placeholder={`${t('configLabels.models')}${t('configCommaSeparatedHint')}`}
-                  className="w-full"
-                />
+                <TagInputField values={providerModels} onChange={(values) => onFieldChange('models', values)} placeholder={t('providersModelsEnterHint')} />
               </PanelField>
               <PanelField label={t('providersApiKey')} dense>
                 <ProxyTextField value={String(proxy?.api_key || '')} onChange={(e) => onFieldChange('api_key', e.target.value)} placeholder={t('configLabels.api_key')} className="w-full" />
@@ -456,7 +521,7 @@ export function ProviderProxyCard({
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-500/15 text-[11px] font-semibold text-sky-300">2</div>
               <div className="min-w-0 flex items-center gap-2">
                 <div className="text-sm font-medium text-zinc-100">Authentication</div>
-                <div className="truncate text-[11px] text-zinc-500">Request auth and hybrid priority.</div>
+                <div className="truncate text-[11px] text-zinc-500">Choose how this provider authenticates requests.</div>
               </div>
             </div>
             <PanelField label={t('providersAuthMode')} help={t('providersAuthModeHelp')} dense>
@@ -480,53 +545,51 @@ export function ProviderProxyCard({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/20 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-fuchsia-500/15 text-[11px] font-semibold text-fuchsia-300">4</div>
-                <div className="min-w-0 flex items-center gap-2">
-                  <div className="text-sm font-medium text-zinc-100">{t('providersOAuthAccounts')}</div>
-                  <div className="truncate text-[11px] text-zinc-500">Imported sessions.</div>
+          {showOAuth ? (
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/20 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-fuchsia-500/15 text-[11px] font-semibold text-fuchsia-300">4</div>
+                  <div className="min-w-0 flex items-center gap-2">
+                    <div className="text-sm font-medium text-zinc-100">{t('providersOAuthAccounts')}</div>
+                    <div className="truncate text-[11px] text-zinc-500">Imported sessions.</div>
+                  </div>
                 </div>
-              </div>
-              {showOAuth ? (
                 <FixedButton onClick={onLoadOAuthAccounts} variant="neutral" radius="lg" label={t('providersRefreshList')}>
                   <RefreshCw className="w-4 h-4" />
                 </FixedButton>
-              ) : null}
-            </div>
-            {!showOAuth ? (
-              <div className="text-zinc-500">Enable oauth or hybrid mode to manage OAuth accounts.</div>
-            ) : oauthAccounts.length === 0 ? (
-              <div className="text-zinc-500">{t('providersNoOAuthAccounts')}</div>
-            ) : (
-              <div className="space-y-2">
-                {oauthAccounts.map((account, idx) => (
-                  <div key={`${account?.credential_file || idx}`} className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 py-3 space-y-2">
-                    <div className="min-w-0">
-                      <div className="text-zinc-200 truncate">{account?.email || account?.account_id || account?.credential_file}</div>
-                      <div className="text-zinc-500 text-[11px]">label: {account?.account_label || account?.email || account?.account_id || '-'}</div>
-                      <div className="text-zinc-500 truncate text-[11px]">{account?.credential_file}</div>
-                      <div className="text-zinc-500 text-[11px]">project: {account?.project_id || '-'} · device: {account?.device_id || '-'}</div>
-                      <div className="text-zinc-500 truncate text-[11px]">proxy: {account?.network_proxy || '-'}</div>
-                      <div className="text-zinc-500 text-[11px]">expire: {account?.expire || '-'} · cooldown: {account?.cooldown_until || '-'}</div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <FixedButton onClick={() => onRefreshOAuthAccount(String(account?.credential_file || ''))} variant="neutral" radius="lg" label="Refresh">
-                        <RefreshCw className="w-4 h-4" />
-                      </FixedButton>
-                      <FixedButton onClick={() => onClearOAuthCooldown(String(account?.credential_file || ''))} variant="neutral" radius="lg" label="Clear Cooldown">
-                        <RotateCcw className="w-4 h-4" />
-                      </FixedButton>
-                      <FixedButton onClick={() => onDeleteOAuthAccount(String(account?.credential_file || ''))} variant="danger" radius="lg" label={t('delete')}>
-                        <Trash2 className="w-4 h-4" />
-                      </FixedButton>
-                    </div>
-                  </div>
-                ))}
               </div>
-            )}
-          </div>
+              {oauthAccounts.length === 0 ? (
+                <div className="text-zinc-500">{t('providersNoOAuthAccounts')}</div>
+              ) : (
+                <div className="space-y-2">
+                  {oauthAccounts.map((account, idx) => (
+                    <div key={`${account?.credential_file || idx}`} className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 py-3 space-y-2">
+                      <div className="min-w-0">
+                        <div className="text-zinc-200 truncate">{account?.email || account?.account_id || account?.credential_file}</div>
+                        <div className="text-zinc-500 text-[11px]">label: {account?.account_label || account?.email || account?.account_id || '-'}</div>
+                        <div className="text-zinc-500 truncate text-[11px]">{account?.credential_file}</div>
+                        <div className="text-zinc-500 text-[11px]">project: {account?.project_id || '-'} · device: {account?.device_id || '-'}</div>
+                        <div className="text-zinc-500 truncate text-[11px]">proxy: {account?.network_proxy || '-'}</div>
+                        <div className="text-zinc-500 text-[11px]">expire: {account?.expire || '-'} · cooldown: {account?.cooldown_until || '-'}</div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <FixedButton onClick={() => onRefreshOAuthAccount(String(account?.credential_file || ''))} variant="neutral" radius="lg" label="Refresh">
+                          <RefreshCw className="w-4 h-4" />
+                        </FixedButton>
+                        <FixedButton onClick={() => onClearOAuthCooldown(String(account?.credential_file || ''))} variant="neutral" radius="lg" label="Clear Cooldown">
+                          <RotateCcw className="w-4 h-4" />
+                        </FixedButton>
+                        <FixedButton onClick={() => onDeleteOAuthAccount(String(account?.credential_file || ''))} variant="danger" radius="lg" label={t('delete')}>
+                          <Trash2 className="w-4 h-4" />
+                        </FixedButton>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950/20 p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
