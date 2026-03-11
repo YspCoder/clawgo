@@ -9,6 +9,26 @@ import ProfileEditorPanel from '../components/subagentProfiles/ProfileEditorPane
 import ProfileListPanel from '../components/subagentProfiles/ProfileListPanel';
 import { emptyDraft, toProfileDraft, type SubagentProfile, type ToolAllowlistGroup } from '../components/subagentProfiles/profileDraft';
 
+function validatePromptFilePath(pathValue: string): string | null {
+  const path = String(pathValue || '').trim();
+  if (!path) return null;
+  const normalized = path.replace(/\\/g, '/');
+  if (/^[a-zA-Z]:\//.test(normalized) || normalized.startsWith('/')) {
+    return 'promptFileRelativePathOnly';
+  }
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.some((segment) => segment === '..')) {
+    return 'promptFileWorkspaceOnly';
+  }
+  return null;
+}
+
+const promptPathMessages: Record<string, string> = {
+  promptFileRelativePathHint: 'Use a workspace-relative path such as agents/coder/AGENT.md.',
+  promptFileRelativePathOnly: 'system_prompt_file must be a workspace-relative path, not an absolute path.',
+  promptFileWorkspaceOnly: 'system_prompt_file must stay within the workspace.',
+};
+
 const SubagentProfiles: React.FC = () => {
   const { t } = useTranslation();
   const { q } = useAppContext();
@@ -21,6 +41,11 @@ const SubagentProfiles: React.FC = () => {
   const [groups, setGroups] = useState<ToolAllowlistGroup[]>([]);
   const [promptFileContent, setPromptFileContent] = useState('');
   const [promptFileFound, setPromptFileFound] = useState(false);
+  const promptPathErrorKey = validatePromptFilePath(String(draft.system_prompt_file || ''));
+  const promptPathHint = t('promptFileRelativePathHint', { defaultValue: promptPathMessages.promptFileRelativePathHint });
+  const promptPathError = promptPathErrorKey
+    ? t(promptPathErrorKey, { defaultValue: promptPathMessages[promptPathErrorKey] || promptPathMessages.promptFileWorkspaceOnly })
+    : '';
 
   const selected = useMemo(
     () => items.find((p) => p.agent_id === selectedId) || null,
@@ -66,6 +91,11 @@ const SubagentProfiles: React.FC = () => {
       setPromptFileFound(false);
       return;
     }
+    if (promptPathErrorKey) {
+      setPromptFileFound(false);
+      setPromptFileContent('');
+      return;
+    }
     fetch(`/webui/api/subagents_runtime${q}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -84,7 +114,7 @@ const SubagentProfiles: React.FC = () => {
         setPromptFileFound(false);
         setPromptFileContent('');
       });
-  }, [draft.system_prompt_file, q]);
+  }, [draft.system_prompt_file, promptPathErrorKey, q]);
 
   const onSelect = (p: SubagentProfile) => {
     setSelectedId(p.agent_id || '');
@@ -108,6 +138,10 @@ const SubagentProfiles: React.FC = () => {
     const agentId = String(draft.agent_id || '').trim();
     if (!agentId) {
       await ui.notify({ title: t('requestFailed'), message: 'agent_id is required' });
+      return;
+    }
+    if (promptPathErrorKey) {
+      await ui.notify({ title: t('requestFailed'), message: promptPathError });
       return;
     }
 
@@ -144,22 +178,6 @@ const SubagentProfiles: React.FC = () => {
     }
   };
 
-  const setStatus = async (status: 'active' | 'disabled') => {
-    const agentId = String(draft.agent_id || '').trim();
-    if (!agentId) return;
-    const action = status === 'active' ? 'enable' : 'disable';
-    const r = await fetch(`/webui/api/subagent_profiles${q}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, agent_id: agentId }),
-    });
-    if (!r.ok) {
-      await ui.notify({ title: t('requestFailed'), message: await r.text() });
-      return;
-    }
-    await load();
-  };
-
   const remove = async () => {
     const agentId = String(draft.agent_id || '').trim();
     if (!agentId) return;
@@ -183,6 +201,10 @@ const SubagentProfiles: React.FC = () => {
     const path = String(draft.system_prompt_file || '').trim();
     if (!path) {
       await ui.notify({ title: t('requestFailed'), message: 'system_prompt_file is required' });
+      return;
+    }
+    if (promptPathErrorKey) {
+      await ui.notify({ title: t('requestFailed'), message: promptPathError });
       return;
     }
     const r = await fetch(`/webui/api/subagents_runtime${q}`, {
@@ -233,14 +255,14 @@ const SubagentProfiles: React.FC = () => {
           onAddAllowlistToken={addAllowlistToken}
           onChange={setDraft}
           onDelete={remove}
-          onDisable={() => setStatus('disabled')}
-          onEnable={() => setStatus('active')}
           onPromptContentChange={setPromptFileContent}
           onSave={save}
           onSavePromptFile={savePromptFile}
           promptContent={promptFileContent}
-          promptMeta={promptFileFound ? t('promptFileReady') : t('promptFileMissing')}
+          promptMeta={promptPathErrorKey ? promptPathError : (promptFileFound ? t('promptFileReady') : t('promptFileMissing'))}
           promptPlaceholder={t('agentPromptContentPlaceholder')}
+          promptPathHint={promptPathHint}
+          promptPathInvalid={!!promptPathErrorKey}
           roleLabel="Role"
           saving={saving}
           statusLabel={t('status')}

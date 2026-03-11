@@ -226,6 +226,7 @@ const Providers: React.FC = () => {
                 onStartOAuthLogin={() => startOAuthLogin(activeProviderEntry[0], activeProviderEntry[1])}
                 onTriggerOAuthImport={() => triggerOAuthImport(activeProviderEntry[0], activeProviderEntry[1])}
                 proxy={activeProviderEntry[1]}
+                runtimeItem={providerRuntimeMap[activeProviderEntry[0]]}
                 runtimeSummary={providerRuntimeMap[activeProviderEntry[0]] ? (
                   <ProviderRuntimeSummary
                     item={providerRuntimeMap[activeProviderEntry[0]]}

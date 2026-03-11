@@ -111,26 +111,26 @@ const TaskAudit: React.FC = () => {
         title={t('taskAudit')}
         titleClassName="text-xl md:text-2xl font-semibold"
         actions={(
-          <ToolbarRow>
-          <SelectField dense value={sourceFilter} onChange={(e)=>setSourceFilter(e.target.value)}>
-            <option value="all">{t('allSources')}</option>
-            <option value="direct">{t('sourceDirect')}</option>
-            <option value="memory_todo">{t('sourceMemoryTodo')}</option>
-            <option value="task_watchdog">task_watchdog</option>
-            <option value="-">-</option>
-          </SelectField>
-          <SelectField dense value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}>
-            <option value="all">{t('allStatus')}</option>
-            <option value="running">{t('statusRunning')}</option>
-            <option value="waiting">{t('statusWaiting')}</option>
-            <option value="blocked">{t('statusBlocked')}</option>
-            <option value="success">{t('statusSuccess')}</option>
-            <option value="error">{t('statusError')}</option>
-            <option value="suppressed">{t('statusSuppressed')}</option>
-          </SelectField>
-          <FixedButton onClick={fetchData} variant="primary" label={loading ? t('loading') : t('refresh')}>
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </FixedButton>
+          <ToolbarRow className="flex-nowrap">
+            <SelectField dense className="w-[152px] shrink-0" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+              <option value="all">{t('allSources')}</option>
+              <option value="direct">{t('sourceDirect')}</option>
+              <option value="memory_todo">{t('sourceMemoryTodo')}</option>
+              <option value="task_watchdog">task_watchdog</option>
+              <option value="-">-</option>
+            </SelectField>
+            <SelectField dense className="w-[152px] shrink-0" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="all">{t('allStatus')}</option>
+              <option value="running">{t('statusRunning')}</option>
+              <option value="waiting">{t('statusWaiting')}</option>
+              <option value="blocked">{t('statusBlocked')}</option>
+              <option value="success">{t('statusSuccess')}</option>
+              <option value="error">{t('statusError')}</option>
+              <option value="suppressed">{t('statusSuppressed')}</option>
+            </SelectField>
+            <FixedButton onClick={fetchData} variant="primary" label={loading ? t('loading') : t('refresh')}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </FixedButton>
           </ToolbarRow>
         )}
       />

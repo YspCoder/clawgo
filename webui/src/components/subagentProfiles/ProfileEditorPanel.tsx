@@ -1,8 +1,8 @@
 import React from 'react';
-import { Pause, Play, Save, Trash2 } from 'lucide-react';
+import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, FixedButton } from '../Button';
-import { FieldBlock, SelectField, TextField, TextareaField } from '../FormControls';
+import { CheckboxField, FieldBlock, SelectField, TextField, TextareaField } from '../FormControls';
 import type { SubagentProfile, ToolAllowlistGroup } from './profileDraft';
 import { parseAllowlist } from './profileDraft';
 
@@ -16,14 +16,14 @@ type ProfileEditorPanelProps = {
   onAddAllowlistToken: (token: string) => void;
   onChange: (next: SubagentProfile) => void;
   onDelete: () => void;
-  onDisable: () => void;
-  onEnable: () => void;
   onPromptContentChange: (value: string) => void;
   onSave: () => void;
   onSavePromptFile: () => void;
   promptContent: string;
   promptMeta: string;
   promptPlaceholder: string;
+  promptPathHint: string;
+  promptPathInvalid: boolean;
   roleLabel: string;
   saving: boolean;
   statusLabel: string;
@@ -45,14 +45,14 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
   onAddAllowlistToken,
   onChange,
   onDelete,
-  onDisable,
-  onEnable,
   onPromptContentChange,
   onSave,
   onSavePromptFile,
   promptContent,
   promptMeta,
   promptPlaceholder,
+  promptPathHint,
+  promptPathInvalid,
   roleLabel,
   saving,
   statusLabel,
@@ -65,6 +65,15 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
 }) => {
   const { t } = useTranslation();
   const allowlistText = (draft.tool_allowlist || []).join(', ');
+  const statusEnabled = (draft.status || 'active') === 'active';
+  const notifyPolicyOptions = [
+    { value: 'final_only', label: '仅最终结果', help: '只在任务完成后通知主代理。' },
+    { value: 'internal_only', label: '仅内部事件', help: '只回传中间过程，不单独强调最终结果。' },
+    { value: 'milestone', label: '关键节点', help: '到达关键阶段时通知主代理。' },
+    { value: 'on_blocked', label: '遇阻才通知', help: '只有卡住、需要介入时才通知主代理。' },
+    { value: 'always', label: '始终通知', help: '过程和结果都会尽量通知主代理。' },
+  ];
+  const notifyPolicy = notifyPolicyOptions.find((option) => option.value === (draft.notify_main_policy || 'final_only')) || notifyPolicyOptions[0];
 
   return (
     <div className="brand-card ui-border-subtle rounded-[28px] border p-4 space-y-3">
@@ -97,39 +106,42 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             placeholder="coding"
           />
         </FieldBlock>
-        <FieldBlock label={statusLabel}>
-          <SelectField
-            value={draft.status || 'active'}
-            onChange={(e) => onChange({ ...draft, status: e.target.value })}
-            dense
-            className="w-full"
-          >
-            <option value="active">active</option>
-            <option value="disabled">disabled</option>
-          </SelectField>
+        <FieldBlock
+          label={statusLabel}
+          help={statusEnabled ? '已启用，允许接收任务。' : '已停用，不会接收新任务。'}
+        >
+          <label className="flex min-h-[34px] items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-sm">
+            <CheckboxField
+              checked={statusEnabled}
+              onChange={(e) => onChange({ ...draft, status: e.target.checked ? 'active' : 'disabled' })}
+            />
+            <span>{statusEnabled ? '启用' : '停用'}</span>
+          </label>
         </FieldBlock>
-        <FieldBlock label="notify_main_policy">
+        <FieldBlock
+          label="通知主代理"
+          help={notifyPolicy.help}
+        >
           <SelectField
             value={draft.notify_main_policy || 'final_only'}
             onChange={(e) => onChange({ ...draft, notify_main_policy: e.target.value })}
             dense
             className="w-full"
           >
-            <option value="final_only">final_only</option>
-            <option value="internal_only">internal_only</option>
-            <option value="milestone">milestone</option>
-            <option value="on_blocked">on_blocked</option>
-            <option value="always">always</option>
+            {notifyPolicyOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </SelectField>
         </FieldBlock>
         <FieldBlock className="md:col-span-2" label="system_prompt_file">
           <TextField
             value={draft.system_prompt_file || ''}
-            onChange={(e) => onChange({ ...draft, system_prompt_file: e.target.value })}
+            onChange={(e) => onChange({ ...draft, system_prompt_file: e.target.value.replace(/\\/g, '/') })}
             dense
-            className="w-full"
+            className={`w-full ${promptPathInvalid ? 'border-rose-400/70 focus:border-rose-300' : ''}`}
             placeholder="agents/coder/AGENT.md"
           />
+          <div className={`mt-1 text-[11px] ${promptPathInvalid ? 'text-rose-300' : 'ui-text-muted'}`}>{promptPathHint}</div>
         </FieldBlock>
         <FieldBlock className="md:col-span-2" label={memoryNamespaceLabel}>
           <TextField
@@ -168,7 +180,7 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             placeholder={promptPlaceholder}
           />
           <div className="mt-2 flex items-center gap-2">
-            <FixedButton type="button" onClick={onSavePromptFile} disabled={!String(draft.system_prompt_file || '').trim()} radius="lg" label={t('savePromptFile')}>
+            <FixedButton type="button" onClick={onSavePromptFile} disabled={!String(draft.system_prompt_file || '').trim() || promptPathInvalid} radius="lg" label={t('savePromptFile')}>
               <Save className="w-4 h-4" />
             </FixedButton>
           </div>
@@ -217,12 +229,6 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
       <div className="flex items-center gap-2">
         <FixedButton onClick={onSave} disabled={saving} variant="primary" label={isExisting ? t('update') : t('create')}>
           <Save className="w-4 h-4" />
-        </FixedButton>
-        <FixedButton onClick={onEnable} disabled={!draft.agent_id} variant="success" label={t('enable')}>
-          <Play className="w-4 h-4" />
-        </FixedButton>
-        <FixedButton onClick={onDisable} disabled={!draft.agent_id} variant="warning" label={t('disable')}>
-          <Pause className="w-4 h-4" />
         </FixedButton>
         <FixedButton onClick={onDelete} disabled={!draft.agent_id} variant="danger" label={t('delete')}>
           <Trash2 className="w-4 h-4" />

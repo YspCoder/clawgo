@@ -214,12 +214,24 @@ const Skills: React.FC = () => {
         }
       />
 
-      <ToolbarRow className="w-full">
-        <TextField disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 disabled:opacity-60" />
-        <FixedButton disabled={installingSkill} onClick={installSkill} variant="success" label={installingSkill ? t('loading') : t('install')}>
-          <Zap className="w-4 h-4" />
-        </FixedButton>
-        <label className="flex items-center gap-2 text-xs text-zinc-400">
+      <ToolbarRow className="w-full flex-nowrap items-center">
+        <TextField
+          disabled={installingSkill}
+          value={installName}
+          onChange={(e) => setInstallName(e.target.value)}
+          placeholder={t('skillsNamePlaceholder')}
+          className="min-w-0 flex-1 disabled:opacity-60"
+        />
+        <Button
+          disabled={installingSkill}
+          onClick={installSkill}
+          variant="success"
+          size="md"
+          noShrink
+        >
+          {installingSkill ? t('loading') : t('install')}
+        </Button>
+        <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-zinc-400">
           <CheckboxField
             checked={ignoreSuspicious}
             disabled={installingSkill}

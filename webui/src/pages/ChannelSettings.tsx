@@ -119,19 +119,47 @@ const ChannelSettings: React.FC = () => {
         (nextCfg as any).channels = {};
       }
       (nextCfg as any).channels[definition.id] = cloneJSON(draft);
-      const res = await fetch(`/webui/api/config${q}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nextCfg),
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
+      const submit = async (confirmRisky: boolean) => {
+        const body = confirmRisky ? { ...nextCfg, confirm_risky: true } : nextCfg;
+        return ui.withLoading(async () => {
+          const res = await fetch(`/webui/api/config${q}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const text = await res.text();
+          let data: any = null;
+          try {
+            data = text ? JSON.parse(text) : null;
+          } catch {
+            data = null;
+          }
+          return { ok: res.ok, text, data };
+        }, t('saving'));
+      };
+
+      let result = await submit(false);
+      if (!result.ok && result.data?.requires_confirm) {
+        const changedFields = Array.isArray(result.data?.changed_fields) ? result.data.changed_fields.join(', ') : '';
+        const ok = await ui.confirmDialog({
+          title: t('configRiskyChangeConfirmTitle'),
+          message: t('configRiskyChangeConfirmMessage', { fields: changedFields || '-' }),
+          danger: true,
+          confirmText: t('saveChanges'),
+        });
+        if (!ok) return;
+        result = await submit(true);
       }
+
+      if (!result.ok) {
+        throw new Error(result.data?.error || result.text || 'save failed');
+      }
+
       setCfg(nextCfg);
       await loadConfig(true);
-      await ui.notify(t('configSaved'));
+      await ui.notify({ title: t('saved'), message: t('configSaved') });
     } catch (err: any) {
-      await ui.notify(String(err?.message || err || 'save failed'));
+      await ui.notify({ title: t('requestFailed'), message: `${t('saveConfigFailed')}: ${String(err?.message || err || 'save failed')}` });
     } finally {
       setSaving(false);
     }

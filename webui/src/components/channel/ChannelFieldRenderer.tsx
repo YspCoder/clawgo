@@ -1,6 +1,6 @@
 import React from 'react';
 import { Check, ShieldCheck, Users, Wifi } from 'lucide-react';
-import { CheckboxField, FieldBlock, TextField, TextareaField } from '../FormControls';
+import { CheckboxField, FieldBlock, TextField } from '../FormControls';
 import type { ChannelField, ChannelKey } from './channelSchema';
 
 type Translate = (key: string, options?: any) => string;
@@ -28,8 +28,83 @@ function getWhatsAppBooleanIcon(fieldKey: string) {
   }
 }
 
-function formatList(value: unknown) {
-  return Array.isArray(value) ? value.join('\n') : '';
+type TagListFieldProps = {
+  isWhatsApp: boolean;
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+  value: unknown;
+};
+
+function TagListField({ isWhatsApp, onChange, placeholder, value }: TagListFieldProps) {
+  const values = Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  const [draft, setDraft] = React.useState('');
+
+  React.useEffect(() => {
+    setDraft('');
+  }, [value]);
+
+  function commit(raw: string) {
+    const items = String(raw || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (items.length === 0) {
+      setDraft('');
+      return;
+    }
+    const next = [...values];
+    items.forEach((item) => {
+      if (!next.includes(item)) next.push(item);
+    });
+    onChange(next);
+    setDraft('');
+  }
+
+  function remove(item: string) {
+    onChange(values.filter((value) => value !== item));
+  }
+
+  return (
+    <div className="space-y-2">
+      {values.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {values.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => remove(item)}
+              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] transition ${
+                isWhatsApp
+                  ? 'border-zinc-700 bg-zinc-950/70 text-zinc-200 hover:border-zinc-500'
+                  : 'border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:border-zinc-500'
+              }`}
+              title={item}
+            >
+              <span className="font-mono">{item}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <TextField
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit(draft);
+          } else if (e.key === 'Backspace' && !draft && values.length > 0) {
+            e.preventDefault();
+            remove(values[values.length - 1]);
+          }
+        }}
+        onBlur={() => {
+          if (draft.trim()) commit(draft);
+        }}
+        placeholder={placeholder || ''}
+        monospace={isWhatsApp}
+      />
+    </div>
+  );
 }
 
 const ChannelFieldRenderer: React.FC<ChannelFieldRendererProps> = ({
@@ -61,9 +136,6 @@ const ChannelFieldRenderer: React.FC<ChannelFieldRendererProps> = ({
                 <div className="ui-form-help mt-1">{helper}</div>
               </div>
             </div>
-            <div className={`ui-pill mt-4 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${value ? 'ui-pill-success' : 'ui-pill-neutral'}`}>
-              {t(value ? 'enabled_true' : 'enabled_false')}
-            </div>
           </div>
           <CheckboxField
             checked={!!value}
@@ -78,9 +150,7 @@ const ChannelFieldRenderer: React.FC<ChannelFieldRendererProps> = ({
       <label key={field.key} className="ui-toggle-card ui-boolean-card flex items-center justify-between gap-4 cursor-pointer">
         <div className="min-w-0 flex-1 pr-3">
           <div className="ui-text-primary text-sm font-semibold">{label}</div>
-          <div className={`ui-pill mt-3 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${value ? 'ui-pill-success' : 'ui-pill-neutral'}`}>
-            {t(value ? 'enabled_true' : 'enabled_false')}
-          </div>
+          {helper ? <div className="ui-form-help mt-1">{helper}</div> : null}
         </div>
         <CheckboxField
           checked={!!value}
@@ -100,14 +170,13 @@ const ChannelFieldRenderer: React.FC<ChannelFieldRendererProps> = ({
         help={helper}
         meta={isWhatsApp && Array.isArray(value) && value.length > 0 ? `${t('entries')}: ${value.length}` : undefined}
       >
-        <TextareaField
-          value={formatList(value)}
-          onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: parseList(e.target.value) }))}
+        <TagListField
+          isWhatsApp={isWhatsApp}
+          onChange={(items) => setDraft((prev) => ({ ...prev, [field.key]: parseList(items.join('\n')) }))}
           placeholder={field.placeholder || ''}
-          monospace={isWhatsApp}
-          className={isWhatsApp ? 'min-h-36 px-4 py-3' : 'min-h-32 px-4 py-3'}
+          value={value}
         />
-        {isWhatsApp ? <div className="ui-form-help text-[11px]">{t('whatsappFieldAllowFromFootnote')}</div> : null}
+        <div className="ui-form-help text-[11px]">{t('channelListInputFootnote')}</div>
       </FieldBlock>
     );
   }

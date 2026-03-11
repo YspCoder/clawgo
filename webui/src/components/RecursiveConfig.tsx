@@ -186,9 +186,6 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
                   onChange={(e) => onChange(currentPath, e.target.checked)}
                   className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500"
                 />
-                <span className="ui-text-subtle group-hover:ui-text-secondary text-sm transition-colors">
-                  {value ? (labels['enabled_true'] || t('enabled_true')) : (labels['enabled_false'] || t('enabled_false'))}
-                </span>
               </label>
             ) : (
               <TextField

@@ -44,7 +44,6 @@ export const channelDefinitions: Record<ChannelKey, ChannelDefinition> = {
         columns: 2,
         fields: [
           { key: 'allow_from', type: 'list', placeholder: '123456789' },
-          { key: 'allow_chats', type: 'list', placeholder: 'telegram:123456789' },
         ],
       },
       {
@@ -146,7 +145,6 @@ export const channelDefinitions: Record<ChannelKey, ChannelDefinition> = {
         columns: 2,
         fields: [
           { key: 'allow_from', type: 'list' },
-          { key: 'allow_chats', type: 'list' },
         ],
       },
       {
