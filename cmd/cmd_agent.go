@@ -27,7 +27,7 @@ func agentCmd() {
 		switch args[i] {
 		case "--debug", "-d":
 			logger.SetLevel(logger.DEBUG)
-			fmt.Println("馃攳 Debug mode enabled")
+			fmt.Println("Debug mode enabled")
 		case "-m", "--message":
 			if i+1 < len(args) {
 				message = args[i+1]

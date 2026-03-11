@@ -103,7 +103,7 @@ func configSetCmd() {
 		return
 	}
 
-	fmt.Printf("鉁?Updated %s = %v\n", path, value)
+	fmt.Printf("Updated %s = %v\n", path, value)
 	running, err := triggerGatewayReload()
 	if err != nil {
 		if running {
@@ -116,7 +116,7 @@ func configSetCmd() {
 		}
 		fmt.Printf("Updated config file. Hot reload not applied: %v\n", err)
 	} else {
-		fmt.Println("鉁?Gateway hot reload signal sent")
+		fmt.Println("Gateway hot reload signal sent")
 	}
 }
 
@@ -153,7 +153,7 @@ func configReloadCmd() {
 		fmt.Printf("Hot reload not applied: %v\n", err)
 		return
 	}
-	fmt.Println("鉁?Gateway hot reload signal sent")
+	fmt.Println("Gateway hot reload signal sent")
 }
 
 func configCheckCmd() {
@@ -164,11 +164,11 @@ func configCheckCmd() {
 	}
 	validationErrors := config.Validate(cfg)
 	if len(validationErrors) == 0 {
-		fmt.Println("鉁?Config validation passed")
+		fmt.Println("Config validation passed")
 		return
 	}
 
-	fmt.Println("鉁?Config validation failed:")
+	fmt.Println("Config validation failed:")
 	for _, ve := range validationErrors {
 		fmt.Printf("  - %v\n", ve)
 	}
@@ -301,7 +301,7 @@ func providerCmd() {
 		os.Exit(1)
 	}
 
-	fmt.Println("鉁?Provider configuration saved.")
+	fmt.Println("Provider configuration saved.")
 	running, err := triggerGatewayReload()
 	if err != nil {
 		if running {
@@ -311,7 +311,7 @@ func providerCmd() {
 		fmt.Printf("Gateway not running, reload skipped: %v\n", err)
 		return
 	}
-	fmt.Println("鉁?Gateway hot reload signal sent")
+	fmt.Println("Gateway hot reload signal sent")
 }
 
 func providerListCmd() {

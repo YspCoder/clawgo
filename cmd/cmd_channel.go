@@ -55,7 +55,7 @@ func channelHelp() {
 func channelTestCmd() {
 	to := ""
 	channelName := ""
-	message := "This is a test message from ClawGo 馃"
+	message := "This is a test message from ClawGo"
 
 	args := os.Args[3:]
 	for i := 0; i < len(args); i++ {
@@ -104,11 +104,11 @@ func channelTestCmd() {
 
 	fmt.Printf("Sending test message to %s (%s)...\n", channelName, to)
 	if err := mgr.SendToChannel(ctx, channelName, to, message); err != nil {
-		fmt.Printf("鉁?Failed to send message: %v\n", err)
+		fmt.Printf("Failed to send message: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("鉁?Test message sent successfully!")
+	fmt.Println("Test message sent successfully.")
 }
 
 func whatsAppChannelCmd() {

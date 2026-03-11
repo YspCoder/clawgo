@@ -100,26 +100,26 @@ func gatewayCmd() {
 
 	enabledChannels := channelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
-		fmt.Printf("鉁?Channels enabled: %s\n", enabledChannels)
+		fmt.Printf("Channels enabled: %s\n", enabledChannels)
 	} else {
-		fmt.Println("鈿?Warning: No channels enabled")
+		fmt.Println("Warning: no channels enabled")
 	}
 
-	fmt.Printf("鉁?Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	fmt.Printf("Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop. Send SIGHUP to hot-reload config.")
 
 	if err := cronService.Start(); err != nil {
 		fmt.Printf("Error starting cron service: %v\n", err)
 	}
-	fmt.Println("鉁?Cron service started")
+	fmt.Println("Cron service started")
 
 	if err := heartbeatService.Start(); err != nil {
 		fmt.Printf("Error starting heartbeat service: %v\n", err)
 	}
-	fmt.Println("鉁?Heartbeat service started")
+	fmt.Println("Heartbeat service started")
 	if cfg.Sentinel.Enabled {
 		sentinelService.Start()
-		fmt.Println("鉁?Sentinel service started")
+		fmt.Println("Sentinel service started")
 	}
 
 	registryServer := api.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
@@ -360,7 +360,7 @@ func gatewayCmd() {
 	if err := registryServer.Start(ctx); err != nil {
 		fmt.Printf("Error starting node registry server: %v\n", err)
 	} else {
-		fmt.Printf("鉁?Node registry server started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+		fmt.Printf("Node registry server started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	}
 
 	if err := channelManager.StartAll(ctx); err != nil {
@@ -374,10 +374,10 @@ func gatewayCmd() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, gatewayNotifySignals()...)
 	applyReload := func() {
-		fmt.Println("\n鈫?Reloading config...")
+		fmt.Println("\nReloading config...")
 		newCfg, err := config.LoadConfig(getConfigPath())
 		if err != nil {
-			fmt.Printf("鉁?Reload failed (load config): %v\n", err)
+			fmt.Printf("Reload failed (load config): %v\n", err)
 			return
 		}
 		if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
@@ -391,7 +391,7 @@ func gatewayCmd() {
 		}
 
 		if reflect.DeepEqual(cfg, newCfg) {
-			fmt.Println("鉁?Config unchanged, skip reload")
+			fmt.Println("Config unchanged, skip reload")
 			return
 		}
 
@@ -422,13 +422,13 @@ func gatewayCmd() {
 			cfg = newCfg
 			runtimecfg.Set(cfg)
 			configureGatewayNodeP2P(agentLoop, registryServer, cfg)
-			fmt.Println("鉁?Config hot-reload applied (logging/metadata only)")
+			fmt.Println("Config hot-reload applied (logging/metadata only)")
 			return
 		}
 
 		newAgentLoop, newChannelManager, err := buildGatewayRuntime(ctx, newCfg, msgBus, cronService)
 		if err != nil {
-			fmt.Printf("鉁?Reload failed (init runtime): %v\n", err)
+			fmt.Printf("Reload failed (init runtime): %v\n", err)
 			return
 		}
 
@@ -462,11 +462,11 @@ func gatewayCmd() {
 		sentinelService.SetManager(channelManager)
 
 		if err := channelManager.StartAll(ctx); err != nil {
-			fmt.Printf("鉁?Reload failed (start channels): %v\n", err)
+			fmt.Printf("Reload failed (start channels): %v\n", err)
 			return
 		}
 		go agentLoop.Run(ctx)
-		fmt.Println("鉁?Config hot-reload applied")
+		fmt.Println("Config hot-reload applied")
 	}
 
 	for {
@@ -488,7 +488,7 @@ func gatewayCmd() {
 				cronService.Stop()
 				agentLoop.Stop()
 				channelManager.StopAll(ctx)
-				fmt.Println("鉁?Gateway stopped")
+				fmt.Println("Gateway stopped")
 				return
 			}
 		}
@@ -589,7 +589,7 @@ func gatewayInstallServiceCmd() error {
 		return err
 	}
 
-	fmt.Printf("鉁?Gateway service registered: %s (%s)\n", gatewayServiceName, scope)
+	fmt.Printf("Gateway service registered: %s (%s)\n", gatewayServiceName, scope)
 	fmt.Printf("  Unit file: %s\n", unitPath)
 	fmt.Println("  Start service:   clawgo gateway start")
 	fmt.Println("  Restart service: clawgo gateway restart")
@@ -1028,7 +1028,7 @@ func buildGatewayRuntime(ctx context.Context, cfg *config.Config, msgBus *bus.Me
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]interface{})
 	skillsInfo := startupInfo["skills"].(map[string]interface{})
-	fmt.Println("\n馃摝 Agent Status:")
+	fmt.Println("\nAgent Status:")
 	fmt.Printf("  鈥?Tools: %d loaded\n", toolsInfo["count"])
 	fmt.Printf("  鈥?Skills: %d/%d available\n", skillsInfo["available"], skillsInfo["total"])
 

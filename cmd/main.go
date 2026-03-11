@@ -22,7 +22,7 @@ var embeddedFiles embed.FS
 var version = "0.2.0"
 var buildTime = "unknown"
 
-const logo = "馃"
+const logo = ">"
 const gatewayServiceName = "clawgo-gateway.service"
 const envRootGranted = "CLAWGO_ROOT_GRANTED"
 
