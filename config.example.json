@@ -2,8 +2,13 @@
   "agents": {
     "defaults": {
       "workspace": "~/.clawgo/workspace",
-      "proxy": "proxy",
-      "proxy_fallbacks": ["backup"],
+      "model": {
+        "primary": "codex/gpt-5.4",
+        "fallbacks": [
+          "openai/gpt-5.4",
+          "anthropic/claude-sonnet-4-20250514"
+        ]
+      },
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20,
@@ -84,7 +89,7 @@
           "allowlist": ["sessions", "subagents", "memory_search", "repo_map"]
         },
         "runtime": {
-          "proxy": "proxy",
+          "provider": "codex",
           "temperature": 0.2,
           "max_retries": 1,
           "retry_backoff_ms": 1000,
@@ -105,7 +110,7 @@
           "allowlist": ["filesystem", "shell", "repo_map", "sessions"]
         },
         "runtime": {
-          "proxy": "proxy",
+          "provider": "openai",
           "temperature": 0.2,
           "max_retries": 1,
           "retry_backoff_ms": 1000,
@@ -128,7 +133,7 @@
           "allowlist": ["shell", "filesystem", "process_manager", "sessions"]
         },
         "runtime": {
-          "proxy": "proxy",
+          "provider": "anthropic",
           "temperature": 0.1,
           "max_retries": 1,
           "retry_backoff_ms": 1000,
@@ -200,27 +205,11 @@
       "allow_from": []
     }
   },
-  "providers": {
-    "proxy": {
-      "api_key": "YOUR_CLIPROXYAPI_KEY",
-      "api_base": "http://localhost:8080/v1",
-      "models": ["glm-4.7", "gpt-4o-mini"],
-      "responses": {
-        "web_search_enabled": false,
-        "web_search_context_size": "",
-        "file_search_vector_store_ids": [],
-        "file_search_max_num_results": 0,
-        "include": [],
-        "stream_include_usage": false
-      },
-      "supports_responses_compact": false,
-      "auth": "bearer",
-      "timeout_sec": 90
-    },
-    "proxies": {
-      "codex-oauth": {
+  "models": {
+    "providers": {
+      "codex": {
         "api_base": "https://api.openai.com/v1",
-        "models": [],
+        "models": ["gpt-5.4"],
         "responses": {
           "web_search_enabled": false,
           "web_search_context_size": "",
@@ -240,13 +229,13 @@
           "refresh_lead_sec": 1800
         },
         "runtime_persist": true,
-        "runtime_history_file": "~/.clawgo/runtime/providers/codex-oauth.json",
+        "runtime_history_file": "~/.clawgo/runtime/providers/codex.json",
         "runtime_history_max": 24,
         "timeout_sec": 90
       },
-      "gemini-oauth": {
-        "api_base": "https://your-openai-compatible-gateway.example.com/v1",
-        "models": [],
+      "gemini": {
+        "api_base": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "models": ["gemini-2.5-pro"],
         "responses": {
           "web_search_enabled": false,
           "web_search_context_size": "",
@@ -266,14 +255,14 @@
           "refresh_lead_sec": 1800
         },
         "runtime_persist": true,
-        "runtime_history_file": "~/.clawgo/runtime/providers/gemini-oauth.json",
+        "runtime_history_file": "~/.clawgo/runtime/providers/gemini.json",
         "runtime_history_max": 24,
         "timeout_sec": 90
       },
-      "openai-hybrid": {
-        "api_key": "sk-your-primary-api-key",
+      "openai": {
+        "api_key": "sk-your-openai-api-key",
         "api_base": "https://api.openai.com/v1",
-        "models": [],
+        "models": ["gpt-5.4", "gpt-5.4-mini"],
         "responses": {
           "web_search_enabled": false,
           "web_search_context_size": "",
@@ -283,24 +272,36 @@
           "stream_include_usage": false
         },
         "supports_responses_compact": true,
-        "auth": "hybrid",
+        "timeout_sec": 90
+      },
+      "anthropic": {
+        "api_base": "https://api.anthropic.com",
+        "models": ["claude-sonnet-4-20250514"],
+        "responses": {
+          "web_search_enabled": false,
+          "web_search_context_size": "",
+          "file_search_vector_store_ids": [],
+          "file_search_max_num_results": 0,
+          "include": [],
+          "stream_include_usage": false
+        },
+        "supports_responses_compact": true,
+        "auth": "oauth",
         "oauth": {
-          "provider": "codex",
-          "credential_files": ["~/.clawgo/auth/codex.json"],
+          "provider": "claude",
+          "credential_files": ["~/.clawgo/auth/claude.json"],
           "callback_port": 1455,
-          "hybrid_priority": "api_first",
-          "cooldown_sec": 900,
           "refresh_scan_sec": 600,
           "refresh_lead_sec": 1800
         },
         "runtime_persist": true,
-        "runtime_history_file": "~/.clawgo/runtime/providers/openai-hybrid.json",
+        "runtime_history_file": "~/.clawgo/runtime/providers/anthropic.json",
         "runtime_history_max": 24,
         "timeout_sec": 90
       },
-      "qwen-oauth": {
-        "api_base": "https://your-openai-compatible-gateway.example.com/v1",
-        "models": [],
+      "qwen": {
+        "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "models": ["qwen-max"],
         "responses": {
           "web_search_enabled": false,
           "web_search_context_size": "",
@@ -318,14 +319,13 @@
           "refresh_lead_sec": 1800
         },
         "runtime_persist": true,
-        "runtime_history_file": "~/.clawgo/runtime/providers/qwen-oauth.json",
+        "runtime_history_file": "~/.clawgo/runtime/providers/qwen.json",
         "runtime_history_max": 24,
         "timeout_sec": 90
       },
-      "backup": {
-        "api_key": "YOUR_BACKUP_PROXY_KEY",
-        "api_base": "http://localhost:8081/v1",
-        "models": ["gpt-4o-mini", "deepseek-chat"],
+      "kimi": {
+        "api_base": "https://api.moonshot.cn/v1",
+        "models": ["kimi-k2-0711-preview"],
         "responses": {
           "web_search_enabled": false,
           "web_search_context_size": "",
@@ -335,7 +335,16 @@
           "stream_include_usage": false
         },
         "supports_responses_compact": true,
-        "auth": "bearer",
+        "auth": "oauth",
+        "oauth": {
+          "provider": "kimi",
+          "credential_files": ["~/.clawgo/auth/kimi.json"],
+          "refresh_scan_sec": 600,
+          "refresh_lead_sec": 1800
+        },
+        "runtime_persist": true,
+        "runtime_history_file": "~/.clawgo/runtime/providers/kimi.json",
+        "runtime_history_max": 24,
         "timeout_sec": 90
       }
     }

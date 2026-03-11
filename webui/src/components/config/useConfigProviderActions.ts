@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { buildProviderRuntimeExportPayload, createDefaultProxyConfig, setPath } from './configUtils';
+import { cloneJSON } from '../../utils/object';
 
 type UI = {
   confirmDialog: (options: any) => Promise<boolean>;
@@ -47,14 +48,10 @@ export function useConfigProviderActions({
   }
 
   function providerConfigPath(name: string) {
-    return name === 'proxy' ? 'providers.proxy' : `providers.proxies.${name}`;
+    return `models.providers.${name}`;
   }
 
   async function removeProxy(name: string) {
-    if (name === 'proxy') {
-      await ui.notify({ title: t('requestFailed'), message: t('providersBuiltinCannotDelete') });
-      return;
-    }
     const ok = await ui.confirmDialog({
       title: t('configDeleteProviderConfirmTitle'),
       message: t('configDeleteProviderConfirmMessage', { name }),
@@ -63,9 +60,9 @@ export function useConfigProviderActions({
     });
     if (!ok) return;
     setCfg((value) => {
-      const next = JSON.parse(JSON.stringify(value || {}));
-      if (next?.providers?.proxies && typeof next.providers.proxies === 'object') {
-        delete next.providers.proxies[name];
+      const next = cloneJSON(value || {});
+      if (next?.models?.providers && typeof next.models.providers === 'object') {
+        delete next.models.providers[name];
       }
       return next;
     });
@@ -75,13 +72,13 @@ export function useConfigProviderActions({
     const trimmed = name.trim();
     if (!trimmed) return;
     setCfg((value) => {
-      const next = JSON.parse(JSON.stringify(value || {}));
-      if (!next.providers || typeof next.providers !== 'object') next.providers = {};
-      if (!next.providers.proxies || typeof next.providers.proxies !== 'object' || Array.isArray(next.providers.proxies)) {
-        next.providers.proxies = {};
+      const next = cloneJSON(value || {});
+      if (!next.models || typeof next.models !== 'object') next.models = {};
+      if (!next.models.providers || typeof next.models.providers !== 'object' || Array.isArray(next.models.providers)) {
+        next.models.providers = {};
       }
-      if (!next.providers.proxies[trimmed]) {
-        next.providers.proxies[trimmed] = createDefaultProxyConfig();
+      if (!next.models.providers[trimmed]) {
+        next.models.providers[trimmed] = createDefaultProxyConfig();
       }
       return next;
     });
@@ -91,6 +88,7 @@ export function useConfigProviderActions({
   async function startOAuthLogin(name: string, proxy?: any) {
     try {
       const oauthProvider = String(proxy?.oauth?.provider || '').trim().toLowerCase();
+      const networkProxy = String(proxy?.oauth?.network_proxy || '').trim();
       let accountLabel = '';
       if (oauthProvider === 'qwen') {
         const value = await ui.promptDialog({
@@ -109,7 +107,7 @@ export function useConfigProviderActions({
         const res = await fetch(`/webui/api/provider/oauth/start${q}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: name, account_label: accountLabel, provider_config: proxy || {} }),
+          body: JSON.stringify({ provider: name, account_label: accountLabel, network_proxy: networkProxy, provider_config: proxy || {} }),
         });
         const { text, data } = await parseResponseBody(res);
         if (!res.ok) throw new Error(data?.error || text || 'oauth start failed');
@@ -136,7 +134,7 @@ export function useConfigProviderActions({
         const res = await fetch(`/webui/api/provider/oauth/complete${q}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: name, flow_id: started.flow_id, callback_url: callbackURL, account_label: accountLabel, provider_config: proxy || {} }),
+          body: JSON.stringify({ provider: name, flow_id: started.flow_id, callback_url: callbackURL, account_label: accountLabel, network_proxy: networkProxy, provider_config: proxy || {} }),
         });
         const { text, data } = await parseResponseBody(res);
         if (!res.ok) throw new Error(data?.error || text || 'oauth complete failed');
@@ -184,6 +182,9 @@ export function useConfigProviderActions({
         const form = new FormData();
         form.append('provider', providerName);
         if (accountLabel) form.append('account_label', accountLabel);
+        if (String(providerConfig?.oauth?.network_proxy || '').trim()) {
+          form.append('network_proxy', String(providerConfig?.oauth?.network_proxy || '').trim());
+        }
         form.append('provider_config', JSON.stringify(providerConfig || {}));
         form.append('file', file);
         const res = await fetch(`/webui/api/provider/oauth/import${q}`, { method: 'POST', body: form });

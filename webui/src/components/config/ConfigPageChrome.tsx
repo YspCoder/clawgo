@@ -2,6 +2,7 @@ import React from 'react';
 import { RefreshCw, Save } from 'lucide-react';
 import { Button, FixedButton } from '../Button';
 import { CheckboxField, TextField } from '../FormControls';
+import { ModalBackdrop, ModalCard, ModalHeader, ModalShell } from '../ModalFrame';
 
 type Translate = (key: string, options?: any) => string;
 
@@ -22,9 +23,9 @@ export function ConfigHeader({ onSave, onShowForm, onShowRaw, showRaw, t }: Conf
           <Button onClick={onShowForm} variant={!showRaw ? 'primary' : 'neutral'} size="sm" radius="lg">{t('form')}</Button>
           <Button onClick={onShowRaw} variant={showRaw ? 'primary' : 'neutral'} size="sm" radius="lg">{t('rawJson')}</Button>
         </div>
-        <Button onClick={onSave} variant="primary" gap="2">
-          <Save className="w-4 h-4" /> {t('saveChanges')}
-        </Button>
+        <FixedButton onClick={onSave} variant="primary" label={t('saveChanges')}>
+          <Save className="w-4 h-4" />
+        </FixedButton>
       </div>
     </div>
   );
@@ -116,12 +117,13 @@ type ConfigDiffModalProps = {
 
 export function ConfigDiffModal({ diffRows, onClose, t }: ConfigDiffModalProps) {
   return (
-    <div className="ui-overlay-strong fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl max-h-[85vh] brand-card border border-zinc-800 rounded-[30px] overflow-hidden flex flex-col">
-        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-          <div className="font-semibold">{t('configDiffPreviewCount', { count: diffRows.length })}</div>
-          <Button onClick={onClose} size="xs" radius="xl">{t('close')}</Button>
-        </div>
+    <ModalShell>
+      <ModalBackdrop />
+      <ModalCard className="max-h-[85vh] max-w-4xl rounded-[30px]">
+        <ModalHeader
+          title={t('configDiffPreviewCount', { count: diffRows.length })}
+          actions={<Button onClick={onClose} size="xs" radius="xl">{t('close')}</Button>}
+        />
         <div className="overflow-auto text-xs">
           <table className="w-full">
             <thead className="sticky top-0 bg-zinc-900 text-zinc-300">
@@ -142,7 +144,7 @@ export function ConfigDiffModal({ diffRows, onClose, t }: ConfigDiffModalProps) 
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
+      </ModalCard>
+    </ModalShell>
   );
 }

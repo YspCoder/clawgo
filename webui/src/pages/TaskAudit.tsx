@@ -1,9 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import ArtifactPreviewCard from '../components/ArtifactPreviewCard';
 import { useAppContext } from '../context/AppContext';
+import { dataUrlForArtifact, formatArtifactBytes } from '../utils/artifacts';
+import CodeBlockPanel from '../components/CodeBlockPanel';
+import DetailGrid from '../components/DetailGrid';
+import EmptyState from '../components/EmptyState';
 import { FixedButton } from '../components/Button';
+import InfoBlock from '../components/InfoBlock';
+import ListPanel from '../components/ListPanel';
+import PageHeader from '../components/PageHeader';
+import PanelHeader from '../components/PanelHeader';
 import { SelectField } from '../components/FormControls';
+import SummaryListItem from '../components/SummaryListItem';
+import ToolbarRow from '../components/ToolbarRow';
 import { formatLocalDateTime } from '../utils/time';
 
 type TaskAuditItem = {
@@ -45,21 +56,6 @@ type NodeDispatchItem = {
   artifacts?: any[];
   [key: string]: any;
 };
-
-function dataUrlForArtifact(artifact: any) {
-  const mime = String(artifact?.mime_type || '').trim() || 'application/octet-stream';
-  const content = String(artifact?.content_base64 || '').trim();
-  if (!content) return '';
-  return `data:${mime};base64,${content}`;
-}
-
-function formatBytes(value: unknown) {
-  const size = Number(value || 0);
-  if (!Number.isFinite(size) || size <= 0) return '-';
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 const TaskAudit: React.FC = () => {
   const { t } = useTranslation();
@@ -111,9 +107,11 @@ const TaskAudit: React.FC = () => {
 
   return (
     <div className="h-full p-4 md:p-6 xl:p-8 flex flex-col gap-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl md:text-2xl font-semibold">{t('taskAudit')}</h1>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title={t('taskAudit')}
+        titleClassName="text-xl md:text-2xl font-semibold"
+        actions={(
+          <ToolbarRow>
           <SelectField dense value={sourceFilter} onChange={(e)=>setSourceFilter(e.target.value)}>
             <option value="all">{t('allSources')}</option>
             <option value="direct">{t('sourceDirect')}</option>
@@ -133,206 +131,153 @@ const TaskAudit: React.FC = () => {
           <FixedButton onClick={fetchData} variant="primary" label={loading ? t('loading') : t('refresh')}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </FixedButton>
-        </div>
-      </div>
+          </ToolbarRow>
+        )}
+      />
 
       <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[320px_1fr_380px] gap-4">
-        <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
-          <div className="px-3 py-2 border-b border-zinc-800 dark:border-zinc-700 text-xs text-zinc-400 uppercase tracking-wider">{t('taskQueue')}</div>
+        <ListPanel>
+          <PanelHeader title={t('taskQueue')} />
           <div className="overflow-y-auto min-h-0">
             {filteredItems.length === 0 ? (
-              <div className="p-4 text-sm text-zinc-500">{t('noTaskAudit')}</div>
+              <EmptyState message={t('noTaskAudit')} padded />
             ) : filteredItems.map((it, idx) => {
               const active = selected?.task_id === it.task_id && selected?.time === it.time;
               return (
-                <button
+                <SummaryListItem
                   key={`${it.task_id || idx}-${it.time || idx}`}
                   onClick={() => setSelected(it)}
-                  className="w-full text-left px-3 py-2 border-b border-zinc-800/60 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-zinc-100 truncate">{it.task_id || `task-${idx + 1}`}</div>
-                      <div className="text-xs text-zinc-400 truncate">{it.channel || '-'} · {it.status} · attempts:{it.attempts || 1} · {it.duration_ms || 0}ms · retry:{it.retry_count || 0} · {it.source || '-'} · {it.provider || '-'} / {it.model || '-'}</div>
-                      <div className="text-[11px] text-zinc-500 truncate">{formatLocalDateTime(it.time)}</div>
-                    </div>
-                    {active && (
-                      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300 self-center">
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    )}
-                  </div>
-                </button>
+                  active={active}
+                  title={it.task_id || `task-${idx + 1}`}
+                  subtitle={`${it.channel || '-'} · ${it.status} · attempts:${it.attempts || 1} · ${it.duration_ms || 0}ms · retry:${it.retry_count || 0} · ${it.source || '-'} · ${it.provider || '-'} / ${it.model || '-'}`}
+                  meta={formatLocalDateTime(it.time)}
+                />
               );
             })}
           </div>
-        </div>
+        </ListPanel>
 
-        <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
-          <div className="px-3 py-2 border-b border-zinc-800 dark:border-zinc-700 text-xs text-zinc-400 uppercase tracking-wider">{t('taskDetail')}</div>
+        <ListPanel>
+          <PanelHeader title={t('taskDetail')} />
           <div className="p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
             {!selected ? (
-              <div className="text-zinc-500">{t('selectTask')}</div>
+              <EmptyState message={t('selectTask')} />
             ) : (
               <>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <div><div className="text-zinc-500 text-xs">{t('taskId')}</div><div className="font-mono break-all">{selected.task_id}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('status')}</div><div>{selected.status}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('source')}</div><div>{selected.source || '-'}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('duration')}</div><div>{selected.duration_ms || 0}ms</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('channel')}</div><div>{selected.channel}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('session')}</div><div className="font-mono break-all">{selected.session}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('provider')}</div><div>{selected.provider || '-'}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('model')}</div><div>{selected.model || '-'}</div></div>
-                  <div><div className="text-zinc-500 text-xs">{t('time')}</div><div>{formatLocalDateTime(selected.time)}</div></div>
-                </div>
+                <DetailGrid
+                  items={[
+                    { label: t('taskId'), value: selected.task_id, valueClassName: 'font-mono break-all' },
+                    { label: t('status'), value: selected.status },
+                    { label: t('source'), value: selected.source || '-' },
+                    { label: t('duration'), value: `${selected.duration_ms || 0}ms` },
+                    { label: t('channel'), value: selected.channel },
+                    { label: t('session'), value: selected.session, valueClassName: 'font-mono break-all' },
+                    { label: t('provider'), value: selected.provider || '-' },
+                    { label: t('model'), value: selected.model || '-' },
+                    { label: t('time'), value: formatLocalDateTime(selected.time) },
+                  ]}
+                />
 
-                <div>
-                  <div className="text-zinc-500 text-xs mb-1">{t('inputPreview')}</div>
-                  <div className="ui-code-panel p-2 whitespace-pre-wrap">{selected.input_preview || '-'}</div>
-                </div>
-
-                <div>
-                  <div className="text-zinc-500 text-xs mb-1">{t('error')}</div>
-                  <div className="ui-code-panel ui-code-danger p-2 whitespace-pre-wrap">{selected.error || '-'}</div>
-                </div>
-
-                <div>
-                  <div className="text-zinc-500 text-xs mb-1">{t('blockReason')}</div>
-                  <div className="ui-code-panel ui-code-warning p-2 whitespace-pre-wrap">{selected.block_reason || '-'}</div>
-                </div>
+                <InfoBlock label={t('inputPreview')} contentClassName="whitespace-pre-wrap">{selected.input_preview || '-'}</InfoBlock>
+                <InfoBlock label={t('error')} contentClassName="ui-code-danger whitespace-pre-wrap">{selected.error || '-'}</InfoBlock>
+                <InfoBlock label={t('blockReason')} contentClassName="ui-code-warning whitespace-pre-wrap">{selected.block_reason || '-'}</InfoBlock>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-zinc-500 text-xs mb-1">{t('lastPauseReason')}</div>
-                    <div className="ui-code-panel p-2 whitespace-pre-wrap">{selected.last_pause_reason || '-'}</div>
-                  </div>
-                  <div>
-                    <div className="text-zinc-500 text-xs mb-1">{t('lastPauseAt')}</div>
-                    <div className="ui-code-panel p-2 whitespace-pre-wrap">{formatLocalDateTime(selected.last_pause_at)}</div>
-                  </div>
+                  <InfoBlock label={t('lastPauseReason')} contentClassName="whitespace-pre-wrap">{selected.last_pause_reason || '-'}</InfoBlock>
+                  <InfoBlock label={t('lastPauseAt')} contentClassName="whitespace-pre-wrap">{formatLocalDateTime(selected.last_pause_at)}</InfoBlock>
                 </div>
 
-                <div>
-                  <div className="text-zinc-500 text-xs mb-1">{t('taskLogs')}</div>
-                  <div className="ui-code-panel p-2 whitespace-pre-wrap">{Array.isArray(selected.logs) && selected.logs.length ? selected.logs.join('\n') : '-'}</div>
-                </div>
+                <InfoBlock label={t('taskLogs')} contentClassName="whitespace-pre-wrap">
+                  {Array.isArray(selected.logs) && selected.logs.length ? selected.logs.join('\n') : '-'}
+                </InfoBlock>
 
-                <div>
-                  <div className="text-zinc-500 text-xs mb-1">{t('mediaSources')}</div>
-                  <div className="ui-code-panel p-2 text-xs">
-                    {Array.isArray(selected.media_items) && selected.media_items.length > 0 ? (
-                      <div className="space-y-1">
-                        {selected.media_items.map((m, i) => (
-                          <div key={i} className="font-mono break-all text-zinc-200">
-                            [{m.channel || '-'}] {m.source || '-'} / {m.type || '-'} · {m.path || m.ref || '-'}
-                          </div>
-                        ))}
-                      </div>
-                    ) : '-'}
-                  </div>
-                </div>
+                <InfoBlock label={t('mediaSources')} contentClassName="text-xs">
+                  {Array.isArray(selected.media_items) && selected.media_items.length > 0 ? (
+                    <div className="space-y-1">
+                      {selected.media_items.map((m, i) => (
+                        <div key={i} className="font-mono break-all text-zinc-200">
+                          [{m.channel || '-'}] {m.source || '-'} / {m.type || '-'} · {m.path || m.ref || '-'}
+                        </div>
+                      ))}
+                    </div>
+                  ) : '-'}
+                </InfoBlock>
 
-                <div>
-                  <div className="text-zinc-500 text-xs mb-1">{t('rawJson')}</div>
-                  <pre className="ui-code-panel p-2 text-xs overflow-auto">{selectedPretty}</pre>
-                </div>
+                <InfoBlock label={t('rawJson')} contentClassName="text-xs overflow-auto">
+                  <pre>{selectedPretty}</pre>
+                </InfoBlock>
               </>
             )}
           </div>
-        </div>
+        </ListPanel>
 
-        <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
-          <div className="px-3 py-2 border-b border-zinc-800 dark:border-zinc-700 text-xs text-zinc-400 uppercase tracking-wider">{t('dashboardNodeDispatches')}</div>
+        <ListPanel>
+          <PanelHeader title={t('dashboardNodeDispatches')} />
           <div className="grid grid-cols-1 min-h-0 flex-1">
             <div className="overflow-y-auto min-h-0 border-b border-zinc-800/60 dark:border-zinc-700/60">
               {nodeItems.length === 0 ? (
-                <div className="p-4 text-sm text-zinc-500">{t('dashboardNodeDispatchesEmpty')}</div>
+                <EmptyState message={t('dashboardNodeDispatchesEmpty')} padded />
               ) : nodeItems.map((it, idx) => {
                 const active = selectedNode?.time === it.time && selectedNode?.node === it.node && selectedNode?.action === it.action;
                 return (
-                  <button
+                  <SummaryListItem
                     key={`${it.time || idx}-${it.node || idx}-${it.action || idx}`}
                     onClick={() => setSelectedNode(it)}
-                    className={`w-full text-left px-3 py-2 border-b border-zinc-800/60 transition-colors ${active ? 'bg-indigo-500/15' : ''}`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-zinc-100 truncate">{`${it.node || '-'} · ${it.action || '-'}`}</div>
-                        <div className="text-xs text-zinc-400 truncate">{it.used_transport || '-'} · {(it.duration_ms || 0)}ms · {(it.artifact_count || 0)} {t('dashboardNodeDispatchArtifacts')}</div>
-                        <div className="text-[11px] text-zinc-500 truncate">{formatLocalDateTime(it.time)}</div>
-                      </div>
-                      {active && (
-                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-300">
-                          <Check className="w-3.5 h-3.5" />
-                        </span>
-                      )}
-                    </div>
-                  </button>
+                    active={active}
+                    title={`${it.node || '-'} · ${it.action || '-'}`}
+                    subtitle={`${it.used_transport || '-'} · ${(it.duration_ms || 0)}ms · ${(it.artifact_count || 0)} ${t('dashboardNodeDispatchArtifacts')}`}
+                    meta={formatLocalDateTime(it.time)}
+                  />
                 );
               })}
             </div>
             <div className="p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
               {!selectedNode ? (
-                <div className="text-zinc-500">{t('selectTask')}</div>
+                <EmptyState message={t('selectTask')} />
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><div className="text-zinc-500 text-xs">{t('nodeP2P')}</div><div>{selectedNode.node || '-'}</div></div>
-                    <div><div className="text-zinc-500 text-xs">{t('action')}</div><div>{selectedNode.action || '-'}</div></div>
-                    <div><div className="text-zinc-500 text-xs">{t('dashboardNodeDispatchTransport')}</div><div>{selectedNode.used_transport || '-'}</div></div>
-                    <div><div className="text-zinc-500 text-xs">{t('dashboardNodeDispatchFallback')}</div><div>{selectedNode.fallback_from || '-'}</div></div>
-                    <div><div className="text-zinc-500 text-xs">{t('duration')}</div><div>{selectedNode.duration_ms || 0}ms</div></div>
-                    <div><div className="text-zinc-500 text-xs">{t('status')}</div><div>{selectedNode.ok ? 'ok' : 'error'}</div></div>
-                  </div>
+                  <DetailGrid
+                    columnsClassName="grid-cols-2"
+                    items={[
+                      { label: t('nodeP2P'), value: selectedNode.node || '-' },
+                      { label: t('action'), value: selectedNode.action || '-' },
+                      { label: t('dashboardNodeDispatchTransport'), value: selectedNode.used_transport || '-' },
+                      { label: t('dashboardNodeDispatchFallback'), value: selectedNode.fallback_from || '-' },
+                      { label: t('duration'), value: `${selectedNode.duration_ms || 0}ms` },
+                      { label: t('status'), value: selectedNode.ok ? 'ok' : 'error' },
+                    ]}
+                  />
 
-                  <div>
-                    <div className="text-zinc-500 text-xs mb-1">{t('error')}</div>
-                    <div className="ui-code-panel ui-code-danger p-2 whitespace-pre-wrap">{selectedNode.error || '-'}</div>
-                  </div>
+                  <CodeBlockPanel label={t('error')} className="" codeClassName="ui-code-danger whitespace-pre-wrap">
+                    {selectedNode.error || '-'}
+                  </CodeBlockPanel>
 
                   <div>
                     <div className="text-zinc-500 text-xs mb-1">{t('dashboardNodeDispatchArtifactPreview')}</div>
                     <div className="space-y-3">
                       {Array.isArray(selectedNode.artifacts) && selectedNode.artifacts.length > 0 ? selectedNode.artifacts.map((artifact, artifactIndex) => {
-                        const kind = String(artifact?.kind || '').trim().toLowerCase();
-                        const mime = String(artifact?.mime_type || '').trim().toLowerCase();
-                        const isImage = kind === 'image' || mime.startsWith('image/');
-                        const isVideo = kind === 'video' || mime.startsWith('video/');
                         const dataUrl = dataUrlForArtifact(artifact);
                         return (
-                          <div key={`artifact-${artifactIndex}`} className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3">
-                            <div className="text-xs font-medium text-zinc-200 truncate">{String(artifact?.name || artifact?.source_path || `artifact-${artifactIndex + 1}`)}</div>
-                            <div className="text-[11px] text-zinc-500 mt-1 truncate">
-                              {[artifact?.kind, artifact?.mime_type, formatBytes(artifact?.size_bytes)].filter(Boolean).join(' · ')}
-                            </div>
-                            <div className="mt-2">
-                              {isImage && dataUrl && <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="ui-media-surface-strong max-h-48 rounded-xl border object-contain" />}
-                              {isVideo && dataUrl && <video src={dataUrl} controls className="ui-media-surface-strong max-h-48 w-full rounded-xl border" />}
-                              {!isImage && !isVideo && String(artifact?.content_text || '').trim() !== '' && (
-                                <pre className="ui-media-surface rounded-xl border p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
-                              )}
-                              {!isImage && !isVideo && String(artifact?.content_text || '').trim() === '' && (
-                                <div className="text-[11px] text-zinc-500 break-all mt-2">{String(artifact?.source_path || artifact?.path || artifact?.url || '-')}</div>
-                              )}
-                            </div>
-                          </div>
+                          <ArtifactPreviewCard
+                            key={`artifact-${artifactIndex}`}
+                            artifact={artifact}
+                            dataUrl={dataUrl}
+                            fallbackName={`artifact-${artifactIndex + 1}`}
+                            formatBytes={formatArtifactBytes}
+                          />
                         );
                       }) : (
-                        <div className="ui-code-panel p-2 text-zinc-500">-</div>
+                        <EmptyState message="-" className="ui-code-panel p-2" />
                       )}
                     </div>
                   </div>
 
-                  <div>
-                    <div className="text-zinc-500 text-xs mb-1">{t('rawJson')}</div>
-                    <pre className="ui-code-panel p-2 text-xs overflow-auto">{JSON.stringify(selectedNode, null, 2)}</pre>
-                  </div>
+                  <CodeBlockPanel label={t('rawJson')} pre>{JSON.stringify(selectedNode, null, 2)}</CodeBlockPanel>
                 </>
               )}
             </div>
           </div>
-        </div>
+        </ListPanel>
       </div>
     </div>
   );

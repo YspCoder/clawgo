@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { FixedButton } from '../Button';
 import { CheckboxField, PanelField, SelectField, TextField, TextareaField } from '../FormControls';
 
@@ -49,9 +49,9 @@ export function GatewayIceServerRow({
         dense
         className="md:col-span-2"
       />
-      <button onClick={onRemove} className="ui-button-danger rounded-xl px-3 py-2 text-xs font-medium transition-colors">
-        {t('delete')}
-      </button>
+      <FixedButton onClick={onRemove} variant="danger" radius="lg" label={t('delete')}>
+        <Trash2 className="w-4 h-4" />
+      </FixedButton>
     </div>
   );
 }

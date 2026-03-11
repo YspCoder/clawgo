@@ -118,6 +118,7 @@ type oauthSession struct {
 	ProjectID     string         `json:"project_id,omitempty"`
 	DeviceID      string         `json:"device_id,omitempty"`
 	ResourceURL   string         `json:"resource_url,omitempty"`
+	NetworkProxy  string         `json:"network_proxy,omitempty"`
 	Scope         string         `json:"scope,omitempty"`
 	Token         map[string]any `json:"token,omitempty"`
 	CooldownUntil string         `json:"-"`
@@ -143,7 +144,6 @@ type oauthConfig struct {
 	Scopes          []string
 	RefreshScan     time.Duration
 	RefreshLead     time.Duration
-	HybridPriority  string
 	Cooldown        time.Duration
 	FlowKind        string
 	TokenStyle      string
@@ -154,7 +154,10 @@ type oauthConfig struct {
 type oauthManager struct {
 	providerName string
 	cfg          oauthConfig
+	timeout      time.Duration
 	httpClient   *http.Client
+	clientMu     sync.Mutex
+	clients      map[string]*http.Client
 	mu           sync.Mutex
 	cached       []*oauthSession
 	cooldowns    map[string]time.Time
@@ -198,6 +201,7 @@ type OAuthLoginOptions struct {
 	NoBrowser    bool
 	Reader       io.Reader
 	AccountLabel string
+	NetworkProxy string
 }
 
 type OAuthPendingFlow struct {
@@ -218,6 +222,7 @@ type OAuthSessionInfo struct {
 	CredentialFile string
 	ProjectID      string
 	AccountLabel   string
+	NetworkProxy   string
 }
 
 type OAuthAccountInfo struct {
@@ -230,6 +235,7 @@ type OAuthAccountInfo struct {
 	AccountLabel   string `json:"account_label,omitempty"`
 	DeviceID       string `json:"device_id,omitempty"`
 	ResourceURL    string `json:"resource_url,omitempty"`
+	NetworkProxy   string `json:"network_proxy,omitempty"`
 	CooldownUntil  string `json:"cooldown_until,omitempty"`
 	FailureCount   int    `json:"failure_count,omitempty"`
 	LastFailure    string `json:"last_failure,omitempty"`
@@ -277,6 +283,7 @@ func (m *OAuthLoginManager) Login(ctx context.Context, apiBase string, opts OAut
 		CredentialFile: session.FilePath,
 		ProjectID:      session.ProjectID,
 		AccountLabel:   sessionLabel(session),
+		NetworkProxy:   maskedProxyURL(session.NetworkProxy),
 	}, models, nil
 }
 
@@ -288,13 +295,20 @@ func (m *OAuthLoginManager) CredentialFile() string {
 }
 
 func (m *OAuthLoginManager) StartManualFlow() (*OAuthPendingFlow, error) {
+	return m.StartManualFlowWithOptions(OAuthLoginOptions{})
+}
+
+func (m *OAuthLoginManager) StartManualFlowWithOptions(opts OAuthLoginOptions) (*OAuthPendingFlow, error) {
 	if m == nil || m.manager == nil {
 		return nil, fmt.Errorf("oauth login manager not configured")
 	}
 	if m.manager.cfg.FlowKind == oauthFlowDevice {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		return m.manager.startDeviceFlow(ctx)
+		return m.manager.startDeviceFlow(ctx, opts)
+	}
+	if _, err := normalizeOptionalProxyURL(opts.NetworkProxy); err != nil {
+		return nil, err
 	}
 	pkceVerifier, pkceChallenge, err := generatePKCE()
 	if err != nil {
@@ -350,6 +364,7 @@ func (m *OAuthLoginManager) CompleteManualFlowWithOptions(ctx context.Context, a
 		CredentialFile: session.FilePath,
 		ProjectID:      session.ProjectID,
 		AccountLabel:   sessionLabel(session),
+		NetworkProxy:   maskedProxyURL(session.NetworkProxy),
 	}, models, nil
 }
 
@@ -371,6 +386,7 @@ func (m *OAuthLoginManager) ImportAuthJSONWithOptions(ctx context.Context, apiBa
 		CredentialFile: session.FilePath,
 		ProjectID:      session.ProjectID,
 		AccountLabel:   sessionLabel(session),
+		NetworkProxy:   maskedProxyURL(session.NetworkProxy),
 	}, models, nil
 }
 
@@ -399,6 +415,7 @@ func (m *OAuthLoginManager) ListAccounts() ([]OAuthAccountInfo, error) {
 			AccountLabel:   sessionLabel(session),
 			DeviceID:       session.DeviceID,
 			ResourceURL:    session.ResourceURL,
+			NetworkProxy:   maskedProxyURL(session.NetworkProxy),
 			CooldownUntil:  session.CooldownUntil,
 			FailureCount:   session.FailureCount,
 			LastFailure:    session.LastFailure,
@@ -436,6 +453,7 @@ func (m *OAuthLoginManager) RefreshAccount(ctx context.Context, credentialFile s
 			AccountLabel:   sessionLabel(refreshed),
 			DeviceID:       refreshed.DeviceID,
 			ResourceURL:    refreshed.ResourceURL,
+			NetworkProxy:   maskedProxyURL(refreshed.NetworkProxy),
 			CooldownUntil:  refreshed.CooldownUntil,
 			FailureCount:   refreshed.FailureCount,
 			LastFailure:    refreshed.LastFailure,
@@ -506,10 +524,16 @@ func newOAuthManager(pc config.ProviderConfig, timeout time.Duration) (*oauthMan
 	if err != nil {
 		return nil, err
 	}
+	client, err := newOAuthHTTPClient(resolved.Provider, timeout, "")
+	if err != nil {
+		return nil, err
+	}
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	manager := &oauthManager{
 		cfg:        resolved,
-		httpClient: newOAuthHTTPClient(resolved.Provider, timeout),
+		timeout:    timeout,
+		httpClient: client,
+		clients:    map[string]*http.Client{"": client},
 		cooldowns:  map[string]time.Time{},
 		bgCtx:      bgCtx,
 		bgCancel:   bgCancel,
@@ -518,11 +542,32 @@ func newOAuthManager(pc config.ProviderConfig, timeout time.Duration) (*oauthMan
 	return manager, nil
 }
 
-func newOAuthHTTPClient(provider string, timeout time.Duration) *http.Client {
-	if provider == defaultClaudeOAuthProvider {
-		return newAnthropicOAuthHTTPClient(timeout)
+func newOAuthHTTPClient(provider string, timeout time.Duration, proxyURL string) (*http.Client, error) {
+	normalizedProxy, err := normalizeOptionalProxyURL(proxyURL)
+	if err != nil {
+		return nil, err
 	}
-	return &http.Client{Timeout: timeout}
+	if provider == defaultClaudeOAuthProvider {
+		return newAnthropicOAuthHTTPClient(timeout, normalizedProxy)
+	}
+	if normalizedProxy == "" {
+		return &http.Client{Timeout: timeout}, nil
+	}
+	parsed, err := url.Parse(normalizedProxy)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyURL(parsed),
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ExpectContinueTimeout: time.Second,
+		},
+	}, nil
 }
 
 func resolveOAuthConfig(pc config.ProviderConfig) (oauthConfig, error) {
@@ -545,7 +590,6 @@ func resolveOAuthConfig(pc config.ProviderConfig) (oauthConfig, error) {
 		TokenURL:        strings.TrimSpace(pc.OAuth.TokenURL),
 		RedirectURL:     strings.TrimSpace(pc.OAuth.RedirectURL),
 		Scopes:          trimNonEmptyStrings(pc.OAuth.Scopes),
-		HybridPriority:  normalizeHybridPriority(pc.OAuth.HybridPriority),
 		Cooldown:        durationFromSeconds(pc.OAuth.CooldownSec, 15*time.Minute),
 		RefreshScan:     durationFromSeconds(pc.OAuth.RefreshScanSec, 10*time.Minute),
 		RefreshLead:     defaultRefreshLead(provider, pc.OAuth.RefreshLeadSec),
@@ -626,9 +670,6 @@ func resolveOAuthConfig(pc config.ProviderConfig) (oauthConfig, error) {
 		cfg.CredentialFiles = uniqueStrings(append([]string{cfg.CredentialFile}, cfg.CredentialFiles...))
 		cfg.CredentialFile = cfg.CredentialFiles[0]
 	}
-	if cfg.HybridPriority == "" {
-		cfg.HybridPriority = "api_first"
-	}
 	return cfg, nil
 }
 
@@ -675,7 +716,12 @@ func (m *oauthManager) models(ctx context.Context, apiBase string) ([]string, er
 	seen := map[string]struct{}{}
 	var lastErr error
 	for _, attempt := range attempts {
-		models, err := fetchOpenAIModels(ctx, m.httpClient, apiBase, attempt.Token)
+		client, err := m.httpClientForSession(attempt.Session)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		models, err := fetchOpenAIModels(ctx, client, apiBase, attempt.Token)
 		if err != nil {
 			lastErr = err
 			continue
@@ -704,7 +750,7 @@ func (m *oauthManager) login(ctx context.Context, apiBase string, opts OAuthLogi
 		return nil, nil, fmt.Errorf("oauth manager not configured")
 	}
 	if m.cfg.FlowKind == oauthFlowDevice {
-		flow, err := m.startDeviceFlow(ctx)
+		flow, err := m.startDeviceFlow(ctx, opts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -741,14 +787,18 @@ func (m *oauthManager) login(ctx context.Context, apiBase string, opts OAuthLogi
 }
 
 func (m *oauthManager) completeLogin(ctx context.Context, apiBase, pkceVerifier string, callback *oauthCallbackResult, state string, opts OAuthLoginOptions) (*oauthSession, []string, error) {
-	session, err := m.exchangeCode(ctx, callback.Code, pkceVerifier, state)
+	session, err := m.exchangeCode(ctx, callback.Code, pkceVerifier, state, opts.NetworkProxy)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := m.applyAccountLabel(session, opts); err != nil {
+	if err := m.applySessionOptions(session, opts); err != nil {
 		return nil, nil, err
 	}
-	models, _ := fetchOpenAIModels(ctx, m.httpClient, apiBase, session.AccessToken)
+	client, err := m.httpClientForSession(session)
+	if err != nil {
+		return nil, nil, err
+	}
+	models, _ := fetchOpenAIModels(ctx, client, apiBase, session.AccessToken)
 	if len(models) > 0 {
 		session.Models = append([]string(nil), models...)
 	}
@@ -788,10 +838,14 @@ func (m *oauthManager) importSession(ctx context.Context, apiBase, fileName stri
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := m.applyAccountLabel(session, opts); err != nil {
+	if err := m.applySessionOptions(session, opts); err != nil {
 		return nil, nil, err
 	}
-	models, _ := fetchOpenAIModels(ctx, m.httpClient, apiBase, session.AccessToken)
+	client, err := m.httpClientForSession(session)
+	if err != nil {
+		return nil, nil, err
+	}
+	models, _ := fetchOpenAIModels(ctx, client, apiBase, session.AccessToken)
 	if len(models) > 0 {
 		session.Models = append([]string(nil), models...)
 	}
@@ -1094,7 +1148,7 @@ func (m *oauthManager) authorizationURL(state, pkceChallenge string) string {
 	return m.cfg.AuthURL + "?" + v.Encode()
 }
 
-func (m *oauthManager) exchangeCode(ctx context.Context, code, verifier, state string) (*oauthSession, error) {
+func (m *oauthManager) exchangeCode(ctx context.Context, code, verifier, state string, proxyURL string) (*oauthSession, error) {
 	switch m.cfg.Provider {
 	case defaultClaudeOAuthProvider:
 		reqBody := map[string]any{
@@ -1105,7 +1159,7 @@ func (m *oauthManager) exchangeCode(ctx context.Context, code, verifier, state s
 			"redirect_uri":  m.cfg.RedirectURL,
 			"code_verifier": verifier,
 		}
-		raw, err := m.doJSONTokenRequest(ctx, reqBody)
+		raw, err := m.doJSONTokenRequest(ctx, reqBody, proxyURL)
 		if err != nil {
 			return nil, err
 		}
@@ -1122,7 +1176,7 @@ func (m *oauthManager) exchangeCode(ctx context.Context, code, verifier, state s
 		if m.cfg.ClientSecret != "" {
 			form.Set("client_secret", m.cfg.ClientSecret)
 		}
-		raw, err := m.doFormTokenRequest(ctx, form)
+		raw, err := m.doFormTokenRequest(ctx, form, proxyURL)
 		if err != nil {
 			return nil, err
 		}
@@ -1159,7 +1213,7 @@ func (m *oauthManager) refreshSessionData(ctx context.Context, session *oauthSes
 			"client_id":     m.cfg.ClientID,
 			"grant_type":    "refresh_token",
 			"refresh_token": session.RefreshToken,
-		})
+		}, session.NetworkProxy)
 		if err != nil {
 			return nil, err
 		}
@@ -1185,7 +1239,7 @@ func (m *oauthManager) refreshSessionData(ctx context.Context, session *oauthSes
 		if len(m.cfg.Scopes) > 0 && m.cfg.Provider != defaultQwenOAuthProvider && m.cfg.Provider != defaultKimiOAuthProvider {
 			form.Set("scope", strings.Join(m.cfg.Scopes, " "))
 		}
-		raw, err := m.doFormTokenRequest(ctx, form)
+		raw, err := m.doFormTokenRequest(ctx, form, session.NetworkProxy)
 		if err != nil {
 			return nil, err
 		}
@@ -1217,7 +1271,7 @@ func (m *oauthManager) refreshGoogleTokenSession(ctx context.Context, session *o
 	if clientSecret != "" {
 		form.Set("client_secret", clientSecret)
 	}
-	raw, err := m.doFormTokenRequestURL(ctx, tokenURL, form)
+	raw, err := m.doFormTokenRequestURL(ctx, tokenURL, form, session.NetworkProxy)
 	if err != nil {
 		return nil, err
 	}
@@ -1254,13 +1308,13 @@ func (m *oauthManager) enrichSession(ctx context.Context, session *oauthSession)
 	switch m.cfg.Provider {
 	case defaultAntigravityOAuthProvider, defaultGeminiOAuthProvider:
 		if strings.TrimSpace(session.Email) == "" && m.cfg.UserInfoURL != "" && session.AccessToken != "" {
-			email, err := m.fetchUserEmail(ctx, session.AccessToken)
+			email, err := m.fetchUserEmail(ctx, session.AccessToken, session.NetworkProxy)
 			if err == nil {
 				session.Email = email
 			}
 		}
 		if m.cfg.Provider == defaultAntigravityOAuthProvider && strings.TrimSpace(session.ProjectID) == "" && session.AccessToken != "" {
-			projectID, err := m.fetchAntigravityProjectID(ctx, session.AccessToken)
+			projectID, err := m.fetchAntigravityProjectID(ctx, session.AccessToken, session.NetworkProxy)
 			if err == nil {
 				session.ProjectID = projectID
 			}
@@ -1413,11 +1467,55 @@ func (m *oauthManager) applyAccountLabel(session *oauthSession, opts OAuthLoginO
 	return nil
 }
 
+func (m *oauthManager) applySessionOptions(session *oauthSession, opts OAuthLoginOptions) error {
+	if err := m.applyAccountLabel(session, opts); err != nil {
+		return err
+	}
+	if session == nil {
+		return fmt.Errorf("oauth session is nil")
+	}
+	proxyURL := firstNonEmpty(opts.NetworkProxy, session.NetworkProxy)
+	normalized, err := normalizeOptionalProxyURL(proxyURL)
+	if err != nil {
+		return err
+	}
+	session.NetworkProxy = normalized
+	return nil
+}
+
 func sessionLabel(session *oauthSession) string {
 	if session == nil {
 		return ""
 	}
 	return firstNonEmpty(session.Email, session.AccountID, session.ProjectID)
+}
+
+func (m *oauthManager) httpClientForSession(session *oauthSession) (*http.Client, error) {
+	if session == nil {
+		return m.httpClient, nil
+	}
+	return m.httpClientForProxy(session.NetworkProxy)
+}
+
+func (m *oauthManager) httpClientForProxy(proxyURL string) (*http.Client, error) {
+	normalized, err := normalizeOptionalProxyURL(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	if normalized == "" {
+		return m.httpClient, nil
+	}
+	m.clientMu.Lock()
+	defer m.clientMu.Unlock()
+	if client, ok := m.clients[normalized]; ok && client != nil {
+		return client, nil
+	}
+	client, err := newOAuthHTTPClient(m.cfg.Provider, m.timeout, normalized)
+	if err != nil {
+		return nil, err
+	}
+	m.clients[normalized] = client
+	return client, nil
 }
 
 func (m *oauthManager) allocateCredentialPathLocked(session *oauthSession) (string, error) {
@@ -1517,6 +1615,7 @@ func mergeOAuthSession(prev, next *oauthSession) *oauthSession {
 	merged.ProjectID = firstNonEmpty(next.ProjectID, prev.ProjectID)
 	merged.DeviceID = firstNonEmpty(next.DeviceID, prev.DeviceID)
 	merged.ResourceURL = firstNonEmpty(next.ResourceURL, prev.ResourceURL)
+	merged.NetworkProxy = firstNonEmpty(next.NetworkProxy, prev.NetworkProxy)
 	merged.Scope = firstNonEmpty(next.Scope, prev.Scope)
 	merged.Models = append([]string(nil), prev.Models...)
 	if len(next.Models) > 0 {
@@ -1828,17 +1927,6 @@ func durationFromSeconds(value int, fallback time.Duration) time.Duration {
 	return time.Duration(value) * time.Second
 }
 
-func normalizeHybridPriority(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "api_first":
-		return "api_first"
-	case "oauth_first":
-		return "oauth_first"
-	default:
-		return ""
-	}
-}
-
 func parseOAuthCallbackURL(raw string) (*oauthCallbackResult, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -1902,6 +1990,7 @@ func parseImportedOAuthSession(provider, fileName string, data []byte) (*oauthSe
 	session.ProjectID = firstNonEmpty(asString(raw["project_id"]), asString(raw["projectId"]))
 	session.DeviceID = firstNonEmpty(asString(raw["device_id"]), asString(raw["deviceId"]))
 	session.ResourceURL = asString(raw["resource_url"])
+	session.NetworkProxy = firstNonEmpty(asString(raw["network_proxy"]), asString(raw["proxy_url"]), asString(raw["http_proxy"]))
 	session.Scope = firstNonEmpty(asString(raw["scope"]), asString(raw["scopes"]))
 	if models := stringSliceFromAny(raw["models"]); len(models) > 0 {
 		session.Models = models
@@ -1916,6 +2005,7 @@ func parseImportedOAuthSession(provider, fileName string, data []byte) (*oauthSe
 		)
 		session.ProjectID = firstNonEmpty(session.ProjectID, asString(session.Token["project_id"]), asString(session.Token["projectId"]))
 		session.DeviceID = firstNonEmpty(session.DeviceID, asString(session.Token["device_id"]), asString(session.Token["deviceId"]))
+		session.NetworkProxy = firstNonEmpty(session.NetworkProxy, asString(session.Token["network_proxy"]), asString(session.Token["proxy_url"]), asString(session.Token["http_proxy"]))
 		session.Scope = firstNonEmpty(session.Scope, asString(session.Token["scope"]), asString(session.Token["scopes"]))
 	}
 	if claims := parseJWTClaims(session.IDToken); len(claims) > 0 {
@@ -2043,21 +2133,21 @@ func defaultInt(value, fallback int) int {
 	return fallback
 }
 
-func (m *oauthManager) doFormTokenRequest(ctx context.Context, form url.Values) (map[string]any, error) {
-	return m.doFormTokenRequestURL(ctx, m.cfg.TokenURL, form)
+func (m *oauthManager) doFormTokenRequest(ctx context.Context, form url.Values, proxyURL string) (map[string]any, error) {
+	return m.doFormTokenRequestURL(ctx, m.cfg.TokenURL, form, proxyURL)
 }
 
-func (m *oauthManager) doFormTokenRequestURL(ctx context.Context, endpoint string, form url.Values) (map[string]any, error) {
+func (m *oauthManager) doFormTokenRequestURL(ctx context.Context, endpoint string, form url.Values, proxyURL string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	return m.doJSONRequest(req, "oauth token request")
+	return m.doJSONRequest(req, "oauth token request", proxyURL)
 }
 
-func (m *oauthManager) doJSONTokenRequest(ctx context.Context, payload map[string]any) (map[string]any, error) {
+func (m *oauthManager) doJSONTokenRequest(ctx context.Context, payload map[string]any, proxyURL string) (map[string]any, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -2068,11 +2158,15 @@ func (m *oauthManager) doJSONTokenRequest(ctx context.Context, payload map[strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	return m.doJSONRequest(req, "oauth token request")
+	return m.doJSONRequest(req, "oauth token request", proxyURL)
 }
 
-func (m *oauthManager) doJSONRequest(req *http.Request, label string) (map[string]any, error) {
-	resp, err := m.httpClient.Do(req)
+func (m *oauthManager) doJSONRequest(req *http.Request, label, proxyURL string) (map[string]any, error) {
+	client, err := m.httpClientForProxy(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s failed: %w", label, err)
 	}
@@ -2091,13 +2185,13 @@ func (m *oauthManager) doJSONRequest(req *http.Request, label string) (map[strin
 	return raw, nil
 }
 
-func (m *oauthManager) fetchUserEmail(ctx context.Context, token string) (string, error) {
+func (m *oauthManager) fetchUserEmail(ctx context.Context, token, proxyURL string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.cfg.UserInfoURL, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
-	raw, err := m.doJSONRequest(req, "oauth userinfo request")
+	raw, err := m.doJSONRequest(req, "oauth userinfo request", proxyURL)
 	if err != nil {
 		return "", err
 	}
@@ -2108,7 +2202,7 @@ func (m *oauthManager) fetchUserEmail(ctx context.Context, token string) (string
 	return email, nil
 }
 
-func (m *oauthManager) fetchAntigravityProjectID(ctx context.Context, token string) (string, error) {
+func (m *oauthManager) fetchAntigravityProjectID(ctx context.Context, token, proxyURL string) (string, error) {
 	endpointURL := fmt.Sprintf("%s/%s:loadCodeAssist", defaultAntigravityAPIEndpoint, defaultAntigravityAPIVersion)
 	body := `{"metadata":{"ideType":"ANTIGRAVITY","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}}`
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, strings.NewReader(body))
@@ -2120,7 +2214,11 @@ func (m *oauthManager) fetchAntigravityProjectID(ctx context.Context, token stri
 	req.Header.Set("User-Agent", defaultAntigravityAPIUserAgent)
 	req.Header.Set("X-Goog-Api-Client", defaultAntigravityAPIClient)
 	req.Header.Set("Client-Metadata", defaultAntigravityClientMeta)
-	resp, err := m.httpClient.Do(req)
+	client, err := m.httpClientForProxy(proxyURL)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -2148,7 +2246,7 @@ func (m *oauthManager) fetchAntigravityProjectID(ctx context.Context, token stri
 	return projectID, nil
 }
 
-func (m *oauthManager) startDeviceFlow(ctx context.Context) (*OAuthPendingFlow, error) {
+func (m *oauthManager) startDeviceFlow(ctx context.Context, opts OAuthLoginOptions) (*OAuthPendingFlow, error) {
 	if m.cfg.FlowKind != oauthFlowDevice {
 		return nil, fmt.Errorf("oauth provider %s does not use device flow", m.cfg.Provider)
 	}
@@ -2165,7 +2263,7 @@ func (m *oauthManager) startDeviceFlow(ctx context.Context) (*OAuthPendingFlow, 
 		}
 		form.Set("code_challenge", challenge)
 		form.Set("code_challenge_method", "S256")
-		raw, err := m.doFormDeviceRequest(ctx, m.cfg.DeviceCodeURL, form)
+		raw, err := m.doFormDeviceRequest(ctx, m.cfg.DeviceCodeURL, form, opts.NetworkProxy)
 		if err != nil {
 			return nil, err
 		}
@@ -2184,7 +2282,7 @@ func (m *oauthManager) startDeviceFlow(ctx context.Context) (*OAuthPendingFlow, 
 			Instructions: "Open the verification URL, finish authorization, then click continue to let the gateway poll for tokens.",
 		}, nil
 	case defaultKimiOAuthProvider:
-		raw, err := m.doFormDeviceRequest(ctx, m.cfg.DeviceCodeURL, form)
+		raw, err := m.doFormDeviceRequest(ctx, m.cfg.DeviceCodeURL, form, opts.NetworkProxy)
 		if err != nil {
 			return nil, err
 		}
@@ -2206,7 +2304,7 @@ func (m *oauthManager) startDeviceFlow(ctx context.Context) (*OAuthPendingFlow, 
 	}
 }
 
-func (m *oauthManager) doFormDeviceRequest(ctx context.Context, endpoint string, form url.Values) (map[string]any, error) {
+func (m *oauthManager) doFormDeviceRequest(ctx context.Context, endpoint string, form url.Values, proxyURL string) (map[string]any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
@@ -2220,7 +2318,7 @@ func (m *oauthManager) doFormDeviceRequest(ctx context.Context, endpoint string,
 		req.Header.Set("X-Msh-Device-Model", runtime.GOOS+" "+runtime.GOARCH)
 		req.Header.Set("X-Msh-Device-Id", randomDeviceID())
 	}
-	return m.doJSONRequest(req, "oauth device request")
+	return m.doJSONRequest(req, "oauth device request", proxyURL)
 }
 
 func parseDeviceFlowPayload(raw map[string]any) (*oauthDeviceCodeResponse, error) {
@@ -2254,14 +2352,18 @@ func randomDeviceID() string {
 }
 
 func (m *oauthManager) completeDeviceFlow(ctx context.Context, apiBase string, flow *OAuthPendingFlow, opts OAuthLoginOptions) (*oauthSession, []string, error) {
-	session, err := m.pollDeviceToken(ctx, flow)
+	session, err := m.pollDeviceToken(ctx, flow, opts.NetworkProxy)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := m.applyAccountLabel(session, opts); err != nil {
+	if err := m.applySessionOptions(session, opts); err != nil {
 		return nil, nil, err
 	}
-	models, _ := fetchOpenAIModels(ctx, m.httpClient, apiBase, session.AccessToken)
+	client, err := m.httpClientForSession(session)
+	if err != nil {
+		return nil, nil, err
+	}
+	models, _ := fetchOpenAIModels(ctx, client, apiBase, session.AccessToken)
 	if len(models) > 0 {
 		session.Models = append([]string(nil), models...)
 	}
@@ -2281,7 +2383,7 @@ func (m *oauthManager) completeDeviceFlow(ctx context.Context, apiBase string, f
 	return session, models, nil
 }
 
-func (m *oauthManager) pollDeviceToken(ctx context.Context, flow *OAuthPendingFlow) (*oauthSession, error) {
+func (m *oauthManager) pollDeviceToken(ctx context.Context, flow *OAuthPendingFlow, proxyURL string) (*oauthSession, error) {
 	if flow == nil || strings.TrimSpace(flow.DeviceCode) == "" {
 		return nil, fmt.Errorf("oauth device flow missing device code")
 	}
@@ -2306,7 +2408,7 @@ func (m *oauthManager) pollDeviceToken(ctx context.Context, flow *OAuthPendingFl
 		if flow.PKCEVerifier != "" {
 			form.Set("code_verifier", flow.PKCEVerifier)
 		}
-		raw, err := m.doFormTokenRequest(ctx, form)
+		raw, err := m.doFormTokenRequest(ctx, form, proxyURL)
 		if err == nil {
 			session, convErr := sessionFromTokenPayload(m.cfg.Provider, raw)
 			if convErr != nil {

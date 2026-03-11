@@ -1,11 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Package, Pencil, Plus, RefreshCw, Save, Trash2, Wrench, X } from 'lucide-react';
+import { Plus, RefreshCw, Save, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import { CheckboxField, SelectField, TextField } from '../components/FormControls';
+import EmptyState from '../components/EmptyState';
+import { ModalBackdrop, ModalBody, ModalCard, ModalFooter, ModalHeader, ModalShell } from '../components/ModalFrame';
+import MCPServerCard from '../components/mcp/MCPServerCard';
+import MCPServerEditor from '../components/mcp/MCPServerEditor';
+import PageHeader from '../components/PageHeader';
+import SectionHeader from '../components/SectionHeader';
+import ToolbarRow from '../components/ToolbarRow';
+import { cloneJSON } from '../utils/object';
 
 type MCPDraftServer = {
   enabled: boolean;
@@ -34,8 +41,6 @@ const emptyDraftServer = (): MCPDraftServer => ({
   package: '',
   installer: '',
 });
-
-const cloneDeep = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 
 const MCP: React.FC = () => {
   const { t } = useTranslation();
@@ -96,7 +101,7 @@ const MCP: React.FC = () => {
       url: String(server?.url || ''),
       command: String(server?.command || ''),
       args: Array.isArray(server?.args) ? server.args.map((x: any) => String(x)) : [],
-      env: typeof server?.env === 'object' && server?.env ? cloneDeep(server.env) : {},
+      env: typeof server?.env === 'object' && server?.env ? cloneJSON(server.env) : {},
       permission: String(server?.permission || 'workspace'),
       working_dir: String(server?.working_dir || ''),
       description: String(server?.description || ''),
@@ -200,7 +205,7 @@ const MCP: React.FC = () => {
       return;
     }
 
-    const next = cloneDeep(cfg || {});
+    const next = cloneJSON(cfg || {});
     if (!next.tools || typeof next.tools !== 'object') next.tools = {};
     if (!next.tools.mcp || typeof next.tools.mcp !== 'object') {
       next.tools.mcp = { enabled: true, request_timeout_sec: 20, servers: {} };
@@ -244,7 +249,7 @@ const MCP: React.FC = () => {
     });
     if (!ok) return;
     try {
-      const next = cloneDeep(cfg || {});
+      const next = cloneJSON(cfg || {});
       if (next?.tools?.mcp?.servers && typeof next.tools.mcp.servers === 'object') {
         delete next.tools.mcp.servers[name];
       }
@@ -352,258 +357,113 @@ const MCP: React.FC = () => {
 
   return (
     <div className="p-4 md:p-8 w-full space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('mcpServices')}</h1>
-          <p className="text-sm text-zinc-500 mt-1">{t('mcpServicesHint')}</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
+      <PageHeader
+        title={t('mcpServices')}
+        subtitle={t('mcpServicesHint')}
+        actions={(
+          <ToolbarRow className="gap-3">
           <FixedButton onClick={async () => { await loadConfig(true); await refreshMCPTools(); }} label={t('reload')}>
             <RefreshCw className="w-4 h-4" />
           </FixedButton>
           <FixedButton onClick={openCreateModal} variant="primary" label={t('add')}>
             <Plus className="w-4 h-4" />
           </FixedButton>
-        </div>
-      </div>
+          </ToolbarRow>
+        )}
+      />
 
       <div className="brand-card-subtle ui-subpanel rounded-2xl p-4 space-y-4">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm font-semibold text-zinc-200">{t('configMCPServers')}</div>
-          <div className="text-xs text-zinc-500">{serverEntries.length}</div>
-        </div>
+        <SectionHeader title={t('configMCPServers')} meta={serverEntries.length} />
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {serverEntries.map(([name, server]) => {
-            const transport = String(server?.transport || 'stdio');
             const check = mcpServerChecks.find((item) => item.name === name);
             return (
-              <div key={name} className="brand-card ui-panel rounded-[24px] p-4 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="font-mono text-sm text-zinc-100">{name}</div>
-                      <span className={`ui-pill inline-flex items-center rounded-full px-2 py-0.5 text-[11px] border ${server?.enabled ? 'ui-pill-success' : 'ui-pill-neutral'}`}>
-                        {server?.enabled ? t('enable') : t('paused')}
-                      </span>
-                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-zinc-900/70 text-zinc-400 border border-zinc-800">
-                        {transport}
-                      </span>
-                    </div>
-                    <div className="text-sm text-zinc-400 break-all">
-                      {transport === 'stdio' ? String(server?.command || '-') : String(server?.url || '-')}
-                    </div>
-                    {server?.description && (
-                      <div className="text-xs text-zinc-500 line-clamp-2">{String(server.description)}</div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <FixedButton onClick={() => openEditModal(name, server)} radius="xl" label={t('edit')}>
-                      <Pencil className="w-4 h-4" />
-                    </FixedButton>
-                    <FixedButton onClick={() => removeServer(name)} variant="danger" radius="xl" label={t('delete')}>
-                      <Trash2 className="w-4 h-4" />
-                    </FixedButton>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="ui-code-panel px-3 py-2">
-                    <div className="text-zinc-500">package</div>
-                    <div className="mt-1 text-zinc-200 break-all">{String(server?.package || '-')}</div>
-                  </div>
-                  <div className="ui-code-panel px-3 py-2">
-                    <div className="text-zinc-500">args</div>
-                    <div className="mt-1 text-zinc-200">{Array.isArray(server?.args) ? server.args.length : 0}</div>
-                  </div>
-                  <div className="ui-code-panel px-3 py-2">
-                    <div className="text-zinc-500">permission</div>
-                    <div className="mt-1 text-zinc-200">{String(server?.permission || 'workspace')}</div>
-                  </div>
-                </div>
-
-                {check && check.status !== 'ok' && check.status !== 'disabled' && check.status !== 'not_applicable' && (
-                  <div className="ui-notice-warning rounded-2xl border px-3 py-2 text-xs">
-                    <div>{check.message || t('configMCPCommandMissing')}</div>
-                    {check.package && (
-                      <div className="mt-1 text-amber-300/80">{t('configMCPInstallSuggested', { pkg: check.package })}</div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <MCPServerCard
+                key={name}
+                check={check}
+                name={name}
+                onEdit={() => openEditModal(name, server)}
+                onRemove={() => removeServer(name)}
+                server={server}
+                t={t}
+              />
             );
           })}
         </div>
         {serverEntries.length === 0 && (
-          <div className="ui-subpanel rounded-[24px] border-dashed px-6 py-10 text-center text-sm text-zinc-500">
-            {t('configNoMCPServers')}
-          </div>
+          <EmptyState
+            centered
+            dashed
+            message={t('configNoMCPServers')}
+            className="ui-subpanel rounded-[24px] px-6 py-10"
+          />
         )}
       </div>
 
       <AnimatePresence>
         {modalOpen && (
           <motion.div
-            className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+            className="fixed inset-0 z-[120]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <motion.div
-              className="ui-overlay-strong absolute inset-0 backdrop-blur-sm"
-              onClick={closeModal}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            />
-            <motion.div
-              className="brand-card ui-panel relative z-[1] w-full max-w-4xl shadow-2xl overflow-hidden"
-              initial={{ opacity: 0, scale: 0.96, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 16 }}
-            >
-              <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-6 py-4 dark:border-zinc-700">
-                <div>
-                  <div className="text-lg font-semibold text-zinc-100">
-                    {editingName ? `${t('edit')} MCP` : `${t('add')} MCP`}
-                  </div>
-                  <div className="text-xs text-zinc-500 mt-1">{t('mcpServicesHint')}</div>
-                </div>
-                <FixedButton onClick={closeModal} radius="xl" label={t('close')}>
-                  <X className="w-4 h-4" />
-                </FixedButton>
-              </div>
+            <ModalShell className="z-[120]">
+              <ModalBackdrop onClick={closeModal} />
+              <motion.div
+                className="relative z-[1] w-full max-w-4xl"
+                initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              >
+                <ModalCard className="ui-panel">
+                  <ModalHeader
+                    className="px-6 py-4"
+                    title={editingName ? `${t('edit')} MCP` : `${t('add')} MCP`}
+                    subtitle={t('mcpServicesHint')}
+                    actions={
+                      <FixedButton onClick={closeModal} radius="xl" label={t('close')}>
+                        <X className="w-4 h-4" />
+                      </FixedButton>
+                    }
+                  />
 
-              <div className="max-h-[80vh] overflow-y-auto px-6 py-5 space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <label className="space-y-2">
-                    <div className="text-xs text-zinc-400">{t('configNewMCPServerName')}</div>
-                    <TextField value={draftName} onChange={(e) => setDraftName(e.target.value)} className="h-11" />
-                  </label>
-                  <label className="space-y-2">
-                    <div className="text-xs text-zinc-400">{t('configLabels.description')}</div>
-                    <TextField value={draft.description} onChange={(e) => updateDraftField('description', e.target.value)} className="h-11" />
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <label className="space-y-2">
-                    <div className="text-xs text-zinc-400">transport</div>
-                    <SelectField value={draft.transport} onChange={(e) => updateDraftField('transport', e.target.value)} className="h-11">
-                      <option value="stdio">stdio</option>
-                      <option value="http">http</option>
-                      <option value="streamable_http">streamable_http</option>
-                      <option value="sse">sse</option>
-                    </SelectField>
-                  </label>
-                  <label className="space-y-2">
-                    <div className="text-xs text-zinc-400">enabled</div>
-                    <div className="ui-toggle-card flex h-11 items-center rounded-xl px-3">
-                      <CheckboxField checked={draft.enabled} onChange={(e) => updateDraftField('enabled', e.target.checked)} />
-                    </div>
-                  </label>
-                  {draft.transport === 'stdio' && (
-                    <label className="space-y-2">
-                      <div className="text-xs text-zinc-400">permission</div>
-                      <SelectField value={draft.permission} onChange={(e) => updateDraftField('permission', e.target.value)} className="h-11">
-                        <option value="workspace">workspace</option>
-                        <option value="full">full</option>
-                      </SelectField>
-                    </label>
-                  )}
-                  {draft.transport === 'stdio' && (
-                    <label className="space-y-2">
-                      <div className="text-xs text-zinc-400">{t('configLabels.package')}</div>
-                      <TextField value={draft.package} onChange={(e) => updateDraftField('package', e.target.value)} className="h-11" />
-                    </label>
-                  )}
-                </div>
-
-                {draft.transport === 'stdio' ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <label className="space-y-2">
-                      <div className="text-xs text-zinc-400">{t('configLabels.command')}</div>
-                      <TextField value={draft.command} onChange={(e) => updateDraftField('command', e.target.value)} className="h-11" />
-                    </label>
-                    <label className="space-y-2">
-                      <div className="text-xs text-zinc-400">{t('configLabels.working_dir')}</div>
-                      <TextField value={draft.working_dir} onChange={(e) => updateDraftField('working_dir', e.target.value)} className="h-11" />
-                    </label>
-                  </div>
-                ) : (
-                  <label className="space-y-2">
-                    <div className="text-xs text-zinc-400">{t('configLabels.url')}</div>
-                    <TextField value={draft.url} onChange={(e) => updateDraftField('url', e.target.value)} className="h-11" />
-                  </label>
-                )}
-
-                {draft.transport === 'stdio' && (
-                  <div className="ui-soft-panel rounded-[24px] p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div>
-                        <div className="text-sm font-medium text-zinc-200">Args</div>
-                        <div className="text-xs text-zinc-500">{t('configMCPArgsEnterHint')}</div>
-                      </div>
-                      <Button onClick={installDraftPackage} variant="success" size="xs_tall" gap="2">
-                        <Package className="w-4 h-4" /> {t('install')}
-                      </Button>
-                    </div>
-
-                    <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto pr-1">
-                      {draft.args.map((arg, index) => (
-                        <span key={`draft-arg-${index}`} className="inline-flex max-w-full items-center gap-2 rounded-xl ui-soft-panel px-2.5 py-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
-                          <span className="font-mono break-all">{arg}</span>
-                          <button type="button" onClick={() => removeDraftArg(index)} className="shrink-0 text-zinc-400 hover:text-zinc-100">x</button>
-                        </span>
-                      ))}
-                    </div>
-                    <TextField
-                      value={draftArgInput}
-                      onChange={(e) => setDraftArgInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          addDraftArg(draftArgInput);
-                        }
-                      }}
-                      onBlur={() => addDraftArg(draftArgInput)}
-                      placeholder={t('configMCPArgsEnterHint')}
-                      className="h-11"
+                  <ModalBody className="max-h-[80vh] overflow-y-auto px-6 py-5">
+                    <MCPServerEditor
+                      activeCheck={activeCheck}
+                      addDraftArg={addDraftArg}
+                      draft={draft}
+                      draftArgInput={draftArgInput}
+                      draftName={draftName}
+                      installCheckPackage={installCheckPackage}
+                      installDraftPackage={installDraftPackage}
+                      removeDraftArg={removeDraftArg}
+                      setDraftArgInput={setDraftArgInput}
+                      setDraftName={setDraftName}
+                      t={t}
+                      updateDraftField={updateDraftField}
                     />
-                  </div>
-                )}
+                  </ModalBody>
 
-                {activeCheck && activeCheck.status !== 'ok' && activeCheck.status !== 'disabled' && activeCheck.status !== 'not_applicable' && (
-                  <div className="ui-notice-warning rounded-2xl border px-4 py-3 text-xs space-y-2">
-                    <div>{activeCheck.message || t('configMCPCommandMissing')}</div>
-                    {activeCheck.package && (
-                      <div className="text-amber-300/80">{t('configMCPInstallSuggested', { pkg: activeCheck.package })}</div>
-                    )}
-                    {activeCheck.installable && (
-                      <Button onClick={() => installCheckPackage(activeCheck)} variant="warning" size="xs_tall">
-                        <Wrench className="w-4 h-4" /> {t('install')}
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between gap-3 border-t border-zinc-800 px-6 py-4 dark:border-zinc-700">
-                <div className="text-xs text-zinc-500">
-                  {activeCheck?.resolved ? activeCheck.resolved : ''}
-                </div>
-                <div className="flex items-center gap-2">
-                  {editingName && (
-                    <Button onClick={() => removeServer(editingName)} variant="danger" gap="2">
-                      <Trash2 className="w-4 h-4" /> {t('delete')}
-                    </Button>
-                  )}
-                  <Button onClick={closeModal} size="sm">{t('cancel')}</Button>
-                  <Button onClick={saveServer} variant="primary" gap="2">
-                    <Save className="w-4 h-4" /> {t('saveChanges')}
-                  </Button>
-                </div>
-              </div>
-            </motion.div>
+                  <ModalFooter className="justify-between px-6 py-4">
+                    <div className="text-xs text-zinc-500">
+                      {activeCheck?.resolved ? activeCheck.resolved : ''}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {editingName && (
+                        <FixedButton onClick={() => removeServer(editingName)} variant="danger" label={t('delete')}>
+                          <Trash2 className="w-4 h-4" />
+                        </FixedButton>
+                      )}
+                      <Button onClick={closeModal} size="sm">{t('cancel')}</Button>
+                      <FixedButton onClick={saveServer} variant="primary" label={t('saveChanges')}>
+                        <Save className="w-4 h-4" />
+                      </FixedButton>
+                    </div>
+                  </ModalFooter>
+                </ModalCard>
+              </motion.div>
+            </ModalShell>
           </motion.div>
         )}
       </AnimatePresence>

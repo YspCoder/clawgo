@@ -4,12 +4,14 @@ import { RefreshCw, Save } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
+import PageHeader from '../components/PageHeader';
 import { ConfigDiffModal } from '../components/config/ConfigPageChrome';
 import { ProviderProxyCard, ProviderRuntimeDrawer, ProviderRuntimeSummary, ProviderRuntimeToolbar } from '../components/config/ProviderConfigSection';
 import { buildDiffRows, RuntimeWindow } from '../components/config/configUtils';
 import { useConfigProviderActions } from '../components/config/useConfigProviderActions';
 import { useConfigRuntimeView } from '../components/config/useConfigRuntimeView';
 import { useConfigSaveAction } from '../components/config/useConfigSaveAction';
+import { cloneJSON } from '../utils/object';
 
 const Providers: React.FC = () => {
   const { t } = useTranslation();
@@ -29,14 +31,10 @@ const Providers: React.FC = () => {
   const [oauthAccounts, setOAuthAccounts] = useState<Record<string, Array<any>>>({});
 
   const providerEntries = useMemo(() => {
-    const providers = ((cfg as any)?.providers || {}) as Record<string, any>;
+    const providers = (((cfg as any)?.models || {}) as any)?.providers || {};
     const entries: Array<[string, any]> = [];
-    if (providers?.proxy && typeof providers.proxy === 'object') {
-      entries.push(['proxy', providers.proxy]);
-    }
-    const custom = providers?.proxies;
-    if (custom && typeof custom === 'object' && !Array.isArray(custom)) {
-      Object.entries(custom).forEach(([name, value]) => entries.push([name, value]));
+    if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
+      Object.entries(providers).forEach(([name, value]) => entries.push([name, value]));
     }
     return entries;
   }, [cfg]);
@@ -89,7 +87,7 @@ const Providers: React.FC = () => {
 
   useEffect(() => {
     if (baseline == null && cfg && Object.keys(cfg).length > 0) {
-      setBaseline(JSON.parse(JSON.stringify(cfg)));
+      setBaseline(cloneJSON(cfg));
     }
   }, [cfg, baseline]);
 
@@ -149,18 +147,21 @@ const Providers: React.FC = () => {
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-4 flex flex-col min-h-full">
       <input ref={oauthImportInputRef} type="file" accept=".json,application/json" className="hidden" onChange={onOAuthImportChange} />
 
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="ui-text-primary text-2xl font-semibold tracking-tight">{t('providers')}</h1>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <FixedButton onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }} label={t('reload')}>
+      <PageHeader
+        title={t('providers')}
+        titleClassName="ui-text-primary"
+        actions={
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <FixedButton onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(cloneJSON(cfg)), 0); }} label={t('reload')}>
             <RefreshCw className="w-4 h-4" />
           </FixedButton>
           <Button onClick={() => setShowDiff(true)} size="sm">{t('configDiffPreview')}</Button>
-          <Button onClick={saveConfig} variant="primary" gap="2">
-            <Save className="w-4 h-4" /> {t('saveChanges')}
-          </Button>
-        </div>
-      </div>
+          <FixedButton onClick={saveConfig} variant="primary" label={t('saveChanges')}>
+            <Save className="w-4 h-4" />
+          </FixedButton>
+          </div>
+        }
+      />
 
       <div className="brand-card ui-border-subtle border rounded-[30px] p-4 md:p-6 space-y-4">
         <ProviderRuntimeToolbar

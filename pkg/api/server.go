@@ -914,8 +914,8 @@ func collectRiskyConfigPaths(oldMap, newMap map[string]interface{}) []string {
 		"channels.telegram.token",
 		"channels.telegram.allow_from",
 		"channels.telegram.allow_chats",
-		"providers.proxy.api_base",
-		"providers.proxy.api_key",
+		"models.providers.openai.api_base",
+		"models.providers.openai.api_key",
 		"gateway.token",
 		"gateway.port",
 	}
@@ -923,9 +923,9 @@ func collectRiskyConfigPaths(oldMap, newMap map[string]interface{}) []string {
 	for _, path := range paths {
 		seen[path] = true
 	}
-	for _, name := range collectProviderProxyNames(oldMap, newMap) {
+	for _, name := range collectProviderNames(oldMap, newMap) {
 		for _, field := range []string{"api_base", "api_key"} {
-			path := "providers.proxies." + name + "." + field
+			path := "models.providers." + name + "." + field
 			if !seen[path] {
 				paths = append(paths, path)
 				seen[path] = true
@@ -935,13 +935,13 @@ func collectRiskyConfigPaths(oldMap, newMap map[string]interface{}) []string {
 	return paths
 }
 
-func collectProviderProxyNames(maps ...map[string]interface{}) []string {
+func collectProviderNames(maps ...map[string]interface{}) []string {
 	seen := map[string]bool{}
 	names := make([]string, 0)
 	for _, root := range maps {
-		providers, _ := root["providers"].(map[string]interface{})
-		proxies, _ := providers["proxies"].(map[string]interface{})
-		for name := range proxies {
+		models, _ := root["models"].(map[string]interface{})
+		providers, _ := models["providers"].(map[string]interface{})
+		for name := range providers {
 			if strings.TrimSpace(name) == "" || seen[name] {
 				continue
 			}
@@ -1001,6 +1001,7 @@ func (s *Server) handleWebUIProviderOAuthStart(w http.ResponseWriter, r *http.Re
 	var body struct {
 		Provider       string                `json:"provider"`
 		AccountLabel   string                `json:"account_label"`
+		NetworkProxy   string                `json:"network_proxy"`
 		ProviderConfig cfgpkg.ProviderConfig `json:"provider_config"`
 	}
 	if r.Method == http.MethodPost {
@@ -1011,6 +1012,7 @@ func (s *Server) handleWebUIProviderOAuthStart(w http.ResponseWriter, r *http.Re
 	} else {
 		body.Provider = strings.TrimSpace(r.URL.Query().Get("provider"))
 		body.AccountLabel = strings.TrimSpace(r.URL.Query().Get("account_label"))
+		body.NetworkProxy = strings.TrimSpace(r.URL.Query().Get("network_proxy"))
 	}
 	cfg, pc, err := s.resolveProviderConfig(strings.TrimSpace(body.Provider), body.ProviderConfig)
 	if err != nil {
@@ -1027,7 +1029,10 @@ func (s *Server) handleWebUIProviderOAuthStart(w http.ResponseWriter, r *http.Re
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	flow, err := loginMgr.StartManualFlow()
+	flow, err := loginMgr.StartManualFlowWithOptions(providers.OAuthLoginOptions{
+		AccountLabel: body.AccountLabel,
+		NetworkProxy: firstNonEmptyString(strings.TrimSpace(body.NetworkProxy), strings.TrimSpace(pc.OAuth.NetworkProxy)),
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1044,6 +1049,7 @@ func (s *Server) handleWebUIProviderOAuthStart(w http.ResponseWriter, r *http.Re
 		"user_code":     flow.UserCode,
 		"instructions":  flow.Instructions,
 		"account_label": strings.TrimSpace(body.AccountLabel),
+		"network_proxy": strings.TrimSpace(body.NetworkProxy),
 	})
 }
 
@@ -1061,6 +1067,7 @@ func (s *Server) handleWebUIProviderOAuthComplete(w http.ResponseWriter, r *http
 		FlowID         string                `json:"flow_id"`
 		CallbackURL    string                `json:"callback_url"`
 		AccountLabel   string                `json:"account_label"`
+		NetworkProxy   string                `json:"network_proxy"`
 		ProviderConfig cfgpkg.ProviderConfig `json:"provider_config"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -1091,6 +1098,7 @@ func (s *Server) handleWebUIProviderOAuthComplete(w http.ResponseWriter, r *http
 	}
 	session, models, err := loginMgr.CompleteManualFlowWithOptions(r.Context(), pc.APIBase, flow, body.CallbackURL, providers.OAuthLoginOptions{
 		AccountLabel: strings.TrimSpace(body.AccountLabel),
+		NetworkProxy: firstNonEmptyString(strings.TrimSpace(body.NetworkProxy), strings.TrimSpace(pc.OAuth.NetworkProxy)),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1111,6 +1119,7 @@ func (s *Server) handleWebUIProviderOAuthComplete(w http.ResponseWriter, r *http
 		"ok":              true,
 		"account":         session.Email,
 		"credential_file": session.CredentialFile,
+		"network_proxy":   session.NetworkProxy,
 		"models":          models,
 	})
 }
@@ -1130,6 +1139,7 @@ func (s *Server) handleWebUIProviderOAuthImport(w http.ResponseWriter, r *http.R
 	}
 	providerName := strings.TrimSpace(r.FormValue("provider"))
 	accountLabel := strings.TrimSpace(r.FormValue("account_label"))
+	networkProxy := strings.TrimSpace(r.FormValue("network_proxy"))
 	inlineCfgRaw := strings.TrimSpace(r.FormValue("provider_config"))
 	var inlineCfg cfgpkg.ProviderConfig
 	if inlineCfgRaw != "" {
@@ -1165,6 +1175,7 @@ func (s *Server) handleWebUIProviderOAuthImport(w http.ResponseWriter, r *http.R
 	}
 	session, models, err := loginMgr.ImportAuthJSONWithOptions(r.Context(), pc.APIBase, header.Filename, data, providers.OAuthLoginOptions{
 		AccountLabel: accountLabel,
+		NetworkProxy: firstNonEmptyString(networkProxy, strings.TrimSpace(pc.OAuth.NetworkProxy)),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1185,6 +1196,7 @@ func (s *Server) handleWebUIProviderOAuthImport(w http.ResponseWriter, r *http.R
 		"ok":              true,
 		"account":         session.Email,
 		"credential_file": session.CredentialFile,
+		"network_proxy":   session.NetworkProxy,
 		"models":          models,
 	})
 }
@@ -1401,10 +1413,7 @@ func (s *Server) loadProviderConfig(name string) (*cfgpkg.Config, cfgpkg.Provide
 		return nil, cfgpkg.ProviderConfig{}, err
 	}
 	providerName := strings.TrimSpace(name)
-	if providerName == "" || providerName == "proxy" {
-		return cfg, cfg.Providers.Proxy, nil
-	}
-	pc, ok := cfg.Providers.Proxies[providerName]
+	pc, ok := cfg.Models.Providers[providerName]
 	if !ok {
 		return nil, cfgpkg.ProviderConfig{}, fmt.Errorf("provider %q not found", providerName)
 	}
@@ -1435,14 +1444,10 @@ func (s *Server) saveProviderConfig(cfg *cfgpkg.Config, name string, pc cfgpkg.P
 		return fmt.Errorf("config is nil")
 	}
 	providerName := strings.TrimSpace(name)
-	if providerName == "" || providerName == "proxy" {
-		cfg.Providers.Proxy = pc
-	} else {
-		if cfg.Providers.Proxies == nil {
-			cfg.Providers.Proxies = map[string]cfgpkg.ProviderConfig{}
-		}
-		cfg.Providers.Proxies[providerName] = pc
+	if cfg.Models.Providers == nil {
+		cfg.Models.Providers = map[string]cfgpkg.ProviderConfig{}
 	}
+	cfg.Models.Providers[providerName] = pc
 	if err := cfgpkg.SaveConfig(s.configPath, cfg); err != nil {
 		return err
 	}
@@ -6052,7 +6057,7 @@ func hotReloadFieldInfo() []map[string]interface{} {
 		{"path": "logging.*", "name": "Logging", "description": "Log level, persistence, and related settings"},
 		{"path": "sentinel.*", "name": "Sentinel", "description": "Health checks and auto-heal behavior"},
 		{"path": "agents.*", "name": "Agent", "description": "Models, policies, and default behavior"},
-		{"path": "providers.*", "name": "Providers", "description": "LLM providers and proxy settings"},
+		{"path": "models.providers.*", "name": "Providers", "description": "LLM provider registry and auth settings"},
 		{"path": "tools.*", "name": "Tools", "description": "Tool toggles and runtime options"},
 		{"path": "channels.*", "name": "Channels", "description": "Telegram and other channel settings"},
 		{"path": "cron.*", "name": "Cron", "description": "Global cron runtime settings"},

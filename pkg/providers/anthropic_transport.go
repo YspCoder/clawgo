@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strings"
@@ -16,16 +17,25 @@ type anthropicOAuthRoundTripper struct {
 	connections map[string]*http2.ClientConn
 	pending     map[string]*sync.Cond
 	dialer      net.Dialer
+	dialContext func(context.Context, string, string) (net.Conn, error)
 }
 
-func newAnthropicOAuthHTTPClient(timeout time.Duration) *http.Client {
+func newAnthropicOAuthHTTPClient(timeout time.Duration, proxyURL string) (*http.Client, error) {
+	rt, err := newAnthropicOAuthRoundTripper(proxyURL)
+	if err != nil {
+		return nil, err
+	}
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: newAnthropicOAuthRoundTripper(),
-	}
+		Transport: rt,
+	}, nil
 }
 
-func newAnthropicOAuthRoundTripper() *anthropicOAuthRoundTripper {
+func newAnthropicOAuthRoundTripper(proxyURL string) (*anthropicOAuthRoundTripper, error) {
+	dialContext, err := proxyDialContext(proxyURL)
+	if err != nil {
+		return nil, err
+	}
 	return &anthropicOAuthRoundTripper{
 		connections: map[string]*http2.ClientConn{},
 		pending:     map[string]*sync.Cond{},
@@ -33,7 +43,8 @@ func newAnthropicOAuthRoundTripper() *anthropicOAuthRoundTripper {
 			Timeout:   15 * time.Second,
 			KeepAlive: 30 * time.Second,
 		},
-	}
+		dialContext: dialContext,
+	}, nil
 }
 
 func (t *anthropicOAuthRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -89,7 +100,11 @@ func (t *anthropicOAuthRoundTripper) getOrCreateConnection(host, addr string) (*
 }
 
 func (t *anthropicOAuthRoundTripper) createConnection(host, addr string) (*http2.ClientConn, error) {
-	rawConn, err := t.dialer.Dial("tcp", addr)
+	dialContext := t.dialContext
+	if dialContext == nil {
+		dialContext = t.dialer.DialContext
+	}
+	rawConn, err := dialContext(context.Background(), "tcp", addr)
 	if err != nil {
 		return nil, err
 	}

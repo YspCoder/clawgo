@@ -6,6 +6,10 @@ import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
 import { CheckboxField, TextField, TextareaField } from '../components/FormControls';
+import { ModalBackdrop, ModalBody, ModalCard, ModalHeader, ModalShell } from '../components/ModalFrame';
+import PageHeader from '../components/PageHeader';
+import ToolbarRow from '../components/ToolbarRow';
+import FileListItem from '../components/FileListItem';
 
 const Skills: React.FC = () => {
   const { t } = useTranslation();
@@ -188,37 +192,42 @@ const Skills: React.FC = () => {
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
       <input ref={uploadRef} type="file" accept=".zip,.tar,.tar.gz,.tgz" className="hidden" onChange={onArchiveSelected} />
 
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('skills')}</h1>
-        <div className="flex items-center gap-2 flex-wrap w-full xl:w-auto">
-          <TextField disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 disabled:opacity-60" />
-          <Button disabled={installingSkill} onClick={installSkill} variant="success">{installingSkill ? t('loading') : t('install')}</Button>
-          <label className="flex items-center gap-2 text-xs text-zinc-400">
-            <CheckboxField
-              checked={ignoreSuspicious}
-              disabled={installingSkill}
-              onChange={(e) => setIgnoreSuspicious(e.target.checked)}
-            />
-            {t('skillsIgnoreSuspicious')}
-          </label>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className={`ui-pill text-xs px-2.5 py-1 rounded-md border font-medium ${clawhubInstalled ? 'ui-pill-success' : 'ui-pill-warning'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
-            {t('skillsClawhubStatus')}: {clawhubInstalled ? t('installed') : t('notInstalled')}
-          </div>
-          {!clawhubInstalled && (
-            <Button onClick={installClawHubIfNeeded} variant="primary" gap="2" shadow>
-              <Zap className="w-4 h-4" /> {t('skillsInstallNow')}
-            </Button>
-          )}
-          <FixedButton onClick={() => refreshSkills()} label={t('refresh')}>
-            <RefreshCw className="w-4 h-4" />
-          </FixedButton>
-          <FixedButton onClick={onAddSkillClick} variant="primary" shadow label={t('skillsAdd')}>
-            <Plus className="w-4 h-4" />
-          </FixedButton>
-        </div>
-      </div>
+      <PageHeader
+        title={t('skills')}
+        actions={
+          <ToolbarRow className="justify-end">
+            <div className={`ui-pill text-xs px-2.5 py-1 rounded-md border font-medium ${clawhubInstalled ? 'ui-pill-success' : 'ui-pill-warning'}`} title={clawhubPath || t('skillsClawhubNotFound')}>
+              {t('skillsClawhubStatus')}: {clawhubInstalled ? t('installed') : t('notInstalled')}
+            </div>
+            {!clawhubInstalled && (
+              <FixedButton onClick={installClawHubIfNeeded} variant="primary" shadow label={t('skillsInstallNow')}>
+                <Zap className="w-4 h-4" />
+              </FixedButton>
+            )}
+            <FixedButton onClick={() => refreshSkills()} label={t('refresh')}>
+              <RefreshCw className="w-4 h-4" />
+            </FixedButton>
+            <FixedButton onClick={onAddSkillClick} variant="primary" shadow label={t('skillsAdd')}>
+              <Plus className="w-4 h-4" />
+            </FixedButton>
+          </ToolbarRow>
+        }
+      />
+
+      <ToolbarRow className="w-full">
+        <TextField disabled={installingSkill} value={installName} onChange={(e) => setInstallName(e.target.value)} placeholder={t('skillsNamePlaceholder')} className="w-full sm:w-72 disabled:opacity-60" />
+        <FixedButton disabled={installingSkill} onClick={installSkill} variant="success" label={installingSkill ? t('loading') : t('install')}>
+          <Zap className="w-4 h-4" />
+        </FixedButton>
+        <label className="flex items-center gap-2 text-xs text-zinc-400">
+          <CheckboxField
+            checked={ignoreSuspicious}
+            disabled={installingSkill}
+            onChange={(e) => setIgnoreSuspicious(e.target.checked)}
+          />
+          {t('skillsIgnoreSuspicious')}
+        </label>
+      </ToolbarRow>
 
       {!clawhubInstalled && (
         <div className="rounded-2xl border border-zinc-800/80 bg-zinc-950/45 p-4 text-sm shadow-sm">
@@ -264,9 +273,9 @@ const Skills: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2 pt-4 border-t border-zinc-800/50 mt-auto">
-              <Button onClick={() => openFileManager(s.id)} variant="accent" size="xs_tall" radius="lg" gap="2" grow title={t('files')}>
-                <FileText className="w-4 h-4" /> {t('skillsFileEdit')}
-              </Button>
+              <FixedButton onClick={() => openFileManager(s.id)} variant="accent" radius="lg" label={t('skillsFileEdit')}>
+                <FileText className="w-4 h-4" />
+              </FixedButton>
               <FixedButton onClick={() => deleteSkill(s.id)} variant="danger" radius="lg" label={t('delete')}>
                 <Trash2 className="w-4 h-4" />
               </FixedButton>
@@ -277,36 +286,48 @@ const Skills: React.FC = () => {
 
       <AnimatePresence>
         {isFileModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsFileModalOpen(false)} className="ui-overlay-strong absolute inset-0 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} className="relative w-full max-w-6xl h-[80vh] bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden flex">
+          <ModalShell>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0" />
+            <ModalBackdrop onClick={() => setIsFileModalOpen(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} className="relative z-[1] w-full max-w-6xl h-[80vh]">
+              <ModalCard className="h-full rounded-3xl bg-zinc-900 flex-row">
               <aside className="w-72 border-r border-zinc-800 bg-zinc-950/60 p-3 overflow-y-auto">
                 <div className="text-sm font-semibold mb-3">{activeSkill} {t('files')}</div>
                 <div className="space-y-1">
                   {skillFiles.map(f => (
-                    <button key={f} onClick={() => openFile(activeSkill, f)} className={`w-full text-left px-2 py-1.5 rounded text-xs font-mono ${activeFile===f ? 'bg-indigo-500/20 text-indigo-200' : 'text-zinc-300 hover:bg-zinc-800'}`}>{f}</button>
+                    <FileListItem key={f} active={activeFile === f} monospace onClick={() => openFile(activeSkill, f)}>
+                      {f}
+                    </FileListItem>
                   ))}
                 </div>
               </aside>
-              <main className="flex-1 flex flex-col">
-                <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-                  <div className="text-sm text-zinc-300 font-mono truncate">{activeFile || t('noFileSelected')}</div>
-                  <div className="flex items-center gap-2">
-                    <Button onClick={saveFile} variant="success" size="xs" radius="lg" gap="1"><Save className="w-3 h-3"/>{t('save')}</Button>
-                    <FixedButton onClick={() => setIsFileModalOpen(false)} radius="full" label={t('close')}>
-                      <X className="w-4 h-4" />
-                    </FixedButton>
-                  </div>
-                </div>
-                <TextareaField
-                  value={fileContent}
-                  onChange={(e)=>setFileContent(e.target.value)}
-                  monospace
-                  className="flex-1 rounded-none border-0 bg-zinc-950 text-zinc-200 p-4 resize-none outline-none"
-                />
-              </main>
+                <main className="flex-1 flex flex-col">
+                  <ModalHeader
+                    title={activeFile || t('noFileSelected')}
+                    className="px-4 py-3"
+                    actions={
+                      <>
+                        <FixedButton onClick={saveFile} variant="success" radius="lg" label={t('save')}>
+                          <Save className="w-4 h-4" />
+                        </FixedButton>
+                        <FixedButton onClick={() => setIsFileModalOpen(false)} radius="full" label={t('close')}>
+                          <X className="w-4 h-4" />
+                        </FixedButton>
+                      </>
+                    }
+                  />
+                  <ModalBody className="flex flex-col">
+                    <TextareaField
+                      value={fileContent}
+                      onChange={(e) => setFileContent(e.target.value)}
+                      monospace
+                      className="flex-1 rounded-none border-0 bg-zinc-950 text-zinc-200 p-4 resize-none outline-none"
+                    />
+                  </ModalBody>
+                </main>
+              </ModalCard>
             </motion.div>
-          </div>
+          </ModalShell>
         )}
       </AnimatePresence>
     </div>

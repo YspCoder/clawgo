@@ -34,7 +34,7 @@ func TestValidateSubagentsAllowsKnownPeers(t *testing.T) {
 		AcceptFrom:       []string{"main"},
 		CanTalkTo:        []string{"main"},
 		Runtime: SubagentRuntimeConfig{
-			Proxy: "proxy",
+			Provider: "openai",
 		},
 	}
 
@@ -66,7 +66,7 @@ func TestValidateSubagentsRejectsAbsolutePromptFile(t *testing.T) {
 		Enabled:          true,
 		SystemPromptFile: "/tmp/AGENT.md",
 		Runtime: SubagentRuntimeConfig{
-			Proxy: "proxy",
+			Provider: "openai",
 		},
 	}
 
@@ -82,7 +82,7 @@ func TestValidateSubagentsRequiresPromptFileWhenEnabled(t *testing.T) {
 	cfg.Agents.Subagents["coder"] = SubagentConfig{
 		Enabled: true,
 		Runtime: SubagentRuntimeConfig{
-			Proxy: "proxy",
+			Provider: "openai",
 		},
 	}
 
@@ -123,7 +123,7 @@ func TestValidateSubagentsRejectsInvalidNotifyMainPolicy(t *testing.T) {
 		SystemPromptFile: "agents/coder/AGENT.md",
 		NotifyMainPolicy: "loud",
 		Runtime: SubagentRuntimeConfig{
-			Proxy: "proxy",
+			Provider: "openai",
 		},
 	}
 
@@ -276,9 +276,11 @@ func TestValidateProviderOAuthAllowsEmptyModelsBeforeLogin(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	cfg.Providers.Proxy.Auth = "oauth"
-	cfg.Providers.Proxy.Models = nil
-	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{Provider: "codex"}
+	pc := cfg.Models.Providers["openai"]
+	pc.Auth = "oauth"
+	pc.Models = nil
+	pc.OAuth = ProviderOAuthConfig{Provider: "codex"}
+	cfg.Models.Providers["openai"] = pc
 
 	if errs := Validate(cfg); len(errs) != 0 {
 		t.Fatalf("expected oauth provider config to be valid before model sync, got %v", errs)
@@ -289,9 +291,11 @@ func TestValidateProviderOAuthRequiresProviderName(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	cfg.Providers.Proxy.Auth = "oauth"
-	cfg.Providers.Proxy.Models = nil
-	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{}
+	pc := cfg.Models.Providers["openai"]
+	pc.Auth = "oauth"
+	pc.Models = nil
+	pc.OAuth = ProviderOAuthConfig{}
+	cfg.Models.Providers["openai"] = pc
 
 	errs := Validate(cfg)
 	if len(errs) == 0 {
@@ -299,7 +303,7 @@ func TestValidateProviderOAuthRequiresProviderName(t *testing.T) {
 	}
 	found := false
 	for _, err := range errs {
-		if strings.Contains(err.Error(), "providers.proxy.oauth.provider") {
+		if strings.Contains(err.Error(), "models.providers.openai.oauth.provider") {
 			found = true
 			break
 		}
@@ -313,10 +317,12 @@ func TestValidateProviderHybridAllowsEmptyModels(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	cfg.Providers.Proxy.Auth = "hybrid"
-	cfg.Providers.Proxy.APIKey = "sk-test"
-	cfg.Providers.Proxy.Models = nil
-	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{Provider: "codex"}
+	pc := cfg.Models.Providers["openai"]
+	pc.Auth = "hybrid"
+	pc.APIKey = "sk-test"
+	pc.Models = nil
+	pc.OAuth = ProviderOAuthConfig{Provider: "codex"}
+	cfg.Models.Providers["openai"] = pc
 
 	if errs := Validate(cfg); len(errs) != 0 {
 		t.Fatalf("expected hybrid provider config to be valid before model sync, got %v", errs)
@@ -327,10 +333,12 @@ func TestValidateProviderHybridRequiresOAuthProvider(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	cfg.Providers.Proxy.Auth = "hybrid"
-	cfg.Providers.Proxy.APIKey = "sk-test"
-	cfg.Providers.Proxy.Models = nil
-	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{}
+	pc := cfg.Models.Providers["openai"]
+	pc.Auth = "hybrid"
+	pc.APIKey = "sk-test"
+	pc.Models = nil
+	pc.OAuth = ProviderOAuthConfig{}
+	cfg.Models.Providers["openai"] = pc
 
 	errs := Validate(cfg)
 	if len(errs) == 0 {
@@ -338,39 +346,12 @@ func TestValidateProviderHybridRequiresOAuthProvider(t *testing.T) {
 	}
 	found := false
 	for _, err := range errs {
-		if strings.Contains(err.Error(), "providers.proxy.oauth.provider") {
+		if strings.Contains(err.Error(), "models.providers.openai.oauth.provider") {
 			found = true
 			break
 		}
 	}
 	if !found {
 		t.Fatalf("expected oauth.provider validation error, got %v", errs)
-	}
-}
-
-func TestValidateProviderHybridPriorityRejectsInvalidValue(t *testing.T) {
-	t.Parallel()
-
-	cfg := DefaultConfig()
-	cfg.Providers.Proxy.Auth = "hybrid"
-	cfg.Providers.Proxy.APIKey = "sk-test"
-	cfg.Providers.Proxy.OAuth = ProviderOAuthConfig{
-		Provider:       "codex",
-		HybridPriority: "random_first",
-	}
-
-	errs := Validate(cfg)
-	if len(errs) == 0 {
-		t.Fatalf("expected validation errors")
-	}
-	found := false
-	for _, err := range errs {
-		if strings.Contains(err.Error(), "oauth.hybrid_priority") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected oauth.hybrid_priority validation error, got %v", errs)
 	}
 }

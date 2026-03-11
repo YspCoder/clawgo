@@ -2,31 +2,17 @@ import React, { useMemo } from 'react';
 import { RefreshCw, Activity, MessageSquare, Wrench, Sparkles, AlertTriangle, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
+import ArtifactPreviewCard from '../components/ArtifactPreviewCard';
 import StatCard from '../components/StatCard';
 import { FixedButton } from '../components/Button';
-
-function formatRuntimeTime(value: unknown) {
-  const raw = String(value || '').trim();
-  if (!raw || raw === '0001-01-01T00:00:00Z') return '-';
-  const ts = Date.parse(raw);
-  if (Number.isNaN(ts)) return raw;
-  return new Date(ts).toLocaleString();
-}
-
-function dataUrlForArtifact(artifact: any) {
-  const mime = String(artifact?.mime_type || '').trim() || 'application/octet-stream';
-  const content = String(artifact?.content_base64 || '').trim();
-  if (!content) return '';
-  return `data:${mime};base64,${content}`;
-}
-
-function formatBytes(value: unknown) {
-  const size = Number(value || 0);
-  if (!Number.isFinite(size) || size <= 0) return '-';
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
+import DetailGrid from '../components/DetailGrid';
+import InfoTile from '../components/InfoTile';
+import InsetCard from '../components/InsetCard';
+import MetricPanel from '../components/MetricPanel';
+import PageHeader from '../components/PageHeader';
+import SectionPanel from '../components/SectionPanel';
+import { dataUrlForArtifact, formatArtifactBytes } from '../utils/artifacts';
+import { formatRuntimeTime } from '../utils/runtime';
 
 const Dashboard: React.FC = () => {
   const { t } = useTranslation();
@@ -114,19 +100,21 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{t('dashboard')}</h1>
-          <div className="mt-2 text-sm text-zinc-500">
+      <PageHeader
+        title={t('dashboard')}
+        subtitle={
+          <>
             {t('gateway')}: <span className="font-mono text-zinc-300">{gatewayVersion}</span>
             {' · '}
             {t('webui')}: <span className="font-mono text-zinc-300">{webuiVersion}</span>
-          </div>
-        </div>
-        <FixedButton onClick={refreshAll} variant="primary" noShrink label={t('refreshAll')}>
-          <RefreshCw className="w-4 h-4" />
-        </FixedButton>
-      </div>
+          </>
+        }
+        actions={
+          <FixedButton onClick={refreshAll} variant="primary" noShrink label={t('refreshAll')}>
+            <RefreshCw className="w-4 h-4" />
+          </FixedButton>
+        }
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
         <StatCard title={t('gatewayStatus')} value={isGatewayOnline ? t('online') : t('offline')} icon={<Activity className={`w-6 h-6 ${isGatewayOnline ? 'ui-icon-success' : 'ui-text-danger'}`} />} />
@@ -138,70 +126,54 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="brand-card ui-border-subtle rounded-[28px] border p-5 min-h-[148px]">
-          <div className="ui-text-secondary flex items-center gap-2 mb-2">
-            <AlertTriangle className="ui-icon-warning w-4 h-4" />
-            <div className="text-sm font-medium">{t('ekgEscalations')}</div>
-          </div>
-          <div className="ui-text-primary text-3xl font-semibold">{ekgEscalationCount}</div>
-          <div className="ui-text-muted mt-2 text-xs">{t('dashboardTopErrorSignature')}: {ekgTopErrSig}</div>
-        </div>
-        <div className="brand-card ui-border-subtle rounded-[28px] border p-5 min-h-[148px]">
-          <div className="ui-text-secondary flex items-center gap-2 mb-2">
-            <Sparkles className="ui-icon-info w-4 h-4" />
-            <div className="text-sm font-medium">{t('ekgTopProvidersWorkload')}</div>
-          </div>
-          <div className="ui-text-primary text-2xl font-semibold truncate">{ekgTopProvider}</div>
-          <div className="ui-text-muted mt-2 text-xs">{t('dashboardWorkloadSnapshot')}</div>
-        </div>
-        <div className="brand-card ui-border-subtle rounded-[28px] border p-5 min-h-[148px]">
-          <div className="ui-text-secondary flex items-center gap-2 mb-2">
-            <Activity className="ui-text-danger w-4 h-4" />
-            <div className="text-sm font-medium">{t('taskAudit')}</div>
-          </div>
-          <div className="ui-text-primary text-3xl font-semibold">{recentFailures.length}</div>
-          <div className="ui-text-muted mt-2 text-xs">{t('dashboardRecentFailedTasks')}</div>
-        </div>
+        <MetricPanel
+          icon={<AlertTriangle className="ui-icon-warning w-4 h-4" />}
+          subtitle={`${t('dashboardTopErrorSignature')}: ${ekgTopErrSig}`}
+          title={t('ekgEscalations')}
+          value={ekgEscalationCount}
+        />
+        <MetricPanel
+          icon={<Sparkles className="ui-icon-info w-4 h-4" />}
+          subtitle={t('dashboardWorkloadSnapshot')}
+          title={t('ekgTopProvidersWorkload')}
+          value={ekgTopProvider}
+          valueClassName="ui-text-primary text-2xl font-semibold truncate"
+        />
+        <MetricPanel
+          icon={<Activity className="ui-text-danger w-4 h-4" />}
+          subtitle={t('dashboardRecentFailedTasks')}
+          title={t('taskAudit')}
+          value={recentFailures.length}
+        />
       </div>
 
-      <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6">
-        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-          <div>
-            <div className="flex items-center gap-2 text-zinc-200">
-              <Activity className="w-5 h-5 text-zinc-400" />
-              <h2 className="text-lg font-medium">{t('nodeArtifactsRetention')}</h2>
-            </div>
-            <div className="text-xs text-zinc-500 mt-1">{t('nodeArtifactsRetentionHint')}</div>
-          </div>
+      <SectionPanel
+        title={t('nodeArtifactsRetention')}
+        subtitle={t('nodeArtifactsRetentionHint')}
+        icon={<Activity className="w-5 h-5 text-zinc-400" />}
+        actions={
           <div className={`ui-pill rounded-full px-2.5 py-1 text-[11px] font-medium ${artifactRetentionEnabled ? 'ui-pill-success' : 'ui-pill-neutral'}`}>
             {artifactRetentionEnabled ? t('enabled') : t('disabled')}
           </div>
-        </div>
+        }
+      >
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-          <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
-            <div className="text-zinc-400 text-xs">{t('nodeArtifactsRetentionPruned')}</div>
-            <div className="mt-2 text-xl font-semibold text-zinc-100">{artifactRetentionPruned}</div>
-          </div>
-          <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
-            <div className="text-zinc-400 text-xs">{t('nodeArtifactsRetentionRemaining')}</div>
-            <div className="mt-2 text-xl font-semibold text-zinc-100">{artifactRetentionRemaining}</div>
-          </div>
-          <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
-            <div className="text-zinc-400 text-xs">{t('nodeArtifactsRetentionKeepLatest')}</div>
-            <div className="mt-2 text-xl font-semibold text-zinc-100">{Number(nodeArtifactRetention?.keep_latest || 0) || '-'}</div>
-          </div>
-          <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
-            <div className="text-zinc-400 text-xs">{t('time')}</div>
-            <div className="mt-2 text-sm font-medium text-zinc-100">{artifactRetentionLastRun}</div>
-          </div>
+          <InfoTile label={t('nodeArtifactsRetentionPruned')} className="brand-card-subtle rounded-2xl border border-zinc-800" contentClassName="text-xl font-semibold text-zinc-100">
+            {artifactRetentionPruned}
+          </InfoTile>
+          <InfoTile label={t('nodeArtifactsRetentionRemaining')} className="brand-card-subtle rounded-2xl border border-zinc-800" contentClassName="text-xl font-semibold text-zinc-100">
+            {artifactRetentionRemaining}
+          </InfoTile>
+          <InfoTile label={t('nodeArtifactsRetentionKeepLatest')} className="brand-card-subtle rounded-2xl border border-zinc-800" contentClassName="text-xl font-semibold text-zinc-100">
+            {Number(nodeArtifactRetention?.keep_latest || 0) || '-'}
+          </InfoTile>
+          <InfoTile label={t('time')} className="brand-card-subtle rounded-2xl border border-zinc-800" contentClassName="text-sm font-medium text-zinc-100">
+            {artifactRetentionLastRun}
+          </InfoTile>
         </div>
-      </div>
+      </SectionPanel>
 
-      <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6">
-        <div className="flex items-center gap-2 mb-5 text-zinc-200">
-          <AlertTriangle className="w-5 h-5 text-amber-400" />
-          <h2 className="text-lg font-medium">{t('nodeAlerts')}</h2>
-        </div>
+      <SectionPanel title={t('nodeAlerts')} icon={<AlertTriangle className="w-5 h-5 text-amber-400" />}>
         {topNodeAlerts.length === 0 ? (
           <div className="text-sm text-zinc-500 text-center py-8">{t('nodeAlertsEmpty')}</div>
         ) : (
@@ -209,7 +181,7 @@ const Dashboard: React.FC = () => {
             {topNodeAlerts.map((alert: any, index: number) => {
               const severity = String(alert?.severity || 'warning');
               return (
-                <div key={`${alert?.node || 'node'}-${alert?.kind || index}-${index}`} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+                <InsetCard key={`${alert?.node || 'node'}-${alert?.kind || index}-${index}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-zinc-100 truncate">{String(alert?.title || '-')}</div>
@@ -220,24 +192,20 @@ const Dashboard: React.FC = () => {
                     </div>
                   </div>
                   <div className="mt-3 text-xs text-zinc-300 whitespace-pre-wrap break-words">{String(alert?.detail || '-')}</div>
-                </div>
+                </InsetCard>
               );
             })}
           </div>
         )}
-      </div>
+      </SectionPanel>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-        <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6 min-h-[340px] h-full">
-          <div className="flex items-center gap-2 mb-5 text-zinc-200">
-            <Activity className="w-5 h-5 text-zinc-400" />
-            <h2 className="text-lg font-medium">{t('taskAudit')}</h2>
-          </div>
+        <SectionPanel title={t('taskAudit')} icon={<Activity className="w-5 h-5 text-zinc-400" />} className="min-h-[340px] h-full">
           <div className="space-y-3">
             {recentTasks.length === 0 ? (
               <div className="text-sm text-zinc-500 text-center py-10">-</div>
             ) : recentTasks.map((task: any, index: number) => (
-              <div key={`${task.task_id || 'task'}-${index}`} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+              <InsetCard key={`${task.task_id || 'task'}-${index}`}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-zinc-200 truncate">{task.task_id || `task-${index + 1}`}</div>
@@ -247,48 +215,32 @@ const Dashboard: React.FC = () => {
                     {task.status || '-'}
                   </div>
                 </div>
-              </div>
+              </InsetCard>
             ))}
           </div>
-        </div>
+        </SectionPanel>
 
-        <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6 min-h-[340px] h-full">
-          <div className="flex items-center gap-2 mb-5 text-zinc-200">
-            <Workflow className="w-5 h-5 text-zinc-400" />
-            <h2 className="text-lg font-medium">{t('nodeP2P')}</h2>
-          </div>
+        <SectionPanel title={t('nodeP2P')} icon={<Workflow className="w-5 h-5 text-zinc-400" />} className="min-h-[340px] h-full">
           <div className="space-y-3">
-            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
-              <div className="text-sm font-medium text-zinc-200">{t('dashboardNodeP2PTransport')}</div>
-              <div className="text-xs text-zinc-500 mt-1">{p2pTransport}</div>
-            </div>
-            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
-              <div className="text-sm font-medium text-zinc-200">{t('dashboardNodeP2PIce')}</div>
-              <div className="text-xs text-zinc-500 mt-1">{`${p2pConfiguredIce} ICE · ${p2pConfiguredStun} STUN`}</div>
-            </div>
-            <div className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
-              <div className="text-sm font-medium text-zinc-200">{t('dashboardNodeP2PHealth')}</div>
-              <div className="text-xs text-zinc-500 mt-1">{t('dashboardNodeP2PDetail', { transport: p2pTransport, sessions: p2pSessions, retries: p2pRetryCount })}</div>
-            </div>
+            <InfoTile label={t('dashboardNodeP2PTransport')} className="brand-card-subtle rounded-2xl border border-zinc-800" labelClassName="text-sm font-medium text-zinc-200 normal-case tracking-normal" contentClassName="text-xs text-zinc-500 mt-1">
+              {p2pTransport}
+            </InfoTile>
+            <InfoTile label={t('dashboardNodeP2PIce')} className="brand-card-subtle rounded-2xl border border-zinc-800" labelClassName="text-sm font-medium text-zinc-200 normal-case tracking-normal" contentClassName="text-xs text-zinc-500 mt-1">
+              {`${p2pConfiguredIce} ICE · ${p2pConfiguredStun} STUN`}
+            </InfoTile>
+            <InfoTile label={t('dashboardNodeP2PHealth')} className="brand-card-subtle rounded-2xl border border-zinc-800" labelClassName="text-sm font-medium text-zinc-200 normal-case tracking-normal" contentClassName="text-xs text-zinc-500 mt-1">
+              {t('dashboardNodeP2PDetail', { transport: p2pTransport, sessions: p2pSessions, retries: p2pRetryCount })}
+            </InfoTile>
           </div>
-        </div>
+        </SectionPanel>
       </div>
 
-      <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6">
-        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-          <div>
-            <div className="flex items-center gap-2 text-zinc-200">
-              <Workflow className="w-5 h-5 text-zinc-400" />
-              <h2 className="text-lg font-medium">{t('dashboardNodeP2PSessions')}</h2>
-            </div>
-            <div className="text-xs text-zinc-500 mt-1">
-              {t('dashboardNodeP2PDetail', { transport: p2pTransport, sessions: p2pSessions, retries: p2pRetryCount })}
-            </div>
-          </div>
-          <div className="text-xs text-zinc-500">
-            {`${p2pConfiguredIce} ICE · ${p2pConfiguredStun} STUN`}
-          </div>
-        </div>
+      <SectionPanel
+        title={t('dashboardNodeP2PSessions')}
+        subtitle={t('dashboardNodeP2PDetail', { transport: p2pTransport, sessions: p2pSessions, retries: p2pRetryCount })}
+        icon={<Workflow className="w-5 h-5 text-zinc-400" />}
+        actions={`${p2pConfiguredIce} ICE · ${p2pConfiguredStun} STUN`}
+      >
         {p2pNodeSessions.length === 0 ? (
           <div className="text-sm text-zinc-500 text-center py-8">{t('dashboardNodeP2PSessionsEmpty')}</div>
         ) : (
@@ -297,7 +249,7 @@ const Dashboard: React.FC = () => {
               const isOpen = session.status.toLowerCase() === 'open';
               const isConnecting = session.status.toLowerCase() === 'connecting';
               return (
-                <div key={session.node} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+                <InsetCard key={session.node}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-zinc-100 truncate">{session.node}</div>
@@ -305,53 +257,58 @@ const Dashboard: React.FC = () => {
                         {t('dashboardNodeP2PSessionCreated')}: {session.createdAt}
                       </div>
                     </div>
-                    <div className={`ui-pill shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${isOpen ? 'ui-pill-success' : isConnecting ? 'ui-pill-warning' : 'ui-pill-danger'}`}>
-                      {session.status}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 text-xs">
-                    <div>
-                      <div className="text-zinc-400">{t('dashboardNodeP2PSessionRetries')}</div>
-                      <div className="text-zinc-200 mt-1">{session.retryCount}</div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-400">{t('dashboardNodeP2PSessionReady')}</div>
-                      <div className="text-zinc-200 mt-1">{session.lastReadyAt}</div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-400">{t('dashboardNodeP2PSessionAttempt')}</div>
-                      <div className="text-zinc-200 mt-1">{session.lastAttempt}</div>
-                    </div>
-                    <div>
-                      <div className="text-zinc-400">{t('dashboardNodeP2PSessionError')}</div>
-                      <div className={`mt-1 break-all ${session.lastError ? 'text-rose-300' : 'text-zinc-500'}`}>
-                        {session.lastError || '-'}
-                      </div>
-                    </div>
+                  <div className={`ui-pill shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${isOpen ? 'ui-pill-success' : isConnecting ? 'ui-pill-warning' : 'ui-pill-danger'}`}>
+                    {session.status}
                   </div>
                 </div>
+                  <DetailGrid
+                    className="mt-4 text-xs"
+                    columnsClassName="grid-cols-1 md:grid-cols-2"
+                    items={[
+                      {
+                        key: 'retry',
+                        label: t('dashboardNodeP2PSessionRetries'),
+                        value: session.retryCount,
+                        valueClassName: 'text-zinc-200 mt-1',
+                      },
+                      {
+                        key: 'ready',
+                        label: t('dashboardNodeP2PSessionReady'),
+                        value: session.lastReadyAt,
+                        valueClassName: 'text-zinc-200 mt-1',
+                      },
+                      {
+                        key: 'attempt',
+                        label: t('dashboardNodeP2PSessionAttempt'),
+                        value: session.lastAttempt,
+                        valueClassName: 'text-zinc-200 mt-1',
+                      },
+                      {
+                        key: 'error',
+                        label: t('dashboardNodeP2PSessionError'),
+                        value: session.lastError || '-',
+                        valueClassName: `mt-1 break-all ${session.lastError ? 'text-rose-300' : 'text-zinc-500'}`,
+                      },
+                    ]}
+                  />
+                </InsetCard>
               );
             })}
           </div>
         )}
-      </div>
+      </SectionPanel>
 
-      <div className="brand-card rounded-[30px] border border-zinc-800/80 p-6">
-        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-          <div>
-            <div className="flex items-center gap-2 text-zinc-200">
-              <Activity className="w-5 h-5 text-zinc-400" />
-              <h2 className="text-lg font-medium">{t('dashboardNodeDispatches')}</h2>
-            </div>
-            <div className="text-xs text-zinc-500 mt-1">{t('dashboardNodeDispatchesHint')}</div>
-          </div>
-        </div>
+      <SectionPanel
+        title={t('dashboardNodeDispatches')}
+        subtitle={t('dashboardNodeDispatchesHint')}
+        icon={<Activity className="w-5 h-5 text-zinc-400" />}
+      >
         {recentNodeDispatches.length === 0 ? (
           <div className="text-sm text-zinc-500 text-center py-8">{t('dashboardNodeDispatchesEmpty')}</div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {recentNodeDispatches.map((item) => (
-              <div key={item.id} className="brand-card-subtle rounded-2xl border border-zinc-800 p-4">
+              <InsetCard key={item.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-zinc-100 truncate">{`${item.node} · ${item.action}`}</div>
@@ -361,76 +318,64 @@ const Dashboard: React.FC = () => {
                     {item.ok ? 'ok' : 'error'}
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 text-xs">
-                  <div>
-                    <div className="text-zinc-400">{t('dashboardNodeDispatchTransport')}</div>
-                    <div className="text-zinc-200 mt-1">{item.usedTransport}</div>
-                  </div>
-                  <div>
-                    <div className="text-zinc-400">{t('dashboardNodeDispatchFallback')}</div>
-                    <div className="text-zinc-200 mt-1">{item.fallbackFrom || '-'}</div>
-                  </div>
-                  <div>
-                    <div className="text-zinc-400">{t('dashboardNodeDispatchDuration')}</div>
-                    <div className="text-zinc-200 mt-1">{`${item.durationMs}ms`}</div>
-                  </div>
-                  <div>
-                    <div className="text-zinc-400">{t('dashboardNodeDispatchArtifacts')}</div>
-                    <div className="text-zinc-200 mt-1">
-                      {item.artifactCount > 0 ? `${item.artifactCount}${item.artifactKinds.length ? ` · ${item.artifactKinds.join(', ')}` : ''}` : '-'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-zinc-400">{t('dashboardNodeDispatchError')}</div>
-                    <div className={`mt-1 break-all ${item.error ? 'text-rose-300' : 'text-zinc-500'}`}>
-                      {item.error || '-'}
-                    </div>
-                  </div>
-                </div>
+                <DetailGrid
+                  className="mt-4 text-xs"
+                  columnsClassName="grid-cols-1 md:grid-cols-2"
+                  items={[
+                    {
+                      key: 'transport',
+                      label: t('dashboardNodeDispatchTransport'),
+                      value: item.usedTransport,
+                      valueClassName: 'text-zinc-200 mt-1',
+                    },
+                    {
+                      key: 'fallback',
+                      label: t('dashboardNodeDispatchFallback'),
+                      value: item.fallbackFrom || '-',
+                      valueClassName: 'text-zinc-200 mt-1',
+                    },
+                    {
+                      key: 'duration',
+                      label: t('dashboardNodeDispatchDuration'),
+                      value: `${item.durationMs}ms`,
+                      valueClassName: 'text-zinc-200 mt-1',
+                    },
+                    {
+                      key: 'artifacts',
+                      label: t('dashboardNodeDispatchArtifacts'),
+                      value: item.artifactCount > 0 ? `${item.artifactCount}${item.artifactKinds.length ? ` · ${item.artifactKinds.join(', ')}` : ''}` : '-',
+                      valueClassName: 'text-zinc-200 mt-1',
+                    },
+                    {
+                      key: 'error',
+                      label: t('dashboardNodeDispatchError'),
+                      value: item.error || '-',
+                      valueClassName: `mt-1 break-all ${item.error ? 'text-rose-300' : 'text-zinc-500'}`,
+                    },
+                  ]}
+                />
                 {item.artifacts.length > 0 && (
                   <div className="mt-4 space-y-3">
                     <div className="text-zinc-400 text-xs">{t('dashboardNodeDispatchArtifactPreview')}</div>
                     {item.artifacts.slice(0, 2).map((artifact: any, artifactIndex: number) => {
-                      const kind = String(artifact?.kind || '').trim().toLowerCase();
-                      const mime = String(artifact?.mime_type || '').trim().toLowerCase();
-                      const isImage = kind === 'image' || mime.startsWith('image/');
-                      const isVideo = kind === 'video' || mime.startsWith('video/');
                       const dataUrl = dataUrlForArtifact(artifact);
                       return (
-                        <div key={`${item.id}-artifact-${artifactIndex}`} className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3">
-                          <div className="flex items-center justify-between gap-3 mb-2">
-                            <div className="min-w-0">
-                              <div className="text-xs font-medium text-zinc-200 truncate">{String(artifact?.name || artifact?.source_path || `artifact-${artifactIndex + 1}`)}</div>
-                              <div className="text-[11px] text-zinc-500 truncate">
-                                {[artifact?.kind, artifact?.mime_type, formatBytes(artifact?.size_bytes)].filter(Boolean).join(' · ')}
-                              </div>
-                            </div>
-                            <div className="text-[11px] text-zinc-500">{String(artifact?.storage || '-')}</div>
-                          </div>
-                          {isImage && dataUrl && (
-                            <img src={dataUrl} alt={String(artifact?.name || 'artifact')} className="ui-media-surface-strong max-h-48 rounded-xl border object-contain" />
-                          )}
-                          {isVideo && dataUrl && (
-                            <video src={dataUrl} controls className="ui-media-surface-strong max-h-48 w-full rounded-xl border" />
-                          )}
-                          {!isImage && !isVideo && String(artifact?.content_text || '').trim() !== '' && (
-                            <pre className="ui-media-surface rounded-xl border p-3 text-[11px] text-zinc-300 whitespace-pre-wrap overflow-auto max-h-48">{String(artifact?.content_text || '')}</pre>
-                          )}
-                          {!isImage && !isVideo && String(artifact?.content_text || '').trim() === '' && (
-                            <div className="text-[11px] text-zinc-500 break-all">
-                              {String(artifact?.source_path || artifact?.path || artifact?.url || '-')}
-                            </div>
-                          )}
-                        </div>
+                        <ArtifactPreviewCard
+                          key={`${item.id}-artifact-${artifactIndex}`}
+                          artifact={artifact}
+                          dataUrl={dataUrl}
+                          fallbackName={`artifact-${artifactIndex + 1}`}
+                          formatBytes={formatArtifactBytes}
+                        />
                       );
                     })}
                   </div>
                 )}
-              </div>
+              </InsetCard>
             ))}
           </div>
         )}
-      </div>
+      </SectionPanel>
     </div>
   );
 };

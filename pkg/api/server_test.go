@@ -248,16 +248,20 @@ func TestHandleWebUIConfigRequiresConfirmForProviderAPIBaseChange(t *testing.T) 
 
 	cfg := cfgpkg.DefaultConfig()
 	cfg.Logging.Enabled = false
-	cfg.Providers.Proxy.APIBase = "https://old.example/v1"
-	cfg.Providers.Proxy.APIKey = "test-key"
+	pc := cfg.Models.Providers["openai"]
+	pc.APIBase = "https://old.example/v1"
+	pc.APIKey = "test-key"
+	cfg.Models.Providers["openai"] = pc
 	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("save config: %v", err)
 	}
 
 	bodyCfg := cfgpkg.DefaultConfig()
 	bodyCfg.Logging.Enabled = false
-	bodyCfg.Providers.Proxy.APIBase = "https://new.example/v1"
-	bodyCfg.Providers.Proxy.APIKey = "test-key"
+	bodyPC := bodyCfg.Models.Providers["openai"]
+	bodyPC.APIBase = "https://new.example/v1"
+	bodyPC.APIKey = "test-key"
+	bodyCfg.Models.Providers["openai"] = bodyPC
 	body, err := json.Marshal(bodyCfg)
 	if err != nil {
 		t.Fatalf("marshal body: %v", err)
@@ -278,8 +282,8 @@ func TestHandleWebUIConfigRequiresConfirmForProviderAPIBaseChange(t *testing.T) 
 	if !strings.Contains(rec.Body.String(), `"requires_confirm":true`) {
 		t.Fatalf("expected requires_confirm response, got: %s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `providers.proxy.api_base`) {
-		t.Fatalf("expected providers.proxy.api_base in changed_fields, got: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `models.providers.openai.api_base`) {
+		t.Fatalf("expected models.providers.openai.api_base in changed_fields, got: %s", rec.Body.String())
 	}
 }
 
@@ -291,7 +295,7 @@ func TestHandleWebUIConfigRequiresConfirmForCustomProviderSecretChange(t *testin
 
 	cfg := cfgpkg.DefaultConfig()
 	cfg.Logging.Enabled = false
-	cfg.Providers.Proxies["backup"] = cfgpkg.ProviderConfig{
+	cfg.Models.Providers["backup"] = cfgpkg.ProviderConfig{
 		APIBase:    "https://backup.example/v1",
 		APIKey:     "old-secret",
 		Models:     []string{"backup-model"},
@@ -304,7 +308,7 @@ func TestHandleWebUIConfigRequiresConfirmForCustomProviderSecretChange(t *testin
 
 	bodyCfg := cfgpkg.DefaultConfig()
 	bodyCfg.Logging.Enabled = false
-	bodyCfg.Providers.Proxies["backup"] = cfgpkg.ProviderConfig{
+	bodyCfg.Models.Providers["backup"] = cfgpkg.ProviderConfig{
 		APIBase:    "https://backup.example/v1",
 		APIKey:     "new-secret",
 		Models:     []string{"backup-model"},
@@ -331,8 +335,8 @@ func TestHandleWebUIConfigRequiresConfirmForCustomProviderSecretChange(t *testin
 	if !strings.Contains(rec.Body.String(), `"requires_confirm":true`) {
 		t.Fatalf("expected requires_confirm response, got: %s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `providers.proxies.backup.api_key`) {
-		t.Fatalf("expected providers.proxies.backup.api_key in changed_fields, got: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `models.providers.backup.api_key`) {
+		t.Fatalf("expected models.providers.backup.api_key in changed_fields, got: %s", rec.Body.String())
 	}
 }
 

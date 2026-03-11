@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,16 +17,16 @@ import (
 )
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers"`
-	Gateway   GatewayConfig   `json:"gateway"`
-	Cron      CronConfig      `json:"cron"`
-	Tools     ToolsConfig     `json:"tools"`
-	Logging   LoggingConfig   `json:"logging"`
-	Sentinel  SentinelConfig  `json:"sentinel"`
-	Memory    MemoryConfig    `json:"memory"`
-	mu        sync.RWMutex
+	Agents   AgentsConfig   `json:"agents"`
+	Channels ChannelsConfig `json:"channels"`
+	Models   ModelsConfig   `json:"models,omitempty"`
+	Gateway  GatewayConfig  `json:"gateway"`
+	Cron     CronConfig     `json:"cron"`
+	Tools    ToolsConfig    `json:"tools"`
+	Logging  LoggingConfig  `json:"logging"`
+	Sentinel SentinelConfig `json:"sentinel"`
+	Memory   MemoryConfig   `json:"memory"`
+	mu       sync.RWMutex
 }
 
 type AgentsConfig struct {
@@ -107,7 +108,7 @@ type SubagentToolsConfig struct {
 }
 
 type SubagentRuntimeConfig struct {
-	Proxy           string  `json:"proxy,omitempty"`
+	Provider        string  `json:"provider,omitempty"`
 	Model           string  `json:"model,omitempty"`
 	Temperature     float64 `json:"temperature,omitempty"`
 	TimeoutSec      int     `json:"timeout_sec,omitempty"`
@@ -120,8 +121,7 @@ type SubagentRuntimeConfig struct {
 
 type AgentDefaults struct {
 	Workspace         string                    `json:"workspace" env:"CLAWGO_AGENTS_DEFAULTS_WORKSPACE"`
-	Proxy             string                    `json:"proxy" env:"CLAWGO_AGENTS_DEFAULTS_PROXY"`
-	ProxyFallbacks    []string                  `json:"proxy_fallbacks" env:"CLAWGO_AGENTS_DEFAULTS_PROXY_FALLBACKS"`
+	Model             AgentModelDefaults        `json:"model,omitempty"`
 	MaxTokens         int                       `json:"max_tokens" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOKENS"`
 	Temperature       float64                   `json:"temperature" env:"CLAWGO_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations int                       `json:"max_tool_iterations" env:"CLAWGO_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
@@ -129,6 +129,11 @@ type AgentDefaults struct {
 	ContextCompaction ContextCompactionConfig   `json:"context_compaction"`
 	Execution         AgentExecutionConfig      `json:"execution"`
 	SummaryPolicy     SystemSummaryPolicyConfig `json:"summary_policy"`
+}
+
+type AgentModelDefaults struct {
+	Primary   string   `json:"primary,omitempty" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_PRIMARY"`
+	Fallbacks []string `json:"fallbacks,omitempty" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_FALLBACKS"`
 }
 
 type HeartbeatConfig struct {
@@ -234,52 +239,8 @@ type DingTalkConfig struct {
 	AllowFrom    []string `json:"allow_from" env:"CLAWGO_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
-type ProvidersConfig struct {
-	Proxy   ProviderConfig            `json:"proxy"`
-	Proxies map[string]ProviderConfig `json:"proxies"`
-}
-
-type providerProxyItem struct {
-	Name string `json:"name"`
-	ProviderConfig
-}
-
-func (p *ProvidersConfig) UnmarshalJSON(data []byte) error {
-	var tmp struct {
-		Proxy   ProviderConfig  `json:"proxy"`
-		Proxies json.RawMessage `json:"proxies"`
-	}
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return err
-	}
-	p.Proxy = tmp.Proxy
-	p.Proxies = map[string]ProviderConfig{}
-	if len(bytes.TrimSpace(tmp.Proxies)) == 0 || string(bytes.TrimSpace(tmp.Proxies)) == "null" {
-		return nil
-	}
-	// Preferred format: object map
-	var asMap map[string]ProviderConfig
-	if err := json.Unmarshal(tmp.Proxies, &asMap); err == nil {
-		for k, v := range asMap {
-			if k == "" {
-				continue
-			}
-			p.Proxies[k] = v
-		}
-		return nil
-	}
-	// Compatibility format: array [{name, ...provider fields...}]
-	var asArr []providerProxyItem
-	if err := json.Unmarshal(tmp.Proxies, &asArr); err == nil {
-		for _, it := range asArr {
-			if it.Name == "" {
-				continue
-			}
-			p.Proxies[it.Name] = it.ProviderConfig
-		}
-		return nil
-	}
-	return fmt.Errorf("providers.proxies must be object map or array of {name,...}")
+type ModelsConfig struct {
+	Providers map[string]ProviderConfig `json:"providers,omitempty"`
 }
 
 type ProviderConfig struct {
@@ -298,6 +259,7 @@ type ProviderConfig struct {
 
 type ProviderOAuthConfig struct {
 	Provider        string   `json:"provider,omitempty"`
+	NetworkProxy    string   `json:"network_proxy,omitempty"`
 	CredentialFile  string   `json:"credential_file,omitempty"`
 	CredentialFiles []string `json:"credential_files,omitempty"`
 	CallbackPort    int      `json:"callback_port,omitempty"`
@@ -307,7 +269,6 @@ type ProviderOAuthConfig struct {
 	TokenURL        string   `json:"token_url,omitempty"`
 	RedirectURL     string   `json:"redirect_url,omitempty"`
 	Scopes          []string `json:"scopes,omitempty"`
-	HybridPriority  string   `json:"hybrid_priority,omitempty"`
 	CooldownSec     int      `json:"cooldown_sec,omitempty"`
 	RefreshScanSec  int      `json:"refresh_scan_sec,omitempty"`
 	RefreshLeadSec  int      `json:"refresh_lead_sec,omitempty"`
@@ -484,8 +445,7 @@ func DefaultConfig() *Config {
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:         filepath.Join(configDir, "workspace"),
-				Proxy:             "proxy",
-				ProxyFallbacks:    []string{},
+				Model:             AgentModelDefaults{Primary: "openai/gpt-5.4", Fallbacks: []string{}},
 				MaxTokens:         8192,
 				Temperature:       0.7,
 				MaxToolIterations: 20,
@@ -599,13 +559,14 @@ func DefaultConfig() *Config {
 				AllowFrom:    []string{},
 			},
 		},
-		Providers: ProvidersConfig{
-			Proxy: ProviderConfig{
-				APIBase:    "http://localhost:8080/v1",
-				Models:     []string{"glm-4.7"},
-				TimeoutSec: 90,
+		Models: ModelsConfig{
+			Providers: map[string]ProviderConfig{
+				"openai": {
+					APIBase:    "https://api.openai.com/v1",
+					Models:     []string{"gpt-5.4"},
+					TimeoutSec: 90,
+				},
 			},
-			Proxies: map[string]ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
 			Host:  "0.0.0.0",
@@ -699,6 +660,60 @@ func DefaultConfig() *Config {
 	}
 }
 
+func ParseProviderModelRef(raw string) (provider string, model string) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", ""
+	}
+	if idx := strings.Index(trimmed, "/"); idx > 0 {
+		return strings.TrimSpace(trimmed[:idx]), strings.TrimSpace(trimmed[idx+1:])
+	}
+	return "", trimmed
+}
+
+func AllProviderConfigs(cfg *Config) map[string]ProviderConfig {
+	out := map[string]ProviderConfig{}
+	if cfg == nil {
+		return out
+	}
+	for name, pc := range cfg.Models.Providers {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		out[trimmed] = pc
+	}
+	return out
+}
+
+func ProviderConfigByName(cfg *Config, name string) (ProviderConfig, bool) {
+	if cfg == nil {
+		return ProviderConfig{}, false
+	}
+	pc, ok := AllProviderConfigs(cfg)[strings.TrimSpace(name)]
+	return pc, ok
+}
+
+func ProviderExists(cfg *Config, name string) bool {
+	_, ok := ProviderConfigByName(cfg, name)
+	return ok
+}
+
+func PrimaryProviderName(cfg *Config) string {
+	if cfg == nil {
+		return "openai"
+	}
+	if provider, _ := ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary); provider != "" {
+		return provider
+	}
+	for name := range cfg.Models.Providers {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			return trimmed
+		}
+	}
+	return "openai"
+}
+
 func generateGatewayToken() string {
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {
@@ -771,13 +786,19 @@ func (c *Config) WorkspacePath() string {
 func (c *Config) GetAPIKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.Providers.Proxy.APIKey
+	if pc, ok := c.Models.Providers[PrimaryProviderName(c)]; ok {
+		return pc.APIKey
+	}
+	return ""
 }
 
 func (c *Config) GetAPIBase() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.Providers.Proxy.APIBase
+	if pc, ok := c.Models.Providers[PrimaryProviderName(c)]; ok {
+		return pc.APIBase
+	}
+	return ""
 }
 
 func (c *Config) LogFilePath() string {

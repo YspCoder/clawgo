@@ -1,3 +1,5 @@
+import { cloneJSON } from '../../utils/object';
+
 type UI = {
   confirmDialog: (options: any) => Promise<boolean>;
   notify: (options: any) => Promise<void>;
@@ -67,7 +69,7 @@ export function useConfigSaveAction({
       }
 
       await ui.notify({ title: t('saved'), message: t('configSaved') });
-      setBaseline(JSON.parse(JSON.stringify(payload)));
+      setBaseline(cloneJSON(payload));
       setConfigEditing(false);
       setShowDiff(false);
     } catch (error) {

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Button } from '../Button';
+import { Download, FolderOpen, LogIn, Plus, RefreshCw, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { Button, FixedButton } from '../Button';
 import { CheckboxField, PanelField, SelectField, TextField } from '../FormControls';
 
 function joinClasses(...values: Array<string | undefined | false>) {
@@ -49,7 +50,9 @@ export function ProviderRuntimeToolbar({
     <div className="flex items-center justify-between gap-2 flex-wrap">
       <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
       <div className="flex items-center gap-2">
-        <Button onClick={onRefreshRuntime} size="xs" radius="lg" variant="neutral">{t('providersRefreshRuntime')}</Button>
+        <FixedButton onClick={onRefreshRuntime} variant="neutral" radius="lg" label={t('providersRefreshRuntime')}>
+          <RefreshCw className="w-4 h-4" />
+        </FixedButton>
         <label className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 px-2 py-1.5 text-[11px] text-zinc-300">
           <CheckboxField checked={runtimeAutoRefresh} onChange={(e) => onRuntimeAutoRefreshChange(e.target.checked)} />
           {t('providersAutoRefresh')}
@@ -67,7 +70,9 @@ export function ProviderRuntimeToolbar({
           <option value="all">{t('providersRuntimeAll')}</option>
         </SelectField>
         <TextField dense value={newProxyName} onChange={(e) => onNewProxyNameChange(e.target.value)} placeholder={t('configNewProviderName')} className="bg-zinc-900/70 border-zinc-700" />
-        <Button onClick={onAddProxy} variant="primary" size="xs" radius="lg">{t('add')}</Button>
+        <FixedButton onClick={onAddProxy} variant="primary" radius="lg" label={t('add')}>
+          <Plus className="w-4 h-4" />
+        </FixedButton>
       </div>
     </div>
   );
@@ -112,10 +117,18 @@ export function ProviderRuntimeSummary({
         <div>oauth accounts: {item.oauth_accounts.length} · {item.oauth_accounts.map((account: any) => account?.account_label || account?.email || account?.account_id || account?.project_id || '-').join(', ')}</div>
       )}
       <div className="mt-1 flex items-center gap-2">
-        <Button onClick={onClearApiCooldown} size="xs" radius="lg" variant="neutral">Clear API Cooldown</Button>
-        <Button onClick={onClearHistory} size="xs" radius="lg" variant="neutral">Clear History</Button>
-        <Button onClick={onExportHistory} size="xs" radius="lg" variant="neutral">Export History</Button>
-        <Button onClick={onOpenHistory} size="xs" radius="lg" variant="neutral">Open History</Button>
+        <FixedButton onClick={onClearApiCooldown} variant="neutral" radius="lg" label="Clear API Cooldown">
+          <RotateCcw className="w-4 h-4" />
+        </FixedButton>
+        <FixedButton onClick={onClearHistory} variant="neutral" radius="lg" label="Clear History">
+          <Trash2 className="w-4 h-4" />
+        </FixedButton>
+        <FixedButton onClick={onExportHistory} variant="neutral" radius="lg" label="Export History">
+          <Download className="w-4 h-4" />
+        </FixedButton>
+        <FixedButton onClick={onOpenHistory} variant="neutral" radius="lg" label="Open History">
+          <FolderOpen className="w-4 h-4" />
+        </FixedButton>
       </div>
       <div className="mt-2">
         <div className="mb-1 flex items-center justify-between gap-2">
@@ -335,7 +348,9 @@ export function ProviderProxyCard({
               {runtimeOpen ? 'Hide Runtime' : 'Show Runtime'}
             </Button>
           ) : null}
-          <Button onClick={onRemove} variant="danger" size="xs" radius="lg">{t('delete')}</Button>
+          <FixedButton onClick={onRemove} variant="danger" radius="lg" label={t('delete')}>
+            <Trash2 className="w-4 h-4" />
+          </FixedButton>
         </div>
       </div>
 
@@ -344,9 +359,9 @@ export function ProviderProxyCard({
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950/20 p-4 space-y-3">
             <div className="flex items-center gap-3">
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500/15 text-[11px] font-semibold text-amber-300">1</div>
-              <div>
+              <div className="min-w-0 flex items-center gap-2">
                 <div className="text-sm font-medium text-zinc-100">Connection</div>
-                <div className="text-[11px] text-zinc-500">Base URL, API key, and model routing for this provider.</div>
+                <div className="truncate text-[11px] text-zinc-500">Base URL, API key, and model routing.</div>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -372,14 +387,18 @@ export function ProviderProxyCard({
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/15 text-[11px] font-semibold text-emerald-300">3</div>
-                  <div>
+                  <div className="min-w-0 flex items-center gap-2">
                     <div className="text-sm font-medium text-zinc-100">{t('providersOAuthSetup')}</div>
-                    <div className="text-[11px] text-zinc-500">Choose the upstream OAuth service, then launch login or import an existing auth file.</div>
+                    <div className="truncate text-[11px] text-zinc-500">Select provider, then login or import.</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button onClick={onStartOAuthLogin} size="xs" radius="lg" disabled={!oauthProvider}>{t('providersOAuthLoginButton')}</Button>
-                  <Button onClick={onTriggerOAuthImport} size="xs" radius="lg" variant="neutral">{t('providersImportAuthJson')}</Button>
+                  <FixedButton onClick={onStartOAuthLogin} radius="lg" disabled={!oauthProvider} label={t('providersOAuthLoginButton')}>
+                    <LogIn className="w-4 h-4" />
+                  </FixedButton>
+                  <FixedButton onClick={onTriggerOAuthImport} radius="lg" variant="neutral" label={t('providersImportAuthJson')}>
+                    <Upload className="w-4 h-4" />
+                  </FixedButton>
                 </div>
               </div>
 
@@ -398,13 +417,10 @@ export function ProviderProxyCard({
                 <PanelField label={t('providersClientSecret')} help={t('providersClientSecretHelp')} dense className="xl:col-span-4">
                   <ProxyTextField value={String(proxy?.oauth?.client_secret || '')} onChange={(e) => onFieldChange('oauth.client_secret', e.target.value)} placeholder={t('providersClientSecret')} className="w-full" />
                 </PanelField>
-                <PanelField label={t('providersPriority')} help={t('providersPriorityHelp')} dense className="xl:col-span-2">
-                  <ProxySelectField value={String(proxy?.oauth?.hybrid_priority || 'api_first')} onChange={(e) => onFieldChange('oauth.hybrid_priority', e.target.value)} className="w-full">
-                    <option value="api_first">api_first</option>
-                    <option value="oauth_first">oauth_first</option>
-                  </ProxySelectField>
+                <PanelField label={t('providersNetworkProxy')} help={t('providersNetworkProxyHelp')} dense className="xl:col-span-5">
+                  <ProxyTextField value={String(proxy?.oauth?.network_proxy || '')} onChange={(e) => onFieldChange('oauth.network_proxy', e.target.value)} placeholder={t('providersNetworkProxyPlaceholder')} className="w-full" />
                 </PanelField>
-                <PanelField label={t('providersCredentialFiles')} help={t('providersCredentialFilesHelp')} dense className="xl:col-span-3">
+                <PanelField label={t('providersCredentialFiles')} help={t('providersCredentialFilesHelp')} dense className="xl:col-span-12">
                   <ProxyTextField
                     value={Array.isArray(proxy?.oauth?.credential_files) ? proxy.oauth.credential_files.join(',') : ''}
                     onChange={(e) => onFieldChange('oauth.credential_files', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
@@ -415,13 +431,13 @@ export function ProviderProxyCard({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <PanelField label={t('providersCooldownSec')} dense>
+                <PanelField label={t('providersCooldownSec')} help="Quota / rate-limit cooldown" dense>
                   <ProxyTextField value={String(proxy?.oauth?.cooldown_sec || '')} onChange={(e) => onFieldChange('oauth.cooldown_sec', Number(e.target.value || 0))} placeholder={t('providersCooldownSec')} className="w-full" />
                 </PanelField>
-                <PanelField label={t('providersRefreshScanSec')} dense>
+                <PanelField label={t('providersRefreshScanSec')} help="Background scan interval" dense>
                   <ProxyTextField value={String(proxy?.oauth?.refresh_scan_sec || '')} onChange={(e) => onFieldChange('oauth.refresh_scan_sec', Number(e.target.value || 0))} placeholder={t('providersRefreshScanSec')} className="w-full" />
                 </PanelField>
-                <PanelField label={t('providersRefreshLeadSec')} dense>
+                <PanelField label={t('providersRefreshLeadSec')} help="Refresh before expiry" dense>
                   <ProxyTextField value={String(proxy?.oauth?.refresh_lead_sec || '')} onChange={(e) => onFieldChange('oauth.refresh_lead_sec', Number(e.target.value || 0))} placeholder={t('providersRefreshLeadSec')} className="w-full" />
                 </PanelField>
               </div>
@@ -438,9 +454,9 @@ export function ProviderProxyCard({
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950/20 p-4 space-y-3">
             <div className="flex items-center gap-3">
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-500/15 text-[11px] font-semibold text-sky-300">2</div>
-              <div>
+              <div className="min-w-0 flex items-center gap-2">
                 <div className="text-sm font-medium text-zinc-100">Authentication</div>
-                <div className="text-[11px] text-zinc-500">Choose how this provider authenticates requests.</div>
+                <div className="truncate text-[11px] text-zinc-500">Request auth and hybrid priority.</div>
               </div>
             </div>
             <PanelField label={t('providersAuthMode')} help={t('providersAuthModeHelp')} dense>
@@ -451,14 +467,8 @@ export function ProviderProxyCard({
                 <option value="none">none</option>
               </ProxySelectField>
             </PanelField>
-            <PanelField label={t('providersPriority')} help={t('providersPriorityHelp')} dense>
-              <ProxySelectField value={String(proxy?.oauth?.hybrid_priority || 'api_first')} onChange={(e) => onFieldChange('oauth.hybrid_priority', e.target.value)} className="w-full" disabled={!showOAuth}>
-                <option value="api_first">api_first</option>
-                <option value="oauth_first">oauth_first</option>
-              </ProxySelectField>
-            </PanelField>
             <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/30 px-3 py-2 text-[11px] text-zinc-500">
-              {showOAuth ? 'api_first prefers API key first. oauth_first prefers the OAuth pool first.' : (
+              {showOAuth ? 'Model selection stays on this provider. Hybrid only switches credentials inside the same provider.' : (
                 <>
                   {t('providersSwitchAuthBefore')}
                   <span className="font-mono text-zinc-300">oauth</span>
@@ -474,12 +484,16 @@ export function ProviderProxyCard({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-fuchsia-500/15 text-[11px] font-semibold text-fuchsia-300">4</div>
-                <div>
+                <div className="min-w-0 flex items-center gap-2">
                   <div className="text-sm font-medium text-zinc-100">{t('providersOAuthAccounts')}</div>
-                  <div className="text-[11px] text-zinc-500">Imported sessions for this provider.</div>
+                  <div className="truncate text-[11px] text-zinc-500">Imported sessions.</div>
                 </div>
               </div>
-              {showOAuth ? <Button onClick={onLoadOAuthAccounts} size="xs" radius="lg" variant="neutral">{t('providersRefreshList')}</Button> : null}
+              {showOAuth ? (
+                <FixedButton onClick={onLoadOAuthAccounts} variant="neutral" radius="lg" label={t('providersRefreshList')}>
+                  <RefreshCw className="w-4 h-4" />
+                </FixedButton>
+              ) : null}
             </div>
             {!showOAuth ? (
               <div className="text-zinc-500">Enable oauth or hybrid mode to manage OAuth accounts.</div>
@@ -494,12 +508,19 @@ export function ProviderProxyCard({
                       <div className="text-zinc-500 text-[11px]">label: {account?.account_label || account?.email || account?.account_id || '-'}</div>
                       <div className="text-zinc-500 truncate text-[11px]">{account?.credential_file}</div>
                       <div className="text-zinc-500 text-[11px]">project: {account?.project_id || '-'} · device: {account?.device_id || '-'}</div>
+                      <div className="text-zinc-500 truncate text-[11px]">proxy: {account?.network_proxy || '-'}</div>
                       <div className="text-zinc-500 text-[11px]">expire: {account?.expire || '-'} · cooldown: {account?.cooldown_until || '-'}</div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Button onClick={() => onRefreshOAuthAccount(String(account?.credential_file || ''))} size="xs" radius="lg" variant="neutral">Refresh</Button>
-                      <Button onClick={() => onClearOAuthCooldown(String(account?.credential_file || ''))} size="xs" radius="lg" variant="neutral">Clear Cooldown</Button>
-                      <Button onClick={() => onDeleteOAuthAccount(String(account?.credential_file || ''))} size="xs" radius="lg" variant="danger">{t('delete')}</Button>
+                      <FixedButton onClick={() => onRefreshOAuthAccount(String(account?.credential_file || ''))} variant="neutral" radius="lg" label="Refresh">
+                        <RefreshCw className="w-4 h-4" />
+                      </FixedButton>
+                      <FixedButton onClick={() => onClearOAuthCooldown(String(account?.credential_file || ''))} variant="neutral" radius="lg" label="Clear Cooldown">
+                        <RotateCcw className="w-4 h-4" />
+                      </FixedButton>
+                      <FixedButton onClick={() => onDeleteOAuthAccount(String(account?.credential_file || ''))} variant="danger" radius="lg" label={t('delete')}>
+                        <Trash2 className="w-4 h-4" />
+                      </FixedButton>
                     </div>
                   </div>
                 ))}
@@ -511,9 +532,9 @@ export function ProviderProxyCard({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-700 text-[11px] font-semibold text-zinc-200">5</div>
-                <div>
+                <div className="min-w-0 flex items-center gap-2">
                   <div className="text-sm font-medium text-zinc-100">Advanced</div>
-                  <div className="text-[11px] text-zinc-500">Low-frequency runtime persistence and history settings.</div>
+                  <div className="truncate text-[11px] text-zinc-500">Low-frequency runtime settings.</div>
                 </div>
               </div>
               <Button onClick={() => setAdvancedOpen((v) => !v)} size="xs" radius="lg" variant="neutral">

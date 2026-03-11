@@ -1032,12 +1032,14 @@ html.theme-dark .brand-button {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
+  color-scheme: light;
   cursor: pointer;
   padding-right: 2.75rem;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6.5L8 10L12 6.5' stroke='%2364758b' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.95rem center;
   background-size: 16px 16px;
+  background-clip: padding-box;
 }
 
 .ui-select:hover {
@@ -1082,11 +1084,13 @@ html.theme-dark .ui-input,
 html.theme-dark .ui-textarea,
 html.theme-dark .ui-select {
   border-color: var(--color-zinc-700);
-  background: rgb(9 16 28 / 0.6);
+  background-color: rgb(9 16 28 / 0.6);
   color: rgb(226 232 240 / 0.96);
 }
 
 html.theme-dark .ui-select {
+  color-scheme: dark;
+  background-color: rgb(9 16 28 / 0.92);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 6.5L8 10L12 6.5' stroke='%2390a4bc' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
@@ -1134,13 +1138,23 @@ html.theme-dark .ui-checkbox:focus-visible {
 }
 
 .ui-select option {
-  background: rgb(255 255 255 / 0.98);
+  background: rgb(255 255 255);
   color: rgb(51 65 85 / 0.98);
 }
 
+.ui-select optgroup {
+  background: rgb(255 255 255);
+  color: rgb(71 85 105 / 0.96);
+}
+
 html.theme-dark .ui-select option {
-  background: rgb(12 20 34 / 0.98);
+  background: rgb(12 20 34);
   color: rgb(226 232 240 / 0.96);
+}
+
+html.theme-dark .ui-select optgroup {
+  background: rgb(12 20 34);
+  color: rgb(148 163 184 / 0.96);
 }
 
 .ui-soft-panel {

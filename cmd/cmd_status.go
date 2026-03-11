@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/nodes"
 	"github.com/YspCoder/clawgo/pkg/providers"
 )
@@ -37,31 +38,21 @@ func statusCmd() {
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
-		activeProvider := cfg.Providers.Proxy
-		activeProxyName := "proxy"
-		if name := strings.TrimSpace(cfg.Agents.Defaults.Proxy); name != "" && name != "proxy" {
-			if p, ok := cfg.Providers.Proxies[name]; ok {
-				activeProvider = p
-				activeProxyName = name
-			}
+		activeProviderName, activeModel := config.ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary)
+		if activeProviderName == "" {
+			activeProviderName = config.PrimaryProviderName(cfg)
 		}
-		activeModel := ""
-		for _, m := range activeProvider.Models {
-			if s := strings.TrimSpace(m); s != "" {
-				activeModel = s
-				break
-			}
-		}
-		fmt.Printf("Model: %s\n", activeModel)
-		fmt.Printf("Proxy: %s\n", activeProxyName)
-		fmt.Printf("Provider API Base: %s\n", activeProvider.APIBase)
-		fmt.Printf("Supports /v1/responses/compact: %v\n", providers.ProviderSupportsResponsesCompact(cfg, activeProxyName))
+		activeProvider, _ := config.ProviderConfigByName(cfg, activeProviderName)
+		fmt.Printf("Primary Model: %s\n", activeModel)
+		fmt.Printf("Primary Provider: %s\n", activeProviderName)
+		fmt.Printf("Provider Base URL: %s\n", activeProvider.APIBase)
+		fmt.Printf("Responses Compact: %v\n", providers.ProviderSupportsResponsesCompact(cfg, activeProviderName))
 		hasKey := strings.TrimSpace(activeProvider.APIKey) != ""
 		status := "not set"
 		if hasKey {
 			status = "configured"
 		}
-		fmt.Printf("Provider API Key: %s\n", status)
+		fmt.Printf("API Key Status: %s\n", status)
 		fmt.Printf("Logging: %v\n", cfg.Logging.Enabled)
 		if cfg.Logging.Enabled {
 			fmt.Printf("Log File: %s\n", cfg.LogFilePath())

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { Button, FixedButton } from '../components/Button';
+import { FixedButton } from '../components/Button';
 import { TextareaField } from '../components/FormControls';
+import FileListItem from '../components/FileListItem';
 
 const Memory: React.FC = () => {
   const { t } = useTranslation();
@@ -126,17 +127,24 @@ const Memory: React.FC = () => {
             </div>
             <div className="space-y-1">
               {files.map((f) => (
-                <div key={f} className={`flex items-center justify-between px-2.5 py-2 rounded-2xl ${active === f ? 'nav-item-active' : 'ui-row-hover'}`}>
-                  <button className={`text-left flex-1 min-w-0 break-all pr-2 ${active === f ? 'ui-text-primary font-medium' : 'ui-text-primary'}`} onClick={() => openFile(f)}>{f}</button>
-                  <button
-                    className="ui-text-danger ui-text-danger-hover shrink-0 p-1"
-                    onClick={() => removeFile(f)}
-                    aria-label={t('delete')}
-                    title={t('delete')}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                <FileListItem
+                  key={f}
+                  active={active === f}
+                  onClick={() => openFile(f)}
+                  actions={(
+                    <button
+                      type="button"
+                      className="ui-text-danger ui-text-danger-hover p-1"
+                      onClick={() => removeFile(f)}
+                      aria-label={t('delete')}
+                      title={t('delete')}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                >
+                  {f}
+                </FileListItem>
               ))}
             </div>
           </div>
@@ -145,7 +153,9 @@ const Memory: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="ui-text-primary font-semibold">{active || t('noFileSelected')}</h2>
-              <Button onClick={saveFile} variant="primary" size="sm" radius="xl">{t('save')}</Button>
+              <FixedButton onClick={saveFile} variant="primary" radius="xl" label={t('save')}>
+                <Save className="w-4 h-4" />
+              </FixedButton>
             </div>
             <TextareaField value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[50vh] lg:h-[80vh] rounded-[24px] p-4" />
           </div>

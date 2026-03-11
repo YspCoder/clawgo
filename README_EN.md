@@ -93,24 +93,26 @@ curl -fsSL https://raw.githubusercontent.com/YspCoder/clawgo/main/install.sh | b
 clawgo onboard
 ```
 
-### 3. Configure a provider
+### 3. Choose a provider and model
 
 ```bash
-clawgo provider
+clawgo provider list
+clawgo provider use openai/gpt-5.4
+clawgo provider configure
 ```
 
 For OAuth-backed providers such as `Codex`, `Anthropic`, `Antigravity`, `Gemini CLI`, `Kimi`, and `Qwen`:
 
 ```bash
-clawgo provider
-clawgo provider login codex-oauth
-clawgo provider login codex-oauth --manual
+clawgo provider list
+clawgo provider login codex
+clawgo provider login codex --manual
 ```
 
 After login, clawgo stores the OAuth session locally and syncs the models available to that account so the provider can be used directly.
 Use `--manual` on a cloud server for callback-based OAuth (`codex`, `anthropic`, `antigravity`, `gemini`): clawgo prints the auth URL, you complete login in a desktop browser, then paste the final callback URL back into the terminal.
 Device-flow OAuth (`kimi`, `qwen`) prints the verification URL and user code, then clawgo polls automatically after authorization without requiring a callback URL to be pasted back.
-Repeat `clawgo provider login codex-oauth --manual` on the same provider to add multiple OAuth accounts; when one account hits quota or rate limits, clawgo automatically retries with the next logged-in account.
+Repeat `clawgo provider login codex --manual` on the same provider to add multiple OAuth accounts; when one account hits quota or rate limits, clawgo automatically retries with the next logged-in account.
 The WebUI can also start OAuth login, accept callback URL pasteback, confirm device-flow authorization, import `auth.json`, list accounts, refresh accounts, and delete accounts.
 
 If you have both an `API key` and OAuth accounts for the same upstream, prefer configuring that provider as `auth: "hybrid"`:
@@ -118,7 +120,6 @@ If you have both an `API key` and OAuth accounts for the same upstream, prefer c
 - it uses `api_key` first
 - when the API key hits quota/rate-limit style failures, it automatically falls back to the provider's OAuth account pool
 - OAuth accounts still keep multi-account rotation, background pre-refresh, `auth.json` import, and WebUI management
-- `oauth.hybrid_priority` supports `api_first` or `oauth_first`
 - `oauth.cooldown_sec` controls how long a rate-limited OAuth account stays out of rotation; default is `900`
 - the provider runtime panel shows current candidate ordering, the most recent successful credential, and recent hit/error history
 - to persist runtime history across restarts, configure `runtime_persist`, `runtime_history_file`, and `runtime_history_max` on the provider

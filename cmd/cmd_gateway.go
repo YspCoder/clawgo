@@ -400,7 +400,7 @@ func gatewayCmd() {
 		}
 
 		runtimeSame := reflect.DeepEqual(cfg.Agents, newCfg.Agents) &&
-			reflect.DeepEqual(cfg.Providers, newCfg.Providers) &&
+			reflect.DeepEqual(cfg.Models, newCfg.Models) &&
 			reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
 			reflect.DeepEqual(cfg.Channels, newCfg.Channels) &&
 			reflect.DeepEqual(cfg.Gateway.Nodes, newCfg.Gateway.Nodes)

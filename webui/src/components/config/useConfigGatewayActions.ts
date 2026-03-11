@@ -1,4 +1,5 @@
 import { setPath } from './configUtils';
+import { cloneJSON } from '../../utils/object';
 
 type UseConfigGatewayActionsArgs = {
   setCfg: React.Dispatch<React.SetStateAction<any>>;
@@ -19,7 +20,7 @@ export function useConfigGatewayActions({ setCfg }: UseConfigGatewayActionsArgs)
 
   function updateGatewayIceServer(index: number, field: string, value: any) {
     setCfg((current) => {
-      const next = JSON.parse(JSON.stringify(current || {}));
+      const next = cloneJSON(current || {});
       if (!next.gateway || typeof next.gateway !== 'object') next.gateway = {};
       if (!next.gateway.nodes || typeof next.gateway.nodes !== 'object') next.gateway.nodes = {};
       if (!next.gateway.nodes.p2p || typeof next.gateway.nodes.p2p !== 'object') next.gateway.nodes.p2p = {};
@@ -34,7 +35,7 @@ export function useConfigGatewayActions({ setCfg }: UseConfigGatewayActionsArgs)
 
   function addGatewayIceServer() {
     setCfg((current) => {
-      const next = JSON.parse(JSON.stringify(current || {}));
+      const next = cloneJSON(current || {});
       if (!next.gateway || typeof next.gateway !== 'object') next.gateway = {};
       if (!next.gateway.nodes || typeof next.gateway.nodes !== 'object') next.gateway.nodes = {};
       if (!next.gateway.nodes.p2p || typeof next.gateway.nodes.p2p !== 'object') next.gateway.nodes.p2p = {};
@@ -46,7 +47,7 @@ export function useConfigGatewayActions({ setCfg }: UseConfigGatewayActionsArgs)
 
   function removeGatewayIceServer(index: number) {
     setCfg((current) => {
-      const next = JSON.parse(JSON.stringify(current || {}));
+      const next = cloneJSON(current || {});
       const iceServers = next?.gateway?.nodes?.p2p?.ice_servers;
       if (Array.isArray(iceServers)) {
         iceServers.splice(index, 1);

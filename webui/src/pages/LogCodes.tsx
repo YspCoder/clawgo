@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { TextField } from '../components/FormControls';
+import PageHeader from '../components/PageHeader';
 
 type CodeItem = {
   code: number;
@@ -42,15 +43,18 @@ const LogCodes: React.FC = () => {
 
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="ui-text-secondary text-2xl font-semibold tracking-tight">{t('logCodes')}</h1>
-        <TextField
-          value={kw}
-          onChange={(e) => setKw(e.target.value)}
-          placeholder={t('logCodesSearchPlaceholder')}
-          className="w-full sm:w-80"
-        />
-      </div>
+      <PageHeader
+        title={t('logCodes')}
+        titleClassName="ui-text-secondary"
+        actions={
+          <TextField
+            value={kw}
+            onChange={(e) => setKw(e.target.value)}
+            placeholder={t('logCodesSearchPlaceholder')}
+            className="w-full sm:w-80"
+          />
+        }
+      />
 
       <div className="brand-card ui-border-subtle border rounded-[30px] overflow-hidden">
         <table className="w-full text-sm">

@@ -1,8 +1,10 @@
+import { cloneJSON } from '../../utils/object';
+
 export type RuntimeWindow = 'all' | '1h' | '24h' | '7d';
 
 export function setPath(obj: any, path: string, value: any) {
   const keys = path.split('.');
-  const next = JSON.parse(JSON.stringify(obj || {}));
+  const next = cloneJSON(obj || {});
   let cur = next;
   for (let i = 0; i < keys.length - 1; i++) {
     const key = keys[i];

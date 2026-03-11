@@ -5,7 +5,10 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
+import EmptyState from '../components/EmptyState';
 import { CheckboxField, FieldBlock, SelectField, TextField, TextareaField } from '../components/FormControls';
+import { ModalBackdrop, ModalBody, ModalCard, ModalFooter, ModalHeader, ModalShell } from '../components/ModalFrame';
+import PageHeader from '../components/PageHeader';
 import { CronJob } from '../types';
 import { formatLocalDateTime } from '../utils/time';
 
@@ -171,17 +174,19 @@ const Cron: React.FC = () => {
 
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('cronJobs')}</h1>
-        <div className="flex items-center gap-3 flex-wrap">
+      <PageHeader
+        title={t('cronJobs')}
+        actions={
+          <>
           <FixedButton onClick={() => refreshCron()} label={t('refresh')}>
             <RefreshCw className="w-4 h-4" />
           </FixedButton>
           <FixedButton onClick={() => openCronModal()} variant="primary" label={t('addJob')}>
             <Plus className="w-4 h-4" />
           </FixedButton>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-6">
         {cron.map((j) => {
@@ -215,9 +220,9 @@ const Cron: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2 pt-4 border-t border-zinc-800/50">
-              <Button onClick={() => openCronModal(j)} size="xs_tall" gap="2" grow>
-                <Edit2 className="w-3.5 h-3.5" /> {t('editJob')}
-              </Button>
+              <FixedButton onClick={() => openCronModal(j)} radius="lg" label={t('editJob')}>
+                <Edit2 className="w-4 h-4" />
+              </FixedButton>
               <FixedButton
                 onClick={() => cronAction(j.enabled ? 'disable' : 'enable', j.id)}
                 variant={j.enabled ? 'warning' : 'success'}
@@ -234,37 +239,46 @@ const Cron: React.FC = () => {
           );
         })}
         {cron.length === 0 && (
-          <div className="col-span-full py-20 brand-card border border-dashed border-zinc-800 rounded-[32px] flex flex-col items-center justify-center text-zinc-500">
-            <Clock className="w-12 h-12 mb-4 opacity-20" />
-            <p className="text-lg font-medium">{t('noCronJobs')}</p>
-          </div>
+          <EmptyState
+            centered
+            dashed
+            panel
+            className="col-span-full py-20 rounded-[32px]"
+            icon={<Clock className="w-12 h-12 opacity-20" />}
+            title={t('noCronJobs')}
+            message={null}
+          />
         )}
       </div>
 
       <AnimatePresence>
         {isCronModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <ModalShell>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setIsCronModalOpen(false)}
-              className="ui-overlay-strong absolute inset-0 backdrop-blur-sm"
+              className="absolute inset-0"
             />
+            <ModalBackdrop onClick={() => setIsCronModalOpen(false)} />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="brand-card ui-panel relative w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden"
+              className="relative z-[1] w-full max-w-lg"
             >
-              <div className="p-6 border-b border-zinc-800 dark:border-zinc-700 flex items-center justify-between bg-zinc-900/20 relative z-[1]">
-                <h2 className="text-xl font-semibold text-zinc-100">{editingCron ? t('editJob') : t('addJob')}</h2>
-                <FixedButton onClick={() => setIsCronModalOpen(false)} radius="full" label={t('close')}>
-                  <X className="w-5 h-5" />
-                </FixedButton>
-              </div>
+              <ModalCard className="ui-panel rounded-[32px]">
+                <ModalHeader
+                  className="bg-zinc-900/20 px-6 py-6"
+                  title={editingCron ? t('editJob') : t('addJob')}
+                  actions={
+                    <FixedButton onClick={() => setIsCronModalOpen(false)} radius="full" label={t('close')}>
+                      <X className="w-5 h-5" />
+                    </FixedButton>
+                  }
+                />
 
-              <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto relative z-[1]">
+                <ModalBody className="max-h-[70vh] overflow-y-auto p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <FieldBlock label={t('jobName')}>
                     <TextField
@@ -347,16 +361,17 @@ const Cron: React.FC = () => {
                     <span className="text-sm font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors">{t('active')}</span>
                   </label>
                 </div>
-              </div>
+                </ModalBody>
 
-              <div className="p-6 border-t border-zinc-800 dark:border-zinc-700 bg-zinc-900/20 flex items-center justify-end gap-3 relative z-[1]">
-                <Button onClick={() => setIsCronModalOpen(false)}>{t('cancel')}</Button>
-                <Button onClick={handleCronSubmit} variant="primary" size="md_wide">
-                  {editingCron ? t('update') : t('create')}
-                </Button>
-              </div>
+                <ModalFooter className="bg-zinc-900/20">
+                  <Button onClick={() => setIsCronModalOpen(false)}>{t('cancel')}</Button>
+                  <FixedButton onClick={handleCronSubmit} variant="primary" label={editingCron ? t('update') : t('create')}>
+                    <Edit2 className="w-4 h-4" />
+                  </FixedButton>
+                </ModalFooter>
+              </ModalCard>
             </motion.div>
-          </div>
+          </ModalShell>
         )}
       </AnimatePresence>
     </div>

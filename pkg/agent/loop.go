@@ -342,22 +342,20 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		subagentDigestDelay:  5 * time.Second,
 		subagentDigests:      map[string]*subagentDigestState{},
 	}
+	if _, primaryModel := config.ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary); strings.TrimSpace(primaryModel) != "" {
+		loop.model = strings.TrimSpace(primaryModel)
+	}
 	go loop.runSubagentDigestTicker()
-	// Initialize provider fallback chain (primary + proxy_fallbacks).
+	// Initialize provider fallback chain (primary + model fallbacks).
 	loop.providerPool = map[string]providers.LLMProvider{}
 	loop.providerNames = []string{}
-	primaryName := cfg.Agents.Defaults.Proxy
-	if primaryName == "" {
-		primaryName = "proxy"
-	}
+	primaryName := config.PrimaryProviderName(cfg)
 	loop.providerPool[primaryName] = provider
 	loop.providerNames = append(loop.providerNames, primaryName)
-	if strings.TrimSpace(primaryName) == "proxy" {
-		loop.providerResponses[primaryName] = cfg.Providers.Proxy.Responses
-	} else if pc, ok := cfg.Providers.Proxies[primaryName]; ok {
+	if pc, ok := config.ProviderConfigByName(cfg, primaryName); ok {
 		loop.providerResponses[primaryName] = pc.Responses
 	}
-	for _, name := range cfg.Agents.Defaults.ProxyFallbacks {
+	for _, name := range cfg.Agents.Defaults.Model.Fallbacks {
 		if name == "" {
 			continue
 		}
@@ -371,13 +369,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		if dup {
 			continue
 		}
-		if p2, err := providers.CreateProviderByName(cfg, name); err == nil {
-			loop.providerPool[name] = p2
-			loop.providerNames = append(loop.providerNames, name)
-			if pc, ok := cfg.Providers.Proxies[name]; ok {
-				loop.providerResponses[name] = pc.Responses
+			if p2, err := providers.CreateProviderByName(cfg, name); err == nil {
+				loop.providerPool[name] = p2
+				loop.providerNames = append(loop.providerNames, name)
+				if pc, ok := config.ProviderConfigByName(cfg, name); ok {
+					loop.providerResponses[name] = pc.Responses
+				}
 			}
-		}
 	}
 
 	// Inject recursive run logic so subagents can use full tool-calling flows.

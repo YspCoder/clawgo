@@ -47,7 +47,7 @@ func configHelp() {
 	fmt.Println("Examples:")
 	fmt.Println("  clawgo config set channels.telegram.enabled true")
 	fmt.Println("  clawgo config set channels.telegram.enable true")
-	fmt.Println("  clawgo config get providers.proxy.api_base")
+	fmt.Println("  clawgo config get models.providers.openai.api_base")
 	fmt.Println("  clawgo config check")
 	fmt.Println("  clawgo config reload")
 }
@@ -180,6 +180,12 @@ func providerCmd() {
 		case "login":
 			providerLoginCmd()
 			return
+		case "list":
+			providerListCmd()
+			return
+		case "use":
+			providerUseCmd()
+			return
 		case "configure":
 			// Continue into the interactive editor below.
 		}
@@ -192,12 +198,15 @@ func providerCmd() {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	defaultProxy := strings.TrimSpace(cfg.Agents.Defaults.Proxy)
-	if defaultProxy == "" {
-		defaultProxy = "proxy"
+	defaultProvider, defaultModel := config.ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary)
+	if defaultProvider == "" {
+		defaultProvider = config.PrimaryProviderName(cfg)
 	}
 	available := providerNames(cfg)
-	fmt.Printf("Current default provider: %s\n", defaultProxy)
+	fmt.Printf("Current primary provider: %s\n", defaultProvider)
+	if defaultModel != "" {
+		fmt.Printf("Current primary model: %s\n", defaultModel)
+	}
 	fmt.Printf("Available providers: %s\n", strings.Join(available, ", "))
 
 	argName := ""
@@ -205,11 +214,11 @@ func providerCmd() {
 		argName = strings.TrimSpace(os.Args[2])
 	}
 	if argName == "" || strings.HasPrefix(argName, "-") {
-		argName = defaultProxy
+		argName = defaultProvider
 	}
 	providerName := promptLine(reader, "Provider name to configure", argName)
 	if providerName == "" {
-		providerName = defaultProxy
+		providerName = defaultProvider
 	}
 
 	pc := providerConfigByName(cfg, providerName)
@@ -220,10 +229,7 @@ func providerCmd() {
 		pc.Auth = "bearer"
 	}
 	if len(pc.Models) == 0 {
-		pc.Models = append([]string{}, cfg.Providers.Proxy.Models...)
-	}
-	if len(pc.Models) == 0 {
-		pc.Models = []string{"glm-4.7"}
+		pc.Models = []string{"gpt-5.4"}
 	}
 
 	pc.APIBase = promptLine(reader, "api_base", pc.APIBase)
@@ -241,23 +247,26 @@ func providerCmd() {
 	pc.SupportsResponsesCompact = promptBool(reader, "supports_responses_compact", pc.SupportsResponsesCompact)
 	if strings.EqualFold(strings.TrimSpace(pc.Auth), "oauth") || strings.EqualFold(strings.TrimSpace(pc.Auth), "hybrid") {
 		pc.OAuth.Provider = promptLine(reader, "oauth.provider", firstNonEmptyString(pc.OAuth.Provider, "codex"))
+		pc.OAuth.NetworkProxy = promptLine(reader, "oauth.network_proxy", pc.OAuth.NetworkProxy)
 		pc.OAuth.CredentialFile = promptLine(reader, "oauth.credential_file", pc.OAuth.CredentialFile)
 		pc.OAuth.CallbackPort = parseIntOrDefault(promptLine(reader, "oauth.callback_port", fmt.Sprintf("%d", defaultInt(pc.OAuth.CallbackPort, 1455))), defaultInt(pc.OAuth.CallbackPort, 1455))
-		if strings.EqualFold(strings.TrimSpace(pc.Auth), "hybrid") {
-			pc.OAuth.HybridPriority = promptLine(reader, "oauth.hybrid_priority (api_first/oauth_first)", firstNonEmptyString(pc.OAuth.HybridPriority, "api_first"))
-		}
 		pc.OAuth.CooldownSec = parseIntOrDefault(promptLine(reader, "oauth.cooldown_sec", fmt.Sprintf("%d", defaultInt(pc.OAuth.CooldownSec, 900))), defaultInt(pc.OAuth.CooldownSec, 900))
 	}
 
 	setProviderConfigByName(cfg, providerName, pc)
 
-	makeDefault := promptBool(reader, fmt.Sprintf("Set %s as agents.defaults.proxy", providerName), providerName == defaultProxy)
-	if makeDefault {
-		cfg.Agents.Defaults.Proxy = providerName
+	currentPrimaryProvider, currentPrimaryModel := config.ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary)
+	makePrimary := promptBool(reader, fmt.Sprintf("Set %s as agents.defaults.model.primary provider", providerName), providerName == currentPrimaryProvider)
+	if makePrimary {
+		targetModel := currentPrimaryModel
+		if targetModel == "" && len(pc.Models) > 0 {
+			targetModel = pc.Models[0]
+		}
+		cfg.Agents.Defaults.Model.Primary = providerName + "/" + targetModel
 	}
 
-	currentFallbacks := strings.Join(cfg.Agents.Defaults.ProxyFallbacks, ",")
-	fallbackRaw := promptLine(reader, "agents.defaults.proxy_fallbacks (comma-separated names)", currentFallbacks)
+	currentFallbacks := strings.Join(cfg.Agents.Defaults.Model.Fallbacks, ",")
+	fallbackRaw := promptLine(reader, "agents.defaults.model.fallbacks (comma-separated provider/model refs)", currentFallbacks)
 	fallbacks := parseCSV(fallbackRaw)
 	valid := map[string]struct{}{}
 	for _, name := range providerNames(cfg) {
@@ -265,12 +274,17 @@ func providerCmd() {
 	}
 	filteredFallbacks := make([]string, 0, len(fallbacks))
 	seen := map[string]struct{}{}
-	defaultName := strings.TrimSpace(cfg.Agents.Defaults.Proxy)
+	defaultRef := strings.TrimSpace(cfg.Agents.Defaults.Model.Primary)
 	for _, fb := range fallbacks {
-		if fb == "" || fb == defaultName {
+		if fb == "" || fb == defaultRef {
 			continue
 		}
-		if _, ok := valid[fb]; !ok {
+		fbProvider, fbModel := config.ParseProviderModelRef(fb)
+		if fbProvider == "" || fbModel == "" {
+			fmt.Printf("Skip invalid fallback provider/model ref: %s\n", fb)
+			continue
+		}
+		if _, ok := valid[fbProvider]; !ok {
 			fmt.Printf("Skip unknown fallback provider: %s\n", fb)
 			continue
 		}
@@ -280,7 +294,7 @@ func providerCmd() {
 		seen[fb] = struct{}{}
 		filteredFallbacks = append(filteredFallbacks, fb)
 	}
-	cfg.Agents.Defaults.ProxyFallbacks = filteredFallbacks
+	cfg.Agents.Defaults.Model.Fallbacks = filteredFallbacks
 
 	if err := config.SaveConfig(getConfigPath(), cfg); err != nil {
 		fmt.Printf("Error saving config: %v\n", err)
@@ -300,6 +314,76 @@ func providerCmd() {
 	fmt.Println("鉁?Gateway hot reload signal sent")
 }
 
+func providerListCmd() {
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+	primary := strings.TrimSpace(cfg.Agents.Defaults.Model.Primary)
+	names := providerNames(cfg)
+	for _, name := range names {
+		pc, _ := config.ProviderConfigByName(cfg, name)
+		models := strings.Join(pc.Models, ",")
+		if models == "" {
+			models = "-"
+		}
+		marker := " "
+		if strings.HasPrefix(primary, name+"/") {
+			marker = "*"
+		}
+		fmt.Printf("%s %s  auth=%s  models=%s  api_base=%s\n", marker, name, strings.TrimSpace(pc.Auth), models, strings.TrimSpace(pc.APIBase))
+	}
+	if primary != "" {
+		fmt.Printf("\nPrimary: %s\n", primary)
+	}
+}
+
+func providerUseCmd() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: clawgo provider use <provider/model>")
+		return
+	}
+	ref := strings.TrimSpace(os.Args[3])
+	providerName, modelName := config.ParseProviderModelRef(ref)
+	if providerName == "" || modelName == "" {
+		fmt.Println("Error: expected provider/model")
+		return
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+	pc, ok := config.ProviderConfigByName(cfg, providerName)
+	if !ok {
+		fmt.Printf("Error: unknown provider %q\n", providerName)
+		os.Exit(1)
+	}
+	foundModel := false
+	for _, candidate := range pc.Models {
+		if strings.TrimSpace(candidate) == modelName {
+			foundModel = true
+			break
+		}
+	}
+	if !foundModel {
+		fmt.Printf("Error: model %q not found in provider %q\n", modelName, providerName)
+		os.Exit(1)
+	}
+	cfg.Agents.Defaults.Model.Primary = providerName + "/" + modelName
+	if err := config.SaveConfig(getConfigPath(), cfg); err != nil {
+		fmt.Printf("Error saving config: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Primary model set to %s\n", cfg.Agents.Defaults.Model.Primary)
+	if running, reloadErr := triggerGatewayReload(); reloadErr == nil {
+		fmt.Println("Gateway hot reload signal sent")
+	} else if running {
+		fmt.Printf("Hot reload not applied: %v\n", reloadErr)
+	}
+}
+
 func providerLoginCmd() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -307,13 +391,14 @@ func providerLoginCmd() {
 		os.Exit(1)
 	}
 
-	providerName := strings.TrimSpace(cfg.Agents.Defaults.Proxy)
+	providerName, _ := config.ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary)
 	if providerName == "" {
-		providerName = "proxy"
+		providerName = config.PrimaryProviderName(cfg)
 	}
 	manual := false
 	noBrowser := false
 	accountLabel := ""
+	networkProxy := ""
 	for i := 3; i < len(os.Args); i++ {
 		arg := strings.TrimSpace(os.Args[i])
 		switch arg {
@@ -326,10 +411,19 @@ func providerLoginCmd() {
 				i++
 				accountLabel = strings.TrimSpace(os.Args[i])
 			}
+		case "--proxy":
+			if i+1 < len(os.Args) {
+				i++
+				networkProxy = strings.TrimSpace(os.Args[i])
+			}
 		case "":
 		default:
 			if strings.HasPrefix(arg, "--label=") {
 				accountLabel = strings.TrimSpace(strings.TrimPrefix(arg, "--label="))
+				continue
+			}
+			if strings.HasPrefix(arg, "--proxy=") {
+				networkProxy = strings.TrimSpace(strings.TrimPrefix(arg, "--proxy="))
 				continue
 			}
 			if !strings.HasPrefix(arg, "-") {
@@ -349,6 +443,9 @@ func providerLoginCmd() {
 	if manual && strings.TrimSpace(pc.OAuth.RedirectURL) == "" && pc.OAuth.CallbackPort <= 0 {
 		pc.OAuth.CallbackPort = 1455
 	}
+	if strings.TrimSpace(networkProxy) == "" {
+		networkProxy = strings.TrimSpace(pc.OAuth.NetworkProxy)
+	}
 
 	timeout := pc.TimeoutSec
 	if timeout <= 0 {
@@ -367,6 +464,7 @@ func providerLoginCmd() {
 		NoBrowser:    noBrowser,
 		Reader:       os.Stdin,
 		AccountLabel: accountLabel,
+		NetworkProxy: networkProxy,
 	})
 	if err != nil {
 		fmt.Printf("OAuth login failed: %v\n", err)
@@ -399,6 +497,9 @@ func providerLoginCmd() {
 	if session.Email != "" {
 		fmt.Printf("Account: %s\n", session.Email)
 	}
+	if session.NetworkProxy != "" {
+		fmt.Printf("Network proxy: %s\n", session.NetworkProxy)
+	}
 	fmt.Printf("Credential file: %s\n", firstNonEmptyString(session.CredentialFile, oauth.CredentialFile()))
 	if len(pc.OAuth.CredentialFiles) > 1 {
 		fmt.Printf("OAuth accounts: %d\n", len(pc.OAuth.CredentialFiles))
@@ -414,8 +515,8 @@ func providerLoginCmd() {
 }
 
 func providerNames(cfg *config.Config) []string {
-	names := []string{"proxy"}
-	for k := range cfg.Providers.Proxies {
+	names := make([]string, 0, len(cfg.Models.Providers))
+	for k := range cfg.Models.Providers {
 		k = strings.TrimSpace(k)
 		if k == "" {
 			continue
@@ -427,33 +528,25 @@ func providerNames(cfg *config.Config) []string {
 }
 
 func providerConfigByName(cfg *config.Config, name string) config.ProviderConfig {
-	name = strings.TrimSpace(name)
-	if name == "" || name == "proxy" {
-		return cfg.Providers.Proxy
-	}
-	if cfg.Providers.Proxies != nil {
-		if pc, ok := cfg.Providers.Proxies[name]; ok {
-			return pc
-		}
+	if pc, ok := config.ProviderConfigByName(cfg, name); ok {
+		return pc
 	}
 	return config.ProviderConfig{
-		APIBase:    cfg.Providers.Proxy.APIBase,
-		TimeoutSec: cfg.Providers.Proxy.TimeoutSec,
-		Auth:       cfg.Providers.Proxy.Auth,
-		Models:     append([]string{}, cfg.Providers.Proxy.Models...),
+		TimeoutSec: 90,
+		Auth:       "bearer",
+		Models:     []string{"gpt-5.4"},
 	}
 }
 
 func setProviderConfigByName(cfg *config.Config, name string, pc config.ProviderConfig) {
 	name = strings.TrimSpace(name)
-	if name == "" || name == "proxy" {
-		cfg.Providers.Proxy = pc
+	if name == "" {
 		return
 	}
-	if cfg.Providers.Proxies == nil {
-		cfg.Providers.Proxies = map[string]config.ProviderConfig{}
+	if cfg.Models.Providers == nil {
+		cfg.Models.Providers = map[string]config.ProviderConfig{}
 	}
-	cfg.Providers.Proxies[name] = pc
+	cfg.Models.Providers[name] = pc
 }
 
 func promptLine(reader *bufio.Reader, label, defaultValue string) string {

@@ -86,14 +86,14 @@ export function CheckboxField({ className, ...props }: CheckboxFieldProps) {
 
 export function FieldBlock({ label, help, meta, className, children }: FieldBlockProps) {
   return (
-    <div className={joinClasses('space-y-1.5', className)}>
+    <div className={joinClasses('space-y-1', className)}>
       {(label || help || meta) && (
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <div className="min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            {label ? <div className="ui-form-label">{label}</div> : null}
-            {help ? <div className="ui-form-help text-[11px]">{help}</div> : null}
+        <div className="flex min-h-[18px] flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <div className="min-w-0 flex flex-1 items-center gap-x-2 gap-y-1 overflow-hidden">
+            {label ? <div className="ui-form-label shrink-0 leading-none">{label}</div> : null}
+            {help ? <div className="ui-form-help truncate text-[10px] leading-none">{help}</div> : null}
           </div>
-          {meta ? <div className="ui-form-help text-[11px]">{meta}</div> : null}
+          {meta ? <div className="ui-form-help shrink-0 text-[10px] leading-none">{meta}</div> : null}
         </div>
       )}
       {children}

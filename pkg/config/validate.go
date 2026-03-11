@@ -87,30 +87,33 @@ func Validate(cfg *Config) []error {
 		}
 	}
 
-	if len(cfg.Providers.Proxies) == 0 {
-		errs = append(errs, validateProviderConfig("providers.proxy", cfg.Providers.Proxy)...)
-	} else {
-		for name, p := range cfg.Providers.Proxies {
-			errs = append(errs, validateProviderConfig("providers.proxies."+name, p)...)
+	for name, p := range cfg.Models.Providers {
+		errs = append(errs, validateProviderConfig("models.providers."+name, p)...)
+	}
+	if len(cfg.Models.Providers) == 0 {
+		errs = append(errs, fmt.Errorf("models.providers must contain at least one provider"))
+	}
+	for _, name := range cfg.Agents.Defaults.Model.Fallbacks {
+		if !ProviderExists(cfg, name) {
+			errs = append(errs, fmt.Errorf("agents.defaults.model.fallbacks contains unknown provider %q", name))
 		}
 	}
-	if cfg.Agents.Defaults.Proxy != "" {
-		if !providerExists(cfg, cfg.Agents.Defaults.Proxy) {
-			errs = append(errs, fmt.Errorf("agents.defaults.proxy %q not found in providers", cfg.Agents.Defaults.Proxy))
+	if primaryRef := strings.TrimSpace(cfg.Agents.Defaults.Model.Primary); primaryRef != "" {
+		providerName, modelName := ParseProviderModelRef(primaryRef)
+		if providerName == "" {
+			providerName = PrimaryProviderName(cfg)
 		}
-	}
-	for _, name := range cfg.Agents.Defaults.ProxyFallbacks {
-		if !providerExists(cfg, name) {
-			errs = append(errs, fmt.Errorf("agents.defaults.proxy_fallbacks contains unknown proxy %q", name))
+		if !ProviderExists(cfg, providerName) {
+			errs = append(errs, fmt.Errorf("agents.defaults.model.primary %q references unknown provider %q", primaryRef, providerName))
+		}
+		if strings.TrimSpace(modelName) == "" {
+			errs = append(errs, fmt.Errorf("agents.defaults.model.primary must include a model, expected provider/model"))
 		}
 	}
 	if cfg.Agents.Defaults.ContextCompaction.Enabled && cfg.Agents.Defaults.ContextCompaction.Mode == "responses_compact" {
-		active := cfg.Agents.Defaults.Proxy
-		if active == "" {
-			active = "proxy"
-		}
-		if pc, ok := providerConfigByName(cfg, active); !ok || !pc.SupportsResponsesCompact {
-			errs = append(errs, fmt.Errorf("context_compaction.mode=responses_compact requires active proxy %q with supports_responses_compact=true", active))
+		active := PrimaryProviderName(cfg)
+		if pc, ok := ProviderConfigByName(cfg, active); !ok || !pc.SupportsResponsesCompact {
+			errs = append(errs, fmt.Errorf("context_compaction.mode=responses_compact requires active provider %q with supports_responses_compact=true", active))
 		}
 	}
 	errs = append(errs, validateAgentRouter(cfg)...)
@@ -474,8 +477,8 @@ func validateSubagents(cfg *Config) []error {
 				errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file must stay within workspace", id))
 			}
 		}
-		if proxy := strings.TrimSpace(raw.Runtime.Proxy); proxy != "" && !providerExists(cfg, proxy) {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.proxy %q not found in providers", id, proxy))
+		if provider := strings.TrimSpace(raw.Runtime.Provider); provider != "" && !ProviderExists(cfg, provider) {
+			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.provider %q not found in providers", id, provider))
 		}
 		for _, sender := range raw.AcceptFrom {
 			sender = strings.TrimSpace(sender)
@@ -562,13 +565,6 @@ func validateProviderConfig(path string, p ProviderConfig) []error {
 			errs = append(errs, fmt.Errorf("%s.oauth.provider is required when auth=hybrid", path))
 		}
 	}
-	if p.OAuth.HybridPriority != "" {
-		switch strings.ToLower(strings.TrimSpace(p.OAuth.HybridPriority)) {
-		case "api_first", "oauth_first":
-		default:
-			errs = append(errs, fmt.Errorf("%s.oauth.hybrid_priority must be one of: api_first, oauth_first", path))
-		}
-	}
 	if p.OAuth.CooldownSec < 0 {
 		errs = append(errs, fmt.Errorf("%s.oauth.cooldown_sec must be >= 0", path))
 	}
@@ -585,25 +581,6 @@ func validateProviderConfig(path string, p ProviderConfig) []error {
 	errs = append(errs, validateNonEmptyStringList(path+".responses.file_search_vector_store_ids", p.Responses.FileSearchVectorStoreIDs)...)
 	errs = append(errs, validateNonEmptyStringList(path+".responses.include", p.Responses.Include)...)
 	return errs
-}
-
-func providerExists(cfg *Config, name string) bool {
-	if name == "proxy" && cfg.Providers.Proxy.APIBase != "" {
-		return true
-	}
-	if cfg.Providers.Proxies == nil {
-		return false
-	}
-	_, ok := cfg.Providers.Proxies[name]
-	return ok
-}
-
-func providerConfigByName(cfg *Config, name string) (ProviderConfig, bool) {
-	if strings.TrimSpace(name) == "proxy" {
-		return cfg.Providers.Proxy, true
-	}
-	pc, ok := cfg.Providers.Proxies[name]
-	return pc, ok
 }
 
 func validateNonEmptyStringList(path string, values []string) []error {

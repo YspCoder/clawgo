@@ -10,6 +10,7 @@ import { useConfigGatewayActions } from '../components/config/useConfigGatewayAc
 import { useConfigNavigation } from '../components/config/useConfigNavigation';
 import { useConfigSaveAction } from '../components/config/useConfigSaveAction';
 import RecursiveConfig from '../components/RecursiveConfig';
+import { cloneJSON } from '../utils/object';
 
 const Config: React.FC = () => {
   const { t } = useTranslation();
@@ -69,7 +70,7 @@ const Config: React.FC = () => {
 
   useEffect(() => {
     if (baseline == null && cfg && Object.keys(cfg).length > 0) {
-      setBaseline(JSON.parse(JSON.stringify(cfg)));
+      setBaseline(cloneJSON(cfg));
     }
   }, [cfg, baseline]);
 
@@ -86,7 +87,7 @@ const Config: React.FC = () => {
         basicMode={basicMode}
         hotOnly={hotOnly}
         onHotOnlyChange={setHotOnly}
-        onReload={async () => { await loadConfig(true); setTimeout(() => setBaseline(JSON.parse(JSON.stringify(cfg))), 0); }}
+        onReload={async () => { await loadConfig(true); setTimeout(() => setBaseline(cloneJSON(cfg)), 0); }}
         onSearchChange={setSearch}
         onShowDiff={() => setShowDiff(true)}
         onToggleBasicMode={() => setBasicMode((value) => !value)}

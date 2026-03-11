@@ -665,7 +665,7 @@ func (p *HTTPProvider) postJSONStream(ctx context.Context, endpoint string, payl
 		req.Header.Set("Accept", "text/event-stream")
 		applyAttemptAuth(req, attempt)
 
-		body, status, ctype, quotaHit, err := p.doStreamAttempt(req, onEvent)
+		body, status, ctype, quotaHit, err := p.doStreamAttempt(req, attempt, onEvent)
 		if err != nil {
 			return nil, 0, "", err
 		}
@@ -707,7 +707,7 @@ func (p *HTTPProvider) postJSON(ctx context.Context, endpoint string, payload in
 		req.Header.Set("Content-Type", "application/json")
 		applyAttemptAuth(req, attempt)
 
-		body, status, ctype, err := p.doJSONAttempt(req)
+		body, status, ctype, err := p.doJSONAttempt(req, attempt)
 		if err != nil {
 			return nil, 0, "", err
 		}
@@ -753,7 +753,7 @@ func (p *HTTPProvider) authAttempts(ctx context.Context) ([]authAttempt, error) 
 		for _, attempt := range attempts {
 			oauthAttempts = append(oauthAttempts, authAttempt{session: attempt.Session, token: attempt.Token, kind: "oauth"})
 		}
-		if mode == "hybrid" && apiReady && p.oauth.cfg.HybridPriority != "oauth_first" {
+		if mode == "hybrid" && apiReady {
 			out = append(out, apiAttempt)
 		}
 		if len(attempts) == 0 {
@@ -764,9 +764,6 @@ func (p *HTTPProvider) authAttempts(ctx context.Context) ([]authAttempt, error) 
 			return nil, fmt.Errorf("oauth session not found, run `clawgo provider login` first")
 		}
 		out = append(out, oauthAttempts...)
-		if mode == "hybrid" && apiReady && p.oauth.cfg.HybridPriority == "oauth_first" {
-			out = append(out, apiAttempt)
-		}
 		p.updateCandidateOrder(out)
 		return out, nil
 	}
@@ -833,8 +830,19 @@ func applyAttemptAuth(req *http.Request, attempt authAttempt) {
 	req.Header.Set("Authorization", "Bearer "+attempt.token)
 }
 
-func (p *HTTPProvider) doJSONAttempt(req *http.Request) ([]byte, int, string, error) {
-	resp, err := p.httpClient.Do(req)
+func (p *HTTPProvider) httpClientForAttempt(attempt authAttempt) (*http.Client, error) {
+	if attempt.kind == "oauth" && attempt.session != nil && p.oauth != nil {
+		return p.oauth.httpClientForSession(attempt.session)
+	}
+	return p.httpClient, nil
+}
+
+func (p *HTTPProvider) doJSONAttempt(req *http.Request, attempt authAttempt) ([]byte, int, string, error) {
+	client, err := p.httpClientForAttempt(attempt)
+	if err != nil {
+		return nil, 0, "", err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("failed to send request: %w", err)
 	}
@@ -846,8 +854,12 @@ func (p *HTTPProvider) doJSONAttempt(req *http.Request) ([]byte, int, string, er
 	return body, resp.StatusCode, strings.TrimSpace(resp.Header.Get("Content-Type")), nil
 }
 
-func (p *HTTPProvider) doStreamAttempt(req *http.Request, onEvent func(string)) ([]byte, int, string, bool, error) {
-	resp, err := p.httpClient.Do(req)
+func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, onEvent func(string)) ([]byte, int, string, bool, error) {
+	client, err := p.httpClientForAttempt(attempt)
+	if err != nil {
+		return nil, 0, "", false, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, "", false, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -1437,17 +1449,10 @@ func buildProviderCandidateOrder(_ string, pc config.ProviderConfig, accounts []
 	case "oauth":
 		out = append(out, oauthAvailable...)
 	case "hybrid":
-		if strings.EqualFold(strings.TrimSpace(pc.OAuth.HybridPriority), "oauth_first") {
-			out = append(out, oauthAvailable...)
-			if apiCandidate.Target != "" && apiCandidate.Available {
-				out = append(out, apiCandidate)
-			}
-		} else {
-			if apiCandidate.Target != "" && apiCandidate.Available {
-				out = append(out, apiCandidate)
-			}
-			out = append(out, oauthAvailable...)
+		if apiCandidate.Target != "" && apiCandidate.Available {
+			out = append(out, apiCandidate)
 		}
+		out = append(out, oauthAvailable...)
 	case "none":
 	default:
 		if apiCandidate.Target != "" {
@@ -2131,11 +2136,16 @@ func (p *HTTPProvider) BuildSummaryViaResponsesCompact(ctx context.Context, mode
 }
 
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {
-	name := strings.TrimSpace(cfg.Agents.Defaults.Proxy)
-	if name == "" {
-		name = "proxy"
+	name := config.PrimaryProviderName(cfg)
+	provider, err := CreateProviderByName(cfg, name)
+	if err != nil {
+		return nil, err
 	}
-	return CreateProviderByName(cfg, name)
+	_, model := config.ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary)
+	if hp, ok := provider.(*HTTPProvider); ok && strings.TrimSpace(model) != "" {
+		hp.defaultModel = strings.TrimSpace(model)
+	}
+	return provider, nil
 }
 
 func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) {
@@ -2219,48 +2229,12 @@ func ListProviderNames(cfg *config.Config) []string {
 }
 
 func getAllProviderConfigs(cfg *config.Config) map[string]config.ProviderConfig {
-	out := map[string]config.ProviderConfig{}
-	if cfg == nil {
-		return out
-	}
-	includeLegacyProxy := len(cfg.Providers.Proxies) == 0 || strings.TrimSpace(cfg.Agents.Defaults.Proxy) == "proxy" || containsStringTrimmed(cfg.Agents.Defaults.ProxyFallbacks, "proxy")
-	if includeLegacyProxy && (cfg.Providers.Proxy.APIBase != "" || cfg.Providers.Proxy.APIKey != "" || cfg.Providers.Proxy.TimeoutSec > 0) {
-		out["proxy"] = cfg.Providers.Proxy
-	}
-	for name, pc := range cfg.Providers.Proxies {
-		trimmed := strings.TrimSpace(name)
-		if trimmed == "" {
-			continue
-		}
-		out[trimmed] = pc
-	}
-	return out
-}
-
-func containsStringTrimmed(values []string, target string) bool {
-	t := strings.TrimSpace(target)
-	for _, v := range values {
-		if strings.TrimSpace(v) == t {
-			return true
-		}
-	}
-	return false
+	return config.AllProviderConfigs(cfg)
 }
 
 func getProviderConfigByName(cfg *config.Config, name string) (config.ProviderConfig, error) {
-	if cfg == nil {
-		return config.ProviderConfig{}, fmt.Errorf("nil config")
+	if pc, ok := config.ProviderConfigByName(cfg, name); ok {
+		return pc, nil
 	}
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return config.ProviderConfig{}, fmt.Errorf("empty provider name")
-	}
-	if trimmed == "proxy" {
-		return cfg.Providers.Proxy, nil
-	}
-	pc, ok := cfg.Providers.Proxies[trimmed]
-	if !ok {
-		return config.ProviderConfig{}, fmt.Errorf("provider %q not found", trimmed)
-	}
-	return pc, nil
+	return config.ProviderConfig{}, fmt.Errorf("provider %q not found", strings.TrimSpace(name))
 }

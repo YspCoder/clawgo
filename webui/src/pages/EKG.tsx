@@ -3,108 +3,12 @@ import { AlertTriangle, RefreshCw, Route, ServerCrash, Workflow } from 'lucide-r
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { FixedButton } from '../components/Button';
+import EKGDistributionCard from '../components/ekg/EKGDistributionCard';
+import EKGRankingCard from '../components/ekg/EKGRankingCard';
 import { SelectField } from '../components/FormControls';
+import MetricPanel from '../components/MetricPanel';
 
 type EKGKV = { key?: string; score?: number; count?: number };
-
-function StatCard({
-  title,
-  value,
-  subtitle,
-  accent,
-  icon,
-}: {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  accent: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="brand-card ui-border-subtle rounded-[28px] border p-5 min-h-[148px]">
-      <div className="flex h-full items-start justify-between gap-3">
-        <div className="flex min-h-full flex-1 flex-col">
-          <div className="ui-text-muted text-[11px] uppercase tracking-widest">{title}</div>
-          <div className="ui-text-primary mt-2 text-3xl font-semibold">{value}</div>
-          {subtitle && <div className="ui-text-muted mt-auto pt-4 text-xs">{subtitle}</div>}
-        </div>
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${accent}`}>{icon}</div>
-      </div>
-    </div>
-  );
-}
-
-function KVDistributionCard({
-  title,
-  data,
-}: {
-  title: string;
-  data: Record<string, number>;
-}) {
-  const entries = useMemo(() => (
-    Object.entries(data).sort((a, b) => b[1] - a[1])
-  ), [data]);
-  const maxValue = entries.length > 0 ? Math.max(...entries.map(([, value]) => value)) : 0;
-
-  return (
-    <div className="brand-card ui-border-subtle rounded-[28px] border p-5">
-      <div className="ui-text-secondary mb-4 text-sm font-medium">{title}</div>
-      <div className="space-y-3">
-        {entries.length === 0 ? (
-          <div className="ui-text-muted text-sm">-</div>
-        ) : entries.map(([key, value]) => (
-          <div key={key} className="space-y-1">
-            <div className="flex items-center justify-between gap-3 text-xs">
-              <div className="ui-text-secondary truncate">{key}</div>
-              <div className="ui-text-muted shrink-0 font-mono">{value}</div>
-            </div>
-            <div className="ui-surface-muted h-2 rounded-full overflow-hidden">
-              <div
-                className="ekg-bar-fill h-full rounded-full"
-                style={{ width: `${maxValue > 0 ? (value / maxValue) * 100 : 0}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RankingCard({
-  title,
-  items,
-  valueMode,
-}: {
-  title: string;
-  items: EKGKV[];
-  valueMode: 'score' | 'count';
-}) {
-  return (
-    <div className="brand-card ui-border-subtle rounded-[28px] border p-5">
-      <div className="ui-text-secondary mb-4 text-sm font-medium">{title}</div>
-      <div className="space-y-2">
-        {items.length === 0 ? (
-          <div className="ui-text-muted text-sm">-</div>
-        ) : items.map((item, index) => (
-          <div key={`${item.key || '-'}-${index}`} className="ui-border-subtle ui-surface-strong flex items-start gap-3 rounded-xl border px-3 py-2">
-            <div className="ui-surface-muted ui-text-secondary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold">
-              {index + 1}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="ui-text-secondary truncate text-sm">{item.key || '-'}</div>
-              <div className="ui-text-muted text-xs">
-                {valueMode === 'score'
-                  ? Number(item.score || 0).toFixed(2)
-                  : `x${item.count || 0}`}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 const EKG: React.FC = () => {
   const { t } = useTranslation();
@@ -178,27 +82,55 @@ const EKG: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard title={t('ekgEscalations')} value={escalationCount} subtitle={t('ekgWindowLabel', { window: ekgWindow })} accent="ui-pill ui-pill-warning border" icon={<AlertTriangle className="w-5 h-5" />} />
-        <StatCard title={t('ekgSourceStats')} value={sourceCount} subtitle={t('ekgActiveSources')} accent="ui-pill ui-pill-info border" icon={<Workflow className="w-5 h-5" />} />
-        <StatCard title={t('ekgChannelStats')} value={channelCount} subtitle={t('ekgActiveChannels')} accent="ui-pill ui-pill-accent border" icon={<Route className="w-5 h-5" />} />
-        <StatCard title={t('ekgTopProvidersWorkload')} value={topWorkloadProvider} subtitle={`${t('ekgErrorsCount')} ${totalErrorHits}`} accent="ui-pill ui-pill-danger border" icon={<ServerCrash className="w-5 h-5" />} />
+        <MetricPanel
+          title={t('ekgEscalations')}
+          value={escalationCount}
+          subtitle={t('ekgWindowLabel', { window: ekgWindow })}
+          icon={<AlertTriangle className="w-5 h-5" />}
+          iconContainerClassName="flex h-10 w-10 items-center justify-center rounded-xl ui-pill ui-pill-warning border"
+          layout="split"
+        />
+        <MetricPanel
+          title={t('ekgSourceStats')}
+          value={sourceCount}
+          subtitle={t('ekgActiveSources')}
+          icon={<Workflow className="w-5 h-5" />}
+          iconContainerClassName="flex h-10 w-10 items-center justify-center rounded-xl ui-pill ui-pill-info border"
+          layout="split"
+        />
+        <MetricPanel
+          title={t('ekgChannelStats')}
+          value={channelCount}
+          subtitle={t('ekgActiveChannels')}
+          icon={<Route className="w-5 h-5" />}
+          iconContainerClassName="flex h-10 w-10 items-center justify-center rounded-xl ui-pill ui-pill-accent border"
+          layout="split"
+        />
+        <MetricPanel
+          title={t('ekgTopProvidersWorkload')}
+          value={topWorkloadProvider}
+          subtitle={`${t('ekgErrorsCount')} ${totalErrorHits}`}
+          icon={<ServerCrash className="w-5 h-5" />}
+          iconContainerClassName="flex h-10 w-10 items-center justify-center rounded-xl ui-pill ui-pill-danger border"
+          layout="split"
+        />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr] gap-6 min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
-          <KVDistributionCard title={t('ekgSourceStats')} data={sourceStats} />
-          <KVDistributionCard title={t('ekgChannelStats')} data={channelStats} />
+          <EKGDistributionCard title={t('ekgSourceStats')} data={sourceStats} />
+          <EKGDistributionCard title={t('ekgChannelStats')} data={channelStats} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
-          <RankingCard title={t('ekgTopProvidersWorkload')} items={providerTopWorkload} valueMode="score" />
-          <RankingCard title={t('ekgTopProvidersAll')} items={providerTop} valueMode="score" />
+          <EKGRankingCard title={t('ekgTopProvidersWorkload')} items={providerTopWorkload} valueMode="score" />
+          <EKGRankingCard title={t('ekgTopProvidersAll')} items={providerTop} valueMode="score" />
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 min-h-0 flex-1">
-        <RankingCard title={t('ekgTopErrsigWorkload')} items={errsigTopWorkload} valueMode="count" />
-        <RankingCard title={t('ekgTopErrsigAll')} items={errsigTop} valueMode="count" />
+        <EKGRankingCard title={t('ekgTopErrsigWorkload')} items={errsigTopWorkload} valueMode="count" />
+        <EKGRankingCard title={t('ekgTopErrsigAll')} items={errsigTop} valueMode="count" />
       </div>
     </div>
   );

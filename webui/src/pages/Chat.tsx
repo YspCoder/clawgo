@@ -1,135 +1,37 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Paperclip, Send, MessageSquare, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import { SelectField, TextField, TextareaField } from '../components/FormControls';
+import ChatComposer from '../components/chat/ChatComposer';
+import ChatEmptyState from '../components/chat/ChatEmptyState';
+import ChatMessageList from '../components/chat/ChatMessageList';
+import SubagentSidebar from '../components/chat/SubagentSidebar';
+import SubagentStreamFilters from '../components/chat/SubagentStreamFilters';
+import {
+  avatarSeed,
+  avatarText,
+  collectActors,
+  formatAgentName,
+  isUserFacingMainSession,
+  messageActorKey,
+  type AgentRuntimeBadge,
+  type RegistryAgent,
+  type RenderedChatItem,
+  type RuntimeTask,
+  type StreamItem,
+} from '../components/chat/chatUtils';
+import { useSubagentChatRuntime } from '../components/chat/useSubagentChatRuntime';
+import { SelectField } from '../components/FormControls';
 import { ChatItem } from '../types';
-
-type StreamItem = {
-  kind?: string;
-  at?: number;
-  task_id?: string;
-  label?: string;
-  agent_id?: string;
-  event_type?: string;
-  message?: string;
-  message_type?: string;
-  content?: string;
-  from_agent?: string;
-  to_agent?: string;
-  reply_to?: string;
-  message_id?: string;
-  status?: string;
-};
-
-type RenderedChatItem = ChatItem & {
-  id: string;
-  actorKey?: string;
-  actorName?: string;
-  avatarText?: string;
-  avatarClassName?: string;
-  metaLine?: string;
-  isReadonlyGroup?: boolean;
-};
-
-type RegistryAgent = {
-  agent_id?: string;
-  display_name?: string;
-  role?: string;
-  enabled?: boolean;
-  transport?: string;
-};
-
-type RuntimeTask = {
-  id?: string;
-  agent_id?: string;
-  status?: string;
-  updated?: number;
-  created?: number;
-  waiting_for_reply?: boolean;
-};
-
-type AgentRuntimeBadge = {
-  status: 'running' | 'waiting' | 'failed' | 'completed' | 'idle';
-  text: string;
-};
-
-function formatAgentName(agentID: string | undefined, t: (key: string) => string): string {
-  const normalized = String(agentID || '').trim();
-  if (!normalized) return t('unknownAgent');
-  if (normalized === 'main') return t('mainAgent');
-  return normalized
-    .split(/[-_.:]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function avatarSeed(key?: string): string {
-  const palette = [
-    'avatar-tone-1',
-    'avatar-tone-2',
-    'avatar-tone-3',
-    'avatar-tone-4',
-    'avatar-tone-5',
-    'avatar-tone-6',
-    'avatar-tone-7',
-  ];
-  const source = String(key || 'agent');
-  let hash = 0;
-  for (let i = 0; i < source.length; i += 1) {
-    hash = (hash * 31 + source.charCodeAt(i)) | 0;
-  }
-  return palette[Math.abs(hash) % palette.length];
-}
-
-function avatarText(name?: string): string {
-  const parts = String(name || '')
-    .split(/\s+/)
-    .filter(Boolean);
-  if (parts.length === 0) return 'A';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
-}
-
-function messageActorKey(item: StreamItem): string {
-  return String(item.from_agent || item.agent_id || item.to_agent || 'subagent').trim() || 'subagent';
-}
-
-function collectActors(items: StreamItem[]): string[] {
-  const set = new Set<string>();
-  items.forEach((item) => {
-    [item.agent_id, item.from_agent, item.to_agent].forEach((value) => {
-      const v = String(value || '').trim();
-      if (v) set.add(v);
-    });
-  });
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}
-
-function isUserFacingMainSession(key?: string): boolean {
-  const normalized = String(key || '').trim().toLowerCase();
-  if (!normalized) return false;
-  return !(
-    normalized.startsWith('subagent:') ||
-    normalized.startsWith('internal:') ||
-    normalized.startsWith('heartbeat:') ||
-    normalized.startsWith('cron:') ||
-    normalized.startsWith('hook:') ||
-    normalized.startsWith('node:')
-  );
-}
 
 const Chat: React.FC = () => {
   const { t } = useTranslation();
   const { q, sessions, subagentRuntimeItems, subagentRegistryItems, subagentStreamItems } = useAppContext();
   const ui = useUI();
   const [mainChat, setMainChat] = useState<RenderedChatItem[]>([]);
-  const [subagentStream, setSubagentStream] = useState<StreamItem[]>([]);
-  const [registryAgents, setRegistryAgents] = useState<RegistryAgent[]>([]);
   const [msg, setMsg] = useState('');
   const [fileSelected, setFileSelected] = useState(false);
   const [chatTab, setChatTab] = useState<'main' | 'subagents'>('main');
@@ -138,7 +40,6 @@ const Chat: React.FC = () => {
   const [dispatchAgentID, setDispatchAgentID] = useState('');
   const [dispatchTask, setDispatchTask] = useState('');
   const [dispatchLabel, setDispatchLabel] = useState('');
-  const [runtimeTasks, setRuntimeTasks] = useState<RuntimeTask[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
@@ -154,6 +55,21 @@ const Chat: React.FC = () => {
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     chatEndRef.current?.scrollIntoView({ behavior });
   };
+
+  const {
+    loadRegistryAgents,
+    loadRuntimeTasks,
+    loadSubagentGroup,
+    registryAgents,
+    runtimeTasks,
+    subagentStream,
+  } = useSubagentChatRuntime({
+    dispatchAgentID,
+    q,
+    subagentRegistryItems,
+    subagentRuntimeItems,
+    subagentStreamItems,
+  });
 
   useEffect(() => {
     if (shouldAutoScrollRef.current) {
@@ -212,75 +128,6 @@ const Chat: React.FC = () => {
         };
       });
       setMainChat(mapped);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const loadSubagentGroup = async () => {
-    try {
-      if (subagentStreamItems.length > 0) {
-        setSubagentStream(subagentStreamItems);
-        return;
-      }
-      shouldAutoScrollRef.current = isNearBottom() || chatTab !== 'subagents';
-      const r = await fetch(`/webui/api/subagents_runtime${q}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'stream_all', limit: 300, task_limit: 36 }),
-      });
-      if (!r.ok) return;
-      const j = await r.json();
-      const arr = Array.isArray(j?.result?.items) ? j.result.items : [];
-      setSubagentStream(arr);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const loadRegistryAgents = async () => {
-    try {
-      if (subagentRegistryItems.length > 0) {
-        const filtered = subagentRegistryItems.filter((item: RegistryAgent) => item?.agent_id && item.enabled !== false);
-        setRegistryAgents(filtered);
-        if (!dispatchAgentID && filtered.length > 0) {
-          setDispatchAgentID(String(filtered[0].agent_id || ''));
-        }
-        return;
-      }
-      const r = await fetch(`/webui/api/subagents_runtime${q}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'registry' }),
-      });
-      if (!r.ok) return;
-      const j = await r.json();
-      const items = Array.isArray(j?.result?.items) ? j.result.items : [];
-      const filtered = items.filter((item: RegistryAgent) => item?.agent_id && item.enabled !== false);
-      setRegistryAgents(filtered);
-      if (!dispatchAgentID && filtered.length > 0) {
-        setDispatchAgentID(String(filtered[0].agent_id || ''));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const loadRuntimeTasks = async () => {
-    try {
-      if (subagentRuntimeItems.length > 0) {
-        setRuntimeTasks(subagentRuntimeItems);
-        return;
-      }
-      const r = await fetch(`/webui/api/subagents_runtime${q}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'list' }),
-      });
-      if (!r.ok) return;
-      const j = await r.json();
-      const items = Array.isArray(j?.result?.items) ? j.result.items : [];
-      setRuntimeTasks(items);
     } catch (e) {
       console.error(e);
     }
@@ -415,6 +262,12 @@ const Chat: React.FC = () => {
     loadRegistryAgents();
     loadRuntimeTasks();
   }, [q, chatTab, sessionKey, subagentRuntimeItems, subagentRegistryItems, subagentStreamItems]);
+
+  useEffect(() => {
+    if (dispatchAgentID || registryAgents.length === 0) return;
+    const first = String(registryAgents[0]?.agent_id || '').trim();
+    if (first) setDispatchAgentID(first);
+  }, [dispatchAgentID, registryAgents]);
 
   const userSessions = (sessions || []).filter((s: any) => isUserFacingMainSession(s?.key));
 
@@ -595,89 +448,38 @@ const Chat: React.FC = () => {
         </div>
 
         {chatTab === 'subagents' && (
-          <div className="ui-surface-strong ui-border-subtle px-4 py-3 border-b flex flex-wrap gap-2">
-            <Button onClick={() => setSelectedStreamAgents([])} variant={selectedStreamAgents.length === 0 ? 'primary' : 'neutral'} size="xs" radius="full">{t('allAgents')}</Button>
-            {streamActors.map((agent) => (
-              <Button
-                key={agent}
-                onClick={() => toggleStreamAgent(agent)}
-                variant={selectedStreamAgents.includes(agent) ? 'primary' : 'neutral'}
-                size="xs"
-                radius="full"
-              >
-                {formatAgentName(agent, t)}
-              </Button>
-            ))}
-          </div>
+          <SubagentStreamFilters
+            agents={streamActors}
+            allAgentsLabel={t('allAgents')}
+            formatAgentName={(agent) => formatAgentName(agent, t)}
+            onReset={() => setSelectedStreamAgents([])}
+            onToggle={toggleStreamAgent}
+            selectedAgents={selectedStreamAgents}
+          />
         )}
 
         <div className="flex-1 min-h-0 flex flex-col xl:flex-row">
           {chatTab === 'subagents' && (
-            <div className="ui-surface-strong ui-border-subtle w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
-              <div>
-                <div className="ui-text-muted text-xs uppercase tracking-wider mb-1">{t('subagentDispatch')}</div>
-                <div className="ui-text-secondary text-sm">{t('subagentDispatchHint')}</div>
-              </div>
-              <div className="space-y-3">
-                <SelectField
-                  value={dispatchAgentID}
-                  onChange={(e) => setDispatchAgentID(e.target.value)}
-                  className="w-full rounded-2xl py-2.5"
-                >
-                  {registryAgents.map((agent) => (
-                    <option key={agent.agent_id} value={agent.agent_id}>
-                      {formatAgentName(agent.display_name || agent.agent_id, t)} · {agent.role || '-'}
-                    </option>
-                  ))}
-                </SelectField>
-                <TextareaField
-                  value={dispatchTask}
-                  onChange={(e) => setDispatchTask(e.target.value)}
-                  placeholder={t('subagentTaskPlaceholder')}
-                  className="w-full min-h-[180px] resize-none rounded-2xl px-3 py-3"
-                />
-                <TextField
-                  value={dispatchLabel}
-                  onChange={(e) => setDispatchLabel(e.target.value)}
-                  placeholder={t('subagentLabelPlaceholder')}
-                  className="w-full rounded-2xl py-2.5"
-                />
-                <Button onClick={dispatchSubagentTask} disabled={!dispatchAgentID.trim() || !dispatchTask.trim()} variant="primary" size="md_tall" fullWidth>
-                  {t('dispatchToSubagent')}
-                </Button>
-              </div>
-              <div className="ui-border-subtle border-t pt-4 min-h-0 flex flex-col">
-                <div className="ui-text-muted text-xs uppercase tracking-wider mb-2">{t('agents')}</div>
-                <div className="overflow-y-auto space-y-2 min-h-0">
-                  {registryAgents.map((agent) => {
-                    const active = dispatchAgentID === agent.agent_id;
-                    const badge = runtimeBadgeByAgent[String(agent.agent_id || '')];
-                    const badgeClass = badge?.status === 'running'
-                      ? 'ui-pill-success'
-                      : badge?.status === 'waiting'
-                        ? 'ui-pill-warning'
-                        : badge?.status === 'failed'
-                          ? 'ui-pill-danger'
-                          : badge?.status === 'completed'
-                            ? 'ui-pill-info'
-                            : 'ui-pill-neutral';
-                    return (
-                      <button
-                        key={agent.agent_id}
-                        onClick={() => setDispatchAgentID(String(agent.agent_id || ''))}
-                        className={`w-full text-left rounded-2xl border px-3 py-2.5 ${active ? 'ui-card-active-warning' : 'ui-border-subtle ui-surface-muted ui-row-hover'}`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="ui-text-primary text-sm font-medium">{formatAgentName(agent.display_name || agent.agent_id, t)}</div>
-                          <span className={`ui-pill inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${badgeClass}`}>{badge?.text || t('idle')}</span>
-                        </div>
-                        <div className="ui-text-muted text-xs">{agent.agent_id} · {agent.role || '-'}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            <SubagentSidebar
+              agentLabel={t('agent')}
+              agentsLabel={t('agents')}
+              dispatchAgentID={dispatchAgentID}
+              dispatchHint={t('subagentDispatchHint')}
+              dispatchLabel={dispatchLabel}
+              dispatchTask={dispatchTask}
+              dispatchTitle={t('subagentDispatch')}
+              dispatchToSubagentLabel={t('dispatchToSubagent')}
+              formatAgentName={(value) => formatAgentName(value, t)}
+              idleLabel={t('idle')}
+              onAgentChange={setDispatchAgentID}
+              onDispatch={dispatchSubagentTask}
+              onLabelChange={setDispatchLabel}
+              onTaskChange={setDispatchTask}
+              registryAgents={registryAgents}
+              runtimeBadgeByAgent={runtimeBadgeByAgent}
+              subagentLabelPlaceholder={t('subagentLabelPlaceholder')}
+              subagentTaskPlaceholder={t('subagentTaskPlaceholder')}
+            />
           )}
           <div
             ref={chatScrollRef}
@@ -687,96 +489,24 @@ const Chat: React.FC = () => {
             className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 min-w-0"
           >
             {displayedChat.length === 0 ? (
-              <div className="ui-text-muted h-full flex flex-col items-center justify-center space-y-4">
-                <div className="ui-border-subtle w-16 h-16 rounded-[24px] brand-card-subtle flex items-center justify-center border">
-                  <MessageSquare className="ui-icon-muted w-8 h-8" />
-                </div>
-                <p className="text-sm font-medium">{chatTab === 'main' ? t('startConversation') : t('noSubagentStream')}</p>
-              </div>
+              <ChatEmptyState message={chatTab === 'main' ? t('startConversation') : t('noSubagentStream')} />
             ) : (
-              displayedChat.map((m, i) => {
-                const isUser = m.role === 'user';
-                const isExec = m.role === 'tool' || m.role === 'exec';
-                const isSystem = m.role === 'system';
-                const bubbleClass = isUser
-                  ? 'chat-bubble-user rounded-br-sm'
-                  : isExec
-                    ? 'chat-bubble-tool rounded-bl-sm'
-                    : isSystem
-                      ? 'chat-bubble-system rounded-bl-sm'
-                      : m.isReadonlyGroup
-                        ? 'chat-bubble-system rounded-bl-sm'
-                        : 'chat-bubble-agent rounded-bl-sm';
-                const metaClass = isUser
-                  ? 'chat-meta-user'
-                  : isExec
-                    ? 'chat-meta-tool'
-                    : 'ui-text-muted';
-                const subLabelClass = isUser
-                  ? 'chat-submeta-user'
-                  : isExec
-                    ? 'chat-submeta-tool'
-                    : 'ui-text-muted';
-
-                return (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    key={m.id || i}
-                    className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`flex items-start gap-2 max-w-full sm:max-w-[96%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <div className={`w-9 h-9 mt-1 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 ${m.avatarClassName || (isUser ? 'avatar-user' : 'avatar-agent')}`}>{m.avatarText || (isUser ? 'U' : 'A')}</div>
-                      <div className={`max-w-[calc(100vw-6rem)] sm:max-w-[92%] rounded-[24px] px-4 py-3 shadow-sm ${bubbleClass}`}>
-                        <div className="flex items-center justify-between gap-3 mb-1">
-                          <div className={`text-[11px] font-medium ${metaClass}`}>{m.actorName || m.label || (isUser ? t('user') : isExec ? t('exec') : isSystem ? t('system') : t('agent'))}</div>
-                          {m.metaLine && <div className={`text-[11px] ${metaClass}`}>{m.metaLine}</div>}
-                        </div>
-                        {m.label && m.actorName && m.label !== m.actorName && (
-                          <div className={`text-[11px] mb-2 ${subLabelClass}`}>{m.label}</div>
-                        )}
-                        <p className="whitespace-pre-wrap text-[14px] leading-relaxed">{m.text}</p>
-                      </div>
-                    </div>
-                  </motion.div>
-                );
-              })
+              <ChatMessageList items={displayedChat} t={t} />
             )}
             <div ref={chatEndRef} />
           </div>
         </div>
 
-        <div className="ui-soft-panel ui-border-subtle p-3 sm:p-4 border-t">
-          <div className="ui-composer w-full relative flex items-center px-2">
-            <input
-              type="file"
-              id="file"
-              className="hidden"
-              onChange={(e) => setFileSelected(!!e.target.files?.[0])}
-            />
-            <label
-              htmlFor="file"
-              className={`absolute left-3 p-2 rounded-full cursor-pointer transition-colors ${fileSelected ? 'ui-icon-info ui-surface-muted' : 'ui-text-muted ui-row-hover'}`}
-            >
-              <Paperclip className="w-5 h-5" />
-            </label>
-            <TextField
-              value={msg}
-              onChange={(e) => setMsg(e.target.value)}
-              onKeyDown={(e) => chatTab === 'main' && e.key === 'Enter' && send()}
-              placeholder={chatTab === 'main' ? t('typeMessage') : t('subagentGroupReadonly')}
-              disabled={chatTab !== 'main'}
-              className="ui-composer-input w-full pl-14 pr-14 py-3.5 text-[15px] transition-all disabled:opacity-60"
-            />
-            <button
-              onClick={send}
-              disabled={chatTab !== 'main' || (!msg.trim() && !fileSelected)}
-              className="absolute right-2 p-2.5 brand-button disabled:opacity-50 ui-text-primary rounded-full transition-colors"
-            >
-              <Send className="w-4 h-4 ml-0.5" />
-            </button>
-          </div>
-        </div>
+        <ChatComposer
+          chatTab={chatTab}
+          disabled={chatTab !== 'main'}
+          fileSelected={fileSelected}
+          msg={msg}
+          onFileChange={(e) => setFileSelected(!!e.target.files?.[0])}
+          onMsgChange={setMsg}
+          onSend={send}
+          placeholder={chatTab === 'main' ? t('typeMessage') : t('subagentGroupReadonly')}
+        />
       </div>
     </div>
   );

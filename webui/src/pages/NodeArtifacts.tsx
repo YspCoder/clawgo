@@ -1,26 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Download, RefreshCw, Scissors, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { Button, FixedButton, LinkButton } from '../components/Button';
+import ArtifactPreviewCard from '../components/ArtifactPreviewCard';
+import { FixedButton, FixedLinkButton, LinkButton } from '../components/Button';
+import CodeBlockPanel from '../components/CodeBlockPanel';
+import EmptyState from '../components/EmptyState';
 import { SelectField, TextField } from '../components/FormControls';
+import ListPanel from '../components/ListPanel';
+import SummaryListItem from '../components/SummaryListItem';
+import { dataUrlForArtifact, formatArtifactBytes } from '../utils/artifacts';
 import { formatLocalDateTime } from '../utils/time';
-
-function dataUrlForArtifact(artifact: any) {
-  const mime = String(artifact?.mime_type || '').trim() || 'application/octet-stream';
-  const content = String(artifact?.content_base64 || '').trim();
-  if (!content) return '';
-  return `data:${mime};base64,${content}`;
-}
-
-function formatBytes(value: unknown) {
-  const size = Number(value || 0);
-  if (!Number.isFinite(size) || size <= 0) return '-';
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 const NodeArtifacts: React.FC = () => {
   const { t } = useTranslation();
@@ -144,7 +135,9 @@ const NodeArtifacts: React.FC = () => {
           <div className="ui-text-muted text-sm mt-1">{t('nodeArtifactsHint')}</div>
         </div>
         <div className="flex items-center gap-2">
-          <LinkButton href={exportURL()} size="sm">{t('export')}</LinkButton>
+          <FixedLinkButton href={exportURL()} label={t('export')}>
+            <Download className="w-4 h-4" />
+          </FixedLinkButton>
           <FixedButton onClick={loadArtifacts} variant="primary" label={loading ? t('loading') : t('refresh')}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </FixedButton>
@@ -152,7 +145,7 @@ const NodeArtifacts: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-4 flex-1 min-h-0">
-        <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
+        <ListPanel>
           <div className="ui-border-subtle p-3 border-b space-y-2">
             <div className="ui-code-panel ui-text-secondary p-3 text-xs space-y-1">
               <div className="ui-text-primary font-medium">{t('nodeArtifactsRetention')}</div>
@@ -183,36 +176,35 @@ const NodeArtifacts: React.FC = () => {
                 placeholder={t('nodeArtifactsKeepLatest')}
                 dense
               />
-              <Button onClick={pruneArtifacts} disabled={prunePending} variant="warning" size="xs_tall">
-                {prunePending ? t('loading') : t('nodeArtifactsPrune')}
-              </Button>
+              <FixedButton onClick={pruneArtifacts} disabled={prunePending} variant="warning" label={prunePending ? t('loading') : t('nodeArtifactsPrune')}>
+                <Scissors className="w-4 h-4" />
+              </FixedButton>
             </div>
           </div>
           <div className="overflow-y-auto min-h-0">
             {filteredItems.length === 0 ? (
-              <div className="ui-text-muted p-4 text-sm">{t('nodeArtifactsEmpty')}</div>
+              <EmptyState message={t('nodeArtifactsEmpty')} padded />
             ) : filteredItems.map((item, index) => {
               const active = String(selected?.id || '') === String(item?.id || '');
               return (
-                <button
+                <SummaryListItem
                   key={String(item?.id || index)}
                   onClick={() => setSelectedID(String(item?.id || ''))}
-                  className={`ui-border-subtle w-full text-left px-3 py-3 border-b ${active ? 'ui-card-active-warning' : 'ui-row-hover'}`}
-                >
-                  <div className="ui-text-primary text-sm font-medium truncate">{String(item?.name || item?.source_path || `artifact-${index + 1}`)}</div>
-                  <div className="ui-text-subtle text-xs truncate">{String(item?.node || '-')} · {String(item?.action || '-')} · {String(item?.kind || '-')}</div>
-                  <div className="ui-text-muted text-[11px] truncate">{formatLocalDateTime(item?.time)}</div>
-                </button>
+                  active={active}
+                  className="border-b py-3"
+                  title={String(item?.name || item?.source_path || `artifact-${index + 1}`)}
+                  subtitle={`${String(item?.node || '-')} · ${String(item?.action || '-')} · ${String(item?.kind || '-')}`}
+                  meta={formatLocalDateTime(item?.time)}
+                />
               );
             })}
           </div>
-        </div>
+        </ListPanel>
 
-        <div className="brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0">
-          <div className="ui-border-subtle ui-text-subtle px-3 py-2 border-b text-xs uppercase tracking-wider">{t('nodeArtifactDetail')}</div>
+        <ListPanel header={<div className="ui-border-subtle ui-text-subtle px-3 py-2 border-b text-xs uppercase tracking-wider">{t('nodeArtifactDetail')}</div>}>
           <div className="p-4 overflow-y-auto min-h-0 space-y-4 text-sm">
             {!selected ? (
-              <div className="ui-text-muted">{t('nodeArtifactsEmpty')}</div>
+              <EmptyState message={t('nodeArtifactsEmpty')} />
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3">
@@ -222,7 +214,9 @@ const NodeArtifacts: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <LinkButton href={downloadURL(String(selected?.id || ''))} size="xs">{t('download')}</LinkButton>
-                    <Button onClick={() => deleteArtifact(String(selected?.id || ''))} variant="danger" size="xs">{t('delete')}</Button>
+                    <FixedButton onClick={() => deleteArtifact(String(selected?.id || ''))} variant="danger" label={t('delete')}>
+                      <Trash2 className="w-4 h-4" />
+                    </FixedButton>
                   </div>
                 </div>
 
@@ -230,36 +224,30 @@ const NodeArtifacts: React.FC = () => {
                   <div><div className="ui-text-muted text-xs">{t('node')}</div><div className="ui-text-secondary">{String(selected?.node || '-')}</div></div>
                   <div><div className="ui-text-muted text-xs">{t('action')}</div><div className="ui-text-secondary">{String(selected?.action || '-')}</div></div>
                   <div><div className="ui-text-muted text-xs">{t('kind')}</div><div className="ui-text-secondary">{String(selected?.kind || '-')}</div></div>
-                  <div><div className="ui-text-muted text-xs">{t('size')}</div><div className="ui-text-secondary">{formatBytes(selected?.size_bytes)}</div></div>
+                  <div><div className="ui-text-muted text-xs">{t('size')}</div><div className="ui-text-secondary">{formatArtifactBytes(selected?.size_bytes)}</div></div>
                 </div>
 
                 <div className="ui-text-muted text-xs break-all">
                   {String(selected?.source_path || selected?.path || selected?.url || '-')}
                 </div>
 
-                {(() => {
-                  const kind = String(selected?.kind || '').trim().toLowerCase();
-                  const mime = String(selected?.mime_type || '').trim().toLowerCase();
-                  const isImage = kind === 'image' || mime.startsWith('image/');
-                  const isVideo = kind === 'video' || mime.startsWith('video/');
-                  const dataUrl = dataUrlForArtifact(selected);
-                  if (isImage && dataUrl) {
-                    return <img src={dataUrl} alt={String(selected?.name || 'artifact')} className="ui-media-surface-strong max-h-[420px] rounded-2xl border object-contain" />;
-                  }
-                  if (isVideo && dataUrl) {
-                    return <video src={dataUrl} controls className="ui-media-surface-strong max-h-[420px] w-full rounded-2xl border" />;
-                  }
-                  if (String(selected?.content_text || '').trim() !== '') {
-                    return <pre className="ui-code-panel p-3 text-[12px] whitespace-pre-wrap overflow-auto max-h-[420px]">{String(selected?.content_text || '')}</pre>;
-                  }
-                  return <div className="ui-text-muted">{t('nodeArtifactPreviewUnavailable')}</div>;
-                })()}
+                <ArtifactPreviewCard
+                  artifact={selected}
+                  dataUrl={dataUrlForArtifact(selected)}
+                  fallbackName={String(selected?.name || 'artifact')}
+                  formatBytes={formatArtifactBytes}
+                  className="max-h-[420px]"
+                />
 
-                <pre className="ui-code-panel p-3 text-xs overflow-auto">{JSON.stringify(selected, null, 2)}</pre>
+                {String(selected?.content_text || '').trim() === '' && !String(selected?.content_base64 || '').trim() ? (
+                  <EmptyState message={t('nodeArtifactPreviewUnavailable')} />
+                ) : null}
+
+                <CodeBlockPanel label={t('rawJson')} pre>{JSON.stringify(selected, null, 2)}</CodeBlockPanel>
               </>
             )}
           </div>
-        </div>
+        </ListPanel>
       </div>
     </div>
   );

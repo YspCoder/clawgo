@@ -3,9 +3,12 @@ import { Terminal, Trash2, Play, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
+import EmptyState from '../components/EmptyState';
 import { LogEntry } from '../types';
 import { formatLocalTime } from '../utils/time';
-import { Button } from '../components/Button';
+import { Button, FixedButton } from '../components/Button';
+import PageHeader from '../components/PageHeader';
+import ToolbarRow from '../components/ToolbarRow';
 
 const Logs: React.FC = () => {
   const { t } = useTranslation();
@@ -164,28 +167,31 @@ const Logs: React.FC = () => {
 
   return (
     <div className="p-4 md:p-5 xl:p-6 w-full space-y-4 h-full flex flex-col">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <h1 className="ui-text-primary text-2xl font-semibold tracking-tight">{t('logs')}</h1>
+      <PageHeader
+        title={t('logs')}
+        titleClassName="ui-text-primary"
+        subtitle={
           <div className={`ui-pill flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
             isStreaming ? 'ui-pill-success' : 'ui-pill-neutral'
           }`}>
             <div className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'ui-dot-live animate-pulse' : 'ui-dot-neutral'}`} />
             {isStreaming ? t('live') : t('paused')}
           </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        }
+        actions={
+          <ToolbarRow>
           <Button onClick={() => setShowRaw(!showRaw)} gap="2">
             {showRaw ? t('pretty') : t('raw')}
           </Button>
           <Button onClick={() => setIsStreaming(!isStreaming)} variant={isStreaming ? 'neutral' : 'primary'} gap="2">
             {isStreaming ? <><Square className="w-4 h-4" /> {t('pause')}</> : <><Play className="w-4 h-4" /> {t('resume')}</>}
           </Button>
-          <Button onClick={clearLogs} gap="2">
-            <Trash2 className="w-4 h-4" /> {t('clear')}
-          </Button>
-        </div>
-      </div>
+          <FixedButton onClick={clearLogs} label={t('clear')}>
+            <Trash2 className="w-4 h-4" />
+          </FixedButton>
+          </ToolbarRow>
+        }
+      />
 
       <div className="flex-1 brand-card ui-border-subtle border rounded-[30px] overflow-hidden flex flex-col shadow-2xl">
         <div className="ui-soft-panel ui-border-subtle px-4 py-2 border-b flex items-center justify-between">
@@ -197,10 +203,12 @@ const Logs: React.FC = () => {
         </div>
         <div className="flex-1 overflow-auto selection:bg-indigo-500/30">
           {logs.length === 0 ? (
-            <div className="ui-text-primary h-full flex flex-col items-center justify-center space-y-2 p-4">
-              <Terminal className="w-8 h-8 opacity-10" />
-              <p>{t('waitingForLogs')}</p>
-            </div>
+            <EmptyState
+              centered
+              className="ui-text-primary h-full p-4"
+              icon={<Terminal className="w-8 h-8 opacity-10" />}
+              message={t('waitingForLogs')}
+            />
           ) : showRaw ? (
             <div className="p-3 font-mono text-xs space-y-1">
               {logs.map((log, i) => (
