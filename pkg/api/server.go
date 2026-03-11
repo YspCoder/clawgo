@@ -56,7 +56,7 @@ type Server struct {
 	logFilePath     string
 	onChat          func(ctx context.Context, sessionKey, content string) (string, error)
 	onChatHistory   func(sessionKey string) []map[string]interface{}
-	onConfigAfter   func()
+	onConfigAfter   func() error
 	onCron          func(action string, args map[string]interface{}) (interface{}, error)
 	onSubagents     func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
 	onNodeDispatch  func(ctx context.Context, req nodes.Request, mode string) (nodes.Response, error)
@@ -291,13 +291,14 @@ func (s *Server) publishSubagentLiveSnapshot(ctx context.Context, key, taskID, p
 func (s *Server) SetConfigPath(path string)    { s.configPath = strings.TrimSpace(path) }
 func (s *Server) SetWorkspacePath(path string) { s.workspacePath = strings.TrimSpace(path) }
 func (s *Server) SetLogFilePath(path string)   { s.logFilePath = strings.TrimSpace(path) }
+func (s *Server) SetToken(token string)        { s.token = strings.TrimSpace(token) }
 func (s *Server) SetChatHandler(fn func(ctx context.Context, sessionKey, content string) (string, error)) {
 	s.onChat = fn
 }
 func (s *Server) SetChatHistoryHandler(fn func(sessionKey string) []map[string]interface{}) {
 	s.onChatHistory = fn
 }
-func (s *Server) SetConfigAfterHook(fn func()) { s.onConfigAfter = fn }
+func (s *Server) SetConfigAfterHook(fn func() error) { s.onConfigAfter = fn }
 func (s *Server) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
 }
@@ -489,16 +490,14 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/webui/api/logs/live", s.handleWebUILogsLive)
 	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
-	if strings.TrimSpace(s.whatsAppBase) != "" {
-		base := strings.TrimRight(strings.TrimSpace(s.whatsAppBase), "/")
-		if base == "" {
-			base = "/whatsapp"
-		}
-		mux.HandleFunc(base, s.handleWhatsAppBridgeWS)
-		mux.HandleFunc(joinServerRoute(base, "ws"), s.handleWhatsAppBridgeWS)
-		mux.HandleFunc(joinServerRoute(base, "status"), s.handleWhatsAppBridgeStatus)
-		mux.HandleFunc(joinServerRoute(base, "logout"), s.handleWhatsAppBridgeLogout)
+	base := strings.TrimRight(strings.TrimSpace(s.whatsAppBase), "/")
+	if base == "" {
+		base = "/whatsapp"
 	}
+	mux.HandleFunc(base, s.handleWhatsAppBridgeWS)
+	mux.HandleFunc(joinServerRoute(base, "ws"), s.handleWhatsAppBridgeWS)
+	mux.HandleFunc(joinServerRoute(base, "status"), s.handleWhatsAppBridgeStatus)
+	mux.HandleFunc(joinServerRoute(base, "logout"), s.handleWhatsAppBridgeLogout)
 	s.server = &http.Server{Addr: s.addr, Handler: mux}
 	go func() {
 		<-ctx.Done()
@@ -866,9 +865,15 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.onConfigAfter != nil {
-			s.onConfigAfter()
+			if err := s.onConfigAfter(); err != nil {
+				http.Error(w, "config saved but reload failed: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		} else {
-			_ = requestSelfReloadSignal()
+			if err := requestSelfReloadSignal(); err != nil {
+				http.Error(w, "config saved but reload signal failed: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reloaded": true})
 	default:
@@ -1490,9 +1495,13 @@ func (s *Server) saveProviderConfig(cfg *cfgpkg.Config, name string, pc cfgpkg.P
 		return err
 	}
 	if s.onConfigAfter != nil {
-		s.onConfigAfter()
+		if err := s.onConfigAfter(); err != nil {
+			return err
+		}
 	} else {
-		_ = requestSelfReloadSignal()
+		if err := requestSelfReloadSignal(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -5890,7 +5899,10 @@ func (s *Server) handleWebUIExecApprovals(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if s.onConfigAfter != nil {
-			s.onConfigAfter()
+			if err := s.onConfigAfter(); err != nil {
+				http.Error(w, "config saved but reload failed: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reloaded": true})
 		return

@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/YspCoder/clawgo/pkg/agent"
@@ -176,6 +177,7 @@ func gatewayCmd() {
 	registryServer.SetGatewayVersion(version)
 	registryServer.SetWebUIVersion(version)
 	registryServer.SetConfigPath(getConfigPath())
+	registryServer.SetToken(cfg.Gateway.Token)
 	registryServer.SetWorkspacePath(cfg.WorkspacePath())
 	registryServer.SetLogFilePath(cfg.LogFilePath())
 	registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
@@ -200,12 +202,15 @@ func gatewayCmd() {
 		}
 		return out
 	})
-	reloadReqCh := make(chan struct{}, 1)
-	registryServer.SetConfigAfterHook(func() {
-		select {
-		case reloadReqCh <- struct{}{}:
-		default:
+	var reloadMu sync.Mutex
+	var applyReload func() error
+	registryServer.SetConfigAfterHook(func() error {
+		reloadMu.Lock()
+		defer reloadMu.Unlock()
+		if applyReload == nil {
+			return fmt.Errorf("reload handler not ready")
 		}
+		return applyReload()
 	})
 	registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
 		return agentLoop.HandleSubagentRuntime(cctx, action, args)
@@ -373,12 +378,11 @@ func gatewayCmd() {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, gatewayNotifySignals()...)
-	applyReload := func() {
+	applyReload = func() error {
 		fmt.Println("\nReloading config...")
 		newCfg, err := config.LoadConfig(getConfigPath())
 		if err != nil {
-			fmt.Printf("Reload failed (load config): %v\n", err)
-			return
+			return fmt.Errorf("load config: %w", err)
 		}
 		if strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv(envRootGranted)), "true") {
 			applyMaximumPermissionPolicy(newCfg)
@@ -392,7 +396,12 @@ func gatewayCmd() {
 
 		if reflect.DeepEqual(cfg, newCfg) {
 			fmt.Println("Config unchanged, skip reload")
-			return
+			return nil
+		}
+
+		if cfg.Gateway.Host != newCfg.Gateway.Host || cfg.Gateway.Port != newCfg.Gateway.Port {
+			fmt.Printf("Warning: gateway host/port change detected (%s:%d -> %s:%d); restart required to rebind listener\n",
+				cfg.Gateway.Host, cfg.Gateway.Port, newCfg.Gateway.Host, newCfg.Gateway.Port)
 		}
 
 		if shouldEmbedWhatsAppBridge(newCfg) {
@@ -421,15 +430,18 @@ func gatewayCmd() {
 			}
 			cfg = newCfg
 			runtimecfg.Set(cfg)
+			registryServer.SetToken(cfg.Gateway.Token)
+			registryServer.SetWorkspacePath(cfg.WorkspacePath())
+			registryServer.SetLogFilePath(cfg.LogFilePath())
+			registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
 			configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 			fmt.Println("Config hot-reload applied (logging/metadata only)")
-			return
+			return nil
 		}
 
 		newAgentLoop, newChannelManager, err := buildGatewayRuntime(ctx, newCfg, msgBus, cronService)
 		if err != nil {
-			fmt.Printf("Reload failed (init runtime): %v\n", err)
-			return
+			return fmt.Errorf("init runtime: %w", err)
 		}
 
 		channelManager.StopAll(ctx)
@@ -446,6 +458,11 @@ func gatewayCmd() {
 		whatsAppBridge = newWhatsAppBridge
 		whatsAppEmbedded = newWhatsAppBridge != nil
 		runtimecfg.Set(cfg)
+		configureLogging(newCfg)
+		registryServer.SetToken(cfg.Gateway.Token)
+		registryServer.SetWorkspacePath(cfg.WorkspacePath())
+		registryServer.SetLogFilePath(cfg.LogFilePath())
+		registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
 		configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 		registryServer.SetWhatsAppBridge(whatsAppBridge, embeddedWhatsAppBridgeBasePath)
 		sentinelService.Stop()
@@ -462,21 +479,24 @@ func gatewayCmd() {
 		sentinelService.SetManager(channelManager)
 
 		if err := channelManager.StartAll(ctx); err != nil {
-			fmt.Printf("Reload failed (start channels): %v\n", err)
-			return
+			return fmt.Errorf("start channels: %w", err)
 		}
 		go agentLoop.Run(ctx)
 		fmt.Println("Config hot-reload applied")
+		return nil
 	}
 
 	for {
 		select {
-		case <-reloadReqCh:
-			applyReload()
 		case sig := <-sigChan:
 			switch {
 			case isGatewayReloadSignal(sig):
-				applyReload()
+				reloadMu.Lock()
+				err := applyReload()
+				reloadMu.Unlock()
+				if err != nil {
+					fmt.Printf("Reload failed: %v\n", err)
+				}
 			default:
 				fmt.Println("\nShutting down...")
 				cancel()

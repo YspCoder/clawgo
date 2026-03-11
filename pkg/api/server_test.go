@@ -340,6 +340,80 @@ func TestHandleWebUIConfigRequiresConfirmForCustomProviderSecretChange(t *testin
 	}
 }
 
+func TestHandleWebUIConfigRunsReloadHookSynchronously(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Logging.Enabled = false
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	body, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "", nil)
+	srv.SetConfigPath(cfgPath)
+	called := false
+	srv.SetConfigAfterHook(func() error {
+		called = true
+		return nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/webui/api/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.handleWebUIConfig(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !called {
+		t.Fatalf("expected reload hook to run")
+	}
+}
+
+func TestHandleWebUIConfigReturnsReloadHookError(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Logging.Enabled = false
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	body, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "", nil)
+	srv.SetConfigPath(cfgPath)
+	srv.SetConfigAfterHook(func() error {
+		return fmt.Errorf("reload boom")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/webui/api/config", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.handleWebUIConfig(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "reload failed") {
+		t.Fatalf("expected reload failure in body, got: %s", rec.Body.String())
+	}
+}
+
 func TestHandleNodeConnectRegistersAndHeartbeatsNode(t *testing.T) {
 	t.Parallel()
 

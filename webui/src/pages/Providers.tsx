@@ -16,7 +16,7 @@ import { cloneJSON } from '../utils/object';
 const Providers: React.FC = () => {
   const { t } = useTranslation();
   const ui = useUI();
-  const { cfg, setCfg, cfgRaw, loadConfig, q, setConfigEditing, providerRuntimeItems } = useAppContext();
+  const { cfg, setCfg, cfgRaw, loadConfig, q, setConfigEditing, providerRuntimeItems, setToken } = useAppContext();
   const [newProxyName, setNewProxyName] = useState('');
   const [runtimeAutoRefresh, setRuntimeAutoRefresh] = useState(true);
   const [runtimeRefreshSec, setRuntimeRefreshSec] = useState(10);
@@ -134,9 +134,11 @@ const Providers: React.FC = () => {
   const { saveConfig } = useConfigSaveAction({
     cfg,
     cfgRaw,
+    loadConfig,
     q,
     setBaseline,
     setConfigEditing,
+    setToken,
     setShowDiff,
     showRaw: false,
     t,
@@ -152,7 +154,10 @@ const Providers: React.FC = () => {
         titleClassName="ui-text-primary"
         actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
-          <FixedButton onClick={async () => { await loadConfig(true); setTimeout(() => setBaseline(cloneJSON(cfg)), 0); }} label={t('reload')}>
+          <FixedButton onClick={async () => {
+            const reloaded = await loadConfig(true);
+            setBaseline(cloneJSON(reloaded ?? cfg));
+          }} label={t('reload')}>
             <RefreshCw className="w-4 h-4" />
           </FixedButton>
           <Button onClick={() => setShowDiff(true)} size="sm">{t('configDiffPreview')}</Button>

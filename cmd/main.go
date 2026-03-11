@@ -19,7 +19,7 @@ import (
 //go:embed workspace
 var embeddedFiles embed.FS
 
-var version = "0.2.0"
+var version = "0.2.1"
 var buildTime = "unknown"
 
 const logo = ">"

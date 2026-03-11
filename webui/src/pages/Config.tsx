@@ -15,7 +15,7 @@ import { cloneJSON } from '../utils/object';
 const Config: React.FC = () => {
   const { t } = useTranslation();
   const ui = useUI();
-  const { cfg, setCfg, cfgRaw, setCfgRaw, loadConfig, hotReloadFieldDetails, q, setConfigEditing } = useAppContext();
+  const { cfg, setCfg, cfgRaw, setCfgRaw, loadConfig, hotReloadFieldDetails, q, setConfigEditing, setToken } = useAppContext();
   const [showRaw, setShowRaw] = useState(false);
   const [basicMode, setBasicMode] = useState(true);
   const [hotOnly, setHotOnly] = useState(false);
@@ -43,9 +43,11 @@ const Config: React.FC = () => {
   const { saveConfig } = useConfigSaveAction({
     cfg,
     cfgRaw,
+    loadConfig,
     q,
     setBaseline,
     setConfigEditing,
+    setToken,
     setShowDiff,
     showRaw,
     t,
@@ -87,7 +89,10 @@ const Config: React.FC = () => {
         basicMode={basicMode}
         hotOnly={hotOnly}
         onHotOnlyChange={setHotOnly}
-        onReload={async () => { await loadConfig(true); setTimeout(() => setBaseline(cloneJSON(cfg)), 0); }}
+        onReload={async () => {
+          const reloaded = await loadConfig(true);
+          setBaseline(cloneJSON(reloaded ?? cfg));
+        }}
         onSearchChange={setSearch}
         onShowDiff={() => setShowDiff(true)}
         onToggleBasicMode={() => setBasicMode((value) => !value)}

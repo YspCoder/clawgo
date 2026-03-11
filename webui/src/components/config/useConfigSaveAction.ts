@@ -9,9 +9,11 @@ type UI = {
 type UseConfigSaveActionArgs = {
   cfg: any;
   cfgRaw: string;
+  loadConfig: (force?: boolean, tokenOverride?: string) => Promise<any>;
   q: string;
   setBaseline: React.Dispatch<React.SetStateAction<any>>;
   setConfigEditing: (editing: boolean) => void;
+  setToken: (token: string) => void;
   setShowDiff: React.Dispatch<React.SetStateAction<boolean>>;
   showRaw: boolean;
   t: (key: string, options?: any) => string;
@@ -21,9 +23,11 @@ type UseConfigSaveActionArgs = {
 export function useConfigSaveAction({
   cfg,
   cfgRaw,
+  loadConfig,
   q,
   setBaseline,
   setConfigEditing,
+  setToken,
   setShowDiff,
   showRaw,
   t,
@@ -68,8 +72,14 @@ export function useConfigSaveAction({
         throw new Error(result.data?.error || result.text || 'save failed');
       }
 
+      const hasGatewayToken = typeof payload?.gateway?.token === 'string';
+      const nextToken = hasGatewayToken ? payload.gateway.token.trim() : '';
+      const reloaded = await loadConfig(true, nextToken || undefined);
+      if (hasGatewayToken) {
+        setToken(nextToken);
+      }
       await ui.notify({ title: t('saved'), message: t('configSaved') });
-      setBaseline(cloneJSON(payload));
+      setBaseline(cloneJSON(reloaded ?? payload));
       setConfigEditing(false);
       setShowDiff(false);
     } catch (error) {

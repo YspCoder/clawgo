@@ -87,7 +87,7 @@ interface AppContextType {
   refreshTaskQueue: () => Promise<void>;
   refreshEKGSummary: () => Promise<void>;
   refreshVersion: () => Promise<void>;
-  loadConfig: (force?: boolean) => Promise<void>;
+  loadConfig: (force?: boolean, tokenOverride?: string) => Promise<any>;
   gatewayVersion: string;
   webuiVersion: string;
   compiledChannels: string[];
@@ -145,15 +145,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
 
-  const loadConfig = useCallback(async (force = false) => {
+  const loadConfig = useCallback(async (force = false, tokenOverride?: string) => {
+    let loadedConfig: any = null;
     try {
-      const hotQ = q ? `${q}&include_hot_reload_fields=1` : '?include_hot_reload_fields=1';
+      const authQ = tokenOverride
+        ? `?token=${encodeURIComponent(tokenOverride)}`
+        : q;
+      const hotQ = authQ ? `${authQ}&include_hot_reload_fields=1` : '?include_hot_reload_fields=1';
       const r = await fetch(`/webui/api/config${hotQ}`);
       if (!r.ok) throw new Error('Failed to load config');
       const txt = await r.text();
       try {
         const parsed = JSON.parse(txt);
         if (parsed && parsed.config) {
+          loadedConfig = parsed.config;
           if (!configEditing || force) {
             setCfg(parsed.config);
             setCfgRaw(JSON.stringify(parsed.config, null, 2));
@@ -161,15 +166,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setHotReloadFields(Array.isArray(parsed.hot_reload_fields) ? parsed.hot_reload_fields : []);
           setHotReloadFieldDetails(Array.isArray(parsed.hot_reload_field_details) ? parsed.hot_reload_field_details : []);
         } else {
+          loadedConfig = parsed || {};
           if (!configEditing || force) {
             setCfg(parsed || {});
             setCfgRaw(txt);
           }
         }
       } catch {
+        loadedConfig = null;
         if (!configEditing || force) {
           setCfgRaw(txt);
-          try { setCfg(JSON.parse(txt)); } catch { setCfg({}); }
+          try {
+            loadedConfig = JSON.parse(txt);
+            setCfg(loadedConfig);
+          } catch {
+            loadedConfig = {};
+            setCfg({});
+          }
         }
       }
       setIsGatewayOnline(true);
@@ -177,6 +190,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsGatewayOnline(false);
       console.error(e);
     }
+    return loadedConfig;
   }, [q, configEditing]);
 
   const refreshNodes = useCallback(async () => {
