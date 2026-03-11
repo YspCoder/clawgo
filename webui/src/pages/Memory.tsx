@@ -3,7 +3,7 @@ import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { FixedButton } from '../components/Button';
+import { Button, FixedButton } from '../components/Button';
 import { TextareaField } from '../components/FormControls';
 import FileListItem from '../components/FileListItem';
 
@@ -153,10 +153,11 @@ const Memory: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="ui-text-primary font-semibold">{active || t('noFileSelected')}</h2>
-              <FixedButton onClick={saveFile} variant="primary" radius="xl" label={t('save')}>
-                <Save className="w-4 h-4" />
-              </FixedButton>
-            </div>
+                <Button onClick={saveFile} variant="primary" size="sm" radius="xl" gap="1">
+                  <Save className="w-4 h-4" />
+                  {t('save')}
+                </Button>
+              </div>
             <TextareaField value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-[50vh] lg:h-[80vh] rounded-[24px] p-4" />
           </div>
         </main>

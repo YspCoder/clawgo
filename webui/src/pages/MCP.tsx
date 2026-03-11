@@ -456,10 +456,11 @@ const MCP: React.FC = () => {
                         </FixedButton>
                       )}
                       <Button onClick={closeModal} size="sm">{t('cancel')}</Button>
-                      <FixedButton onClick={saveServer} variant="primary" label={t('saveChanges')}>
-                        <Save className="w-4 h-4" />
-                      </FixedButton>
-                    </div>
+                        <Button onClick={saveServer} variant="primary" size="sm" radius="lg" gap="1">
+                          <Save className="w-4 h-4" />
+                          {t('saveChanges')}
+                        </Button>
+                      </div>
                   </ModalFooter>
                 </ModalCard>
               </motion.div>

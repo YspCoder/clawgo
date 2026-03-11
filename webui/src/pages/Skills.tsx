@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
-import { CheckboxField, TextField, TextareaField } from '../components/FormControls';
+import { TextField, TextareaField, ToolbarCheckboxField } from '../components/FormControls';
 import { ModalBackdrop, ModalBody, ModalCard, ModalHeader, ModalShell } from '../components/ModalFrame';
 import PageHeader from '../components/PageHeader';
 import ToolbarRow from '../components/ToolbarRow';
@@ -231,14 +231,13 @@ const Skills: React.FC = () => {
         >
           {installingSkill ? t('loading') : t('install')}
         </Button>
-        <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-zinc-400">
-          <CheckboxField
-            checked={ignoreSuspicious}
-            disabled={installingSkill}
-            onChange={(e) => setIgnoreSuspicious(e.target.checked)}
-          />
-          {t('skillsIgnoreSuspicious')}
-        </label>
+        <ToolbarCheckboxField
+          checked={ignoreSuspicious}
+          className={installingSkill ? 'pointer-events-none opacity-60' : 'shrink-0'}
+          help={t('skillsIgnoreSuspiciousHint', { defaultValue: 'Use --force to ignore suspicious package warnings.' })}
+          label={t('skillsIgnoreSuspicious')}
+          onChange={setIgnoreSuspicious}
+        />
       </ToolbarRow>
 
       {!clawhubInstalled && (
@@ -319,9 +318,10 @@ const Skills: React.FC = () => {
                     className="px-4 py-3"
                     actions={
                       <>
-                        <FixedButton onClick={saveFile} variant="success" radius="lg" label={t('save')}>
+                        <Button onClick={saveFile} variant="success" size="sm" radius="lg" gap="1">
                           <Save className="w-4 h-4" />
-                        </FixedButton>
+                          {t('save')}
+                        </Button>
                         <FixedButton onClick={() => setIsFileModalOpen(false)} radius="full" label={t('close')}>
                           <X className="w-4 h-4" />
                         </FixedButton>

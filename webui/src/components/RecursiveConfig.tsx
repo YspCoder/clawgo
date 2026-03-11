@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FixedButton } from './Button';
-import { CheckboxField, SelectField, TextField, TextareaField } from './FormControls';
+import { CheckboxCardField, SelectField, TextField, TextareaField } from './FormControls';
 
 interface RecursiveConfigProps {
   data: any;
@@ -175,25 +175,26 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
 
         return (
           <div key={currentPath} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="ui-text-secondary text-sm font-medium block capitalize">{label}</span>
-              <span className="ui-text-subtle text-[10px] font-mono">{currentPath}</span>
-            </div>
             {typeof value === 'boolean' ? (
-              <label className="ui-toggle-card flex items-center gap-3 p-3 cursor-pointer transition-colors group">
-                <CheckboxField
-                  checked={value}
-                  onChange={(e) => onChange(currentPath, e.target.checked)}
-                  className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500"
-                />
-              </label>
-            ) : (
-              <TextField
-                type={typeof value === 'number' ? 'number' : 'text'}
-                value={value === null || value === undefined ? '' : String(value)}
-                onChange={(e) => onChange(currentPath, typeof value === 'number' ? Number(e.target.value) : e.target.value)}
-                className="w-full transition-colors font-mono"
+              <CheckboxCardField
+                checked={value}
+                help={<span className="font-mono text-[10px]">{currentPath}</span>}
+                label={label}
+                onChange={(checked) => onChange(currentPath, checked)}
               />
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="ui-text-secondary text-sm font-medium block capitalize">{label}</span>
+                  <span className="ui-text-subtle text-[10px] font-mono">{currentPath}</span>
+                </div>
+                <TextField
+                  type={typeof value === 'number' ? 'number' : 'text'}
+                  value={value === null || value === undefined ? '' : String(value)}
+                  onChange={(e) => onChange(currentPath, typeof value === 'number' ? Number(e.target.value) : e.target.value)}
+                  className="w-full transition-colors font-mono"
+                />
+              </>
             )}
           </div>
         );

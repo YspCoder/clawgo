@@ -1,7 +1,7 @@
 import React from 'react';
 import { RefreshCw, Save } from 'lucide-react';
 import { Button, FixedButton } from '../Button';
-import { CheckboxField, TextField } from '../FormControls';
+import { TextField, ToolbarCheckboxField } from '../FormControls';
 import { ModalBackdrop, ModalCard, ModalHeader, ModalShell } from '../ModalFrame';
 
 type Translate = (key: string, options?: any) => string;
@@ -23,9 +23,10 @@ export function ConfigHeader({ onSave, onShowForm, onShowRaw, showRaw, t }: Conf
           <Button onClick={onShowForm} variant={!showRaw ? 'primary' : 'neutral'} size="sm" radius="lg">{t('form')}</Button>
           <Button onClick={onShowRaw} variant={showRaw ? 'primary' : 'neutral'} size="sm" radius="lg">{t('rawJson')}</Button>
         </div>
-        <FixedButton onClick={onSave} variant="primary" label={t('saveChanges')}>
+        <Button onClick={onSave} variant="primary" size="sm" radius="lg" gap="1">
           <Save className="w-4 h-4" />
-        </FixedButton>
+          {t('saveChanges')}
+        </Button>
       </div>
     </div>
   );
@@ -64,10 +65,12 @@ export function ConfigToolbar({
         <Button onClick={onToggleBasicMode} size="sm">
           {basicMode ? t('configBasicMode') : t('configAdvancedMode')}
         </Button>
-        <label className="ui-text-primary flex items-center gap-2 text-sm">
-          <CheckboxField checked={hotOnly} onChange={(e) => onHotOnlyChange(e.target.checked)} />
-          {t('configHotOnly')}
-        </label>
+        <ToolbarCheckboxField
+          checked={hotOnly}
+          help={t('configHotOnlyHint', { defaultValue: 'Only show fields that support hot reload.' })}
+          label={t('configHotOnly')}
+          onChange={onHotOnlyChange}
+        />
         <TextField value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={t('configSearchPlaceholder')} className="min-w-[240px] flex-1" />
       </div>
     </div>

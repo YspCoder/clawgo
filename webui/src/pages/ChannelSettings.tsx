@@ -4,7 +4,7 @@ import { RefreshCw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { FixedButton } from '../components/Button';
+import { Button, FixedButton } from '../components/Button';
 import ChannelSectionCard from '../components/channel/ChannelSectionCard';
 import ChannelFieldRenderer from '../components/channel/ChannelFieldRenderer';
 import {
@@ -69,6 +69,15 @@ const ChannelSettings: React.FC = () => {
   const [draft, setDraft] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState(false);
   const [waStatus, setWaStatus] = useState<WhatsAppStatusPayload | null>(null);
+  const draftRef = React.useRef<Record<string, any>>({});
+
+  const updateDraft: React.Dispatch<React.SetStateAction<Record<string, any>>> = React.useCallback((next) => {
+    setDraft((prev) => {
+      const resolved = typeof next === 'function' ? (next as (value: Record<string, any>) => Record<string, any>)(prev) : next;
+      draftRef.current = resolved;
+      return resolved;
+    });
+  }, []);
 
   useEffect(() => {
     if (!fallbackChannel) {
@@ -80,6 +89,7 @@ const ChannelSettings: React.FC = () => {
       return;
     }
     const next = cloneJSON(((cfg as any)?.channels?.[definition.id] || {}) as Record<string, any>);
+    draftRef.current = next;
     setDraft(next);
   }, [availableChannelKeys, cfg, definition, fallbackChannel, key, navigate]);
 
@@ -112,13 +122,17 @@ const ChannelSettings: React.FC = () => {
   if (!definition || !availableChannelKeys.includes(key)) return null;
 
   const saveChannel = async () => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    }
     setSaving(true);
     try {
       const nextCfg = cloneJSON(cfg || {});
       if (!nextCfg.channels || typeof nextCfg.channels !== 'object') {
         (nextCfg as any).channels = {};
       }
-      (nextCfg as any).channels[definition.id] = cloneJSON(draft);
+      (nextCfg as any).channels[definition.id] = cloneJSON(draftRef.current || {});
       const submit = async (confirmRisky: boolean) => {
         const body = confirmRisky ? { ...nextCfg, confirm_risky: true } : nextCfg;
         return ui.withLoading(async () => {
@@ -202,9 +216,10 @@ const ChannelSettings: React.FC = () => {
               <RefreshCw className="h-4 w-4" />
             </FixedButton>
           )}
-          <FixedButton onClick={saveChannel} disabled={saving} variant="primary" label={saving ? t('loading') : t('saveChanges')}>
+          <Button onClick={saveChannel} disabled={saving} variant="primary" size="sm" radius="lg" gap="1">
             <Save className="h-4 w-4" />
-          </FixedButton>
+            {saving ? t('loading') : t('saveChanges')}
+          </Button>
           </>
         }
       />
@@ -229,7 +244,7 @@ const ChannelSettings: React.FC = () => {
                       field={field}
                       getDescription={getChannelFieldDescription}
                       parseList={parseChannelList}
-                      setDraft={setDraft}
+                      setDraft={updateDraft}
                       t={t}
                     />
                   ))}

@@ -2,7 +2,7 @@ import React from 'react';
 import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, FixedButton } from '../Button';
-import { CheckboxField, FieldBlock, SelectField, TextField, TextareaField } from '../FormControls';
+import { CheckboxCardField, FieldBlock, SelectField, TextField, TextareaField } from '../FormControls';
 import type { SubagentProfile, ToolAllowlistGroup } from './profileDraft';
 import { parseAllowlist } from './profileDraft';
 
@@ -108,15 +108,14 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
         </FieldBlock>
         <FieldBlock
           label={statusLabel}
-          help={statusEnabled ? '已启用，允许接收任务。' : '已停用，不会接收新任务。'}
         >
-          <label className="flex min-h-[34px] items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-sm">
-            <CheckboxField
-              checked={statusEnabled}
-              onChange={(e) => onChange({ ...draft, status: e.target.checked ? 'active' : 'disabled' })}
-            />
-            <span>{statusEnabled ? '启用' : '停用'}</span>
-          </label>
+          <CheckboxCardField
+            checked={statusEnabled}
+            className="min-h-[76px]"
+            help={statusEnabled ? '已启用，允许接收任务。' : '已停用，不会接收新任务。'}
+            label={statusEnabled ? '启用' : '停用'}
+            onChange={(checked) => onChange({ ...draft, status: checked ? 'active' : 'disabled' })}
+          />
         </FieldBlock>
         <FieldBlock
           label="通知主代理"
@@ -180,9 +179,10 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             placeholder={promptPlaceholder}
           />
           <div className="mt-2 flex items-center gap-2">
-            <FixedButton type="button" onClick={onSavePromptFile} disabled={!String(draft.system_prompt_file || '').trim() || promptPathInvalid} radius="lg" label={t('savePromptFile')}>
+            <Button type="button" onClick={onSavePromptFile} disabled={!String(draft.system_prompt_file || '').trim() || promptPathInvalid} variant="primary" size="sm" radius="lg" gap="1">
               <Save className="w-4 h-4" />
-            </FixedButton>
+              {t('savePromptFile')}
+            </Button>
           </div>
         </FieldBlock>
         <FieldBlock label={maxRetriesLabel}>
@@ -227,9 +227,10 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
         </FieldBlock>
       </div>
       <div className="flex items-center gap-2">
-        <FixedButton onClick={onSave} disabled={saving} variant="primary" label={isExisting ? t('update') : t('create')}>
+        <Button onClick={onSave} disabled={saving} variant="primary" size="sm" radius="lg" gap="1">
           <Save className="w-4 h-4" />
-        </FixedButton>
+          {isExisting ? t('update') : t('create')}
+        </Button>
         <FixedButton onClick={onDelete} disabled={!draft.agent_id} variant="danger" label={t('delete')}>
           <Trash2 className="w-4 h-4" />
         </FixedButton>

@@ -37,6 +37,30 @@ type PanelFieldProps = FieldBlockProps & {
   dense?: boolean;
 };
 
+type CheckboxCardFieldProps = {
+  checked: boolean;
+  className?: string;
+  help?: React.ReactNode;
+  label: React.ReactNode;
+  onChange: (checked: boolean) => void;
+};
+
+type ToolbarCheckboxFieldProps = {
+  checked: boolean;
+  className?: string;
+  help?: React.ReactNode;
+  label: React.ReactNode;
+  onChange: (checked: boolean) => void;
+};
+
+type InlineCheckboxFieldProps = {
+  checked: boolean;
+  className?: string;
+  help?: React.ReactNode;
+  label: React.ReactNode;
+  onChange: (checked: boolean) => void;
+};
+
 export function TextField({ dense = false, monospace = false, className, ...props }: TextFieldProps) {
   return (
     <input
@@ -82,6 +106,62 @@ export function TextareaField({ dense = false, monospace = false, className, ...
 
 export function CheckboxField({ className, ...props }: CheckboxFieldProps) {
   return <input {...props} type="checkbox" className={joinClasses('ui-checkbox', className)} />;
+}
+
+export function CheckboxCardField({
+  checked,
+  className,
+  help,
+  label,
+  onChange,
+}: CheckboxCardFieldProps) {
+  return (
+    <label className={joinClasses('ui-toggle-card ui-checkbox-field cursor-pointer', className)}>
+      <div className="space-y-1">
+        <div className="ui-text-primary text-sm font-semibold">{label}</div>
+        {help ? <div className="ui-form-help">{help}</div> : null}
+      </div>
+      <div className="pt-2">
+        <CheckboxField checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      </div>
+    </label>
+  );
+}
+
+export function ToolbarCheckboxField({
+  checked,
+  className,
+  help,
+  label,
+  onChange,
+}: ToolbarCheckboxFieldProps) {
+  return (
+    <label className={joinClasses('ui-toolbar-checkbox cursor-pointer', className)}>
+      <div className="min-w-0 space-y-0.5">
+        <div className="ui-text-primary text-xs font-semibold leading-tight">{label}</div>
+        {help ? <div className="ui-form-help text-[10px] leading-tight">{help}</div> : null}
+      </div>
+      <CheckboxField checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    </label>
+  );
+}
+
+export function InlineCheckboxField({
+  checked,
+  className,
+  help,
+  label,
+  onChange,
+}: InlineCheckboxFieldProps) {
+  return (
+    <label className={joinClasses('flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/30 px-3 py-2.5 cursor-pointer', className)}>
+      <div className="min-w-0 space-y-0.5">
+        <div className="ui-text-primary text-sm font-semibold leading-tight">{label}</div>
+        {help ? <div className="ui-form-help text-[10px] leading-tight">{help}</div> : null}
+      </div>
+      <CheckboxField checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    </label>
+  );
 }
 
 export function FieldBlock({ label, help, meta, className, children }: FieldBlockProps) {

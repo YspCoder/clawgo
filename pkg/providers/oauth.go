@@ -240,6 +240,12 @@ type OAuthAccountInfo struct {
 	FailureCount   int    `json:"failure_count,omitempty"`
 	LastFailure    string `json:"last_failure,omitempty"`
 	HealthScore    int    `json:"health_score,omitempty"`
+	PlanType       string `json:"plan_type,omitempty"`
+	QuotaSource    string `json:"quota_source,omitempty"`
+	BalanceLabel   string `json:"balance_label,omitempty"`
+	BalanceDetail  string `json:"balance_detail,omitempty"`
+	SubActiveStart string `json:"subscription_active_start,omitempty"`
+	SubActiveUntil string `json:"subscription_active_until,omitempty"`
 }
 
 type oauthAttempt struct {
@@ -405,22 +411,7 @@ func (m *OAuthLoginManager) ListAccounts() ([]OAuthAccountInfo, error) {
 		if session == nil {
 			continue
 		}
-		out = append(out, OAuthAccountInfo{
-			Email:          session.Email,
-			AccountID:      session.AccountID,
-			CredentialFile: session.FilePath,
-			Expire:         session.Expire,
-			LastRefresh:    session.LastRefresh,
-			ProjectID:      session.ProjectID,
-			AccountLabel:   sessionLabel(session),
-			DeviceID:       session.DeviceID,
-			ResourceURL:    session.ResourceURL,
-			NetworkProxy:   maskedProxyURL(session.NetworkProxy),
-			CooldownUntil:  session.CooldownUntil,
-			FailureCount:   session.FailureCount,
-			LastFailure:    session.LastFailure,
-			HealthScore:    sessionHealthScore(session),
-		})
+		out = append(out, buildOAuthAccountInfo(session))
 	}
 	return out, nil
 }
@@ -443,24 +434,36 @@ func (m *OAuthLoginManager) RefreshAccount(ctx context.Context, credentialFile s
 		if err != nil {
 			return nil, err
 		}
-		return &OAuthAccountInfo{
-			Email:          refreshed.Email,
-			AccountID:      refreshed.AccountID,
-			CredentialFile: refreshed.FilePath,
-			Expire:         refreshed.Expire,
-			LastRefresh:    refreshed.LastRefresh,
-			ProjectID:      refreshed.ProjectID,
-			AccountLabel:   sessionLabel(refreshed),
-			DeviceID:       refreshed.DeviceID,
-			ResourceURL:    refreshed.ResourceURL,
-			NetworkProxy:   maskedProxyURL(refreshed.NetworkProxy),
-			CooldownUntil:  refreshed.CooldownUntil,
-			FailureCount:   refreshed.FailureCount,
-			LastFailure:    refreshed.LastFailure,
-			HealthScore:    sessionHealthScore(refreshed),
-		}, nil
+		info := buildOAuthAccountInfo(refreshed)
+		return &info, nil
 	}
 	return nil, fmt.Errorf("oauth credential not found")
+}
+
+func buildOAuthAccountInfo(session *oauthSession) OAuthAccountInfo {
+	planType, quotaSource, balanceLabel, balanceDetail, subActiveStart, subActiveUntil := extractOAuthBalanceMetadata(session)
+	return OAuthAccountInfo{
+		Email:          session.Email,
+		AccountID:      session.AccountID,
+		CredentialFile: session.FilePath,
+		Expire:         session.Expire,
+		LastRefresh:    session.LastRefresh,
+		ProjectID:      session.ProjectID,
+		AccountLabel:   sessionLabel(session),
+		DeviceID:       session.DeviceID,
+		ResourceURL:    session.ResourceURL,
+		NetworkProxy:   maskedProxyURL(session.NetworkProxy),
+		CooldownUntil:  session.CooldownUntil,
+		FailureCount:   session.FailureCount,
+		LastFailure:    session.LastFailure,
+		HealthScore:    sessionHealthScore(session),
+		PlanType:       planType,
+		QuotaSource:    quotaSource,
+		BalanceLabel:   balanceLabel,
+		BalanceDetail:  balanceDetail,
+		SubActiveStart: subActiveStart,
+		SubActiveUntil: subActiveUntil,
+	}
 }
 
 func (m *OAuthLoginManager) DeleteAccount(credentialFile string) error {
@@ -1831,6 +1834,63 @@ func parseJWTClaims(token string) map[string]any {
 		return map[string]any{}
 	}
 	return claims
+}
+
+func extractOAuthBalanceMetadata(session *oauthSession) (planType, quotaSource, balanceLabel, balanceDetail, subActiveStart, subActiveUntil string) {
+	if session == nil {
+		return "", "", "", "", "", ""
+	}
+	provider := normalizeOAuthProvider(session.Provider)
+	switch provider {
+	case defaultCodexOAuthProvider:
+		claims := parseJWTClaims(session.IDToken)
+		auth := mapFromAny(claims["https://api.openai.com/auth"])
+		planType = firstNonEmpty(asString(auth["chatgpt_plan_type"]), asString(auth["plan_type"]))
+		subActiveStart = normalizeBalanceTime(firstNonEmpty(asString(auth["chatgpt_subscription_active_start"]), asString(auth["subscription_active_start"])))
+		subActiveUntil = normalizeBalanceTime(firstNonEmpty(asString(auth["chatgpt_subscription_active_until"]), asString(auth["subscription_active_until"])))
+		if planType != "" || subActiveUntil != "" || subActiveStart != "" {
+			quotaSource = provider
+			if planType != "" {
+				balanceLabel = strings.ToUpper(planType)
+			} else {
+				balanceLabel = "subscription"
+			}
+			switch {
+			case subActiveStart != "" && subActiveUntil != "":
+				balanceDetail = fmt.Sprintf("%s ~ %s", subActiveStart, subActiveUntil)
+			case subActiveUntil != "":
+				balanceDetail = fmt.Sprintf("until %s", subActiveUntil)
+			case subActiveStart != "":
+				balanceDetail = fmt.Sprintf("from %s", subActiveStart)
+			}
+		}
+	case defaultGeminiOAuthProvider, defaultAntigravityOAuthProvider:
+		if pid := strings.TrimSpace(session.ProjectID); pid != "" {
+			quotaSource = provider
+			balanceLabel = "project"
+			balanceDetail = pid
+		}
+	}
+	return planType, quotaSource, balanceLabel, balanceDetail, subActiveStart, subActiveUntil
+}
+
+func normalizeBalanceTime(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, trimmed); err == nil {
+			return parsed.Format(time.RFC3339)
+		}
+	}
+	return trimmed
 }
 
 func firstNonEmpty(values ...string) string {

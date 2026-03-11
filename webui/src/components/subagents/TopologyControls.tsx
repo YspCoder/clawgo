@@ -17,6 +17,13 @@ type TopologyControlsProps = {
 };
 
 const FILTERS: TopologyFilter[] = ['all', 'running', 'failed', 'local', 'remote'];
+const FILTER_LABELS: Record<TopologyFilter, string> = {
+  all: 'All',
+  running: 'Running',
+  failed: 'Failed',
+  local: 'Local',
+  remote: 'Remote',
+};
 
 const TopologyControls: React.FC<TopologyControlsProps> = ({
   onClearFocus,
@@ -39,7 +46,7 @@ const TopologyControls: React.FC<TopologyControlsProps> = ({
           onClick={() => onSelectFilter(filter)}
           className={`px-2 py-1 rounded-xl text-[11px] ${topologyFilter === filter ? 'control-chip-active' : 'control-chip'}`}
         >
-          {t(`topologyFilter.${filter}`)}
+          {t(`topologyFilter.${filter}`, { defaultValue: FILTER_LABELS[filter] })}
         </button>
       ))}
       {selectedBranch ? (

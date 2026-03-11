@@ -3,6 +3,7 @@ package providers
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -1134,6 +1135,67 @@ func TestOAuthManagerPrefersHealthierAccount(t *testing.T) {
 	if attempts[0].Token != "token-b" {
 		t.Fatalf("expected healthier token-b first, got %s", attempts[0].Token)
 	}
+}
+
+func TestOAuthLoginManagerListAccountsIncludesCodexPlanMetadata(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	credFile := filepath.Join(dir, "codex-plan.json")
+	idToken := buildTestJWT(map[string]any{
+		"email": "plan@example.com",
+		"https://api.openai.com/auth": map[string]any{
+			"chatgpt_account_id":                "acct-plan",
+			"chatgpt_plan_type":                 "pro",
+			"chatgpt_subscription_active_start": "2026-03-01T00:00:00Z",
+			"chatgpt_subscription_active_until": "2026-04-01T00:00:00Z",
+		},
+	})
+	raw, err := json.Marshal(oauthSession{
+		Provider:     "codex",
+		AccessToken:  "token-plan",
+		RefreshToken: "refresh-plan",
+		IDToken:      idToken,
+		Expire:       time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("marshal session failed: %v", err)
+	}
+	if err := os.WriteFile(credFile, raw, 0o600); err != nil {
+		t.Fatalf("write session failed: %v", err)
+	}
+
+	manager, err := newOAuthManager(config.ProviderConfig{
+		TimeoutSec: 5,
+		OAuth: config.ProviderOAuthConfig{
+			Provider:       "codex",
+			CredentialFile: credFile,
+		},
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("new oauth manager failed: %v", err)
+	}
+
+	accounts, err := (&OAuthLoginManager{manager: manager}).ListAccounts()
+	if err != nil {
+		t.Fatalf("list accounts failed: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected one account, got %#v", accounts)
+	}
+	account := accounts[0]
+	if account.PlanType != "pro" {
+		t.Fatalf("expected plan type to be extracted, got %#v", account)
+	}
+	if account.BalanceLabel != "PRO" || account.SubActiveUntil != "2026-04-01T00:00:00Z" {
+		t.Fatalf("expected subscription metadata in account info, got %#v", account)
+	}
+}
+
+func buildTestJWT(claims map[string]any) string {
+	header, _ := json.Marshal(map[string]any{"alg": "none", "typ": "JWT"})
+	payload, _ := json.Marshal(claims)
+	return base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(payload) + "."
 }
 
 func TestClassifyOAuthFailureDifferentiatesReasons(t *testing.T) {

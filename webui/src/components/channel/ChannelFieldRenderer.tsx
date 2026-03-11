@@ -1,6 +1,6 @@
 import React from 'react';
 import { Check, ShieldCheck, Users, Wifi } from 'lucide-react';
-import { CheckboxField, FieldBlock, TextField } from '../FormControls';
+import { CheckboxCardField, FieldBlock, TextField } from '../FormControls';
 import type { ChannelField, ChannelKey } from './channelSchema';
 
 type Translate = (key: string, options?: any) => string;
@@ -125,39 +125,35 @@ const ChannelFieldRenderer: React.FC<ChannelFieldRendererProps> = ({
     if (isWhatsApp) {
       const Icon = getWhatsAppBooleanIcon(field.key);
       return (
-        <label key={field.key} className="ui-toggle-card ui-boolean-card-detailed flex items-start justify-between gap-4 cursor-pointer">
-          <div className="min-w-0 flex-1 pr-3">
+        <CheckboxCardField
+          key={field.key}
+          className="ui-boolean-card-detailed"
+          checked={!!value}
+          help={(
             <div className="ui-boolean-head">
               <div className={`ui-pill ${value ? 'ui-pill-success' : 'ui-pill-neutral'} flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border`}>
                 <Icon className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <div className="ui-text-primary text-sm font-semibold">{label}</div>
-                <div className="ui-form-help mt-1">{helper}</div>
+                <div className="ui-form-help">{helper}</div>
               </div>
             </div>
-          </div>
-          <CheckboxField
-            checked={!!value}
-            onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.checked }))}
-            className="ui-checkbox mt-1"
-          />
-        </label>
+          )}
+          label={label}
+          onChange={(checked) => setDraft((prev) => ({ ...prev, [field.key]: checked }))}
+        />
       );
     }
 
     return (
-      <label key={field.key} className="ui-toggle-card ui-boolean-card flex items-center justify-between gap-4 cursor-pointer">
-        <div className="min-w-0 flex-1 pr-3">
-          <div className="ui-text-primary text-sm font-semibold">{label}</div>
-          {helper ? <div className="ui-form-help mt-1">{helper}</div> : null}
-        </div>
-        <CheckboxField
-          checked={!!value}
-          onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.checked }))}
-          className="ui-checkbox"
-        />
-      </label>
+      <CheckboxCardField
+        key={field.key}
+        className="ui-boolean-card"
+        checked={!!value}
+        help={helper}
+        label={label}
+        onChange={(checked) => setDraft((prev) => ({ ...prev, [field.key]: checked }))}
+      />
     );
   }
 

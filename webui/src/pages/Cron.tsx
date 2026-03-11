@@ -6,7 +6,7 @@ import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/Button';
 import EmptyState from '../components/EmptyState';
-import { CheckboxField, FieldBlock, SelectField, TextField, TextareaField } from '../components/FormControls';
+import { CheckboxCardField, FieldBlock, SelectField, TextField, TextareaField } from '../components/FormControls';
 import { ModalBackdrop, ModalBody, ModalCard, ModalFooter, ModalHeader, ModalShell } from '../components/ModalFrame';
 import PageHeader from '../components/PageHeader';
 import { CronJob } from '../types';
@@ -343,24 +343,20 @@ const Cron: React.FC = () => {
                   </FieldBlock>
                 </div>
 
-                <div className="flex items-center gap-6 pt-2">
-                  <label className="flex items-center gap-3 cursor-pointer group">
-                    <CheckboxField
+                  <div className="grid grid-cols-1 gap-3 pt-2 md:grid-cols-2">
+                    <CheckboxCardField
                       checked={cronForm.deliver}
-                      onChange={(e) => setCronForm({ ...cronForm, deliver: e.target.checked })}
-                      className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 bg-zinc-950"
+                      help={t('cronDeliverHint', { defaultValue: 'Send the message through the selected channel.' })}
+                      label={t('deliver')}
+                      onChange={(checked) => setCronForm({ ...cronForm, deliver: checked })}
                     />
-                    <span className="text-sm font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors">{t('deliver')}</span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer group">
-                    <CheckboxField
+                    <CheckboxCardField
                       checked={cronForm.enabled}
-                      onChange={(e) => setCronForm({ ...cronForm, enabled: e.target.checked })}
-                      className="w-4 h-4 rounded border-zinc-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-zinc-900 bg-zinc-950"
+                      help={t('cronEnabledHint', { defaultValue: 'Enable this cron job immediately after saving.' })}
+                      label={t('active')}
+                      onChange={(checked) => setCronForm({ ...cronForm, enabled: checked })}
                     />
-                    <span className="text-sm font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors">{t('active')}</span>
-                  </label>
-                </div>
+                  </div>
                 </ModalBody>
 
                 <ModalFooter className="bg-zinc-900/20">

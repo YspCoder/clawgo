@@ -966,19 +966,45 @@ html.theme-dark .brand-button {
   padding: 1.1rem 1.15rem;
 }
 
+.ui-checkbox-field {
+  display: flex;
+  min-height: 92px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+}
+
+.ui-toolbar-checkbox {
+  display: inline-flex;
+  min-width: 150px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  border: 1px solid var(--color-zinc-800);
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 0.78);
+  box-shadow: inset 0 1px 0 var(--card-inner-highlight);
+  padding: 0.55rem 0.75rem;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.ui-toolbar-checkbox:hover {
+  border-color: color-mix(in srgb, var(--color-indigo-400) 34%, var(--color-zinc-800));
+}
+
 .ui-checkbox {
   appearance: none;
   -webkit-appearance: none;
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 0.95rem;
+  height: 0.95rem;
   flex-shrink: 0;
   border: 1.5px solid rgb(148 163 184 / 0.9);
-  border-radius: 0.4rem;
+  border-radius: 0.3rem;
   background: rgb(255 255 255 / 0.94);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.95);
   background-repeat: no-repeat;
   background-position: center;
-  background-size: 0.72rem 0.72rem;
+  background-size: 0.62rem 0.62rem;
   transition:
     border-color 160ms ease,
     background-color 160ms ease,
@@ -1000,9 +1026,8 @@ html.theme-dark .brand-button {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3 7.2L5.7 10L11 4.6' stroke='white' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"),
     linear-gradient(135deg, var(--button-start) 0%, var(--button-end) 100%);
   box-shadow:
-    0 0 0 3px rgb(249 115 22 / 0.14),
-    0 8px 18px rgb(249 115 22 / 0.2);
-  transform: translateY(-0.5px);
+    0 0 0 2px rgb(249 115 22 / 0.12),
+    0 4px 12px rgb(249 115 22 / 0.18);
 }
 
 .ui-checkbox:focus-visible {
@@ -1069,6 +1094,19 @@ html.theme-dark .ui-toggle-card {
   background: rgb(9 16 28 / 0.32);
 }
 
+.ui-toolbar-checkbox {
+  color: inherit;
+}
+
+html.theme-dark .ui-toolbar-checkbox {
+  border-color: var(--color-zinc-700);
+  background: rgb(9 16 28 / 0.32);
+}
+
+html.theme-dark .ui-toolbar-checkbox:hover {
+  border-color: color-mix(in srgb, var(--color-indigo-400) 38%, var(--color-zinc-700));
+}
+
 html.theme-dark .ui-toggle-card:hover {
   border-color: color-mix(in srgb, var(--color-indigo-400) 38%, var(--color-zinc-700));
 }
@@ -1128,8 +1166,8 @@ html.theme-dark .ui-checkbox:checked {
     linear-gradient(135deg, rgb(249 115 22 / 0.96) 0%, rgb(245 158 11 / 0.96) 100%);
   box-shadow:
     0 0 0 1px rgb(255 196 128 / 0.24),
-    0 0 0 4px rgb(232 132 58 / 0.18),
-    0 10px 22px rgb(232 132 58 / 0.22);
+    0 0 0 3px rgb(232 132 58 / 0.16),
+    0 6px 16px rgb(232 132 58 / 0.2);
 }
 
 html.theme-dark .ui-checkbox:focus-visible {
@@ -1169,6 +1207,7 @@ html.theme-dark .ui-select optgroup {
   border-radius: 9999px;
   background: linear-gradient(180deg, var(--card-subtle-a), var(--card-subtle-b));
   box-shadow: inset 0 1px 0 var(--card-inner-highlight);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 
 .ui-composer-input {
@@ -1178,10 +1217,25 @@ html.theme-dark .ui-select optgroup {
   background: transparent;
   color: rgb(51 65 85 / 0.98);
   outline: none;
+  display: flex;
+  align-items: center;
+  caret-color: rgb(234 88 12 / 0.92);
+}
+
+.ui-composer:focus-within {
+  border-color: rgb(249 115 22 / 0.72);
+  box-shadow:
+    0 0 0 3px rgb(249 115 22 / 0.12),
+    inset 0 1px 0 var(--card-inner-highlight);
 }
 
 .ui-composer-input::placeholder {
-  color: rgb(100 116 139 / 0.9);
+  color: rgb(113 128 150 / 0.86);
+}
+
+.ui-composer-input::selection {
+  background: rgb(251 191 36 / 0.32);
+  color: rgb(30 41 59 / 0.98);
 }
 
 .ui-composer-input:focus {
@@ -1220,10 +1274,23 @@ html.theme-dark .ui-composer {
 
 html.theme-dark .ui-composer-input {
   color: rgb(226 232 240 / 0.96);
+  caret-color: rgb(251 146 60 / 0.96);
+}
+
+html.theme-dark .ui-composer:focus-within {
+  border-color: rgb(251 146 60 / 0.8);
+  box-shadow:
+    0 0 0 3px rgb(251 146 60 / 0.14),
+    inset 0 1px 0 rgb(255 255 255 / 0.05);
 }
 
 html.theme-dark .ui-composer-input::placeholder {
-  color: rgb(111 131 155 / 0.9);
+  color: rgb(126 146 171 / 0.86);
+}
+
+html.theme-dark .ui-composer-input::selection {
+  background: rgb(251 146 60 / 0.28);
+  color: rgb(248 250 252 / 0.98);
 }
 
 html.theme-dark .ui-code-panel {

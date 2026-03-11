@@ -1,7 +1,7 @@
 import React from 'react';
 import { Download, FolderOpen, LogIn, LogOut, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, Upload, Wallet, X } from 'lucide-react';
 import { Button, FixedButton } from '../Button';
-import { CheckboxField, PanelField, SelectField, TextField } from '../FormControls';
+import { CheckboxField, InlineCheckboxField, PanelField, SelectField, TextField, ToolbarCheckboxField } from '../FormControls';
 
 function joinClasses(...values: Array<string | undefined | false>) {
   return values.filter(Boolean).join(' ');
@@ -112,21 +112,23 @@ export function ProviderRuntimeToolbar({
   t,
 }: ProviderRuntimeToolbarProps) {
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-3 items-start">
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-3 items-center">
       <div className="space-y-1">
         <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
         <div className="text-[11px] text-zinc-500">Runtime filters and provider creation are split so the status controls stay attached to each other.</div>
       </div>
-      <div className="flex flex-col items-stretch gap-2 xl:min-w-[760px]">
-        <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2 xl:min-w-[1040px]">
           <Button onClick={onRefreshRuntime} size="xs" radius="lg" variant="neutral" gap="2" noShrink>
             <RefreshCw className="w-4 h-4" />
             {t('providersRefreshRuntime')}
           </Button>
-          <label className="flex shrink-0 items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 px-2 py-1.5 text-[11px] whitespace-nowrap text-zinc-300">
-            <CheckboxField checked={runtimeAutoRefresh} onChange={(e) => onRuntimeAutoRefreshChange(e.target.checked)} />
-            {t('providersAutoRefresh')}
-          </label>
+          <ToolbarCheckboxField
+            checked={runtimeAutoRefresh}
+            className="shrink-0"
+            help="Refresh runtime stats on the selected interval."
+            label={t('providersAutoRefresh')}
+            onChange={onRuntimeAutoRefreshChange}
+          />
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/25 px-2 py-2">
             <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Runtime</span>
             <SelectField dense value={String(runtimeRefreshSec)} onChange={(e) => onRuntimeRefreshSecChange(Number(e.target.value || 10))} className="min-w-[124px] bg-zinc-900/70 border-zinc-700">
@@ -142,14 +144,11 @@ export function ProviderRuntimeToolbar({
               <option value="all">{t('providersRuntimeAll')}</option>
             </SelectField>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <TextField dense value={newProxyName} onChange={(e) => onNewProxyNameChange(e.target.value)} placeholder={t('configNewProviderName')} className="min-w-[220px] flex-1 bg-zinc-900/70 border-zinc-700 xl:max-w-[280px]" />
+          <TextField dense value={newProxyName} onChange={(e) => onNewProxyNameChange(e.target.value)} placeholder={t('configNewProviderName')} className="min-w-[220px] bg-zinc-900/70 border-zinc-700 xl:w-[280px]" />
           <Button onClick={onAddProxy} variant="primary" size="xs" radius="lg" gap="2" noShrink>
             <Plus className="w-4 h-4" />
             {t('add')}
           </Button>
-        </div>
       </div>
     </div>
   );
@@ -360,6 +359,7 @@ export function ProviderRuntimeDrawer({
 type ProviderProxyCardProps = {
   name: string;
   oauthAccounts: Array<any>;
+  oauthAccountsLoading?: boolean;
   onClearOAuthCooldown: (credentialFile: string) => void;
   onDeleteOAuthAccount: (credentialFile: string) => void;
   onFieldChange: (field: string, value: any) => void;
@@ -377,6 +377,7 @@ type ProviderProxyCardProps = {
 export function ProviderProxyCard({
   name,
   oauthAccounts,
+  oauthAccountsLoading,
   onClearOAuthCooldown,
   onDeleteOAuthAccount,
   onFieldChange,
@@ -402,6 +403,7 @@ export function ProviderProxyCard({
   const runtimeErrors = Array.isArray(runtimeItem?.recent_errors) ? runtimeItem.recent_errors : [];
   const lastQuotaError = runtimeErrors.find((item: any) => String(item?.reason || '').trim() === 'quota') || null;
   const connected = showOAuth && oauthAccountCount > 0;
+  const primaryAccount = oauthAccounts[0] || null;
   const quotaState = !showOAuth
     ? null
     : lastQuotaError
@@ -435,6 +437,19 @@ export function ProviderProxyCard({
                 tone: 'border-zinc-700 bg-zinc-900/50 text-zinc-300',
                 detail: '还没有可用的 OAuth 账号。',
               };
+  const quotaTone = quotaState?.tone || 'border-zinc-700 bg-zinc-900/50 text-zinc-300';
+  const oauthStatusText = oauthAccountsLoading
+    ? t('providersOAuthLoading')
+    : connected
+      ? `${t('providersOAuthAutoLoaded')} ${oauthAccountCount} ${t('providersOAuthAccountUnit')}`
+      : t('providersNoOAuthAccounts');
+  const oauthStatusDetail = oauthAccountsLoading
+    ? t('providersOAuthLoadingHelp')
+    : connected
+      ? `${t('providersOAuthPrimaryAccount')} ${primaryAccount?.account_label || primaryAccount?.email || primaryAccount?.account_id || '-'}`
+      : t('providersOAuthEmptyHelp');
+  const primaryBalanceText = primaryAccount?.balance_label || primaryAccount?.plan_type || '';
+  const primaryBalanceDetail = primaryAccount?.balance_detail || primaryAccount?.subscription_active_until || '';
 
   return (
     <div className="grid grid-cols-1 gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-xs">
@@ -565,6 +580,39 @@ export function ProviderProxyCard({
                 <div className="rounded-2xl border border-zinc-800 bg-zinc-950/25 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">{t('providersOAuthLoginStatus')}</div>
+                      <div className="mt-2 flex items-center gap-2 text-sm font-medium text-zinc-100">
+                        <ShieldCheck className={`h-4 w-4 ${connected ? 'text-emerald-300' : 'text-zinc-500'}`} />
+                        {oauthAccountsLoading ? t('providersOAuthLoading') : connected ? oauthStatusText : t('providersOAuthDisconnected')}
+                      </div>
+                      <div className="mt-2 text-[11px] text-zinc-500">{oauthStatusDetail}</div>
+                    </div>
+                    <div className={`rounded-full border px-2.5 py-1 text-[11px] ${connected ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900/50 text-zinc-400'}`}>
+                      {oauthAccountsLoading ? t('providersLoading') : connected ? t('providersConnected') : t('providersDisconnected')}
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-950/25 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">{t('providersQuotaStatus')}</div>
+                      <div className="mt-2 flex items-center gap-2 text-sm font-medium text-zinc-100">
+                        <Wallet className="h-4 w-4 text-amber-300" />
+                        {primaryBalanceText || quotaState?.label || t('providersQuotaPending')}
+                      </div>
+                      <div className="mt-2 text-[11px] text-zinc-500">{primaryBalanceDetail || quotaState?.detail || t('providersQuotaHelp')}</div>
+                    </div>
+                    <div className={`rounded-full border px-2.5 py-1 text-[11px] ${quotaTone}`}>
+                      {lastQuotaError ? t('providersQuotaBadge') : connected ? t('providersRuntimeBadge') : t('providersPending')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hidden grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-950/25 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
                       <div className="text-[11px] uppercase tracking-[0.18em] text-zinc-500">登录状态</div>
                       <div className="mt-2 flex items-center gap-2 text-sm font-medium text-zinc-100">
                         <ShieldCheck className={`h-4 w-4 ${connected ? 'text-emerald-300' : 'text-zinc-500'}`} />
@@ -641,10 +689,23 @@ export function ProviderProxyCard({
                   </div>
                 </div>
                 <FixedButton onClick={onLoadOAuthAccounts} variant="neutral" radius="lg" label={t('providersRefreshList')}>
-                  <RefreshCw className="w-4 h-4" />
+                  <RefreshCw className={`w-4 h-4${oauthAccountsLoading ? ' animate-spin' : ''}`} />
                 </FixedButton>
               </div>
               <div className={`rounded-xl border px-3 py-2 text-[11px] ${
+                oauthAccountsLoading
+                  ? 'border-sky-500/25 bg-sky-500/10 text-sky-100'
+                  : connected
+                    ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-100'
+                    : 'border-zinc-800 bg-zinc-950/30 text-zinc-400'
+              }`}>
+                {oauthAccountsLoading
+                  ? t('providersOAuthLoadingHelp')
+                  : connected
+                    ? `${oauthStatusText}。${oauthStatusDetail}`
+                    : t('providersOAuthEmptyHelp')}
+              </div>
+              <div className={`hidden rounded-xl border px-3 py-2 text-[11px] ${
                 connected
                   ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-100'
                   : 'border-zinc-800 bg-zinc-950/30 text-zinc-400'
@@ -653,7 +714,9 @@ export function ProviderProxyCard({
                   ? `已自动加载 ${oauthAccountCount} 个 OAuth 账号。当前主账号：${oauthAccounts[0]?.account_label || oauthAccounts[0]?.email || oauthAccounts[0]?.account_id || '-'}`
                   : '当前没有可用账号。可以直接点击左侧 OAuth 登录，或者导入 auth.json。'}
               </div>
-              {oauthAccounts.length === 0 ? (
+              {oauthAccountsLoading ? (
+                <div className="text-zinc-500">{t('providersOAuthLoading')}</div>
+              ) : oauthAccounts.length === 0 ? (
                 <div className="text-zinc-500">{t('providersNoOAuthAccounts')}</div>
               ) : (
                 <div className="space-y-2">
@@ -674,9 +737,29 @@ export function ProviderProxyCard({
                         </div>
                         <div className="text-zinc-500 text-[11px]">label: {account?.account_label || account?.email || account?.account_id || '-'}</div>
                         <div className="text-zinc-500 truncate text-[11px]">{account?.credential_file}</div>
+                        {(account?.balance_label || account?.plan_type) ? (
+                          <div className="text-zinc-500 text-[11px]">
+                            {t('providersBalanceDisplay')}: {account?.balance_label || account?.plan_type}
+                            {account?.balance_detail ? ` · ${account.balance_detail}` : ''}
+                          </div>
+                        ) : null}
+                        {account?.subscription_active_until ? (
+                          <div className="text-zinc-500 text-[11px]">
+                            {t('providersSubscriptionUntil')}: {account?.subscription_active_until}
+                          </div>
+                        ) : null}
                         <div className="text-zinc-500 text-[11px]">project: {account?.project_id || '-'} · device: {account?.device_id || '-'}</div>
                         <div className="text-zinc-500 truncate text-[11px]">proxy: {account?.network_proxy || '-'}</div>
                         <div className="text-zinc-500 text-[11px]">expire: {account?.expire || '-'} · cooldown: {account?.cooldown_until || '-'}</div>
+                        <div className="text-zinc-500 text-[11px]">
+                          {t('providersQuotaStatus')}: {String(account?.cooldown_until || '').trim()
+                            ? `${t('providersQuotaCooldown')} · ${account?.cooldown_until || '-'}`
+                            : Number(account?.health_score || 100) < 60
+                              ? `${t('providersQuotaHealthLow')} · ${t('providersQuotaLowestHealth')} ${Number(account?.health_score || 100)}`
+                              : lastQuotaError
+                                ? `${t('providersQuotaLimited')} · ${String(lastQuotaError?.when || '-')}`
+                                : t('providersQuotaHealthy')}
+                        </div>
                         <div className="text-zinc-500 text-[11px]">health: {Number(account?.health_score || 100)} · failures: {Number(account?.failure_count || 0)} · last failure: {account?.last_failure || '-'}</div>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -710,9 +793,12 @@ export function ProviderProxyCard({
                 {advancedOpen ? 'Hide' : 'Show'}
               </Button>
             </div>
-            <PanelField label={t('providersRuntimePersist')} help={t('providersRuntimePersistHelp')} dense>
-              <CheckboxField checked={Boolean(proxy?.runtime_persist)} onChange={(e) => onFieldChange('runtime_persist', e.target.checked)} />
-            </PanelField>
+            <InlineCheckboxField
+              checked={Boolean(proxy?.runtime_persist)}
+              help={t('providersRuntimePersistHelp')}
+              label={t('providersRuntimePersist')}
+              onChange={(checked) => onFieldChange('runtime_persist', checked)}
+            />
             {advancedOpen ? (
               <div className="space-y-3">
                 <PanelField label={t('providersRuntimeHistoryFile')} dense>

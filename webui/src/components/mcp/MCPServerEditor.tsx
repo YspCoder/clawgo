@@ -1,7 +1,7 @@
 import React from 'react';
 import { Package, Wrench } from 'lucide-react';
 import { Button, FixedButton } from '../Button';
-import { CheckboxField, SelectField, TextField } from '../FormControls';
+import { CheckboxCardField, SelectField, TextField } from '../FormControls';
 import NoticePanel from '../NoticePanel';
 
 type MCPDraftServer = {
@@ -77,12 +77,15 @@ const MCPServerEditor: React.FC<MCPServerEditorProps> = ({
             <option value="sse">sse</option>
           </SelectField>
         </label>
-        <label className="space-y-2">
+        <div className="space-y-2">
           <div className="text-xs text-zinc-400">enabled</div>
-          <div className="ui-toggle-card flex h-11 items-center rounded-xl px-3">
-            <CheckboxField checked={draft.enabled} onChange={(e) => updateDraftField('enabled', e.target.checked)} />
-          </div>
-        </label>
+          <CheckboxCardField
+            checked={draft.enabled}
+            className="min-h-[76px]"
+            label={t('enable')}
+            onChange={(checked) => updateDraftField('enabled', checked)}
+          />
+        </div>
         {draft.transport === 'stdio' ? (
           <label className="space-y-2">
             <div className="text-xs text-zinc-400">permission</div>
