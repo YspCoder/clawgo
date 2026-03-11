@@ -795,6 +795,7 @@ html.theme-dark .brand-button {
   align-items: center;
   justify-content: center;
   min-height: 40px;
+  white-space: nowrap;
   border-radius: var(--radius-button);
   border: 1px solid transparent;
   line-height: 1;

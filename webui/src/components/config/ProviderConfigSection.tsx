@@ -114,29 +114,29 @@ export function ProviderRuntimeToolbar({
   return (
     <div className="flex items-center justify-between gap-2 flex-wrap">
       <div className="text-sm font-semibold text-zinc-200">{t('configProxies')}</div>
-      <div className="flex items-center gap-2">
-        <Button onClick={onRefreshRuntime} size="xs" radius="lg" variant="neutral" gap="2">
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        <Button onClick={onRefreshRuntime} size="xs" radius="lg" variant="neutral" gap="2" noShrink>
           <RefreshCw className="w-4 h-4" />
           {t('providersRefreshRuntime')}
         </Button>
-        <label className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 px-2 py-1.5 text-[11px] text-zinc-300">
+        <label className="flex shrink-0 items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/30 px-2 py-1.5 text-[11px] whitespace-nowrap text-zinc-300">
           <CheckboxField checked={runtimeAutoRefresh} onChange={(e) => onRuntimeAutoRefreshChange(e.target.checked)} />
           {t('providersAutoRefresh')}
         </label>
-        <SelectField dense value={String(runtimeRefreshSec)} onChange={(e) => onRuntimeRefreshSecChange(Number(e.target.value || 10))} className="bg-zinc-900/70 border-zinc-700">
+        <SelectField dense value={String(runtimeRefreshSec)} onChange={(e) => onRuntimeRefreshSecChange(Number(e.target.value || 10))} className="min-w-[136px] bg-zinc-900/70 border-zinc-700">
           <option value="2">2s</option>
           <option value="5">5s</option>
           <option value="10">10s</option>
           <option value="30">30s</option>
         </SelectField>
-        <SelectField dense value={runtimeWindow} onChange={(e) => onRuntimeWindowChange(e.target.value as 'all' | '1h' | '24h' | '7d')} className="bg-zinc-900/70 border-zinc-700">
+        <SelectField dense value={runtimeWindow} onChange={(e) => onRuntimeWindowChange(e.target.value as 'all' | '1h' | '24h' | '7d')} className="min-w-[156px] bg-zinc-900/70 border-zinc-700">
           <option value="1h">{t('providersRuntime1h')}</option>
           <option value="24h">{t('providersRuntime24h')}</option>
           <option value="7d">{t('providersRuntime7d')}</option>
           <option value="all">{t('providersRuntimeAll')}</option>
         </SelectField>
-        <TextField dense value={newProxyName} onChange={(e) => onNewProxyNameChange(e.target.value)} placeholder={t('configNewProviderName')} className="bg-zinc-900/70 border-zinc-700" />
-        <Button onClick={onAddProxy} variant="primary" size="xs" radius="lg" gap="2">
+        <TextField dense value={newProxyName} onChange={(e) => onNewProxyNameChange(e.target.value)} placeholder={t('configNewProviderName')} className="min-w-[168px] bg-zinc-900/70 border-zinc-700" />
+        <Button onClick={onAddProxy} variant="primary" size="xs" radius="lg" gap="2" noShrink>
           <Plus className="w-4 h-4" />
           {t('add')}
         </Button>
