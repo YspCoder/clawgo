@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -27,6 +28,7 @@ import (
 	"github.com/YspCoder/clawgo/pkg/providers"
 	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 	"github.com/YspCoder/clawgo/pkg/sentinel"
+	"github.com/YspCoder/clawgo/pkg/wsrelay"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -181,6 +183,24 @@ func gatewayCmd() {
 	registryServer.SetWorkspacePath(cfg.WorkspacePath())
 	registryServer.SetLogFilePath(cfg.LogFilePath())
 	registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
+	aistudioRelay := wsrelay.NewManager(wsrelay.Options{
+		Path: "/v1/ws",
+		ProviderFactory: func(r *http.Request) (string, error) {
+			provider := strings.TrimSpace(r.URL.Query().Get("provider"))
+			if provider == "" {
+				provider = strings.TrimSpace(r.Header.Get("X-Clawgo-Provider"))
+			}
+			if provider == "" {
+				provider = "aistudio"
+			}
+			return strings.ToLower(provider), nil
+		},
+		OnConnected:    providers.NotifyAIStudioRelayConnected,
+		OnDisconnected: providers.NotifyAIStudioRelayDisconnected,
+	})
+	defer func() { _ = aistudioRelay.Stop(context.Background()) }()
+	providers.SetAIStudioRelayManager(aistudioRelay)
+	registryServer.SetProtectedRoute(aistudioRelay.Path(), aistudioRelay.Handler())
 	bindAgentLoopHandlers := func(loop *agent.AgentLoop) {
 		registryServer.SetChatHandler(func(cctx context.Context, sessionKey, content string) (string, error) {
 			if strings.TrimSpace(content) == "" {

@@ -943,11 +943,11 @@ func applyAttemptProviderHeaders(req *http.Request, attempt authAttempt, provide
 		req.Header.Set("X-Stainless-Runtime-Version", "v22.17.0")
 		req.Header.Set("Sec-Fetch-Mode", "cors")
 		req.Header.Set("X-Stainless-Lang", "js")
-		req.Header.Set("X-Stainless-Arch", "arm64")
+		req.Header.Set("X-Stainless-Arch", qwenStainlessArch())
 		req.Header.Set("X-Stainless-Package-Version", "5.11.0")
 		req.Header.Set("X-Dashscope-Cachecontrol", "enable")
 		req.Header.Set("X-Stainless-Retry-Count", "0")
-		req.Header.Set("X-Stainless-Os", "MacOS")
+		req.Header.Set("X-Stainless-Os", qwenStainlessOS())
 		req.Header.Set("X-Dashscope-Authtype", "qwen-oauth")
 		req.Header.Set("X-Stainless-Runtime", "node")
 		if stream {
@@ -962,13 +962,9 @@ func applyAttemptProviderHeaders(req *http.Request, attempt authAttempt, provide
 		req.Header.Set("User-Agent", kimiCompatUserAgent)
 		req.Header.Set("X-Msh-Platform", "kimi_cli")
 		req.Header.Set("X-Msh-Version", "1.10.6")
-		req.Header.Set("X-Msh-Device-Name", "clawgo")
-		req.Header.Set("X-Msh-Device-Model", runtime.GOOS+" "+runtime.GOARCH)
-		if attempt.session != nil && strings.TrimSpace(attempt.session.DeviceID) != "" {
-			req.Header.Set("X-Msh-Device-Id", strings.TrimSpace(attempt.session.DeviceID))
-		} else {
-			req.Header.Set("X-Msh-Device-Id", "clawgo-device")
-		}
+		req.Header.Set("X-Msh-Device-Name", kimiDeviceName())
+		req.Header.Set("X-Msh-Device-Model", kimiDeviceModel())
+		req.Header.Set("X-Msh-Device-Id", kimiDeviceID(attempt.session))
 		if stream {
 			req.Header.Set("Accept", "text/event-stream")
 		} else {
@@ -1005,9 +1001,42 @@ func randomSessionID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16])
 }
 
+func qwenStainlessArch() string {
+	switch runtime.GOARCH {
+	case "amd64":
+		return "x64"
+	case "386":
+		return "x86"
+	default:
+		return runtime.GOARCH
+	}
+}
+
+func qwenStainlessOS() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "MacOS"
+	case "windows":
+		return "Windows"
+	case "linux":
+		return "Linux"
+	default:
+		if runtime.GOOS == "" {
+			return ""
+		}
+		return strings.ToUpper(runtime.GOOS[:1]) + runtime.GOOS[1:]
+	}
+}
+
 func (p *HTTPProvider) httpClientForAttempt(attempt authAttempt) (*http.Client, error) {
 	if attempt.kind == "oauth" && attempt.session != nil && p.oauth != nil {
-		return p.oauth.httpClientForSession(attempt.session)
+		client, err := p.oauth.httpClientForSession(attempt.session)
+		if err != nil {
+			return nil, err
+		}
+		if client != nil {
+			return client, nil
+		}
 	}
 	return p.httpClient, nil
 }
@@ -1733,7 +1762,11 @@ func GetProviderRuntimeSnapshot(cfg *config.Config) map[string]interface{} {
 			"last_success":   state.LastSuccess,
 		}
 		candidateOrder := state.CandidateOrder
-		if strings.EqualFold(strings.TrimSpace(pc.Auth), "oauth") || strings.EqualFold(strings.TrimSpace(pc.Auth), "hybrid") {
+		if strings.EqualFold(name, "aistudio") {
+			if accounts := listAIStudioRelayAccounts(); len(accounts) > 0 {
+				item["oauth_accounts"] = accounts
+			}
+		} else if strings.EqualFold(strings.TrimSpace(pc.Auth), "oauth") || strings.EqualFold(strings.TrimSpace(pc.Auth), "hybrid") {
 			if mgr, err := NewOAuthLoginManager(pc, time.Duration(maxInt(pc.TimeoutSec, 90))*time.Second); err == nil {
 				if accounts, err := mgr.ListAccounts(); err == nil {
 					item["oauth_accounts"] = accounts
@@ -2343,13 +2376,14 @@ func openAICompatMessages(messages []Message) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(messages))
 	for _, msg := range messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		content := openAICompatMessageContent(msg)
 		switch role {
 		case "system":
-			out = append(out, map[string]interface{}{"role": "system", "content": msg.Content})
+			out = append(out, map[string]interface{}{"role": "system", "content": content})
 		case "developer":
-			out = append(out, map[string]interface{}{"role": "user", "content": msg.Content})
+			out = append(out, map[string]interface{}{"role": "user", "content": content})
 		case "assistant":
-			item := map[string]interface{}{"role": "assistant", "content": msg.Content}
+			item := map[string]interface{}{"role": "assistant", "content": content}
 			if len(msg.ToolCalls) > 0 {
 				toolCalls := make([]map[string]interface{}, 0, len(msg.ToolCalls))
 				for _, tc := range msg.ToolCalls {
@@ -2381,13 +2415,64 @@ func openAICompatMessages(messages []Message) []map[string]interface{} {
 			out = append(out, map[string]interface{}{
 				"role":         "tool",
 				"tool_call_id": msg.ToolCallID,
-				"content":      msg.Content,
+				"content":      content,
 			})
 		default:
-			out = append(out, map[string]interface{}{"role": "user", "content": msg.Content})
+			out = append(out, map[string]interface{}{"role": "user", "content": content})
 		}
 	}
 	return out
+}
+
+func openAICompatMessageContent(msg Message) interface{} {
+	if len(msg.ContentParts) == 0 {
+		return msg.Content
+	}
+	parts := make([]map[string]interface{}, 0, len(msg.ContentParts))
+	for _, part := range msg.ContentParts {
+		switch strings.ToLower(strings.TrimSpace(part.Type)) {
+		case "text", "input_text":
+			if strings.TrimSpace(part.Text) == "" {
+				continue
+			}
+			parts = append(parts, map[string]interface{}{
+				"type": "text",
+				"text": part.Text,
+			})
+		case "input_image", "image_url":
+			imageURL := strings.TrimSpace(part.ImageURL)
+			if imageURL == "" {
+				continue
+			}
+			payload := map[string]interface{}{
+				"type": "image_url",
+				"image_url": map[string]interface{}{
+					"url": imageURL,
+				},
+			}
+			if detail := strings.TrimSpace(part.Detail); detail != "" {
+				payload["image_url"].(map[string]interface{})["detail"] = detail
+			}
+			parts = append(parts, payload)
+		default:
+			if strings.TrimSpace(part.Text) == "" {
+				continue
+			}
+			parts = append(parts, map[string]interface{}{
+				"type": "text",
+				"text": part.Text,
+			})
+		}
+	}
+	if len(parts) == 0 {
+		return msg.Content
+	}
+	if len(parts) == 1 && parts[0]["type"] == "text" && len(msg.ToolCalls) == 0 {
+		if text, _ := parts[0]["text"].(string); text != "" {
+			return text
+		}
+	}
+	return parts
 }
 
 func openAICompatTools(tools []ToolDefinition) []map[string]interface{} {
@@ -2615,7 +2700,12 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 	}
 	ConfigureProviderRuntime(name, pc)
 	oauthProvider := strings.ToLower(strings.TrimSpace(pc.OAuth.Provider))
-	if pc.APIBase == "" && oauthProvider != defaultAntigravityOAuthProvider {
+	if pc.APIBase == "" &&
+		oauthProvider != defaultAntigravityOAuthProvider &&
+		oauthProvider != defaultGeminiOAuthProvider &&
+		!strings.EqualFold(name, "gemini-cli") &&
+		!strings.EqualFold(name, "aistudio") &&
+		!strings.EqualFold(name, "vertex") {
 		return nil, fmt.Errorf("no API base configured for provider %q", name)
 	}
 	if pc.TimeoutSec <= 0 {
@@ -2635,6 +2725,18 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 	if oauthProvider == defaultAntigravityOAuthProvider {
 		return NewAntigravityProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
+	if strings.EqualFold(name, "aistudio") {
+		return NewAistudioProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
+	if strings.EqualFold(name, "gemini-cli") {
+		return NewGeminiCLIProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
+	if oauthProvider == defaultGeminiOAuthProvider || strings.EqualFold(name, defaultGeminiOAuthProvider) || strings.EqualFold(name, "aistudio") {
+		return NewGeminiProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
+	if strings.EqualFold(name, "vertex") {
+		return NewVertexProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
 	if oauthProvider == defaultCodexOAuthProvider {
 		return NewCodexProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
@@ -2646,6 +2748,9 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 	}
 	if oauthProvider == defaultKimiOAuthProvider {
 		return NewKimiProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
+	if oauthProvider == defaultIFlowOAuthProvider || strings.EqualFold(name, defaultIFlowOAuthProvider) {
+		return NewIFlowProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
 	return NewHTTPProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 }

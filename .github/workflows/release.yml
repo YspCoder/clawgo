@@ -67,65 +67,6 @@ jobs:
           echo "Targets: $build_targets"
           echo "Variants: $channel_variants"
 
-  build-webui:
-    needs: prepare-release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Ensure Node.js 20
-        shell: bash
-        run: |
-          set -euo pipefail
-          if command -v node >/dev/null 2>&1; then
-            node_major="$(node -p 'process.versions.node.split(".")[0]')"
-          else
-            node_major=""
-          fi
-          if [ "$node_major" != "20" ]; then
-            arch="$(dpkg --print-architecture)"
-            case "$arch" in
-              amd64) node_arch="x64" ;;
-              arm64) node_arch="arm64" ;;
-              *)
-                echo "Unsupported runner architecture for Node install: $arch" >&2
-                exit 1
-                ;;
-            esac
-            curl -fsSL "https://nodejs.org/dist/v20.19.5/node-v20.19.5-linux-${node_arch}.tar.xz" -o /tmp/node.tar.xz
-            sudo rm -rf /usr/local/lib/nodejs
-            sudo mkdir -p /usr/local/lib/nodejs
-            sudo tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs
-            echo "/usr/local/lib/nodejs/node-v20.19.5-linux-${node_arch}/bin" >> "$GITHUB_PATH"
-          fi
-          node --version
-          npm --version
-
-      - name: Install WebUI dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd webui
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
-
-      - name: Build WebUI
-        shell: bash
-        run: |
-          set -euo pipefail
-          make build-webui
-
-      - name: Upload WebUI dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: webui-dist
-          path: webui/dist
-          if-no-files-found: error
-
   prepare-go-cache:
     needs: prepare-release
     runs-on: ubuntu-latest
@@ -172,7 +113,6 @@ jobs:
   build-and-package:
     needs:
       - prepare-release
-      - build-webui
       - prepare-go-cache
     runs-on: ubuntu-latest
     strategy:
@@ -202,12 +142,6 @@ jobs:
           sudo tar -C /usr/local -xzf /tmp/go.tgz
           echo "/usr/local/go/bin" >> "$GITHUB_PATH"
           /usr/local/go/bin/go version
-
-      - name: Download WebUI dist
-        uses: actions/download-artifact@v4
-        with:
-          name: webui-dist
-          path: webui/dist
 
       - name: Download Go module cache
         uses: actions/download-artifact@v4
@@ -248,8 +182,7 @@ jobs:
           make package-all \
             VERSION="${{ needs.prepare-release.outputs.version }}" \
             BUILD_TARGETS="${{ matrix.target }}" \
-            CHANNEL_PACKAGE_VARIANTS="${{ needs.prepare-release.outputs.channel_variants }}" \
-            SKIP_WEBUI_BUILD=1
+            CHANNEL_PACKAGE_VARIANTS="${{ needs.prepare-release.outputs.channel_variants }}"
           rm -f build/checksums.txt
 
       - name: Upload matrix artifacts

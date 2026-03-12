@@ -3,7 +3,9 @@ set -euo pipefail
 
 OWNER="YspCoder"
 REPO="clawgo"
+WEBUI_REPO="clawgo-web"
 BIN="clawgo"
+WEBUI_ASSET="webui.tar.gz"
 INSTALL_DIR="/usr/local/bin"
 VARIANT="${CLAWGO_CHANNEL_VARIANT:-full}"
 VARIANT_EXPLICIT=0
@@ -20,7 +22,7 @@ Usage: $0 [--variant full|none|telegram|discord|feishu|maixcam|qq|dingtalk|whats
 Install or upgrade ClawGo from the latest GitHub release.
 
 Notes:
-  - WebUI is embedded in the binary and initialized when you run 'clawgo onboard'.
+  - The installer can optionally download WebUI from the matching tag in $OWNER/$WEBUI_REPO.
   - Variant 'none' installs the no-channel build.
   - OpenClaw migration is offered only when a legacy workspace is detected.
 EOF
@@ -248,6 +250,36 @@ install_binary() {
   log "Installed $BIN to $INSTALL_DIR/$BIN"
 }
 
+install_webui() {
+  local target_dir="$1"
+  local file="$WEBUI_ASSET"
+  local url="https://github.com/$OWNER/$WEBUI_REPO/releases/download/$TAG/$file"
+  local out="$TMPDIR/$file"
+  local extract_dir="$TMPDIR/webui-extract"
+
+  require_cmd tar
+  require_cmd rsync
+  mkdir -p "$extract_dir" "$target_dir"
+
+  log "Downloading optional WebUI package from $OWNER/$WEBUI_REPO@$TAG ..."
+  if ! curl -fSL "$url" -o "$out"; then
+    warn "Failed to download $file from $url"
+    return 1
+  fi
+
+  rm -rf "$target_dir"
+  mkdir -p "$target_dir"
+  tar -xzf "$out" -C "$extract_dir"
+
+  if [[ -d "$extract_dir/webui" ]]; then
+    rsync -a --delete "$extract_dir/webui/" "$target_dir/"
+  else
+    rsync -a --delete "$extract_dir/" "$target_dir/"
+  fi
+
+  log "Installed WebUI to $target_dir"
+}
+
 migrate_local_openclaw() {
   local src="${1:-$LEGACY_WORKSPACE_DIR}"
   local dst="${2:-$WORKSPACE_DIR}"
@@ -377,17 +409,12 @@ offer_openclaw_migration() {
 }
 
 offer_onboard() {
-  log "Refreshing embedded WebUI assets..."
-  "$INSTALL_DIR/$BIN" onboard --sync-webui >/dev/null 2>&1 || warn "Failed to refresh embedded WebUI assets automatically. You can run 'clawgo onboard --sync-webui' later."
-
   if [[ -f "$CONFIG_PATH" ]]; then
     log "Existing config detected at $CONFIG_PATH"
-    log "WebUI assets were refreshed from the embedded bundle."
     log "Run 'clawgo onboard' only if you want to regenerate config or missing workspace templates."
     return
   fi
 
-  log "WebUI assets were refreshed from the embedded bundle."
   if prompt_yes_no "No config found. Run 'clawgo onboard' now?" "N"; then
     "$INSTALL_DIR/$BIN" onboard
   else
@@ -406,6 +433,13 @@ main() {
   trap 'rm -rf "$TMPDIR"' EXIT
 
   install_binary
+  if prompt_yes_no "Install optional WebUI from $OWNER/$WEBUI_REPO@$TAG?" "N"; then
+    local_webui_dir="$HOME/clawgo-webui"
+    tty_read local_webui_dir "Enter WebUI install directory: " "$local_webui_dir"
+    install_webui "$local_webui_dir" || warn "WebUI installation failed. You can install it later by downloading $WEBUI_ASSET from the $TAG release."
+  else
+    log "Skipped optional WebUI installation."
+  fi
   offer_openclaw_migration
   offer_onboard
 

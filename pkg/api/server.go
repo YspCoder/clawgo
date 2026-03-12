@@ -76,6 +76,8 @@ type Server struct {
 	whatsAppBase    string
 	oauthFlowMu     sync.Mutex
 	oauthFlows      map[string]*providers.OAuthPendingFlow
+	extraRoutesMu   sync.RWMutex
+	extraRoutes     map[string]http.Handler
 }
 
 var nodesWebsocketUpgrader = websocket.Upgrader{
@@ -100,6 +102,7 @@ func NewServer(host string, port int, token string, mgr *nodes.Manager) *Server 
 		liveRuntimeSubs: map[chan []byte]struct{}{},
 		liveSubagents:   map[string]*liveSubagentGroup{},
 		oauthFlows:      map[string]*providers.OAuthPendingFlow{},
+		extraRoutes:     map[string]http.Handler{},
 	}
 }
 
@@ -312,6 +315,19 @@ func (s *Server) SetToolsCatalogHandler(fn func() interface{}) { s.onToolsCatalo
 func (s *Server) SetWebUIDir(dir string)                       { s.webUIDir = strings.TrimSpace(dir) }
 func (s *Server) SetGatewayVersion(v string)                   { s.gatewayVersion = strings.TrimSpace(v) }
 func (s *Server) SetWebUIVersion(v string)                     { s.webuiVersion = strings.TrimSpace(v) }
+func (s *Server) SetProtectedRoute(path string, handler http.Handler) {
+	if s == nil {
+		return
+	}
+	path = strings.TrimSpace(path)
+	s.extraRoutesMu.Lock()
+	defer s.extraRoutesMu.Unlock()
+	if path == "" || handler == nil {
+		delete(s.extraRoutes, path)
+		return
+	}
+	s.extraRoutes[path] = handler
+}
 func (s *Server) SetNodeWebRTCTransport(t *nodes.WebRTCTransport) {
 	s.nodeWebRTC = t
 }
@@ -489,6 +505,19 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/api/logs/live", s.handleWebUILogsLive)
 	mux.HandleFunc("/api/logs/recent", s.handleWebUILogsRecent)
+	s.extraRoutesMu.RLock()
+	for path, handler := range s.extraRoutes {
+		routePath := path
+		routeHandler := handler
+		mux.Handle(routePath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !s.checkAuth(r) {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			routeHandler.ServeHTTP(w, r)
+		}))
+	}
+	s.extraRoutesMu.RUnlock()
 	base := strings.TrimRight(strings.TrimSpace(s.whatsAppBase), "/")
 	if base == "" {
 		base = "/whatsapp"

@@ -57,6 +57,13 @@ const (
 	defaultKimiDeviceCodeURL        = "https://auth.kimi.com/api/oauth/device_authorization"
 	defaultKimiTokenURL             = "https://auth.kimi.com/api/oauth/token"
 	defaultKimiClientID             = "17e5f671-d194-4dfb-9706-5516cb48c098"
+	defaultIFlowOAuthProvider       = "iflow"
+	defaultIFlowAuthURL             = "https://iflow.cn/oauth"
+	defaultIFlowTokenURL            = "https://iflow.cn/oauth/token"
+	defaultIFlowClientID            = "10009311001"
+	defaultIFlowClientSecret        = "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW"
+	defaultIFlowCallbackPort        = 11451
+	defaultIFlowRedirectPath        = "/oauth2callback"
 	defaultQwenOAuthProvider        = "qwen"
 	defaultQwenDeviceCodeURL        = "https://chat.qwen.ai/api/v1/oauth2/device/code"
 	defaultQwenTokenURL             = "https://chat.qwen.ai/api/v1/oauth2/token"
@@ -649,6 +656,13 @@ func resolveOAuthConfig(pc config.ProviderConfig) (oauthConfig, error) {
 		cfg.DeviceCodeURL = firstNonEmpty(strings.TrimSpace(pc.OAuth.AuthURL), defaultKimiDeviceCodeURL)
 		cfg.TokenURL = firstNonEmpty(cfg.TokenURL, defaultKimiTokenURL)
 		cfg.AuthURL = cfg.DeviceCodeURL
+	case defaultIFlowOAuthProvider:
+		cfg.CallbackPort = defaultInt(cfg.CallbackPort, defaultIFlowCallbackPort)
+		cfg.ClientID = firstNonEmpty(cfg.ClientID, defaultIFlowClientID)
+		cfg.ClientSecret = firstNonEmpty(cfg.ClientSecret, defaultIFlowClientSecret)
+		cfg.AuthURL = firstNonEmpty(cfg.AuthURL, defaultIFlowAuthURL)
+		cfg.TokenURL = firstNonEmpty(cfg.TokenURL, defaultIFlowTokenURL)
+		cfg.RedirectPath = defaultIFlowRedirectPath
 	case defaultQwenOAuthProvider:
 		cfg.FlowKind = oauthFlowDevice
 		cfg.ClientID = firstNonEmpty(cfg.ClientID, defaultQwenClientID)
@@ -700,6 +714,8 @@ func defaultRefreshLead(provider string, overrideSec int) time.Duration {
 		return defaultAntigravityRefreshLead
 	case defaultKimiOAuthProvider:
 		return defaultKimiRefreshLead
+	case defaultIFlowOAuthProvider:
+		return 30 * time.Minute
 	case defaultQwenOAuthProvider:
 		return defaultQwenRefreshLead
 	default:
