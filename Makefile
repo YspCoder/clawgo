@@ -63,6 +63,7 @@ DEV_WEBUI_DIR?=$(CURDIR)/webui
 WEBUI_DIST_DIR=$(DEV_WEBUI_DIR)/dist
 WEBUI_PACKAGE_LOCK=$(DEV_WEBUI_DIR)/package-lock.json
 NPM?=npm
+SKIP_WEBUI_BUILD?=0
 
 # OS detection
 UNAME_S:=$(shell uname -s)
@@ -228,6 +229,14 @@ build-webui:
 	@echo "Building WebUI..."
 	@if [ ! -d "$(DEV_WEBUI_DIR)" ]; then \
 		echo "✗ Missing WebUI directory: $(DEV_WEBUI_DIR)"; \
+		exit 1; \
+	fi
+	@if [ "$(SKIP_WEBUI_BUILD)" = "1" ]; then \
+		if [ -d "$(WEBUI_DIST_DIR)" ]; then \
+			echo "✓ Reusing existing WebUI dist from $(WEBUI_DIST_DIR)"; \
+			exit 0; \
+		fi; \
+		echo "✗ SKIP_WEBUI_BUILD=1 but WebUI dist is missing: $(WEBUI_DIST_DIR)"; \
 		exit 1; \
 	fi
 	@if ! command -v "$(NPM)" >/dev/null 2>&1; then \
