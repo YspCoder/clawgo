@@ -1,7 +1,7 @@
 import React from 'react';
 import { Package, Wrench } from 'lucide-react';
 import { Button, FixedButton } from '../ui/Button';
-import { CheckboxCardField, SelectField, TextField } from '../ui/FormControls';
+import { SwitchCardField, SelectField, TextField } from '../ui/FormControls';
 import NoticePanel from '../layout/NoticePanel';
 
 type MCPDraftServer = {
@@ -79,7 +79,7 @@ const MCPServerEditor: React.FC<MCPServerEditorProps> = ({
         </label>
         <div className="space-y-2">
           <div className="text-xs text-zinc-400">enabled</div>
-          <CheckboxCardField
+          <SwitchCardField
             checked={draft.enabled}
             className="min-h-[76px]"
             label={t('enable')}
@@ -123,14 +123,15 @@ const MCPServerEditor: React.FC<MCPServerEditorProps> = ({
 
       {draft.transport === 'stdio' ? (
         <div className="ui-soft-panel rounded-[24px] p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <div className="text-sm font-medium text-zinc-200">Args</div>
-              <div className="text-xs text-zinc-500">{t('configMCPArgsEnterHint')}</div>
+              <div className="text-sm font-medium text-zinc-200">{t('mcpArgs')}</div>
+              <div className="text-xs text-zinc-500">{t('configMCPArgsHint', { defaultValue: 'Press Enter to add arguments' })}</div>
             </div>
-            <FixedButton onClick={installDraftPackage} variant="success" label={t('install')}>
+            <Button onClick={installDraftPackage} variant="success" size="sm" radius="lg" gap="1">
               <Package className="w-4 h-4" />
-            </FixedButton>
+              {t('install')}
+            </Button>
           </div>
 
           <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto pr-1">

@@ -39,14 +39,14 @@ const SectionPanel: React.FC<SectionPanelProps> = ({
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className={joinClasses('brand-card glass-panel rounded-[30px] border border-zinc-800/80 p-6 glow-effect', className)}
+      className={joinClasses('brand-card glass-panel rounded-2xl border border-zinc-800/80 p-5 glow-effect', className)}
     >
       <div className="relative z-10">
         {title || subtitle || actions || icon ? (
           <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className={joinClasses('mb-5 flex items-center justify-between gap-3 flex-wrap', headerClassName)}
+            className={joinClasses('mb-4 flex items-center justify-between gap-3 flex-wrap', headerClassName)}
           >
             <div>
               {title ? (

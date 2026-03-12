@@ -238,7 +238,7 @@ const SubagentProfiles: React.FC = () => {
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
         <ProfileListPanel
-          emptyLabel="No subagent profiles."
+          emptyLabel={t('profileEmptyLabel')}
           items={items}
           onSelect={onSelect}
           selectedId={selectedId}
@@ -263,15 +263,15 @@ const SubagentProfiles: React.FC = () => {
           promptPlaceholder={t('agentPromptContentPlaceholder')}
           promptPathHint={promptPathHint}
           promptPathInvalid={!!promptPathErrorKey}
-          roleLabel="Role"
+          roleLabel={t('profileRoleLabel')}
           saving={saving}
           statusLabel={t('status')}
-          toolAllowlistHint={<><span className="ui-text-subtle font-mono">skill_exec</span> is inherited automatically and does not need to be listed here.</>}
+          toolAllowlistHint={<><span className="ui-text-subtle font-mono">skill_exec</span> {t('profileToolAllowlistInheritHint')}</>}
           toolAllowlistLabel={t('toolAllowlist')}
           maxRetriesLabel={t('maxRetries')}
           retryBackoffLabel={t('retryBackoffMs')}
-          maxTaskCharsLabel="Max Task Chars"
-          maxResultCharsLabel="Max Result Chars"
+          maxTaskCharsLabel={t('profileMaxTaskCharsLabel')}
+          maxResultCharsLabel={t('profileMaxResultCharsLabel')}
         />
       </div>
     </div>

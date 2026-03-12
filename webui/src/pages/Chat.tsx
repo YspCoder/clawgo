@@ -350,7 +350,7 @@ const Chat: React.FC = () => {
 
   return (
     <div className="flex h-full min-w-0 p-4 md:p-6 xl:p-8">
-      <div className="flex-1 flex flex-col brand-card ui-panel rounded-[30px] overflow-hidden">
+      <div className="flex-1 flex flex-col brand-card ui-panel rounded-2xl overflow-hidden">
         <div className="ui-surface-muted ui-border-subtle px-4 py-3 border-b flex items-center gap-2 min-w-0 overflow-x-auto">
           <div className="flex items-center gap-2 min-w-0 shrink-0">
             <Button onClick={() => setChatTab('main')} variant={chatTab === 'main' ? 'primary' : 'neutral'} size="xs">{t('mainChat')}</Button>

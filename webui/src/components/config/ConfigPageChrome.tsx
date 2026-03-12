@@ -1,7 +1,7 @@
 import React from 'react';
 import { RefreshCw, Save } from 'lucide-react';
 import { Button, FixedButton } from '../ui/Button';
-import { TextField, ToolbarCheckboxField } from '../ui/FormControls';
+import { TextField, ToolbarSwitchField } from '../ui/FormControls';
 import CodeBlockPanel from '../data-display/CodeBlockPanel';
 import { ModalBackdrop, ModalCard, ModalHeader, ModalShell } from '../ui/ModalFrame';
 
@@ -66,7 +66,7 @@ export function ConfigToolbar({
         <Button onClick={onToggleBasicMode} size="sm">
           {basicMode ? t('configBasicMode') : t('configAdvancedMode')}
         </Button>
-        <ToolbarCheckboxField
+        <ToolbarSwitchField
           checked={hotOnly}
           help={t('configHotOnlyHint', { defaultValue: 'Only show fields that support hot reload.' })}
           label={t('configHotOnly')}
@@ -126,7 +126,7 @@ export function ConfigDiffModal({ diffRows, onClose, t }: ConfigDiffModalProps) 
   return (
     <ModalShell>
       <ModalBackdrop />
-      <ModalCard className="max-h-[85vh] max-w-4xl rounded-[30px]">
+      <ModalCard className="max-h-[85vh] max-w-4xl rounded-2xl">
         <ModalHeader
           title={t('configDiffPreviewCount', { count: diffRows.length })}
           actions={<Button onClick={onClose} size="xs" radius="xl">{t('close')}</Button>}

@@ -29,14 +29,14 @@ const WhatsAppQRCodePanel: React.FC<WhatsAppQRCodePanelProps> = ({
       }
     >
       {qrAvailable ? (
-        <div className="ui-soft-panel rounded-[28px] p-5">
+        <div className="ui-soft-panel rounded-2xl p-5">
           <img src={qrImageURL} alt={t('whatsappBridgeQRCode')} className="mx-auto block w-full max-w-[360px]" />
         </div>
       ) : (
         <EmptyState
           centered
           dashed
-          className="ui-soft-panel rounded-[28px] p-8"
+          className="ui-soft-panel rounded-2xl p-8"
           icon={
             <div className="ui-subpanel ui-surface-strong mx-auto flex h-16 w-16 items-center justify-center rounded-3xl">
               <Smartphone className="ui-icon-muted h-7 w-7" />

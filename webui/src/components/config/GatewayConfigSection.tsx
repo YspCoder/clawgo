@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { FixedButton } from '../ui/Button';
-import { CheckboxField, PanelField, SelectField, TextField, TextareaField } from '../ui/FormControls';
+import { SwitchField, PanelField, SelectField, TextField, TextareaField } from '../ui/FormControls';
 
 type Translate = (key: string) => string;
 
@@ -83,7 +83,7 @@ export function GatewayP2PSection({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
         <PanelField label={t('enable')}>
-          <CheckboxField
+          <SwitchField
             checked={Boolean(p2p?.enabled)}
             onChange={(e) => onP2PFieldChange('enabled', e.target.checked)}
           />
@@ -161,13 +161,13 @@ export function GatewayDispatchSection({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
         <PanelField label={t('configNodeDispatchPreferLocal')}>
-          <CheckboxField checked={Boolean(dispatch?.prefer_local)} onChange={(e) => onDispatchFieldChange('prefer_local', e.target.checked)} />
+          <SwitchField checked={Boolean(dispatch?.prefer_local)} onChange={(e) => onDispatchFieldChange('prefer_local', e.target.checked)} />
         </PanelField>
         <PanelField label={t('configNodeDispatchPreferP2P')}>
-          <CheckboxField checked={Boolean(dispatch?.prefer_p2p ?? true)} onChange={(e) => onDispatchFieldChange('prefer_p2p', e.target.checked)} />
+          <SwitchField checked={Boolean(dispatch?.prefer_p2p ?? true)} onChange={(e) => onDispatchFieldChange('prefer_p2p', e.target.checked)} />
         </PanelField>
         <PanelField label={t('configNodeDispatchAllowRelay')}>
-          <CheckboxField checked={Boolean(dispatch?.allow_relay_fallback ?? true)} onChange={(e) => onDispatchFieldChange('allow_relay_fallback', e.target.checked)} />
+          <SwitchField checked={Boolean(dispatch?.allow_relay_fallback ?? true)} onChange={(e) => onDispatchFieldChange('allow_relay_fallback', e.target.checked)} />
         </PanelField>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -243,7 +243,7 @@ export function GatewayArtifactsSection({ artifacts, onArtifactsFieldChange, t }
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
         <PanelField label={t('enable')}>
-          <CheckboxField checked={Boolean(artifacts?.enabled)} onChange={(e) => onArtifactsFieldChange('enabled', e.target.checked)} />
+          <SwitchField checked={Boolean(artifacts?.enabled)} onChange={(e) => onArtifactsFieldChange('enabled', e.target.checked)} />
         </PanelField>
         <PanelField label={t('configNodeArtifactsKeepLatest')}>
           <TextField
@@ -256,7 +256,7 @@ export function GatewayArtifactsSection({ artifacts, onArtifactsFieldChange, t }
           />
         </PanelField>
         <PanelField label={t('configNodeArtifactsPruneOnRead')}>
-          <CheckboxField checked={Boolean(artifacts?.prune_on_read ?? true)} onChange={(e) => onArtifactsFieldChange('prune_on_read', e.target.checked)} />
+          <SwitchField checked={Boolean(artifacts?.prune_on_read ?? true)} onChange={(e) => onArtifactsFieldChange('prune_on_read', e.target.checked)} />
         </PanelField>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">

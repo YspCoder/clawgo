@@ -22,3 +22,8 @@ build
 
 .gocache
 .vscode
+
+cmd/workspace/*
+channels
+
+*.pid

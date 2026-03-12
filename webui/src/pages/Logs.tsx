@@ -95,18 +95,20 @@ const Logs: React.FC = () => {
   };
 
   return (
-    <div className="p-4 md:p-6 xl:p-8 w-full space-y-4 h-full flex flex-col">
+    <div className="p-3 md:p-4 w-full space-y-3 h-full flex flex-col min-h-0">
       <PageHeader
-        title={t('logs')}
-        titleClassName="ui-text-primary"
-        subtitle={
-          <div className={`ui-pill flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
-            isStreaming ? 'ui-pill-success' : 'ui-pill-neutral'
-          }`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'ui-dot-live animate-pulse' : 'ui-dot-neutral'}`} />
-            {isStreaming ? t('live') : t('paused')}
+        title={
+          <div className="flex items-center gap-3">
+            <span>{t('logs')}</span>
+            <div className={`ui-pill flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+              isStreaming ? 'ui-pill-success' : 'ui-pill-neutral'
+            }`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'ui-dot-live animate-pulse' : 'ui-dot-neutral'}`} />
+              {isStreaming ? t('live') : t('paused')}
+            </div>
           </div>
         }
+        titleClassName="ui-text-primary flex items-center gap-3"
         actions={
           <ToolbarRow>
           <Button onClick={() => setShowRaw(!showRaw)} gap="2">
@@ -122,7 +124,7 @@ const Logs: React.FC = () => {
         }
       />
 
-      <div className="flex-1 brand-card ui-border-subtle border rounded-[30px] overflow-hidden flex flex-col shadow-2xl">
+      <div className="flex-1 brand-card ui-border-subtle border rounded-2xl overflow-hidden flex flex-col shadow-2xl">
         <div className="ui-soft-panel ui-border-subtle px-4 py-2 border-b flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="ui-icon-muted w-4 h-4" />

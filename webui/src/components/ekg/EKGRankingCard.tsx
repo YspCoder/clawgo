@@ -14,7 +14,7 @@ const EKGRankingCard: React.FC<EKGRankingCardProps> = ({
   valueMode,
 }) => {
   return (
-    <div className="brand-card ui-border-subtle rounded-[28px] border p-5">
+    <div className="brand-card ui-border-subtle rounded-2xl border p-5">
       <div className="ui-text-secondary mb-4 text-sm font-medium">{title}</div>
       <div className="space-y-2">
         {items.length === 0 ? (

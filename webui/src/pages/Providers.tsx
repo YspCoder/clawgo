@@ -206,7 +206,7 @@ const Providers: React.FC = () => {
           }
         />
 
-      <div className="brand-card ui-border-subtle border rounded-[30px] p-4 md:p-6 space-y-4">
+      <div className="brand-card ui-border-subtle border rounded-2xl p-4 md:p-6 space-y-4">
         <ProviderRuntimeToolbar
           newProxyName={newProxyName}
           onAddProxy={() => addProxy(newProxyName)}

@@ -1,6 +1,5 @@
 import React from 'react';
-import { Check, ShieldCheck, Users, Wifi } from 'lucide-react';
-import { CheckboxCardField, FieldBlock, TextField } from '../ui/FormControls';
+import { SwitchCardField, FieldBlock, TextField } from '../ui/FormControls';
 import type { ChannelField, ChannelKey } from './channelSchema';
 
 type Translate = (key: string, options?: any) => string;
@@ -15,18 +14,6 @@ type ChannelFieldRendererProps = {
   t: Translate;
 };
 
-function getWhatsAppBooleanIcon(fieldKey: string) {
-  switch (fieldKey) {
-    case 'enabled':
-      return Wifi;
-    case 'enable_groups':
-      return Users;
-    case 'require_mention_in_groups':
-      return ShieldCheck;
-    default:
-      return Check;
-  }
-}
 
 type TagListFieldProps = {
   isWhatsApp: boolean;
@@ -122,33 +109,9 @@ const ChannelFieldRenderer: React.FC<ChannelFieldRendererProps> = ({
   const helper = getDescription(t, channelKey, field.key);
 
   if (field.type === 'boolean') {
-    if (isWhatsApp) {
-      const Icon = getWhatsAppBooleanIcon(field.key);
-      return (
-        <CheckboxCardField
-          key={field.key}
-          className="ui-boolean-card-detailed"
-          checked={!!value}
-          help={(
-            <div className="ui-boolean-head">
-              <div className={`ui-pill ${value ? 'ui-pill-success' : 'ui-pill-neutral'} flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border`}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="ui-form-help">{helper}</div>
-              </div>
-            </div>
-          )}
-          label={label}
-          onChange={(checked) => setDraft((prev) => ({ ...prev, [field.key]: checked }))}
-        />
-      );
-    }
-
     return (
-      <CheckboxCardField
+      <SwitchCardField
         key={field.key}
-        className="ui-boolean-card"
         checked={!!value}
         help={helper}
         label={label}

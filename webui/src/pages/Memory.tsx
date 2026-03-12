@@ -116,7 +116,7 @@ const Memory: React.FC = () => {
 
   return (
     <div className="h-full p-4 md:p-5 xl:p-6">
-      <div className="flex h-full flex-col overflow-hidden rounded-[30px] border brand-card ui-border-subtle lg:flex-row">
+      <div className="flex h-full flex-col overflow-hidden rounded-2xl border brand-card ui-border-subtle lg:flex-row">
         <aside className="ui-border-subtle w-full overflow-y-auto border-b p-2 md:p-3 lg:w-72 lg:border-r lg:border-b-0">
           <div className="sidebar-section rounded-[24px] p-2 md:p-2.5 space-y-1">
             <div className="flex items-center justify-between">

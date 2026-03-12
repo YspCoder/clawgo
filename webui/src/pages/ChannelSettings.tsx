@@ -15,7 +15,7 @@ import {
 } from '../components/channel/channelSchema';
 import WhatsAppQRCodePanel from '../components/channel/WhatsAppQRCodePanel';
 import WhatsAppStatusPanel from '../components/channel/WhatsAppStatusPanel';
-import { CheckboxField } from '../components/ui/FormControls';
+import { SwitchField } from '../components/ui/FormControls';
 import PageHeader from '../components/layout/PageHeader';
 import type { ChannelKey } from '../components/channel/channelSchema';
 import { cloneJSON } from '../utils/object';
@@ -204,7 +204,7 @@ const ChannelSettings: React.FC = () => {
   const stateLabel = wa?.connected ? t('online') : wa?.logged_in ? t('whatsappStateDisconnected') : wa?.qr_available ? t('whatsappStateAwaitingScan') : t('offline');
 
   return (
-    <div className="space-y-6 px-5 py-5 md:px-7 md:py-6 xl:px-8">
+    <div className="space-y-4 px-5 py-5 md:px-7 md:py-6 xl:px-8">
       <PageHeader
         title={t(definition.titleKey)}
         titleClassName="ui-text-primary text-3xl font-bold"
@@ -224,18 +224,23 @@ const ChannelSettings: React.FC = () => {
         }
       />
 
-      <div className={`grid gap-6 ${key === 'whatsapp' ? 'xl:grid-cols-[1fr_0.92fr]' : ''}`}>
-        <div className="space-y-4">
-          {definition.sections.map((section) => {
+      <div className={`grid gap-4 ${key === 'whatsapp' ? 'xl:grid-cols-[1fr_0.92fr]' : ''}`}>
+        <div className="brand-card ui-panel rounded-2xl p-5">
+          {definition.sections.map((section, idx) => {
             const Icon = getChannelSectionIcon(section.id);
             return (
-              <ChannelSectionCard
-                key={section.id}
-                icon={<Icon className="ui-icon-muted h-[18px] w-[18px]" />}
-                title={t(section.titleKey)}
-                hint={t(section.hintKey)}
-              >
-                <div className={`grid gap-4 ${section.columns === 1 ? 'grid-cols-1' : 'lg:grid-cols-2'}`}>
+              <div key={section.id}>
+                {idx > 0 && <hr className="ui-border-subtle my-4 border-t" />}
+                <div className="ui-section-header mb-3">
+                  <div className="ui-subpanel flex h-11 w-11 shrink-0 items-center justify-center">
+                    <Icon className="ui-icon-muted h-[18px] w-[18px]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="ui-text-primary text-lg font-semibold">{t(section.titleKey)}</div>
+                    <p className="ui-text-muted mt-0.5 text-sm">{t(section.hintKey)}</p>
+                  </div>
+                </div>
+                <div className={`grid gap-3 ${section.columns === 1 ? 'grid-cols-1' : 'lg:grid-cols-2'}`}>
                   {section.fields.map((field) => (
                     <ChannelFieldRenderer
                       key={field.key}
@@ -249,7 +254,7 @@ const ChannelSettings: React.FC = () => {
                     />
                   ))}
                 </div>
-              </ChannelSectionCard>
+              </div>
             );
           })}
         </div>

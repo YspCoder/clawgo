@@ -62,21 +62,21 @@ const MCPServerCard: React.FC<MCPServerCardProps> = ({
 
       <div className="grid grid-cols-2 gap-3 text-xs">
         <InfoTile
-          label="package"
+          label={t('mcpPackage')}
           className="ui-code-panel px-3 py-2"
           contentClassName="mt-1 break-all text-zinc-200 text-sm"
         >
           {String(server?.package || '-')}
         </InfoTile>
         <InfoTile
-          label="args"
+          label={t('mcpArgs')}
           className="ui-code-panel px-3 py-2"
           contentClassName="mt-1 text-zinc-200 text-sm"
         >
           {Array.isArray(server?.args) ? server.args.length : 0}
         </InfoTile>
         <InfoTile
-          label="permission"
+          label={t('mcpPermission')}
           className="ui-code-panel px-3 py-2"
           contentClassName="mt-1 text-zinc-200 text-sm"
         >

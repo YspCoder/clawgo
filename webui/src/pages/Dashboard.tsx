@@ -62,7 +62,7 @@ const Dashboard: React.FC = () => {
   }, [nodeAlerts]);
 
   return (
-    <div className="p-4 md:p-6 xl:p-8 w-full space-y-6 xl:space-y-8">
+    <div className="p-4 md:p-5 w-full space-y-4">
       <PageHeader
         title={t('dashboard')}
         subtitle={
@@ -138,7 +138,7 @@ const Dashboard: React.FC = () => {
         )}
       </SectionPanel>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
         <SectionPanel title={t('taskAudit')} icon={<Activity className="w-5 h-5 text-zinc-400" />} className="min-h-[340px] h-full">
           <div className="space-y-3">
             {recentTasks.length === 0 ? (

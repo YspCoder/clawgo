@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/ui/Button';
-import { TextField, TextareaField, ToolbarCheckboxField } from '../components/ui/FormControls';
+import { TextField, TextareaField, ToolbarSwitchField } from '../components/ui/FormControls';
 import { ModalBackdrop, ModalBody, ModalCard, ModalHeader, ModalShell } from '../components/ui/ModalFrame';
 import PageHeader from '../components/layout/PageHeader';
 import ToolbarRow from '../components/layout/ToolbarRow';
@@ -231,7 +231,7 @@ const Skills: React.FC = () => {
         >
           {installingSkill ? t('loading') : t('install')}
         </Button>
-        <ToolbarCheckboxField
+        <ToolbarSwitchField
           checked={ignoreSuspicious}
           className={installingSkill ? 'pointer-events-none opacity-60' : 'shrink-0'}
           help={t('skillsIgnoreSuspiciousHint', { defaultValue: 'Use --force to ignore suspicious package warnings.' })}
@@ -256,7 +256,7 @@ const Skills: React.FC = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
         {skills.map(s => (
-          <div key={s.id} className="brand-card rounded-[28px] border border-zinc-800/80 p-6 flex flex-col shadow-sm group hover:border-zinc-700/50 transition-colors">
+          <div key={s.id} className="brand-card rounded-2xl border border-zinc-800/80 p-6 flex flex-col shadow-sm group hover:border-zinc-700/50 transition-colors">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50">

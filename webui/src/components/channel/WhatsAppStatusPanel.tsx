@@ -44,18 +44,17 @@ const WhatsAppStatusPanel: React.FC<WhatsAppStatusPanelProps> = ({
     <ChannelSectionCard
       icon={status?.connected ? <Wifi className="ui-icon-success h-[18px] w-[18px]" /> : <WifiOff className="ui-icon-warning h-[18px] w-[18px]" />}
       title={
-        <>
-          <div className="ui-text-muted text-xs uppercase tracking-[0.28em]">{t('gatewayStatus')}</div>
-          <div className="ui-text-primary mt-1 text-2xl font-semibold">{stateLabel}</div>
-        </>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="ui-text-muted text-xs uppercase tracking-[0.28em]">{t('gatewayStatus')}</div>
+            <div className="ui-text-primary mt-1 text-2xl font-semibold">{stateLabel}</div>
+          </div>
+          <FixedButton onClick={onLogout} variant="danger" label={t('logout')}>
+            <LogOut className="h-4 w-4" />
+          </FixedButton>
+        </div>
       }
     >
-      <div className="flex items-start justify-between gap-4">
-        <div />
-        <FixedButton onClick={onLogout} variant="danger" label={t('logout')}>
-          <LogOut className="h-4 w-4" />
-        </FixedButton>
-      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <InfoTile label={t('whatsappBridgeURL')} className="break-all">

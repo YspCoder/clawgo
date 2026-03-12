@@ -12,7 +12,7 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon }) => (
     whileHover={{ scale: 1.02 }}
     whileTap={{ scale: 0.98 }}
     transition={{ type: "spring", stiffness: 400, damping: 25 }}
-    className="brand-card hover-lift h-full min-h-[124px] border border-zinc-800 p-6 flex items-center gap-4 cursor-pointer"
+    className="brand-card hover-lift h-full min-h-[96px] border border-zinc-800 p-5 flex items-center gap-4 cursor-pointer"
   >
     <div className="card-icon-shell w-12 h-12 rounded-2xl bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50 relative z-[1]">
       {icon}

@@ -14,7 +14,7 @@ type MetricPanelProps = {
   valueClassName?: string;
 };
 
-const BASE_CLASS_NAME = 'brand-card hover-lift glow-effect ui-border-subtle rounded-[28px] border p-5 min-h-[148px]';
+const BASE_CLASS_NAME = 'brand-card hover-lift glow-effect ui-border-subtle rounded-2xl border p-4 min-h-[120px]';
 
 const MetricPanel: React.FC<MetricPanelProps> = ({
   className,

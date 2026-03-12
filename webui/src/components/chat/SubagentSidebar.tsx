@@ -60,7 +60,7 @@ const SubagentSidebar: React.FC<SubagentSidebarProps> = ({
   subagentTaskPlaceholder,
 }) => {
   return (
-    <div className="ui-surface-strong ui-border-subtle w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
+    <div className="bg-zinc-50/50 dark:bg-zinc-900/40 ui-border-subtle w-full xl:w-[320px] xl:shrink-0 border-b xl:border-b-0 xl:border-r p-4 flex flex-col gap-4 max-h-[46vh] xl:max-h-none overflow-y-auto">
       <div>
         <div className="ui-text-muted text-xs uppercase tracking-wider mb-1">{dispatchTitle}</div>
         <div className="ui-text-secondary text-sm">{dispatchHint}</div>

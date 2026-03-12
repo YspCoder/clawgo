@@ -2,7 +2,7 @@ import React from 'react';
 import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, FixedButton } from '../ui/Button';
-import { CheckboxCardField, FieldBlock, SelectField, TextField, TextareaField } from '../ui/FormControls';
+import { SwitchCardField, FieldBlock, SelectField, TextField, TextareaField } from '../ui/FormControls';
 import type { SubagentProfile, ToolAllowlistGroup } from './profileDraft';
 import { parseAllowlist } from './profileDraft';
 
@@ -67,16 +67,17 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
   const allowlistText = (draft.tool_allowlist || []).join(', ');
   const statusEnabled = (draft.status || 'active') === 'active';
   const notifyPolicyOptions = [
-    { value: 'final_only', label: '仅最终结果', help: '只在任务完成后通知主代理。' },
-    { value: 'internal_only', label: '仅内部事件', help: '只回传中间过程，不单独强调最终结果。' },
-    { value: 'milestone', label: '关键节点', help: '到达关键阶段时通知主代理。' },
-    { value: 'on_blocked', label: '遇阻才通知', help: '只有卡住、需要介入时才通知主代理。' },
-    { value: 'always', label: '始终通知', help: '过程和结果都会尽量通知主代理。' },
+    { value: 'final_only', label: t('profileNotifyFinalOnlyLabel'), help: t('profileNotifyFinalOnlyHelp') },
+    { value: 'internal_only', label: t('profileNotifyInternalOnlyLabel'), help: t('profileNotifyInternalOnlyHelp') },
+    { value: 'milestone', label: t('profileNotifyMilestoneLabel'), help: t('profileNotifyMilestoneHelp') },
+    { value: 'on_blocked', label: t('profileNotifyOnBlockedLabel'), help: t('profileNotifyOnBlockedHelp') },
+    { value: 'always', label: t('profileNotifyAlwaysLabel'), help: t('profileNotifyAlwaysHelp') },
   ];
   const notifyPolicy = notifyPolicyOptions.find((option) => option.value === (draft.notify_main_policy || 'final_only')) || notifyPolicyOptions[0];
 
   return (
-    <div className="brand-card ui-border-subtle rounded-[28px] border p-4 space-y-3">
+    <div className="brand-card ui-border-subtle rounded-2xl border p-4 flex flex-col min-h-0 h-full">
+      <div className="space-y-3 flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-2">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <FieldBlock label={idLabel}>
           <TextField
@@ -85,7 +86,7 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             onChange={(e) => onChange({ ...draft, agent_id: e.target.value })}
             dense
             className="w-full disabled:opacity-60"
-            placeholder="coder"
+            placeholder={t('profileIdPlaceholder')}
           />
         </FieldBlock>
         <FieldBlock label={nameLabel}>
@@ -94,7 +95,7 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             onChange={(e) => onChange({ ...draft, name: e.target.value })}
             dense
             className="w-full"
-            placeholder="Code Agent"
+            placeholder={t('profileNamePlaceholder')}
           />
         </FieldBlock>
         <FieldBlock label={roleLabel}>
@@ -103,22 +104,21 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             onChange={(e) => onChange({ ...draft, role: e.target.value })}
             dense
             className="w-full"
-            placeholder="coding"
+            placeholder={t('profileRolePlaceholder')}
           />
         </FieldBlock>
         <FieldBlock
           label={statusLabel}
         >
-          <CheckboxCardField
+          <SwitchCardField
             checked={statusEnabled}
-            className="min-h-[76px]"
-            help={statusEnabled ? '已启用，允许接收任务。' : '已停用，不会接收新任务。'}
-            label={statusEnabled ? '启用' : '停用'}
+            help={statusEnabled ? t('profileStatusEnabledHelp') : t('profileStatusDisabledHelp')}
+            label={statusEnabled ? t('profileStatusEnabledLabel') : t('profileStatusDisabledLabel')}
             onChange={(checked) => onChange({ ...draft, status: checked ? 'active' : 'disabled' })}
           />
         </FieldBlock>
         <FieldBlock
-          label="通知主代理"
+          label={t('profileNotifyMain')}
           help={notifyPolicy.help}
         >
           <SelectField
@@ -138,7 +138,7 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             onChange={(e) => onChange({ ...draft, system_prompt_file: e.target.value.replace(/\\/g, '/') })}
             dense
             className={`w-full ${promptPathInvalid ? 'border-rose-400/70 focus:border-rose-300' : ''}`}
-            placeholder="agents/coder/AGENT.md"
+            placeholder={t('profilePromptFilePlaceholder')}
           />
           <div className={`mt-1 text-[11px] ${promptPathInvalid ? 'text-rose-300' : 'ui-text-muted'}`}>{promptPathHint}</div>
         </FieldBlock>
@@ -148,7 +148,7 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             onChange={(e) => onChange({ ...draft, memory_namespace: e.target.value })}
             dense
             className="w-full"
-            placeholder="coder"
+            placeholder={t('profileNamespacePlaceholder')}
           />
         </FieldBlock>
         <FieldBlock className="md:col-span-2" label={toolAllowlistLabel}>
@@ -157,7 +157,7 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             onChange={(e) => onChange({ ...draft, tool_allowlist: parseAllowlist(e.target.value) })}
             dense
             className="w-full"
-            placeholder="read_file, list_files, memory_search"
+            placeholder={t('profileAllowlistPlaceholder')}
           />
           <div className="ui-text-muted mt-1 text-[11px]">{toolAllowlistHint}</div>
           {groups.length > 0 ? (
@@ -170,7 +170,7 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
             </div>
           ) : null}
         </FieldBlock>
-        <FieldBlock className="md:col-span-2" label="system_prompt_file content" meta={promptMeta}>
+        <FieldBlock className="md:col-span-2" label={t('profilePromptFileContentLabel')} meta={promptMeta}>
           <TextareaField
             value={promptContent}
             onChange={(e) => onPromptContentChange(e.target.value)}
@@ -226,7 +226,8 @@ const ProfileEditorPanel: React.FC<ProfileEditorPanelProps> = ({
           />
         </FieldBlock>
       </div>
-      <div className="flex items-center gap-2">
+      </div>
+      <div className="flex items-center gap-2 pt-4 mt-auto">
         <Button onClick={onSave} disabled={saving} variant="primary" size="sm" radius="lg" gap="1">
           <Save className="w-4 h-4" />
           {isExisting ? t('update') : t('create')}

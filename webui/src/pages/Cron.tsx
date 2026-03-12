@@ -6,7 +6,7 @@ import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/ui/Button';
 import EmptyState from '../components/data-display/EmptyState';
-import { CheckboxCardField, FieldBlock, SelectField, TextField, TextareaField } from '../components/ui/FormControls';
+import { SwitchCardField, FieldBlock, SelectField, TextField, TextareaField } from '../components/ui/FormControls';
 import { ModalBackdrop, ModalBody, ModalCard, ModalFooter, ModalHeader, ModalShell } from '../components/ui/ModalFrame';
 import PageHeader from '../components/layout/PageHeader';
 import { CronJob } from '../types';
@@ -192,7 +192,7 @@ const Cron: React.FC = () => {
         {cron.map((j) => {
           const schedule = formatSchedule(j, t);
           return (
-          <div key={j.id} className="brand-card rounded-[30px] border border-zinc-800/80 p-6 flex flex-col group hover:border-zinc-700/50 transition-colors">
+          <div key={j.id} className="brand-card rounded-2xl border border-zinc-800/80 p-6 flex flex-col group hover:border-zinc-700/50 transition-colors">
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="font-semibold text-zinc-100 mb-1">{j.name || j.id}</h3>
@@ -344,15 +344,15 @@ const Cron: React.FC = () => {
                 </div>
 
                   <div className="grid grid-cols-1 gap-3 pt-2 md:grid-cols-2">
-                    <CheckboxCardField
+                    <SwitchCardField
                       checked={cronForm.deliver}
-                      help={t('cronDeliverHint', { defaultValue: 'Send the message through the selected channel.' })}
+                      help={t('cronDeliverHint')}
                       label={t('deliver')}
                       onChange={(checked) => setCronForm({ ...cronForm, deliver: checked })}
                     />
-                    <CheckboxCardField
+                    <SwitchCardField
                       checked={cronForm.enabled}
-                      help={t('cronEnabledHint', { defaultValue: 'Enable this cron job immediately after saving.' })}
+                      help={t('cronEnabledHint')}
                       label={t('active')}
                       onChange={(checked) => setCronForm({ ...cronForm, enabled: checked })}
                     />

@@ -19,7 +19,7 @@ const SubagentStreamFilters: React.FC<SubagentStreamFiltersProps> = ({
   selectedAgents,
 }) => {
   return (
-    <div className="ui-surface-strong ui-border-subtle px-4 py-3 border-b flex flex-wrap gap-2">
+    <div className="bg-zinc-50/50 dark:bg-zinc-900/40 ui-border-subtle px-4 py-3 border-b flex flex-wrap gap-2">
       <Button onClick={onReset} variant={selectedAgents.length === 0 ? 'primary' : 'neutral'} size="xs" radius="full">
         {allAgentsLabel}
       </Button>

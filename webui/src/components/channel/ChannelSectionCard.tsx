@@ -14,7 +14,7 @@ const ChannelSectionCard: React.FC<ChannelSectionCardProps> = ({
   title,
 }) => {
   return (
-    <section className="brand-card ui-panel rounded-[30px] p-6 space-y-5">
+    <section className="brand-card ui-panel rounded-2xl p-5 space-y-4">
       <div className="ui-section-header">
         <div className="ui-subpanel flex h-11 w-11 shrink-0 items-center justify-center">
           {icon}

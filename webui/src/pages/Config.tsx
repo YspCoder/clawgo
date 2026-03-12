@@ -100,7 +100,7 @@ const Config: React.FC = () => {
         t={t}
       />
 
-      <div className="flex-1 brand-card ui-border-subtle border rounded-[30px] overflow-hidden flex flex-col shadow-sm min-h-[420px]">
+      <div className="flex-1 brand-card ui-border-subtle border rounded-2xl overflow-hidden flex flex-col shadow-sm min-h-[420px]">
         {!showRaw ? (
           <div className="flex-1 flex min-h-0">
             <ConfigSidebar

@@ -56,7 +56,7 @@ const LogCodes: React.FC = () => {
         }
       />
 
-      <div className="brand-card ui-border-subtle border rounded-[30px] overflow-hidden">
+      <div className="brand-card ui-border-subtle border rounded-2xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="ui-soft-panel ui-border-subtle border-b">
             <tr className="ui-text-secondary">

@@ -16,7 +16,7 @@ const ListPanel: React.FC<ListPanelProps> = ({
   header,
 }) => {
   return (
-    <div className={joinClasses('brand-card ui-panel rounded-[28px] overflow-hidden flex flex-col min-h-0', className)}>
+    <div className={joinClasses('brand-card ui-panel rounded-2xl overflow-hidden flex flex-col min-h-0', className)}>
       {header}
       {children}
     </div>

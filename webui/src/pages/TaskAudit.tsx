@@ -111,15 +111,15 @@ const TaskAudit: React.FC = () => {
         title={t('taskAudit')}
         titleClassName="text-xl md:text-2xl font-semibold"
         actions={(
-          <ToolbarRow className="flex-nowrap">
-            <SelectField dense className="w-[152px] shrink-0" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+          <ToolbarRow className="flex flex-wrap sm:flex-nowrap justify-end items-center gap-2">
+            <SelectField dense className="w-full sm:w-[152px] shrink-0" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
               <option value="all">{t('allSources')}</option>
               <option value="direct">{t('sourceDirect')}</option>
               <option value="memory_todo">{t('sourceMemoryTodo')}</option>
               <option value="task_watchdog">task_watchdog</option>
               <option value="-">-</option>
             </SelectField>
-            <SelectField dense className="w-[152px] shrink-0" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <SelectField dense className="w-full sm:w-[152px] shrink-0" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="all">{t('allStatus')}</option>
               <option value="running">{t('statusRunning')}</option>
               <option value="waiting">{t('statusWaiting')}</option>

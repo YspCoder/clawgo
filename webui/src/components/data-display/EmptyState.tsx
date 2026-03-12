@@ -31,7 +31,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
         'text-sm text-zinc-500',
         centered && 'text-center',
         padded && 'p-4',
-        panel && 'brand-card border border-zinc-800/80 rounded-[30px]',
+        panel && 'brand-card border border-zinc-800/80 rounded-2xl',
         dashed && 'border-dashed',
         (icon || title) && 'flex flex-col items-center justify-center gap-2',
         className,

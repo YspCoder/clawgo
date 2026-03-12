@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FixedButton } from './Button';
-import { CheckboxCardField, SelectField, TextField, TextareaField } from './FormControls';
+import { SwitchCardField, SelectField, TextField, TextareaField } from './FormControls';
 
 interface RecursiveConfigProps {
   data: any;
@@ -176,7 +176,7 @@ const RecursiveConfig: React.FC<RecursiveConfigProps> = ({ data, labels, path = 
         return (
           <div key={currentPath} className="space-y-2">
             {typeof value === 'boolean' ? (
-              <CheckboxCardField
+              <SwitchCardField
                 checked={value}
                 help={<span className="font-mono text-[10px]">{currentPath}</span>}
                 label={label}
