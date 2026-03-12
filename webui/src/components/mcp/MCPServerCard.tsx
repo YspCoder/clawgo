@@ -1,8 +1,8 @@
 import React from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import { FixedButton } from '../Button';
-import InfoTile from '../InfoTile';
-import NoticePanel from '../NoticePanel';
+import { FixedButton } from '../ui/Button';
+import InfoTile from '../data-display/InfoTile';
+import NoticePanel from '../layout/NoticePanel';
 
 type MCPServerCheck = {
   name: string;

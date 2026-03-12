@@ -1,7 +1,7 @@
 import React from 'react';
-import ListPanel from '../ListPanel';
-import PanelHeader from '../PanelHeader';
-import SummaryListItem from '../SummaryListItem';
+import ListPanel from '../layout/ListPanel';
+import PanelHeader from '../layout/PanelHeader';
+import SummaryListItem from '../list/SummaryListItem';
 import type { SubagentProfile } from './profileDraft';
 
 type ProfileListPanelProps = {

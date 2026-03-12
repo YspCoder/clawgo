@@ -1,20 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
-import ArtifactPreviewCard from '../components/ArtifactPreviewCard';
+import ArtifactPreviewCard from '../components/data-display/ArtifactPreviewCard';
 import { useAppContext } from '../context/AppContext';
 import { dataUrlForArtifact, formatArtifactBytes } from '../utils/artifacts';
-import CodeBlockPanel from '../components/CodeBlockPanel';
-import DetailGrid from '../components/DetailGrid';
-import EmptyState from '../components/EmptyState';
-import { FixedButton } from '../components/Button';
-import InfoBlock from '../components/InfoBlock';
-import ListPanel from '../components/ListPanel';
-import PageHeader from '../components/PageHeader';
-import PanelHeader from '../components/PanelHeader';
-import { SelectField } from '../components/FormControls';
-import SummaryListItem from '../components/SummaryListItem';
-import ToolbarRow from '../components/ToolbarRow';
+import CodeBlockPanel from '../components/data-display/CodeBlockPanel';
+import DetailGrid from '../components/data-display/DetailGrid';
+import EmptyState from '../components/data-display/EmptyState';
+import { FixedButton } from '../components/ui/Button';
+import InfoBlock from '../components/data-display/InfoBlock';
+import ListPanel from '../components/layout/ListPanel';
+import PageHeader from '../components/layout/PageHeader';
+import PanelHeader from '../components/layout/PanelHeader';
+import { SelectField } from '../components/ui/FormControls';
+import SummaryListItem from '../components/list/SummaryListItem';
+import ToolbarRow from '../components/layout/ToolbarRow';
 import { formatLocalDateTime } from '../utils/time';
 
 type TaskAuditItem = {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { QrCode, Smartphone } from 'lucide-react';
 import ChannelSectionCard from './ChannelSectionCard';
-import EmptyState from '../EmptyState';
+import EmptyState from '../data-display/EmptyState';
 
 type Translate = (key: string, options?: any) => string;
 

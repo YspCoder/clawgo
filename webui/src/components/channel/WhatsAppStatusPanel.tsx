@@ -1,9 +1,9 @@
 import React from 'react';
 import { LogOut, Wifi, WifiOff } from 'lucide-react';
-import { FixedButton } from '../Button';
+import { FixedButton } from '../ui/Button';
 import ChannelSectionCard from './ChannelSectionCard';
-import InfoTile from '../InfoTile';
-import NoticePanel from '../NoticePanel';
+import InfoTile from '../data-display/InfoTile';
+import NoticePanel from '../layout/NoticePanel';
 
 type Translate = (key: string, options?: any) => string;
 

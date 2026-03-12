@@ -66,7 +66,7 @@ export function TextField({ dense = false, monospace = false, className, ...prop
     <input
       {...props}
       className={joinClasses(
-        'ui-input',
+        'ui-input transition-all duration-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none hover:border-zinc-700 w-full',
         dense ? 'rounded-lg px-2 py-1 text-xs' : 'rounded-xl px-3 py-2 text-sm',
         monospace && 'font-mono',
         className,
@@ -80,7 +80,7 @@ export function SelectField({ dense = false, className, children, ...props }: Se
     <select
       {...props}
       className={joinClasses(
-        'ui-select',
+        'ui-select transition-all duration-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none hover:border-zinc-700 cursor-pointer w-full',
         dense ? 'rounded-lg px-2 py-1 text-xs' : 'rounded-xl px-3 py-2 text-sm',
         className,
       )}
@@ -95,7 +95,7 @@ export function TextareaField({ dense = false, monospace = false, className, ...
     <textarea
       {...props}
       className={joinClasses(
-        'ui-textarea',
+        'ui-textarea transition-all duration-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none hover:border-zinc-700 w-full',
         dense ? 'rounded-lg px-2 py-1 text-xs' : 'rounded-xl px-3 py-2 text-sm',
         monospace && 'font-mono',
         className,
@@ -105,7 +105,7 @@ export function TextareaField({ dense = false, monospace = false, className, ...
 }
 
 export function CheckboxField({ className, ...props }: CheckboxFieldProps) {
-  return <input {...props} type="checkbox" className={joinClasses('ui-checkbox', className)} />;
+  return <input {...props} type="checkbox" className={joinClasses('ui-checkbox transition-all duration-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none hover:border-zinc-500 w-4 h-4 shrink-0', className)} />;
 }
 
 export function CheckboxCardField({
@@ -116,12 +116,12 @@ export function CheckboxCardField({
   onChange,
 }: CheckboxCardFieldProps) {
   return (
-    <label className={joinClasses('ui-toggle-card ui-checkbox-field cursor-pointer', className)}>
-      <div className="space-y-1">
+    <label className={joinClasses('ui-toggle-card ui-checkbox-field p-4 rounded-2xl cursor-pointer transition-all duration-200 hover:bg-zinc-800/50 border hover:border-zinc-700 border-zinc-800/60 flex flex-row items-start gap-4', className)}>
+      <div className="space-y-1.5 flex-1">
         <div className="ui-text-primary text-sm font-semibold">{label}</div>
-        {help ? <div className="ui-form-help">{help}</div> : null}
+        {help ? <div className="ui-form-help text-xs text-zinc-400 whitespace-pre-wrap">{help}</div> : null}
       </div>
-      <div className="pt-2">
+      <div className="pt-0.5 flex shrink-0">
         <CheckboxField checked={checked} onChange={(e) => onChange(e.target.checked)} />
       </div>
     </label>
@@ -136,7 +136,7 @@ export function ToolbarCheckboxField({
   onChange,
 }: ToolbarCheckboxFieldProps) {
   return (
-    <label className={joinClasses('ui-toolbar-checkbox cursor-pointer', className)}>
+    <label className={joinClasses('ui-toolbar-checkbox cursor-pointer transition-colors duration-200 hover:bg-zinc-800/50', className)}>
       <div className="min-w-0 space-y-0.5">
         <div className="ui-text-primary text-xs font-semibold leading-tight">{label}</div>
         {help ? <div className="ui-form-help text-[10px] leading-tight">{help}</div> : null}
@@ -154,10 +154,10 @@ export function InlineCheckboxField({
   onChange,
 }: InlineCheckboxFieldProps) {
   return (
-    <label className={joinClasses('flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/30 px-3 py-2.5 cursor-pointer', className)}>
-      <div className="min-w-0 space-y-0.5">
+    <label className={joinClasses('flex items-center justify-between gap-3 rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-3 py-3 cursor-pointer transition-all duration-200 hover:bg-zinc-800/60 hover:border-zinc-700 shadow-sm', className)}>
+      <div className="min-w-0 space-y-1">
         <div className="ui-text-primary text-sm font-semibold leading-tight">{label}</div>
-        {help ? <div className="ui-form-help text-[10px] leading-tight">{help}</div> : null}
+        {help ? <div className="ui-form-help text-xs text-zinc-400 leading-snug whitespace-pre-wrap">{help}</div> : null}
       </div>
       <CheckboxField checked={checked} onChange={(e) => onChange(e.target.checked)} />
     </label>
@@ -166,14 +166,14 @@ export function InlineCheckboxField({
 
 export function FieldBlock({ label, help, meta, className, children }: FieldBlockProps) {
   return (
-    <div className={joinClasses('space-y-1', className)}>
+    <div className={joinClasses('flex flex-col gap-1.5', className)}>
       {(label || help || meta) && (
-        <div className="flex min-h-[18px] flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          <div className="min-w-0 flex flex-1 items-center gap-x-2 gap-y-1 overflow-hidden">
-            {label ? <div className="ui-form-label shrink-0 leading-none">{label}</div> : null}
-            {help ? <div className="ui-form-help truncate text-[10px] leading-none">{help}</div> : null}
+        <div className="flex flex-col gap-1.5 mb-1.5">
+          <div className="flex items-center justify-between gap-3">
+            {label ? <div className="ui-form-label text-sm font-semibold text-zinc-200">{label}</div> : null}
+            {meta ? <div className="ui-form-help shrink-0 text-xs font-medium text-zinc-500">{meta}</div> : null}
           </div>
-          {meta ? <div className="ui-form-help shrink-0 text-[10px] leading-none">{meta}</div> : null}
+          {help ? <div className="ui-form-help text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">{help}</div> : null}
         </div>
       )}
       {children}
@@ -186,8 +186,8 @@ export function PanelField({ dense = false, className, ...props }: PanelFieldPro
     <FieldBlock
       {...props}
       className={joinClasses(
-        'rounded-xl border border-zinc-800 bg-zinc-900/30',
-        dense ? 'p-2 space-y-2' : 'p-3 space-y-2',
+        'glass-panel rounded-xl border border-zinc-800/60 bg-zinc-900/40 shadow-sm',
+        dense ? 'p-3 space-y-2' : 'p-4 space-y-3',
         className,
       )}
     />

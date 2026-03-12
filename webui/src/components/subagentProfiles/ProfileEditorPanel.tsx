@@ -1,8 +1,8 @@
 import React from 'react';
 import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, FixedButton } from '../Button';
-import { CheckboxCardField, FieldBlock, SelectField, TextField, TextareaField } from '../FormControls';
+import { Button, FixedButton } from '../ui/Button';
+import { CheckboxCardField, FieldBlock, SelectField, TextField, TextareaField } from '../ui/FormControls';
 import type { SubagentProfile, ToolAllowlistGroup } from './profileDraft';
 import { parseAllowlist } from './profileDraft';
 

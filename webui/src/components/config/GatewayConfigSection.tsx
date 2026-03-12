@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { FixedButton } from '../Button';
-import { CheckboxField, PanelField, SelectField, TextField, TextareaField } from '../FormControls';
+import { FixedButton } from '../ui/Button';
+import { CheckboxField, PanelField, SelectField, TextField, TextareaField } from '../ui/FormControls';
 
 type Translate = (key: string) => string;
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Paperclip, Send } from 'lucide-react';
-import { TextField } from '../FormControls';
+import { TextField } from '../ui/FormControls';
 
 type ChatComposerProps = {
   chatTab: 'main' | 'subagents';

@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 
 type InsetCardProps = {
   children: React.ReactNode;
@@ -11,10 +12,14 @@ function joinClasses(...values: Array<string | undefined | false>) {
 
 const InsetCard: React.FC<InsetCardProps> = ({ children, className }) => {
   return (
-    <div className={joinClasses('brand-card-subtle rounded-2xl border border-zinc-800 p-4', className)}>
+    <motion.div 
+      whileHover={{ scale: 1.01, backgroundColor: 'var(--card-bg-a)' }}
+      transition={{ duration: 0.2 }}
+      className={joinClasses('glass-panel rounded-2xl p-4 transition-colors', className)}
+    >
       {children}
-    </div>
+    </motion.div>
   );
 };
 
-export default InsetCard;
+export default React.memo(InsetCard);

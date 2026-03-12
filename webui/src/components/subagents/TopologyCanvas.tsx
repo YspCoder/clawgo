@@ -1,5 +1,5 @@
 import React from 'react';
-import { SpaceParticles } from '../SpaceParticles';
+import { SpaceParticles } from '../data-display/SpaceParticles';
 import type { GraphLineSpec } from './topologyTypes';
 
 type TopologyCanvasProps = {

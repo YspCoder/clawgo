@@ -3,7 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import Header from './Header';
 import Sidebar from './Sidebar';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '../../context/AppContext';
 
 const Layout: React.FC = () => {
   const location = useLocation();

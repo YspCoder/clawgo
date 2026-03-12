@@ -1,7 +1,7 @@
 import React from 'react';
 import { Download, FolderOpen, LogIn, LogOut, Plus, RefreshCw, RotateCcw, ShieldCheck, Trash2, Upload, Wallet, X } from 'lucide-react';
-import { Button, FixedButton } from '../Button';
-import { CheckboxField, InlineCheckboxField, PanelField, SelectField, TextField, ToolbarCheckboxField } from '../FormControls';
+import { Button, FixedButton } from '../ui/Button';
+import { CheckboxField, InlineCheckboxField, PanelField, SelectField, TextField, ToolbarCheckboxField } from '../ui/FormControls';
 
 function joinClasses(...values: Array<string | undefined | false>) {
   return values.filter(Boolean).join(' ');

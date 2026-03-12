@@ -3,71 +3,22 @@ import { Terminal, Trash2, Play, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import EmptyState from '../components/EmptyState';
+import EmptyState from '../components/data-display/EmptyState';
 import { LogEntry } from '../types';
 import { formatLocalTime } from '../utils/time';
-import { Button, FixedButton } from '../components/Button';
-import PageHeader from '../components/PageHeader';
-import ToolbarRow from '../components/ToolbarRow';
+import { Button, FixedButton } from '../components/ui/Button';
+import PageHeader from '../components/layout/PageHeader';
+import ToolbarRow from '../components/layout/ToolbarRow';
+import { useLogStream } from '../hooks/useLogStream';
 
 const Logs: React.FC = () => {
   const { t } = useTranslation();
   const ui = useUI();
   const { q } = useAppContext();
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const { logs, isStreaming, setIsStreaming, clearLogs: hookClearLogs } = useLogStream({ q });
   const [codeMap, setCodeMap] = useState<Record<number, string>>({});
-  const [isStreaming, setIsStreaming] = useState(true);
   const [showRaw, setShowRaw] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-
-  const loadRecent = async () => {
-    try {
-      const r = await fetch(`/webui/api/logs/recent${q ? `${q}&limit=10` : '?limit=10'}`);
-      if (!r.ok) return;
-      const j = await r.json();
-      if (Array.isArray(j.logs)) {
-        setLogs(j.logs.map(normalizeLog));
-      }
-    } catch (e) {
-      console.error('L0096', e);
-    }
-  };
-
-  const closeSocket = () => {
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-    }
-  };
-
-  const startStreaming = () => {
-    closeSocket();
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = new URL(`${proto}//${window.location.host}/webui/api/logs/live`);
-    const token = new URLSearchParams(q.startsWith('?') ? q.slice(1) : q).get('token');
-    if (token) url.searchParams.set('token', token);
-
-    const ws = new WebSocket(url.toString());
-    socketRef.current = ws;
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        const log = normalizeLog(payload?.entry ?? payload);
-        setLogs(prev => [...prev.slice(-1000), log]);
-      } catch (e) {
-        console.error('L0097', e);
-      }
-    };
-    ws.onerror = (e) => {
-      console.error('L0097', e);
-    };
-    ws.onclose = () => {
-      if (socketRef.current === ws) {
-        socketRef.current = null;
-      }
-    };
-  };
 
   const loadCodeMap = async () => {
     try {
@@ -97,19 +48,6 @@ const Logs: React.FC = () => {
   }, [q]);
 
   useEffect(() => {
-    loadRecent();
-    if (isStreaming) {
-      startStreaming();
-    } else {
-      closeSocket();
-    }
-
-    return () => {
-      closeSocket();
-    };
-  }, [isStreaming, q]);
-
-  useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
@@ -121,17 +59,8 @@ const Logs: React.FC = () => {
       confirmText: t('clear'),
     });
     if (!ok) return;
-    setLogs([]);
+    hookClearLogs();
   };
-
-  const normalizeLog = (v: any): LogEntry => ({
-    time: typeof v?.time === 'string' && v.time ? v.time : (typeof v?.timestamp === 'string' && v.timestamp ? v.timestamp : new Date().toISOString()),
-    level: typeof v?.level === 'string' && v.level ? v.level : 'INFO',
-    code: typeof v?.code === 'number' ? v.code : undefined,
-    msg: typeof v?.msg === 'string' ? v.msg : (typeof v?.message === 'string' ? v.message : JSON.stringify(v)),
-    __raw: JSON.stringify(v),
-    ...v,
-  });
 
   const toCode = (v: any): number | undefined => {
     if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
@@ -166,7 +95,7 @@ const Logs: React.FC = () => {
   };
 
   return (
-    <div className="p-4 md:p-5 xl:p-6 w-full space-y-4 h-full flex flex-col">
+    <div className="p-4 md:p-6 xl:p-8 w-full space-y-4 h-full flex flex-col">
       <PageHeader
         title={t('logs')}
         titleClassName="ui-text-primary"

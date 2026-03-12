@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
-import { GlobalDialog, DialogOptions } from '../components/GlobalDialog';
+import { GlobalDialog, DialogOptions } from '../components/ui/GlobalDialog';
 
 type ThemeMode = 'light' | 'dark';
 

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Button } from '../Button';
-import { TextField } from '../FormControls';
+import { Button } from '../ui/Button';
+import { TextField } from '../ui/FormControls';
 
 type ProviderModelPickerModalProps = {
   initialValue?: string;

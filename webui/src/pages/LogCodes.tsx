@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
-import { TextField } from '../components/FormControls';
-import PageHeader from '../components/PageHeader';
+import { TextField } from '../components/ui/FormControls';
+import PageHeader from '../components/layout/PageHeader';
 
 type CodeItem = {
   code: number;

@@ -2,14 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { TextareaField } from '../components/FormControls';
+import { TextareaField } from '../components/ui/FormControls';
 import { GatewayArtifactsSection, GatewayDispatchSection, GatewayP2PSection } from '../components/config/GatewayConfigSection';
 import { ConfigDiffModal, ConfigHeader, ConfigSidebar, ConfigToolbar } from '../components/config/ConfigPageChrome';
 import { buildDiffRows, formatTagRuleText, parseTagRuleText, setPath } from '../components/config/configUtils';
 import { useConfigGatewayActions } from '../components/config/useConfigGatewayActions';
 import { useConfigNavigation } from '../components/config/useConfigNavigation';
 import { useConfigSaveAction } from '../components/config/useConfigSaveAction';
-import RecursiveConfig from '../components/RecursiveConfig';
+import RecursiveConfig from '../components/ui/RecursiveConfig';
 import { cloneJSON } from '../utils/object';
 
 const Config: React.FC = () => {

@@ -1,9 +1,9 @@
 import React from 'react';
 import { Github, Moon, RefreshCw, SunMedium, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useAppContext } from '../context/AppContext';
-import { useUI } from '../context/UIContext';
-import { FixedButton, FixedLinkButton } from './Button';
+import { useAppContext } from '../../context/AppContext';
+import { useUI } from '../../context/UIContext';
+import { FixedButton, FixedLinkButton } from '../ui/Button';
 
 const REPO_URL = 'https://github.com/YspCoder/clawgo';
 

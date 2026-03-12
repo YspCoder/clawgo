@@ -4,11 +4,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { Button, FixedButton } from '../components/Button';
-import EmptyState from '../components/EmptyState';
-import { CheckboxCardField, FieldBlock, SelectField, TextField, TextareaField } from '../components/FormControls';
-import { ModalBackdrop, ModalBody, ModalCard, ModalFooter, ModalHeader, ModalShell } from '../components/ModalFrame';
-import PageHeader from '../components/PageHeader';
+import { Button, FixedButton } from '../components/ui/Button';
+import EmptyState from '../components/data-display/EmptyState';
+import { CheckboxCardField, FieldBlock, SelectField, TextField, TextareaField } from '../components/ui/FormControls';
+import { ModalBackdrop, ModalBody, ModalCard, ModalFooter, ModalHeader, ModalShell } from '../components/ui/ModalFrame';
+import PageHeader from '../components/layout/PageHeader';
 import { CronJob } from '../types';
 import { formatLocalDateTime } from '../utils/time';
 

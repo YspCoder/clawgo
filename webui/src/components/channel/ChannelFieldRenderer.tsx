@@ -1,6 +1,6 @@
 import React from 'react';
 import { Check, ShieldCheck, Users, Wifi } from 'lucide-react';
-import { CheckboxCardField, FieldBlock, TextField } from '../FormControls';
+import { CheckboxCardField, FieldBlock, TextField } from '../ui/FormControls';
 import type { ChannelField, ChannelKey } from './channelSchema';
 
 type Translate = (key: string, options?: any) => string;

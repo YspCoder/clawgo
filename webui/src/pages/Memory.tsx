@@ -3,9 +3,9 @@ import { Save, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { Button, FixedButton } from '../components/Button';
-import { TextareaField } from '../components/FormControls';
-import FileListItem from '../components/FileListItem';
+import { Button, FixedButton } from '../components/ui/Button';
+import { TextareaField } from '../components/ui/FormControls';
+import FileListItem from '../components/list/FileListItem';
 
 const Memory: React.FC = () => {
   const { t } = useTranslation();

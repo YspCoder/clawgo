@@ -1,7 +1,7 @@
 import React from 'react';
-import CodeBlockPanel from '../CodeBlockPanel';
-import NoticePanel from '../NoticePanel';
-import { SelectField, TextField, TextareaField } from '../FormControls';
+import CodeBlockPanel from '../data-display/CodeBlockPanel';
+import NoticePanel from '../layout/NoticePanel';
+import { SelectField, TextField, TextareaField } from '../ui/FormControls';
 
 type DispatchReplayPanelProps = {
   argsLabel: string;

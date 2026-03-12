@@ -1,8 +1,8 @@
 import React from 'react';
 import { Package, Wrench } from 'lucide-react';
-import { Button, FixedButton } from '../Button';
-import { CheckboxCardField, SelectField, TextField } from '../FormControls';
-import NoticePanel from '../NoticePanel';
+import { Button, FixedButton } from '../ui/Button';
+import { CheckboxCardField, SelectField, TextField } from '../ui/FormControls';
+import NoticePanel from '../layout/NoticePanel';
 
 type MCPDraftServer = {
   enabled: boolean;

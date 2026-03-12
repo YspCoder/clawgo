@@ -4,7 +4,7 @@ import { RefreshCw, Save } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { Button, FixedButton } from '../components/Button';
+import { Button, FixedButton } from '../components/ui/Button';
 import ChannelSectionCard from '../components/channel/ChannelSectionCard';
 import ChannelFieldRenderer from '../components/channel/ChannelFieldRenderer';
 import {
@@ -15,8 +15,8 @@ import {
 } from '../components/channel/channelSchema';
 import WhatsAppQRCodePanel from '../components/channel/WhatsAppQRCodePanel';
 import WhatsAppStatusPanel from '../components/channel/WhatsAppStatusPanel';
-import { CheckboxField } from '../components/FormControls';
-import PageHeader from '../components/PageHeader';
+import { CheckboxField } from '../components/ui/FormControls';
+import PageHeader from '../components/layout/PageHeader';
 import type { ChannelKey } from '../components/channel/channelSchema';
 import { cloneJSON } from '../utils/object';
 

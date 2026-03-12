@@ -4,12 +4,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { Button, FixedButton } from '../components/Button';
-import { TextField, TextareaField, ToolbarCheckboxField } from '../components/FormControls';
-import { ModalBackdrop, ModalBody, ModalCard, ModalHeader, ModalShell } from '../components/ModalFrame';
-import PageHeader from '../components/PageHeader';
-import ToolbarRow from '../components/ToolbarRow';
-import FileListItem from '../components/FileListItem';
+import { Button, FixedButton } from '../components/ui/Button';
+import { TextField, TextareaField, ToolbarCheckboxField } from '../components/ui/FormControls';
+import { ModalBackdrop, ModalBody, ModalCard, ModalHeader, ModalShell } from '../components/ui/ModalFrame';
+import PageHeader from '../components/layout/PageHeader';
+import ToolbarRow from '../components/layout/ToolbarRow';
+import FileListItem from '../components/list/FileListItem';
 
 const Skills: React.FC = () => {
   const { t } = useTranslation();

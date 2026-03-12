@@ -1,6 +1,6 @@
 import React from 'react';
-import { Button } from '../Button';
-import { SelectField, TextField, TextareaField } from '../FormControls';
+import { Button } from '../ui/Button';
+import { SelectField, TextField, TextareaField } from '../ui/FormControls';
 import type { AgentRuntimeBadge, RegistryAgent } from './chatUtils';
 
 type SubagentSidebarProps = {
@@ -103,15 +103,15 @@ const SubagentSidebar: React.FC<SubagentSidebarProps> = ({
               <button
                 key={agent.agent_id}
                 onClick={() => onAgentChange(String(agent.agent_id || ''))}
-                className={`w-full text-left rounded-2xl border px-3 py-2.5 ${active ? 'ui-card-active-warning' : 'ui-border-subtle ui-surface-muted ui-row-hover'}`}
+                className={`w-full text-left rounded-2xl border px-3 py-2.5 transition-all duration-300 hover-lift ${active ? 'ui-card-active-warning shadow-sm border-amber-500/30' : 'ui-border-subtle bg-zinc-900/40 hover:bg-zinc-800/60 hover:border-zinc-700'}`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="ui-text-primary text-sm font-medium">{formatAgentName(agent.display_name || agent.agent_id)}</div>
-                  <span className={`ui-pill inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] ${badgeClassName(badge?.status)}`}>
+                <div className="flex items-center justify-between gap-2 mb-0.5">
+                  <div className="ui-text-primary text-sm font-semibold truncate">{formatAgentName(agent.display_name || agent.agent_id)}</div>
+                  <span className={`ui-pill shrink-0 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider ${badgeClassName(badge?.status)}`}>
                     {badge?.text || idleLabel}
                   </span>
                 </div>
-                <div className="ui-text-muted text-xs">{agent.agent_id} · {agent.role || '-'}</div>
+                <div className="ui-text-muted text-xs truncate">{agent.agent_id} · {agent.role || '-'}</div>
               </button>
             );
           })}

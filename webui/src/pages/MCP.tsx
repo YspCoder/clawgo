@@ -4,14 +4,14 @@ import { Plus, RefreshCw, Save, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
-import { Button, FixedButton } from '../components/Button';
-import EmptyState from '../components/EmptyState';
-import { ModalBackdrop, ModalBody, ModalCard, ModalFooter, ModalHeader, ModalShell } from '../components/ModalFrame';
+import { Button, FixedButton } from '../components/ui/Button';
+import EmptyState from '../components/data-display/EmptyState';
+import { ModalBackdrop, ModalBody, ModalCard, ModalFooter, ModalHeader, ModalShell } from '../components/ui/ModalFrame';
 import MCPServerCard from '../components/mcp/MCPServerCard';
 import MCPServerEditor from '../components/mcp/MCPServerEditor';
-import PageHeader from '../components/PageHeader';
-import SectionHeader from '../components/SectionHeader';
-import ToolbarRow from '../components/ToolbarRow';
+import PageHeader from '../components/layout/PageHeader';
+import SectionHeader from '../components/layout/SectionHeader';
+import ToolbarRow from '../components/layout/ToolbarRow';
 import { cloneJSON } from '../utils/object';
 
 type MCPDraftServer = {

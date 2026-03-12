@@ -1,6 +1,6 @@
 import React from 'react';
-import EmptyState from '../EmptyState';
-import InfoBlock from '../InfoBlock';
+import EmptyState from '../data-display/EmptyState';
+import InfoBlock from '../data-display/InfoBlock';
 
 type AgentTreePanelProps = {
   emptyLabel: string;

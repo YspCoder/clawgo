@@ -1,8 +1,9 @@
 import React from 'react';
 import { RefreshCw, Save } from 'lucide-react';
-import { Button, FixedButton } from '../Button';
-import { TextField, ToolbarCheckboxField } from '../FormControls';
-import { ModalBackdrop, ModalCard, ModalHeader, ModalShell } from '../ModalFrame';
+import { Button, FixedButton } from '../ui/Button';
+import { TextField, ToolbarCheckboxField } from '../ui/FormControls';
+import CodeBlockPanel from '../data-display/CodeBlockPanel';
+import { ModalBackdrop, ModalCard, ModalHeader, ModalShell } from '../ui/ModalFrame';
 
 type Translate = (key: string, options?: any) => string;
 
@@ -95,18 +96,21 @@ export function ConfigSidebar({
   t,
 }: ConfigSidebarProps) {
   return (
-    <aside className="sidebar-section ui-border-subtle w-44 md:w-56 border-r p-2 md:p-3 overflow-y-auto shrink-0">
-      <div className="ui-text-secondary text-xs uppercase tracking-widest mb-2 px-2">{t('configTopLevel')}</div>
-      <div className="space-y-1">
-        {filteredTopKeys.map((key) => (
-          <button
-            key={key}
-            onClick={() => onSelectTop(key)}
-            className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-colors ${activeTop === key ? 'nav-item-active ui-text-primary' : 'ui-text-primary ui-row-hover'}`}
-          >
-            {key === hotReloadTabKey ? t('configHotFieldsFull') : (configLabels[key] || key)}
-          </button>
-        ))}
+    <aside className="sidebar-section w-44 md:w-56 border-r border-zinc-800/60 p-2 md:p-3 overflow-y-auto shrink-0 flex flex-col gap-1">
+      <div className="ui-text-secondary text-[10px] uppercase font-bold tracking-widest mb-1 px-3">{t('configTopLevel')}</div>
+      <div className="space-y-0.5">
+        {filteredTopKeys.map((key) => {
+          const isActive = activeTop === key;
+          return (
+            <button
+              key={key}
+              onClick={() => onSelectTop(key)}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 border hover-lift ${isActive ? 'nav-item-active text-indigo-700 border-indigo-500/30 shadow-[0_4px_20px_rgba(79,70,229,0.15)]' : 'text-zinc-400 border-transparent hover:bg-zinc-800/40 hover:text-zinc-200'}`}
+            >
+              {key === hotReloadTabKey ? t('configHotFieldsFull') : (configLabels[key] || key)}
+            </button>
+          );
+        })}
       </div>
     </aside>
   );

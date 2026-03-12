@@ -1,7 +1,7 @@
 import React from 'react';
-import ArtifactPreviewCard from '../ArtifactPreviewCard';
-import EmptyState from '../EmptyState';
-import InfoBlock from '../InfoBlock';
+import ArtifactPreviewCard from '../data-display/ArtifactPreviewCard';
+import EmptyState from '../data-display/EmptyState';
+import InfoBlock from '../data-display/InfoBlock';
 
 type DispatchArtifactPreviewSectionProps = {
   artifacts: any[];

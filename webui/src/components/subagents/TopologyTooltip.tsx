@@ -1,5 +1,5 @@
 import React from 'react';
-import InsetCard from '../InsetCard';
+import InsetCard from '../data-display/InsetCard';
 import type { StreamItem, SubagentTask } from './subagentTypes';
 
 type StreamPreview = {

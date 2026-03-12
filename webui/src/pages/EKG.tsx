@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, RefreshCw, Route, ServerCrash, Workflow } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../context/AppContext';
-import { FixedButton } from '../components/Button';
+import { FixedButton } from '../components/ui/Button';
 import EKGDistributionCard from '../components/ekg/EKGDistributionCard';
 import EKGRankingCard from '../components/ekg/EKGRankingCard';
-import { SelectField } from '../components/FormControls';
-import MetricPanel from '../components/MetricPanel';
+import { SelectField } from '../components/ui/FormControls';
+import MetricPanel from '../components/data-display/MetricPanel';
 
 type EKGKV = { key?: string; score?: number; count?: number };
 
