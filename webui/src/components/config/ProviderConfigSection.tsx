@@ -138,12 +138,12 @@ export function ProviderRuntimeToolbar({
           <option value="all">{t('providersRuntimeAll')}</option>
         </SelectField>
         <TextField dense value={newProxyName} onChange={(e) => onNewProxyNameChange(e.target.value)} placeholder={t('configNewProviderName')} className="min-w-[220px] !w-[220px] xl:!w-[280px] bg-zinc-900/70 border-zinc-700" />
-        <Button onClick={onRefreshRuntime} size="xs" radius="lg" variant="neutral" gap="2" noShrink>
-          <RefreshCw className="w-4 h-4" />
-        </Button>
         <Button onClick={onAddProxy} variant="primary" size="xs" radius="lg" gap="2" noShrink>
           <Plus className="w-4 h-4" />
           {t('add')}
+        </Button>
+        <Button onClick={onRefreshRuntime} size="xs" radius="lg" variant="neutral" gap="2" noShrink>
+          <RefreshCw className="w-4 h-4" />
         </Button>
       </div>
     </div>
@@ -409,6 +409,14 @@ export function ProviderProxyCard({
   const oauthProvider = String(proxy?.oauth?.provider || '');
   const [runtimeOpen, setRuntimeOpen] = React.useState(false);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (showOAuth) {
+      onLoadOAuthAccounts();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showOAuth]);
+
   const oauthAccountCount = Array.isArray(oauthAccounts) ? oauthAccounts.length : 0;
   const runtimeErrors = Array.isArray(runtimeItem?.recent_errors) ? runtimeItem.recent_errors : [];
   const lastQuotaError = runtimeErrors.find((item: any) => String(item?.reason || '').trim() === 'quota') || null;
@@ -419,13 +427,13 @@ export function ProviderProxyCard({
     : lastQuotaError
       ? {
         label: t('providersQuotaLimited'),
-        tone: 'border-amber-500/30 bg-amber-500/10 text-amber-200',
+        tone: 'ui-pill ui-pill-warning',
         detail: ti('providersQuotaLimitedDetail', { when: String(lastQuotaError?.when || '-') }),
       }
       : oauthAccounts.some((account) => String(account?.cooldown_until || '').trim())
         ? {
           label: t('providersQuotaCooldown'),
-          tone: 'border-orange-500/30 bg-orange-500/10 text-orange-200',
+          tone: 'ui-pill ui-pill-warning',
           detail: oauthAccounts
             .map((account) => String(account?.cooldown_until || '').trim())
             .find(Boolean) || '-',
@@ -433,21 +441,21 @@ export function ProviderProxyCard({
         : oauthAccounts.some((account) => Number(account?.health_score || 100) < 60)
           ? {
             label: t('providersQuotaHealthLow'),
-            tone: 'border-rose-500/30 bg-rose-500/10 text-rose-200',
+            tone: 'ui-pill ui-pill-danger',
             detail: ti('providersQuotaHealthLowDetail', { score: Math.min(...oauthAccounts.map((account) => Number(account?.health_score || 100))) }),
           }
           : connected
             ? {
               label: t('providersQuotaHealthy'),
-              tone: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
+              tone: 'ui-pill ui-pill-success',
               detail: t('providersQuotaHealthyDetail'),
             }
             : {
               label: t('providersOAuthDisconnected'),
-              tone: 'border-zinc-700 bg-zinc-900/50 text-zinc-300',
+              tone: 'ui-pill ui-pill-neutral',
               detail: t('providersQuotaNoAccountDetail'),
             };
-  const quotaTone = quotaState?.tone || 'border-zinc-700 bg-zinc-900/50 text-zinc-300';
+  const quotaTone = quotaState?.tone || 'ui-pill ui-pill-neutral';
   const oauthStatusText = oauthAccountsLoading
     ? t('providersOAuthLoading')
     : connected
@@ -702,11 +710,9 @@ export function ProviderProxyCard({
                   <RefreshCw className={`w-4 h-4${oauthAccountsLoading ? ' animate-spin' : ''}`} />
                 </FixedButton>
               </div>
-              <div className={`rounded-xl border px-3 py-2 text-[11px] ${oauthAccountsLoading
-                ? 'border-sky-500/25 bg-sky-500/10 text-sky-100'
-                : connected
-                  ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-100'
-                  : 'border-zinc-800 bg-zinc-950/30 text-zinc-400'
+              <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${connected
+                ? 'ui-pill ui-pill-success'
+                : 'ui-pill ui-pill-neutral'
                 }`}>
                 {oauthAccountsLoading
                   ? t('providersOAuthLoadingHelp')
@@ -715,8 +721,8 @@ export function ProviderProxyCard({
                     : t('providersOAuthEmptyHelp')}
               </div>
               <div className={`hidden rounded-xl border px-3 py-2 text-[11px] ${connected
-                ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-100'
-                : 'border-zinc-800 bg-zinc-950/30 text-zinc-400'
+                ? 'ui-pill ui-pill-success'
+                : 'ui-pill ui-pill-neutral'
                 }`}>
                 {connected
                   ? ti('providersAutoLoadedCount', { count: oauthAccountCount, primary: oauthAccounts[0]?.account_label || oauthAccounts[0]?.email || oauthAccounts[0]?.account_id || '-' })
@@ -734,10 +740,10 @@ export function ProviderProxyCard({
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-zinc-200 truncate">{account?.email || account?.account_id || account?.credential_file}</div>
                           <div className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${String(account?.cooldown_until || '').trim()
-                            ? 'border-orange-500/30 bg-orange-500/10 text-orange-200'
+                            ? 'ui-pill ui-pill-warning'
                             : Number(account?.health_score || 100) < 60
-                              ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
-                              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                              ? 'ui-pill ui-pill-danger'
+                              : 'ui-pill ui-pill-success'
                             }`}>
                             {String(account?.cooldown_until || '').trim() ? t('providersAccountCooldown') : Number(account?.health_score || 100) < 60 ? t('providersAccountLimited') : t('providersAccountOnline')}
                           </div>

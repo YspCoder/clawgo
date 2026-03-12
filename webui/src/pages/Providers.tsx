@@ -4,6 +4,7 @@ import { RefreshCw, Save } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useUI } from '../context/UIContext';
 import { Button, FixedButton } from '../components/ui/Button';
+import { SelectField } from '../components/ui/FormControls';
 import PageHeader from '../components/layout/PageHeader';
 import { ConfigDiffModal } from '../components/config/ConfigPageChrome';
 import { ProviderProxyCard, ProviderRuntimeDrawer, ProviderRuntimeSummary, ProviderRuntimeToolbar } from '../components/config/ProviderConfigSection';
@@ -12,6 +13,22 @@ import { useConfigProviderActions } from '../components/config/useConfigProvider
 import { useConfigRuntimeView } from '../components/config/useConfigRuntimeView';
 import { useConfigSaveAction } from '../components/config/useConfigSaveAction';
 import { cloneJSON } from '../utils/object';
+
+function parseProviderModelRef(raw: unknown) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return { provider: '', model: '' };
+  const idx = trimmed.indexOf('/');
+  if (idx <= 0) return { provider: '', model: trimmed };
+  return {
+    provider: trimmed.slice(0, idx).trim(),
+    model: trimmed.slice(idx + 1).trim(),
+  };
+}
+
+function firstProviderModel(provider: any) {
+  const models = Array.isArray(provider?.models) ? provider.models : [];
+  return String(models.find((item: any) => String(item || '').trim()) || '').trim();
+}
 
 const Providers: React.FC = () => {
   const { t } = useTranslation();
@@ -56,6 +73,11 @@ const Providers: React.FC = () => {
     () => providerEntries.find(([name]) => name === activeProviderName) || null,
     [providerEntries, activeProviderName],
   );
+  const defaultProviderName = useMemo(() => {
+    const { provider } = parseProviderModelRef((cfg as any)?.agents?.defaults?.model?.primary);
+    if (provider && providerEntries.some(([name]) => name === provider)) return provider;
+    return providerEntries[0]?.[0] || '';
+  }, [cfg, providerEntries]);
 
   useEffect(() => {
     latestProviderRuntimeRef.current = Array.isArray(providerRuntimeItems) ? providerRuntimeItems : [];
@@ -182,6 +204,38 @@ const Providers: React.FC = () => {
     ui,
   });
 
+  const applyDefaultProvider = useCallback((providerName: string) => {
+    const trimmed = String(providerName || '').trim();
+    if (!trimmed) return;
+    const providerEntry = providerEntries.find(([name]) => name === trimmed);
+    if (!providerEntry) return;
+    const [, providerConfig] = providerEntry;
+    const currentPrimary = parseProviderModelRef((cfg as any)?.agents?.defaults?.model?.primary);
+    const model = currentPrimary.provider === trimmed && currentPrimary.model
+      ? currentPrimary.model
+      : firstProviderModel(providerConfig);
+    if (!model) {
+      void ui.notify({ title: t('requestFailed'), message: t('providersDefaultProviderModelRequired', { name: trimmed }) });
+      return;
+    }
+    setCfg((value) => {
+      const next = cloneJSON(value || {});
+      if (!next.agents || typeof next.agents !== 'object') next.agents = {};
+      if (!next.agents.defaults || typeof next.agents.defaults !== 'object') next.agents.defaults = {};
+      if (!next.agents.defaults.model || typeof next.agents.defaults.model !== 'object') next.agents.defaults.model = {};
+      next.agents.defaults.model.primary = `${trimmed}/${model}`;
+      next.agents.defaults.model.fallbacks = [];
+      if (!next.agents.subagents || typeof next.agents.subagents !== 'object') return next;
+      Object.entries(next.agents.subagents).forEach(([, rawAgent]) => {
+        const agent = rawAgent as any;
+        if (!agent || typeof agent !== 'object') return;
+        if (!agent.runtime || typeof agent.runtime !== 'object') agent.runtime = {};
+        agent.runtime.provider = trimmed;
+      });
+      return next;
+    });
+  }, [cfg, providerEntries, setCfg, t, ui]);
+
   return (
     <div className="p-4 md:p-6 xl:p-8 w-full space-y-4 flex flex-col min-h-full">
       <input ref={oauthImportInputRef} type="file" accept=".json,application/json" className="hidden" onChange={onOAuthImportChange} />
@@ -227,6 +281,29 @@ const Providers: React.FC = () => {
           {t('providersIntroMiddle')}
           <span className="font-mono text-zinc-200">hybrid</span>
           {t('providersIntroAfter')}
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4 md:p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-1">
+              <div className="text-sm font-semibold text-zinc-100">{t('providersDefaultProvider')}</div>
+              <div className="text-xs text-zinc-400">{t('providersDefaultProviderHelp')}</div>
+            </div>
+            <div className="w-full lg:w-[320px]">
+              <SelectField
+                dense
+                value={defaultProviderName}
+                onChange={(e) => applyDefaultProvider(e.target.value)}
+                className="w-full bg-zinc-900/70 border-zinc-700"
+              >
+                {providerEntries.map(([name, provider]) => (
+                  <option key={`default-provider-${name}`} value={name}>
+                    {name} · {String(provider?.auth || 'bearer')}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          </div>
         </div>
 
         {providerEntries.length > 0 ? (
