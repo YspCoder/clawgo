@@ -48,10 +48,7 @@ func onboard() {
 
 	fmt.Printf("%s clawgo is ready!\n", logo)
 	fmt.Println("\nNext steps:")
-	fmt.Println("  1. Configure CLIProxyAPI at", configPath)
-	fmt.Println("     Ensure CLIProxyAPI is running: https://github.com/router-for-me/CLIProxyAPI")
-	fmt.Println("     Set providers.<name>.models for Responses API")
-	fmt.Println("  2. Chat: clawgo agent -m \"Hello!\"")
+	fmt.Println("  1. Chat: clawgo agent -m \"Hello!\"")
 }
 
 func ensureConfigOnboard(configPath string, defaults *config.Config) (string, error) {
