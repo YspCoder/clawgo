@@ -626,7 +626,9 @@ func (p *CodexProvider) doWebsocketAttempt(ctx context.Context, endpoint string,
 		switch strings.TrimSpace(fmt.Sprintf("%v", event["type"])) {
 		case "response.output_text.delta":
 			if d := strings.TrimSpace(fmt.Sprintf("%v", event["delta"])); d != "" {
-				onDelta(d)
+				if onDelta != nil {
+					onDelta(d)
+				}
 			}
 		case "response.completed":
 			if respObj, ok := event["response"]; ok {
