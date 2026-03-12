@@ -275,10 +275,16 @@ func iflowBaseURLForAttempt(base *HTTPProvider, attempt authAttempt) string {
 			return normalizeIFlowBaseURL(raw)
 		}
 		if attempt.session.Token != nil {
-			if raw := strings.TrimSpace(asString(attempt.session.Token["base_url"])); raw != "" {
+			if raw := firstNonEmpty(
+				strings.TrimSpace(asString(attempt.session.Token["base_url"])),
+				strings.TrimSpace(asString(attempt.session.Token["base-url"])),
+			); raw != "" {
 				return normalizeIFlowBaseURL(raw)
 			}
-			if raw := strings.TrimSpace(asString(attempt.session.Token["resource_url"])); raw != "" {
+			if raw := firstNonEmpty(
+				strings.TrimSpace(asString(attempt.session.Token["resource_url"])),
+				strings.TrimSpace(asString(attempt.session.Token["resource-url"])),
+			); raw != "" {
 				return normalizeIFlowBaseURL(raw)
 			}
 		}
@@ -309,10 +315,11 @@ func normalizeIFlowBaseURL(raw string) string {
 
 func iflowAttemptAPIKey(attempt authAttempt) string {
 	if attempt.session != nil && attempt.session.Token != nil {
-		if v := strings.TrimSpace(asString(attempt.session.Token["api_key"])); v != "" {
-			return v
-		}
-		if v := strings.TrimSpace(asString(attempt.session.Token["apiKey"])); v != "" {
+		if v := firstNonEmpty(
+			strings.TrimSpace(asString(attempt.session.Token["api_key"])),
+			strings.TrimSpace(asString(attempt.session.Token["api-key"])),
+			strings.TrimSpace(asString(attempt.session.Token["apiKey"])),
+		); v != "" {
 			return v
 		}
 	}

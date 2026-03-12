@@ -39,6 +39,7 @@ import (
 
 type AgentLoop struct {
 	bus                  *bus.MessageBus
+	cfg                  *config.Config
 	provider             providers.LLMProvider
 	workspace            string
 	model                string
@@ -54,6 +55,7 @@ type AgentLoop struct {
 	audit                *triggerAudit
 	running              bool
 	sessionScheduler     *SessionScheduler
+	providerChain        []providerCandidate
 	providerNames        []string
 	providerPool         map[string]providers.LLMProvider
 	providerResponses    map[string]config.ProviderResponsesConfig
@@ -71,6 +73,12 @@ type AgentLoop struct {
 	subagentDigestMu     sync.Mutex
 	subagentDigestDelay  time.Duration
 	subagentDigests      map[string]*subagentDigestState
+}
+
+type providerCandidate struct {
+	ref   string
+	name  string
+	model string
 }
 
 type subagentDigestItem struct {
@@ -315,6 +323,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	loop := &AgentLoop{
 		bus:                  msgBus,
+		cfg:                  cfg,
 		provider:             provider,
 		workspace:            workspace,
 		model:                provider.GetDefaultModel(),
@@ -346,36 +355,75 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		loop.model = strings.TrimSpace(primaryModel)
 	}
 	go loop.runSubagentDigestTicker()
-	// Initialize provider fallback chain (primary + model fallbacks).
+	// Initialize provider fallback chain (primary + inferred providers).
+	loop.providerChain = []providerCandidate{}
 	loop.providerPool = map[string]providers.LLMProvider{}
 	loop.providerNames = []string{}
 	primaryName := config.PrimaryProviderName(cfg)
+	primaryRef := strings.TrimSpace(cfg.Agents.Defaults.Model.Primary)
+	if primaryRef == "" {
+		primaryRef = primaryName + "/" + loop.model
+	}
 	loop.providerPool[primaryName] = provider
+	loop.providerChain = append(loop.providerChain, providerCandidate{
+		ref:   primaryRef,
+		name:  primaryName,
+		model: loop.model,
+	})
 	loop.providerNames = append(loop.providerNames, primaryName)
 	if pc, ok := config.ProviderConfigByName(cfg, primaryName); ok {
 		loop.providerResponses[primaryName] = pc.Responses
 	}
-	for _, name := range cfg.Agents.Defaults.Model.Fallbacks {
-		if name == "" {
+	seenProviders := map[string]struct{}{primaryName: {}}
+	providerConfigs := config.AllProviderConfigs(cfg)
+	providerOrder := make([]string, 0, len(providerConfigs))
+	for name := range providerConfigs {
+		normalized := strings.TrimSpace(name)
+		if normalized == "" {
 			continue
 		}
-		dup := false
-		for _, existing := range loop.providerNames {
-			if existing == name {
-				dup = true
-				break
-			}
+		providerOrder = append(providerOrder, normalized)
+	}
+	sort.SliceStable(providerOrder, func(i, j int) bool {
+		ni := normalizeFallbackProviderName(providerOrder[i])
+		nj := normalizeFallbackProviderName(providerOrder[j])
+		pi := automaticFallbackPriority(ni)
+		pj := automaticFallbackPriority(nj)
+		if pi == pj {
+			return ni < nj
 		}
-		if dup {
+		return pi < pj
+	})
+	for _, rawName := range providerOrder {
+		providerName := strings.TrimSpace(rawName)
+		if providerName == "" {
 			continue
 		}
-		if p2, err := providers.CreateProviderByName(cfg, name); err == nil {
-			loop.providerPool[name] = p2
-			loop.providerNames = append(loop.providerNames, name)
-			if pc, ok := config.ProviderConfigByName(cfg, name); ok {
-				loop.providerResponses[name] = pc.Responses
-			}
+		providerName, _ = config.ParseProviderModelRef(providerName + "/_")
+		if providerName == "" {
+			continue
 		}
+		if _, dup := seenProviders[providerName]; dup {
+			continue
+		}
+		modelName := ""
+		if pc, ok := config.ProviderConfigByName(cfg, providerName); ok {
+			if len(pc.Models) > 0 {
+				modelName = strings.TrimSpace(pc.Models[0])
+			}
+			loop.providerResponses[providerName] = pc.Responses
+		}
+		seenProviders[providerName] = struct{}{}
+		loop.providerNames = append(loop.providerNames, providerName)
+		ref := providerName
+		if modelName != "" {
+			ref += "/" + modelName
+		}
+		loop.providerChain = append(loop.providerChain, providerCandidate{
+			ref:   ref,
+			name:  providerName,
+			model: modelName,
+		})
 	}
 
 	// Inject recursive run logic so subagents can use full tool-calling flows.
@@ -581,24 +629,44 @@ func (al *AgentLoop) buildSessionShards(ctx context.Context) []chan bus.InboundM
 }
 
 func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMessage, messages []providers.Message, toolDefs []providers.ToolDefinition, options map[string]interface{}, primaryErr error) (*providers.LLMResponse, string, error) {
-	if len(al.providerNames) <= 1 {
+	if len(al.providerChain) <= 1 {
 		return nil, "", primaryErr
 	}
 	lastErr := primaryErr
-	candidates := append([]string(nil), al.providerNames[1:]...)
+	candidateNames := make([]string, 0, len(al.providerChain)-1)
+	for _, candidate := range al.providerChain[1:] {
+		candidateNames = append(candidateNames, candidate.name)
+	}
 	if al.ekg != nil {
 		errSig := ""
 		if primaryErr != nil {
 			errSig = primaryErr.Error()
 		}
-		candidates = al.ekg.RankProvidersForError(candidates, errSig)
+		candidateNames = al.ekg.RankProvidersForError(candidateNames, errSig)
 	}
-	for _, name := range candidates {
-		p, ok := al.providerPool[name]
-		if !ok || p == nil {
+	ranked := make([]providerCandidate, 0, len(al.providerChain)-1)
+	used := make([]bool, len(al.providerChain)-1)
+	for _, name := range candidateNames {
+		for idx, candidate := range al.providerChain[1:] {
+			if used[idx] || candidate.name != name {
+				continue
+			}
+			used[idx] = true
+			ranked = append(ranked, candidate)
+		}
+	}
+	for idx, candidate := range al.providerChain[1:] {
+		if !used[idx] {
+			ranked = append(ranked, candidate)
+		}
+	}
+	for _, candidate := range ranked {
+		p, candidateModel, err := al.ensureProviderCandidate(candidate)
+		if err != nil {
+			lastErr = err
 			continue
 		}
-		resp, err := p.Chat(ctx, messages, toolDefs, al.model, options)
+		resp, err := p.Chat(ctx, messages, toolDefs, candidateModel, options)
 		if al.ekg != nil {
 			st := "success"
 			lg := "fallback provider success"
@@ -608,15 +676,94 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 				lg = err.Error()
 				errSig = err.Error()
 			}
-			al.ekg.Record(ekg.Event{Session: msg.SessionKey, Channel: msg.Channel, Source: "provider_fallback", Status: st, Provider: name, Model: al.model, ErrSig: errSig, Log: lg})
+			al.ekg.Record(ekg.Event{Session: msg.SessionKey, Channel: msg.Channel, Source: "provider_fallback", Status: st, Provider: candidate.name, Model: candidateModel, ErrSig: errSig, Log: lg})
 		}
 		if err == nil {
-			logger.WarnCF("agent", logger.C0150, map[string]interface{}{"provider": name})
-			return resp, name, nil
+			logger.WarnCF("agent", logger.C0150, map[string]interface{}{"provider": candidate.name, "model": candidateModel, "ref": candidate.ref})
+			return resp, candidate.name, nil
 		}
 		lastErr = err
 	}
 	return nil, "", lastErr
+}
+
+func (al *AgentLoop) ensureProviderCandidate(candidate providerCandidate) (providers.LLMProvider, string, error) {
+	if al == nil {
+		return nil, "", fmt.Errorf("agent loop is nil")
+	}
+	name := strings.TrimSpace(candidate.name)
+	if name == "" {
+		return nil, "", fmt.Errorf("fallback provider name is empty")
+	}
+	al.providerMu.RLock()
+	existing := al.providerPool[name]
+	al.providerMu.RUnlock()
+	if existing != nil {
+		model := strings.TrimSpace(candidate.model)
+		if model == "" {
+			model = strings.TrimSpace(existing.GetDefaultModel())
+		}
+		if model == "" {
+			return nil, "", fmt.Errorf("fallback provider %q has no model configured", name)
+		}
+		return existing, model, nil
+	}
+	if al.cfg == nil {
+		return nil, "", fmt.Errorf("config not available for fallback provider %q", name)
+	}
+	created, err := providers.CreateProviderByName(al.cfg, name)
+	if err != nil {
+		return nil, "", err
+	}
+	model := strings.TrimSpace(candidate.model)
+	if model == "" {
+		model = strings.TrimSpace(created.GetDefaultModel())
+	}
+	if model == "" {
+		return nil, "", fmt.Errorf("fallback provider %q has no model configured", name)
+	}
+	al.providerMu.Lock()
+	if existing := al.providerPool[name]; existing != nil {
+		al.providerMu.Unlock()
+		return existing, model, nil
+	}
+	al.providerPool[name] = created
+	al.providerMu.Unlock()
+	return created, model, nil
+}
+
+func automaticFallbackPriority(name string) int {
+	switch normalizeFallbackProviderName(name) {
+	case "claude":
+		return 10
+	case "codex":
+		return 20
+	case "gemini":
+		return 30
+	case "gemini-cli":
+		return 40
+	case "aistudio":
+		return 50
+	case "vertex":
+		return 60
+	case "antigravity":
+		return 70
+	case "qwen":
+		return 80
+	case "kimi":
+		return 90
+	case "iflow":
+		return 100
+	case "openai-compatibility":
+		return 110
+	default:
+		return 1000
+	}
+}
+
+func normalizeFallbackProviderName(name string) string {
+	normalized, _ := config.ParseProviderModelRef(strings.TrimSpace(name) + "/_")
+	return strings.TrimSpace(normalized)
 }
 
 func (al *AgentLoop) setSessionProvider(sessionKey, provider string) {
@@ -1188,12 +1335,9 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 
 		if err != nil {
-			if fb, fbProvider, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
+			if fb, _, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
 				response = fb
 				err = nil
-				if fbProvider != "" {
-					al.setSessionProvider(msg.SessionKey, fbProvider)
-				}
 			} else {
 				err = ferr
 			}
@@ -1542,12 +1686,9 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
 
 		if err != nil {
-			if fb, fbProvider, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
+			if fb, _, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
 				response = fb
 				err = nil
-				if fbProvider != "" {
-					al.setSessionProvider(msg.SessionKey, fbProvider)
-				}
 			} else {
 				err = ferr
 			}

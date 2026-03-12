@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -252,6 +253,7 @@ func (p *AntigravityProvider) baseURLs() []string {
 
 func (p *AntigravityProvider) buildRequestBody(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}, session *oauthSession, stream bool) map[string]any {
 	request := map[string]any{}
+	baseModel := strings.TrimSpace(qwenBaseModel(model))
 	systemParts := make([]map[string]any, 0)
 	contents := make([]map[string]any, 0, len(messages))
 	callNames := map[string]string{}
@@ -299,6 +301,16 @@ func (p *AntigravityProvider) buildRequestBody(messages []Message, tools []ToolD
 	if gen := antigravityGenerationConfig(options); len(gen) > 0 {
 		request["generationConfig"] = gen
 	}
+	if extra, ok := mapOption(options, "gemini_generation_config"); ok && len(extra) > 0 {
+		gen := mapFromAny(request["generationConfig"])
+		if gen == nil {
+			gen = map[string]any{}
+		}
+		for k, v := range extra {
+			gen[k] = v
+		}
+		request["generationConfig"] = gen
+	}
 	if toolDecls := antigravityToolDeclarations(tools); len(toolDecls) > 0 {
 		request["tools"] = []map[string]any{{"function_declarations": toolDecls}}
 		request["toolConfig"] = map[string]any{
@@ -307,18 +319,19 @@ func (p *AntigravityProvider) buildRequestBody(messages []Message, tools []ToolD
 	}
 	projectID := ""
 	if session != nil {
-		projectID = firstNonEmpty(strings.TrimSpace(session.ProjectID), asString(session.Token["project_id"]), asString(session.Token["projectId"]))
+		projectID = firstNonEmpty(strings.TrimSpace(session.ProjectID), asString(session.Token["project_id"]), asString(session.Token["project-id"]), asString(session.Token["projectId"]), asString(session.Token["project"]))
 	}
 	if projectID == "" {
 		projectID = "default-project"
 	}
+	applyAntigravityThinkingSuffix(request, model)
 	requestType := "agent"
-	if strings.Contains(strings.ToLower(model), "image") {
+	if strings.Contains(strings.ToLower(baseModel), "image") {
 		requestType = "image_gen"
 	}
 	return map[string]any{
 		"project":     projectID,
-		"model":       strings.TrimSpace(model),
+		"model":       baseModel,
 		"userAgent":   "antigravity",
 		"requestType": requestType,
 		"requestId":   "agent-" + randomSessionID(),
@@ -452,6 +465,79 @@ func antigravityGenerationConfig(options map[string]any) map[string]any {
 		cfg["temperature"] = temperature
 	}
 	return cfg
+}
+
+func applyAntigravityThinkingSuffix(request map[string]any, model string) {
+	suffix := qwenModelSuffix(model)
+	if suffix == "" {
+		return
+	}
+	baseModel := strings.TrimSpace(qwenBaseModel(model))
+	gen := mapFromAny(request["generationConfig"])
+	if gen == nil {
+		gen = map[string]any{}
+	}
+	thinkingConfig := mapFromAny(gen["thinkingConfig"])
+	if thinkingConfig == nil {
+		thinkingConfig = map[string]any{}
+	}
+	includeThoughts, userSetIncludeThoughts := geminiExistingIncludeThoughts(thinkingConfig)
+	delete(thinkingConfig, "thinkingBudget")
+	delete(thinkingConfig, "thinking_budget")
+	delete(thinkingConfig, "thinkingLevel")
+	delete(thinkingConfig, "thinking_level")
+	delete(thinkingConfig, "include_thoughts")
+
+	setIncludeThoughts := func(defaultValue bool, force bool) {
+		if force || !userSetIncludeThoughts {
+			includeThoughts = defaultValue
+		}
+		thinkingConfig["includeThoughts"] = includeThoughts
+	}
+
+	lower := strings.ToLower(strings.TrimSpace(suffix))
+	switch {
+	case lower == "auto" || lower == "-1":
+		thinkingConfig["thinkingBudget"] = -1
+		setIncludeThoughts(true, false)
+	case lower == "none" || lower == "0":
+		if geminiUsesThinkingLevels(baseModel) {
+			thinkingConfig["thinkingLevel"] = "low"
+		} else {
+			thinkingConfig["thinkingBudget"] = 128
+		}
+		setIncludeThoughts(false, true)
+	case isGeminiThinkingLevel(lower):
+		if geminiUsesThinkingLevels(baseModel) {
+			thinkingConfig["thinkingLevel"] = normalizeGeminiThinkingLevel(lower)
+		} else {
+			thinkingConfig["thinkingBudget"] = geminiThinkingBudgetForLevel(lower)
+		}
+		setIncludeThoughts(true, false)
+	default:
+		if budget, err := strconv.Atoi(lower); err == nil {
+			switch {
+			case budget < 0:
+				thinkingConfig["thinkingBudget"] = -1
+				setIncludeThoughts(true, false)
+			case budget == 0:
+				if geminiUsesThinkingLevels(baseModel) {
+					thinkingConfig["thinkingLevel"] = "low"
+				} else {
+					thinkingConfig["thinkingBudget"] = 128
+				}
+				setIncludeThoughts(false, true)
+			default:
+				thinkingConfig["thinkingBudget"] = budget
+				setIncludeThoughts(true, false)
+			}
+		}
+	}
+	if len(thinkingConfig) == 0 {
+		return
+	}
+	gen["thinkingConfig"] = thinkingConfig
+	request["generationConfig"] = gen
 }
 
 func consumeAntigravityStream(resp *http.Response, onDelta func(string)) ([]byte, int, string, error) {

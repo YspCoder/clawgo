@@ -9,16 +9,18 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	geminiCLIBaseURL    = "https://cloudcode-pa.googleapis.com"
-	geminiCLIVersion    = "v1internal"
-	geminiCLIDefaultAlt = "sse"
-	geminiCLIApiClient  = "genai-cli/0 gl-go/1.0"
+	geminiCLIBaseURL        = "https://cloudcode-pa.googleapis.com"
+	geminiCLIVersion        = "v1internal"
+	geminiCLIDefaultAlt     = "sse"
+	geminiCLIClientVersion  = "0.31.0"
+	geminiCLIApiClient      = "google-genai-sdk/1.41.0 gl-node/v22.19.0"
 )
 
 type GeminiCLIProvider struct {
@@ -220,7 +222,7 @@ func applyGeminiCLIAttemptAuth(req *http.Request, attempt authAttempt) error {
 	}
 	token := strings.TrimSpace(attempt.token)
 	if attempt.session != nil {
-		token = firstNonEmpty(strings.TrimSpace(attempt.session.AccessToken), token, asString(attempt.session.Token["access_token"]))
+		token = firstNonEmpty(strings.TrimSpace(attempt.session.AccessToken), token, asString(attempt.session.Token["access_token"]), asString(attempt.session.Token["access-token"]))
 	}
 	if token == "" {
 		return fmt.Errorf("missing access token for gemini-cli")
@@ -263,26 +265,53 @@ func consumeGeminiCLIStream(resp *http.Response, onDelta func(string)) ([]byte, 
 }
 
 func geminiCLIProjectID(options map[string]interface{}, session *oauthSession) string {
-	if value, ok := stringOption(options, "gemini_project_id"); ok {
-		return value
-	}
-	if value, ok := stringOption(options, "project_id"); ok {
-		return value
+	for _, key := range []string{"gemini_project_id", "project_id", "project"} {
+		if value, ok := stringOption(options, key); ok {
+			trimmed := strings.TrimSpace(value)
+			if trimmed != "" {
+				return trimmed
+			}
+		}
 	}
 	if session == nil {
 		return ""
 	}
-	return firstNonEmpty(strings.TrimSpace(session.ProjectID), asString(session.Token["project_id"]), asString(session.Token["projectId"]), asString(session.Token["project"]))
+	return firstNonEmpty(strings.TrimSpace(session.ProjectID), asString(session.Token["project_id"]), asString(session.Token["project-id"]), asString(session.Token["projectId"]), asString(session.Token["project"]))
+}
+
+func geminiCLIRuntimeOS() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "win32"
+	default:
+		return runtime.GOOS
+	}
+}
+
+func geminiCLIRuntimeArch() string {
+	switch runtime.GOARCH {
+	case "amd64":
+		return "x64"
+	case "386":
+		return "x86"
+	default:
+		return runtime.GOARCH
+	}
+}
+
+func geminiCLIUserAgent(model string) string {
+	trimmedModel := strings.TrimSpace(model)
+	if trimmedModel == "" {
+		trimmedModel = "unknown"
+	}
+	return fmt.Sprintf("GeminiCLI/%s/%s (%s; %s)", geminiCLIClientVersion, trimmedModel, geminiCLIRuntimeOS(), geminiCLIRuntimeArch())
 }
 
 func applyGeminiCLIHeaders(req *http.Request, model string) {
 	if req == nil {
 		return
 	}
-	if strings.TrimSpace(model) == "" {
-		model = "unknown"
-	}
-	req.Header.Set("User-Agent", "GeminiCLI/"+model)
+	req.Header.Set("User-Agent", geminiCLIUserAgent(model))
 	req.Header.Set("X-Goog-Api-Client", geminiCLIApiClient)
 }
 

@@ -2344,7 +2344,7 @@ func (p *HTTPProvider) compatBase() string {
 }
 
 func (p *HTTPProvider) compatModel(model string) string {
-	trimmed := strings.TrimSpace(model)
+	trimmed := strings.TrimSpace(qwenBaseModel(model))
 	if p.oauthProvider() == defaultKimiOAuthProvider && strings.HasPrefix(strings.ToLower(trimmed), "kimi-") {
 		return trimmed[5:]
 	}
@@ -2355,6 +2355,9 @@ func (p *HTTPProvider) buildOpenAICompatChatRequest(messages []Message, tools []
 	requestBody := map[string]interface{}{
 		"model":    p.compatModel(model),
 		"messages": openAICompatMessages(messages),
+	}
+	if suffix := qwenModelSuffix(model); suffix != "" {
+		applyOpenAICompatThinkingSuffix(requestBody, suffix)
 	}
 	if len(tools) > 0 {
 		requestBody["tools"] = openAICompatTools(tools)
@@ -2680,6 +2683,29 @@ func (p *HTTPProvider) BuildSummaryViaResponsesCompact(ctx context.Context, mode
 	return summary, nil
 }
 
+func normalizeProviderRouteName(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "geminicli", "gemini_cli":
+		return "gemini-cli"
+	case "aistudio", "ai-studio", "ai_studio", "google-ai-studio", "google_ai_studio", "googleaistudio":
+		return "aistudio"
+	case "google", "gemini-api-key", "gemini_api_key":
+		return "gemini"
+	case "anthropic", "claude-code", "claude_code", "claude-api-key", "claude_api_key":
+		return "claude"
+	case "openai-compatibility", "openai_compatibility", "openai-compat", "openai_compat":
+		return "openai-compatibility"
+	case "vertex-api-key", "vertex_api_key", "vertex-compat", "vertex_compat", "vertex-compatibility", "vertex_compatibility":
+		return "vertex"
+	case "codex-api-key", "codex_api_key":
+		return "codex"
+	case "i-flow", "i_flow":
+		return "iflow"
+	default:
+		return strings.TrimSpace(name)
+	}
+}
+
 func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 	name := config.PrimaryProviderName(cfg)
 	provider, err := CreateProviderByName(cfg, name)
@@ -2694,18 +2720,32 @@ func CreateProvider(cfg *config.Config) (LLMProvider, error) {
 }
 
 func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) {
-	pc, err := getProviderConfigByName(cfg, name)
+	routeName := normalizeProviderRouteName(name)
+	pc, err := getProviderConfigByName(cfg, routeName)
 	if err != nil {
 		return nil, err
 	}
-	ConfigureProviderRuntime(name, pc)
-	oauthProvider := strings.ToLower(strings.TrimSpace(pc.OAuth.Provider))
+	ConfigureProviderRuntime(routeName, pc)
+	oauthProvider := normalizeOAuthProvider(pc.OAuth.Provider)
 	if pc.APIBase == "" &&
 		oauthProvider != defaultAntigravityOAuthProvider &&
 		oauthProvider != defaultGeminiOAuthProvider &&
-		!strings.EqualFold(name, "gemini-cli") &&
-		!strings.EqualFold(name, "aistudio") &&
-		!strings.EqualFold(name, "vertex") {
+		oauthProvider != "aistudio" &&
+		oauthProvider != defaultCodexOAuthProvider &&
+		oauthProvider != defaultClaudeOAuthProvider &&
+		oauthProvider != defaultQwenOAuthProvider &&
+		oauthProvider != defaultKimiOAuthProvider &&
+		oauthProvider != defaultIFlowOAuthProvider &&
+		!strings.EqualFold(routeName, "gemini-cli") &&
+		!strings.EqualFold(routeName, "aistudio") &&
+		!strings.EqualFold(routeName, "vertex") &&
+		!strings.EqualFold(routeName, defaultAntigravityOAuthProvider) &&
+		!strings.EqualFold(routeName, defaultGeminiOAuthProvider) &&
+		!strings.EqualFold(routeName, defaultCodexOAuthProvider) &&
+		!strings.EqualFold(routeName, defaultClaudeOAuthProvider) &&
+		!strings.EqualFold(routeName, defaultQwenOAuthProvider) &&
+		!strings.EqualFold(routeName, defaultKimiOAuthProvider) &&
+		!strings.EqualFold(routeName, defaultIFlowOAuthProvider) {
 		return nil, fmt.Errorf("no API base configured for provider %q", name)
 	}
 	if pc.TimeoutSec <= 0 {
@@ -2722,37 +2762,37 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 			return nil, err
 		}
 	}
-	if oauthProvider == defaultAntigravityOAuthProvider {
-		return NewAntigravityProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if oauthProvider == defaultAntigravityOAuthProvider || strings.EqualFold(routeName, defaultAntigravityOAuthProvider) {
+		return NewAntigravityProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if strings.EqualFold(name, "aistudio") {
-		return NewAistudioProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if oauthProvider == "aistudio" || strings.EqualFold(routeName, "aistudio") {
+		return NewAistudioProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if strings.EqualFold(name, "gemini-cli") {
-		return NewGeminiCLIProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if strings.EqualFold(routeName, "gemini-cli") {
+		return NewGeminiCLIProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if oauthProvider == defaultGeminiOAuthProvider || strings.EqualFold(name, defaultGeminiOAuthProvider) || strings.EqualFold(name, "aistudio") {
-		return NewGeminiProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if oauthProvider == defaultGeminiOAuthProvider || strings.EqualFold(routeName, defaultGeminiOAuthProvider) || strings.EqualFold(routeName, "aistudio") {
+		return NewGeminiProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if strings.EqualFold(name, "vertex") {
-		return NewVertexProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if strings.EqualFold(routeName, "vertex") {
+		return NewVertexProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if oauthProvider == defaultCodexOAuthProvider {
-		return NewCodexProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if oauthProvider == defaultCodexOAuthProvider || strings.EqualFold(routeName, defaultCodexOAuthProvider) {
+		return NewCodexProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if oauthProvider == defaultClaudeOAuthProvider {
-		return NewClaudeProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if oauthProvider == defaultClaudeOAuthProvider || strings.EqualFold(routeName, defaultClaudeOAuthProvider) {
+		return NewClaudeProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if oauthProvider == defaultQwenOAuthProvider {
-		return NewQwenProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if oauthProvider == defaultQwenOAuthProvider || strings.EqualFold(routeName, defaultQwenOAuthProvider) {
+		return NewQwenProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if oauthProvider == defaultKimiOAuthProvider {
-		return NewKimiProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if oauthProvider == defaultKimiOAuthProvider || strings.EqualFold(routeName, defaultKimiOAuthProvider) {
+		return NewKimiProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	if oauthProvider == defaultIFlowOAuthProvider || strings.EqualFold(name, defaultIFlowOAuthProvider) {
-		return NewIFlowProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	if oauthProvider == defaultIFlowOAuthProvider || strings.EqualFold(routeName, defaultIFlowOAuthProvider) {
+		return NewIFlowProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	return NewHTTPProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	return NewHTTPProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 }
 
 func CreateProviders(cfg *config.Config) (map[string]LLMProvider, error) {

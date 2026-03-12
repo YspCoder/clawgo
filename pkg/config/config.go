@@ -132,8 +132,7 @@ type AgentDefaults struct {
 }
 
 type AgentModelDefaults struct {
-	Primary   string   `json:"primary,omitempty" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_PRIMARY"`
-	Fallbacks []string `json:"fallbacks,omitempty" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_FALLBACKS"`
+	Primary string `json:"primary,omitempty" env:"CLAWGO_AGENTS_DEFAULTS_MODEL_PRIMARY"`
 }
 
 type HeartbeatConfig struct {
@@ -445,7 +444,7 @@ func DefaultConfig() *Config {
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:         filepath.Join(configDir, "workspace"),
-				Model:             AgentModelDefaults{Primary: "openai/gpt-5.4", Fallbacks: []string{}},
+				Model:             AgentModelDefaults{Primary: "openai/gpt-5.4"},
 				MaxTokens:         8192,
 				Temperature:       0.7,
 				MaxToolIterations: 20,
@@ -660,13 +659,36 @@ func DefaultConfig() *Config {
 	}
 }
 
+func normalizeProviderNameAlias(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "geminicli", "gemini_cli":
+		return "gemini-cli"
+	case "aistudio", "ai-studio", "ai_studio", "google-ai-studio", "google_ai_studio", "googleaistudio":
+		return "aistudio"
+	case "google", "gemini-api-key", "gemini_api_key":
+		return "gemini"
+	case "anthropic", "claude-code", "claude_code", "claude-api-key", "claude_api_key":
+		return "claude"
+	case "openai-compatibility", "openai_compatibility", "openai-compat", "openai_compat":
+		return "openai-compatibility"
+	case "vertex-api-key", "vertex_api_key", "vertex-compat", "vertex_compat", "vertex-compatibility", "vertex_compatibility":
+		return "vertex"
+	case "codex-api-key", "codex_api_key":
+		return "codex"
+	case "i-flow", "i_flow":
+		return "iflow"
+	default:
+		return strings.TrimSpace(name)
+	}
+}
+
 func ParseProviderModelRef(raw string) (provider string, model string) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", ""
 	}
 	if idx := strings.Index(trimmed, "/"); idx > 0 {
-		return strings.TrimSpace(trimmed[:idx]), strings.TrimSpace(trimmed[idx+1:])
+		return normalizeProviderNameAlias(trimmed[:idx]), strings.TrimSpace(trimmed[idx+1:])
 	}
 	return "", trimmed
 }
@@ -690,7 +712,12 @@ func ProviderConfigByName(cfg *Config, name string) (ProviderConfig, bool) {
 	if cfg == nil {
 		return ProviderConfig{}, false
 	}
-	pc, ok := AllProviderConfigs(cfg)[strings.TrimSpace(name)]
+	configs := AllProviderConfigs(cfg)
+	trimmed := strings.TrimSpace(name)
+	if pc, ok := configs[trimmed]; ok {
+		return pc, true
+	}
+	pc, ok := configs[normalizeProviderNameAlias(trimmed)]
 	return pc, ok
 }
 
@@ -704,10 +731,10 @@ func PrimaryProviderName(cfg *Config) string {
 		return "openai"
 	}
 	if provider, _ := ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary); provider != "" {
-		return provider
+		return normalizeProviderNameAlias(provider)
 	}
 	for name := range cfg.Models.Providers {
-		if trimmed := strings.TrimSpace(name); trimmed != "" {
+		if trimmed := normalizeProviderNameAlias(name); trimmed != "" {
 			return trimmed
 		}
 	}

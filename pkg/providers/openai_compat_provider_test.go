@@ -157,3 +157,26 @@ func TestOpenAICompatMessagesPreserveMultimodalContentParts(t *testing.T) {
 		t.Fatalf("image detail = %#v", got)
 	}
 }
+
+func TestBuildOpenAICompatChatRequestAppliesThinkingSuffix(t *testing.T) {
+	base := NewHTTPProvider("openai", "token", "https://example.com/v1", "gpt-5", false, "api_key", 5*time.Second, nil)
+	body := base.buildOpenAICompatChatRequest([]Message{{Role: "user", Content: "hi"}}, nil, "gpt-5(high)", nil)
+	if got := body["model"]; got != "gpt-5" {
+		t.Fatalf("model = %#v, want gpt-5", got)
+	}
+	if got := body["reasoning_effort"]; got != "high" {
+		t.Fatalf("reasoning_effort = %#v, want high", got)
+	}
+}
+
+func TestBuildOpenAICompatChatRequestStripsKimiPrefixAndSuffix(t *testing.T) {
+	base := NewHTTPProvider("kimi", "token", kimiCompatBaseURL, "kimi-k2.5", false, "oauth", 5*time.Second, nil)
+	base.oauth = &oauthManager{cfg: oauthConfig{Provider: defaultKimiOAuthProvider}}
+	body := base.buildOpenAICompatChatRequest([]Message{{Role: "user", Content: "hi"}}, nil, "kimi-k2.5(-1)", nil)
+	if got := body["model"]; got != "k2.5" {
+		t.Fatalf("model = %#v, want k2.5", got)
+	}
+	if got := body["reasoning_effort"]; got != "auto" {
+		t.Fatalf("reasoning_effort = %#v, want auto", got)
+	}
+}

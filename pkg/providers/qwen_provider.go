@@ -164,19 +164,58 @@ func applyQwenThinkingSuffix(body map[string]interface{}, suffix string) {
 	if suffix == "" {
 		return
 	}
-	switch suffix {
-	case "low", "medium", "high", "auto":
-		body["reasoning_effort"] = suffix
-	case "none":
+	if applyOpenAICompatThinkingSuffix(body, suffix) {
+		return
+	}
+}
+
+func applyOpenAICompatThinkingSuffix(body map[string]interface{}, suffix string) bool {
+	if body == nil {
+		return false
+	}
+	normalizedLevel, isLevel := normalizeOpenAICompatThinkingLevel(suffix)
+	switch {
+	case isLevel:
+		delete(body, "thinking")
+		body["reasoning_effort"] = normalizedLevel
+		return true
+	case strings.EqualFold(strings.TrimSpace(suffix), "none"):
 		delete(body, "reasoning_effort")
 		body["thinking"] = map[string]interface{}{"type": "disabled"}
+		return true
 	default:
-		if n, err := strconv.Atoi(suffix); err == nil && n > 0 {
+		n, err := strconv.Atoi(strings.TrimSpace(suffix))
+		if err != nil {
+			return false
+		}
+		switch {
+		case n < 0:
+			delete(body, "thinking")
+			body["reasoning_effort"] = "auto"
+		case n == 0:
+			delete(body, "reasoning_effort")
+			body["thinking"] = map[string]interface{}{"type": "disabled"}
+		default:
+			delete(body, "reasoning_effort")
 			body["thinking"] = map[string]interface{}{
 				"type":          "enabled",
 				"budget_tokens": n,
 			}
 		}
+		return true
+	}
+}
+
+func normalizeOpenAICompatThinkingLevel(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "minimal":
+		return "low", true
+	case "low", "medium", "high", "auto":
+		return strings.ToLower(strings.TrimSpace(raw)), true
+	case "xhigh", "max":
+		return "high", true
+	default:
+		return "", false
 	}
 }
 

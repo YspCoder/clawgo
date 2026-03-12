@@ -292,3 +292,22 @@ func TestCreateProviderByNameRoutesAIStudioProviderViaGeminiTests(t *testing.T) 
 		t.Fatalf("provider = %T, want *AistudioProvider", provider)
 	}
 }
+
+func TestGeminiThinkingSuffixPreservesExplicitIncludeThoughts(t *testing.T) {
+	p := NewGeminiProvider("gemini", "", "", "gemini-3-pro-preview", false, "api_key", 5*time.Second, nil)
+	body := p.buildRequestBody([]Message{{Role: "user", Content: "hi"}}, nil, "gemini-3-pro-preview(high)", map[string]interface{}{
+		"gemini_generation_config": map[string]interface{}{
+			"thinkingConfig": map[string]interface{}{
+				"includeThoughts": false,
+			},
+		},
+	}, false)
+	gen := mapFromAny(body["generationConfig"])
+	thinking := mapFromAny(gen["thinkingConfig"])
+	if got := asString(thinking["thinkingLevel"]); got != "high" {
+		t.Fatalf("thinkingLevel = %q, want high", got)
+	}
+	if got := fmt.Sprintf("%v", thinking["includeThoughts"]); got != "false" {
+		t.Fatalf("includeThoughts = %v, want false", thinking["includeThoughts"])
+	}
+}

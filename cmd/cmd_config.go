@@ -265,37 +265,6 @@ func providerCmd() {
 		cfg.Agents.Defaults.Model.Primary = providerName + "/" + targetModel
 	}
 
-	currentFallbacks := strings.Join(cfg.Agents.Defaults.Model.Fallbacks, ",")
-	fallbackRaw := promptLine(reader, "agents.defaults.model.fallbacks (comma-separated provider/model refs)", currentFallbacks)
-	fallbacks := parseCSV(fallbackRaw)
-	valid := map[string]struct{}{}
-	for _, name := range providerNames(cfg) {
-		valid[name] = struct{}{}
-	}
-	filteredFallbacks := make([]string, 0, len(fallbacks))
-	seen := map[string]struct{}{}
-	defaultRef := strings.TrimSpace(cfg.Agents.Defaults.Model.Primary)
-	for _, fb := range fallbacks {
-		if fb == "" || fb == defaultRef {
-			continue
-		}
-		fbProvider, fbModel := config.ParseProviderModelRef(fb)
-		if fbProvider == "" || fbModel == "" {
-			fmt.Printf("Skip invalid fallback provider/model ref: %s\n", fb)
-			continue
-		}
-		if _, ok := valid[fbProvider]; !ok {
-			fmt.Printf("Skip unknown fallback provider: %s\n", fb)
-			continue
-		}
-		if _, ok := seen[fb]; ok {
-			continue
-		}
-		seen[fb] = struct{}{}
-		filteredFallbacks = append(filteredFallbacks, fb)
-	}
-	cfg.Agents.Defaults.Model.Fallbacks = filteredFallbacks
-
 	if err := config.SaveConfig(getConfigPath(), cfg); err != nil {
 		fmt.Printf("Error saving config: %v\n", err)
 		os.Exit(1)

@@ -119,37 +119,7 @@ func applyKimiThinking(body map[string]interface{}, model string) {
 	if suffix == "" {
 		return
 	}
-	suffix = strings.ToLower(strings.TrimSpace(suffix))
-	switch suffix {
-	case "low", "medium", "high", "auto":
-		body["reasoning_effort"] = suffix
-		delete(body, "thinking")
-	case "none":
-		delete(body, "reasoning_effort")
-		body["thinking"] = map[string]interface{}{"type": "disabled"}
-	default:
-		if budget, err := parsePositiveInt(suffix); err == nil && budget > 0 {
-			delete(body, "reasoning_effort")
-			body["thinking"] = map[string]interface{}{
-				"type":          "enabled",
-				"budget_tokens": budget,
-			}
-		}
-	}
-}
-
-func parsePositiveInt(raw string) (int, error) {
-	var out int
-	for _, ch := range raw {
-		if ch < '0' || ch > '9' {
-			return 0, fmt.Errorf("non-digit")
-		}
-		out = out*10 + int(ch-'0')
-	}
-	if out <= 0 {
-		return 0, fmt.Errorf("not positive")
-	}
-	return out, nil
+	_ = applyOpenAICompatThinkingSuffix(body, suffix)
 }
 
 func normalizeKimiToolMessages(body map[string]interface{}) {

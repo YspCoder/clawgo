@@ -226,7 +226,10 @@ func (p *VertexProvider) endpoint(attempt authAttempt, model, action string, str
 func vertexBaseURLForAttempt(base *HTTPProvider, attempt authAttempt, options map[string]interface{}) string {
 	customBase := ""
 	if attempt.session != nil && attempt.session.Token != nil {
-		if raw := strings.TrimSpace(asString(attempt.session.Token["base_url"])); raw != "" {
+		if raw := firstNonEmpty(
+			strings.TrimSpace(asString(attempt.session.Token["base_url"])),
+			strings.TrimSpace(asString(attempt.session.Token["base-url"])),
+		); raw != "" {
 			customBase = normalizeVertexBaseURL(raw)
 		}
 	}
@@ -256,11 +259,16 @@ func normalizeVertexBaseURL(raw string) string {
 
 func vertexProjectLocation(attempt authAttempt, options map[string]interface{}) (string, string, bool) {
 	projectID := ""
-	if value, ok := stringOption(options, "vertex_project_id"); ok {
-		projectID = strings.TrimSpace(value)
+	for _, key := range []string{"vertex_project_id", "project_id", "project"} {
+		if value, ok := stringOption(options, key); ok {
+			projectID = strings.TrimSpace(value)
+			if projectID != "" {
+				break
+			}
+		}
 	}
 	if attempt.session != nil {
-		projectID = firstNonEmpty(projectID, strings.TrimSpace(attempt.session.ProjectID), asString(attempt.session.Token["project_id"]), asString(attempt.session.Token["projectId"]), asString(attempt.session.Token["project"]))
+		projectID = firstNonEmpty(projectID, strings.TrimSpace(attempt.session.ProjectID), asString(attempt.session.Token["project_id"]), asString(attempt.session.Token["project-id"]), asString(attempt.session.Token["projectId"]), asString(attempt.session.Token["project"]))
 		if projectID == "" {
 			projectID = strings.TrimSpace(asString(mapFromAny(attempt.session.Token["service_account"])["project_id"]))
 		}
@@ -274,11 +282,16 @@ func vertexProjectLocation(attempt authAttempt, options map[string]interface{}) 
 
 func vertexLocationForAttempt(attempt authAttempt, options map[string]interface{}) string {
 	location := ""
-	if value, ok := stringOption(options, "vertex_location"); ok {
-		location = strings.TrimSpace(value)
+	for _, key := range []string{"vertex_location", "location", "region"} {
+		if value, ok := stringOption(options, key); ok {
+			location = strings.TrimSpace(value)
+			if location != "" {
+				break
+			}
+		}
 	}
 	if attempt.session != nil {
-		location = firstNonEmpty(location, asString(attempt.session.Token["location"]), asString(mapFromAny(attempt.session.Token["service_account"])["location"]))
+		location = firstNonEmpty(location, asString(attempt.session.Token["location"]), asString(attempt.session.Token["region"]), asString(mapFromAny(attempt.session.Token["service_account"])["location"]))
 	}
 	if strings.TrimSpace(location) == "" {
 		location = vertexDefaultRegion
@@ -501,7 +514,7 @@ func vertexServiceAccountJSON(session *oauthSession) ([]byte, error) {
 		return nil, fmt.Errorf("vertex service account missing")
 	}
 	raw := mapFromAny(session.Token["service_account"])
-	if projectID := firstNonEmpty(asString(raw["project_id"]), strings.TrimSpace(session.ProjectID), asString(session.Token["project_id"]), asString(session.Token["project"])); projectID != "" {
+	if projectID := firstNonEmpty(asString(raw["project_id"]), asString(raw["project-id"]), strings.TrimSpace(session.ProjectID), asString(session.Token["project_id"]), asString(session.Token["project-id"]), asString(session.Token["project"])); projectID != "" {
 		raw["project_id"] = projectID
 	}
 	data, err := json.Marshal(raw)

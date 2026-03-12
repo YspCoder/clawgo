@@ -3,8 +3,8 @@ package providers
 import (
 	"bufio"
 	"bytes"
-	"encoding/base64"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	geminiBaseURL          = "https://generativelanguage.googleapis.com"
-	geminiAPIVersion       = "v1beta"
+	geminiBaseURL           = "https://generativelanguage.googleapis.com"
+	geminiAPIVersion        = "v1beta"
 	geminiImagePreviewModel = "gemini-2.5-flash-image-preview"
 )
 
@@ -277,43 +277,50 @@ func applyGeminiThinkingSuffix(request map[string]any, model string) {
 	if thinkingConfig == nil {
 		thinkingConfig = map[string]any{}
 	}
+	includeThoughts, userSetIncludeThoughts := geminiExistingIncludeThoughts(thinkingConfig)
 	delete(thinkingConfig, "thinkingBudget")
 	delete(thinkingConfig, "thinking_budget")
 	delete(thinkingConfig, "thinkingLevel")
 	delete(thinkingConfig, "thinking_level")
 	delete(thinkingConfig, "include_thoughts")
 
+	setIncludeThoughts := func(defaultValue bool, force bool) {
+		if force || !userSetIncludeThoughts {
+			includeThoughts = defaultValue
+		}
+		thinkingConfig["includeThoughts"] = includeThoughts
+	}
+
 	lower := strings.ToLower(strings.TrimSpace(suffix))
 	switch {
 	case lower == "auto" || lower == "-1":
 		thinkingConfig["thinkingBudget"] = -1
-		thinkingConfig["includeThoughts"] = true
+		setIncludeThoughts(true, false)
 	case lower == "none":
 		if geminiUsesThinkingLevels(baseModel) {
 			thinkingConfig["thinkingLevel"] = "low"
 		} else {
 			thinkingConfig["thinkingBudget"] = 128
 		}
-		thinkingConfig["includeThoughts"] = false
+		setIncludeThoughts(false, true)
 	case isGeminiThinkingLevel(lower):
 		if geminiUsesThinkingLevels(baseModel) {
 			thinkingConfig["thinkingLevel"] = normalizeGeminiThinkingLevel(lower)
-			thinkingConfig["includeThoughts"] = true
 		} else {
 			thinkingConfig["thinkingBudget"] = geminiThinkingBudgetForLevel(lower)
-			thinkingConfig["includeThoughts"] = true
 		}
+		setIncludeThoughts(true, false)
 	default:
 		if budget, err := strconv.Atoi(lower); err == nil {
 			if budget < 0 {
 				thinkingConfig["thinkingBudget"] = -1
-				thinkingConfig["includeThoughts"] = true
+				setIncludeThoughts(true, false)
 			} else if budget == 0 {
 				thinkingConfig["thinkingBudget"] = 128
-				thinkingConfig["includeThoughts"] = false
+				setIncludeThoughts(false, true)
 			} else {
 				thinkingConfig["thinkingBudget"] = budget
-				thinkingConfig["includeThoughts"] = true
+				setIncludeThoughts(true, false)
 			}
 		}
 	}
@@ -322,6 +329,38 @@ func applyGeminiThinkingSuffix(request map[string]any, model string) {
 	}
 	gen["thinkingConfig"] = thinkingConfig
 	request["generationConfig"] = gen
+}
+
+func geminiExistingIncludeThoughts(thinkingConfig map[string]any) (bool, bool) {
+	if thinkingConfig == nil {
+		return false, false
+	}
+	if value, ok := thinkingConfig["includeThoughts"]; ok {
+		return geminiBoolValue(value), true
+	}
+	if value, ok := thinkingConfig["include_thoughts"]; ok {
+		return geminiBoolValue(value), true
+	}
+	return false, false
+}
+
+func geminiBoolValue(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typed)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	case int:
+		return typed != 0
+	case int64:
+		return typed != 0
+	case float64:
+		return typed != 0
+	}
+	return false
 }
 
 func geminiUsesThinkingLevels(model string) bool {
@@ -490,10 +529,16 @@ func geminiBaseURLForAttempt(base *HTTPProvider, attempt authAttempt) string {
 			return normalizeGeminiBaseURL(raw)
 		}
 		if attempt.session.Token != nil {
-			if raw := strings.TrimSpace(asString(attempt.session.Token["base_url"])); raw != "" {
+				if raw := firstNonEmpty(
+				strings.TrimSpace(asString(attempt.session.Token["base_url"])),
+				strings.TrimSpace(asString(attempt.session.Token["base-url"])),
+			); raw != "" {
 				return normalizeGeminiBaseURL(raw)
 			}
-			if raw := strings.TrimSpace(asString(attempt.session.Token["resource_url"])); raw != "" {
+			if raw := firstNonEmpty(
+				strings.TrimSpace(asString(attempt.session.Token["resource_url"])),
+				strings.TrimSpace(asString(attempt.session.Token["resource-url"])),
+			); raw != "" {
 				return normalizeGeminiBaseURL(raw)
 			}
 		}

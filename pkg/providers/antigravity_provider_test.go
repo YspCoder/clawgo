@@ -2,6 +2,7 @@ package providers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -164,5 +165,56 @@ func TestAntigravityBaseURLsIncludeProdFallback(t *testing.T) {
 	}
 	if got[0] != antigravityDailyBaseURL || got[1] != antigravitySandboxBaseURL || got[2] != antigravityProdBaseURL {
 		t.Fatalf("unexpected fallback order: %#v", got)
+	}
+}
+
+func TestAntigravityBuildRequestBodyAppliesThinkingSuffix(t *testing.T) {
+	p := NewAntigravityProvider("antigravity", "", "", "gemini-3-pro", false, "oauth", 0, nil)
+	body := p.buildRequestBody([]Message{{Role: "user", Content: "hello"}}, nil, "gemini-3-pro(high)", nil, &oauthSession{ProjectID: "demo-project"}, false)
+	if got := body["model"]; got != "gemini-3-pro" {
+		t.Fatalf("model = %#v, want gemini-3-pro", got)
+	}
+	request := mapFromAny(body["request"])
+	gen := mapFromAny(request["generationConfig"])
+	thinking := mapFromAny(gen["thinkingConfig"])
+	if got := asString(thinking["thinkingLevel"]); got != "high" {
+		t.Fatalf("thinkingLevel = %q, want high", got)
+	}
+	if got := fmt.Sprintf("%v", thinking["includeThoughts"]); got != "true" {
+		t.Fatalf("includeThoughts = %v, want true", thinking["includeThoughts"])
+	}
+}
+
+func TestAntigravityBuildRequestBodyDisablesThinkingOutput(t *testing.T) {
+	p := NewAntigravityProvider("antigravity", "", "", "gemini-2.5-pro", false, "oauth", 0, nil)
+	body := p.buildRequestBody([]Message{{Role: "user", Content: "hello"}}, nil, "gemini-2.5-pro(0)", nil, &oauthSession{ProjectID: "demo-project"}, false)
+	request := mapFromAny(body["request"])
+	gen := mapFromAny(request["generationConfig"])
+	thinking := mapFromAny(gen["thinkingConfig"])
+	if got := intValue(thinking["thinkingBudget"]); got != 128 {
+		t.Fatalf("thinkingBudget = %v, want 128", thinking["thinkingBudget"])
+	}
+	if got := fmt.Sprintf("%v", thinking["includeThoughts"]); got != "false" {
+		t.Fatalf("includeThoughts = %v, want false", thinking["includeThoughts"])
+	}
+}
+
+func TestAntigravityThinkingSuffixPreservesExplicitIncludeThoughts(t *testing.T) {
+	p := NewAntigravityProvider("antigravity", "", "", "gemini-3-pro", false, "oauth", 0, nil)
+	body := p.buildRequestBody([]Message{{Role: "user", Content: "hello"}}, nil, "gemini-3-pro(high)", map[string]interface{}{
+		"gemini_generation_config": map[string]interface{}{
+			"thinkingConfig": map[string]interface{}{
+				"includeThoughts": false,
+			},
+		},
+	}, &oauthSession{ProjectID: "demo-project"}, false)
+	request := mapFromAny(body["request"])
+	gen := mapFromAny(request["generationConfig"])
+	thinking := mapFromAny(gen["thinkingConfig"])
+	if got := asString(thinking["thinkingLevel"]); got != "high" {
+		t.Fatalf("thinkingLevel = %q, want high", got)
+	}
+	if got := fmt.Sprintf("%v", thinking["includeThoughts"]); got != "false" {
+		t.Fatalf("includeThoughts = %v, want false", thinking["includeThoughts"])
 	}
 }

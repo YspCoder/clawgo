@@ -44,9 +44,29 @@ func aistudioChannelID(providerName string, options map[string]interface{}) stri
 }
 
 func aistudioChannelCandidates(providerName string, options map[string]interface{}) []string {
-	for _, key := range []string{"aistudio_channel", "aistudio_provider", "relay_provider"} {
+	for _, key := range []string{"aistudio_channel", "aistudio_provider", "relay_provider", "channel_id", "provider_id"} {
 		if value, ok := stringOption(options, key); ok && strings.TrimSpace(value) != "" {
 			return []string{strings.ToLower(strings.TrimSpace(value))}
+		}
+	}
+	for _, key := range []string{"aistudio_channels", "channel_ids", "relay_providers"} {
+		if values, ok := stringSliceOption(options, key); ok && len(values) > 0 {
+			out := make([]string, 0, len(values))
+			seen := map[string]struct{}{}
+			for _, value := range values {
+				channelID := strings.ToLower(strings.TrimSpace(value))
+				if channelID == "" {
+					continue
+				}
+				if _, exists := seen[channelID]; exists {
+					continue
+				}
+				seen[channelID] = struct{}{}
+				out = append(out, channelID)
+			}
+			if len(out) > 0 {
+				return out
+			}
 		}
 	}
 	if runtimeSelected := preferredAIStudioRelayChannels(); len(runtimeSelected) > 0 {

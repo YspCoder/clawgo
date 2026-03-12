@@ -820,8 +820,15 @@ func applyCodexWebsocketHeaders(headers http.Header, attempt authAttempt, option
 	headers.Set("User-Agent", codexCompatUserAgent)
 	if attempt.kind != "api_key" {
 		headers.Set("Originator", "codex_cli_rs")
-		if attempt.session != nil && strings.TrimSpace(attempt.session.AccountID) != "" {
-			headers.Set("Chatgpt-Account-Id", strings.TrimSpace(attempt.session.AccountID))
+		if attempt.session != nil {
+			accountID := firstNonEmpty(
+				strings.TrimSpace(attempt.session.AccountID),
+				strings.TrimSpace(asString(attempt.session.Token["account_id"])),
+				strings.TrimSpace(asString(attempt.session.Token["account-id"])),
+			)
+			if accountID != "" {
+				headers.Set("Chatgpt-Account-Id", accountID)
+			}
 		}
 	}
 	return headers

@@ -93,11 +93,6 @@ func Validate(cfg *Config) []error {
 	if len(cfg.Models.Providers) == 0 {
 		errs = append(errs, fmt.Errorf("models.providers must contain at least one provider"))
 	}
-	for _, name := range cfg.Agents.Defaults.Model.Fallbacks {
-		if !ProviderExists(cfg, name) {
-			errs = append(errs, fmt.Errorf("agents.defaults.model.fallbacks contains unknown provider %q", name))
-		}
-	}
 	if primaryRef := strings.TrimSpace(cfg.Agents.Defaults.Model.Primary); primaryRef != "" {
 		providerName, modelName := ParseProviderModelRef(primaryRef)
 		if providerName == "" {

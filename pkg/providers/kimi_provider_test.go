@@ -143,3 +143,16 @@ func TestKimiProviderCountTokens(t *testing.T) {
 		t.Fatalf("usage = %#v, want positive prompt-only count", usage)
 	}
 }
+
+func TestBuildKimiChatRequestSupportsNumericAutoAndDisable(t *testing.T) {
+	base := NewHTTPProvider("kimi", "token", kimiCompatBaseURL, "kimi-k2.5", false, "oauth", 5*time.Second, nil)
+	autoBody := buildKimiChatRequest(base, []Message{{Role: "user", Content: "hi"}}, nil, "kimi-k2.5(-1)", nil, false)
+	if got := autoBody["reasoning_effort"]; got != "auto" {
+		t.Fatalf("reasoning_effort = %#v, want auto", got)
+	}
+	disableBody := buildKimiChatRequest(base, []Message{{Role: "user", Content: "hi"}}, nil, "kimi-k2.5(0)", nil, false)
+	thinking, _ := disableBody["thinking"].(map[string]interface{})
+	if got := thinking["type"]; got != "disabled" {
+		t.Fatalf("thinking.type = %#v, want disabled", got)
+	}
+}

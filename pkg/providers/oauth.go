@@ -692,10 +692,20 @@ func resolveOAuthConfig(pc config.ProviderConfig) (oauthConfig, error) {
 
 func normalizeOAuthProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "anthropic":
+	case "anthropic", "claude-code", "claude_code", "claude-api-key", "claude_api_key":
 		return defaultClaudeOAuthProvider
-	case "gemini-cli":
+	case "gemini-cli", "geminicli", "gemini_cli", "google", "gemini-api-key", "gemini_api_key":
 		return defaultGeminiOAuthProvider
+	case "aistudio", "ai-studio", "ai_studio", "google-ai-studio", "google_ai_studio", "googleaistudio":
+		return "aistudio"
+	case "openai-compatibility", "openai_compatibility", "openai-compat", "openai_compat":
+		return "openai-compatibility"
+	case "vertex-api-key", "vertex_api_key", "vertex-compat", "vertex_compat", "vertex-compatibility", "vertex_compatibility":
+		return "vertex"
+	case "codex-api-key", "codex_api_key":
+		return defaultCodexOAuthProvider
+	case "i-flow", "i_flow":
+		return defaultIFlowOAuthProvider
 	default:
 		return strings.ToLower(strings.TrimSpace(provider))
 	}
