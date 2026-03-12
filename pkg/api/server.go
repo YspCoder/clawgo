@@ -445,51 +445,50 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/nodes/register", s.handleRegister)
 	mux.HandleFunc("/nodes/heartbeat", s.handleHeartbeat)
 	mux.HandleFunc("/nodes/connect", s.handleNodeConnect)
-	mux.HandleFunc("/webui", s.handleWebUI)
-	mux.HandleFunc("/webui/", s.handleWebUIAsset)
-	mux.HandleFunc("/webui/api/config", s.handleWebUIConfig)
-	mux.HandleFunc("/webui/api/chat", s.handleWebUIChat)
-	mux.HandleFunc("/webui/api/chat/history", s.handleWebUIChatHistory)
-	mux.HandleFunc("/webui/api/chat/stream", s.handleWebUIChatStream)
-	mux.HandleFunc("/webui/api/chat/live", s.handleWebUIChatLive)
-	mux.HandleFunc("/webui/api/runtime", s.handleWebUIRuntime)
-	mux.HandleFunc("/webui/api/version", s.handleWebUIVersion)
-	mux.HandleFunc("/webui/api/provider/oauth/start", s.handleWebUIProviderOAuthStart)
-	mux.HandleFunc("/webui/api/provider/oauth/complete", s.handleWebUIProviderOAuthComplete)
-	mux.HandleFunc("/webui/api/provider/oauth/import", s.handleWebUIProviderOAuthImport)
-	mux.HandleFunc("/webui/api/provider/oauth/accounts", s.handleWebUIProviderOAuthAccounts)
-	mux.HandleFunc("/webui/api/provider/models", s.handleWebUIProviderModels)
-	mux.HandleFunc("/webui/api/provider/runtime", s.handleWebUIProviderRuntime)
-	mux.HandleFunc("/webui/api/provider/runtime/summary", s.handleWebUIProviderRuntimeSummary)
-	mux.HandleFunc("/webui/api/whatsapp/status", s.handleWebUIWhatsAppStatus)
-	mux.HandleFunc("/webui/api/whatsapp/logout", s.handleWebUIWhatsAppLogout)
-	mux.HandleFunc("/webui/api/whatsapp/qr.svg", s.handleWebUIWhatsAppQR)
-	mux.HandleFunc("/webui/api/upload", s.handleWebUIUpload)
-	mux.HandleFunc("/webui/api/nodes", s.handleWebUINodes)
-	mux.HandleFunc("/webui/api/node_dispatches", s.handleWebUINodeDispatches)
-	mux.HandleFunc("/webui/api/node_dispatches/replay", s.handleWebUINodeDispatchReplay)
-	mux.HandleFunc("/webui/api/node_artifacts", s.handleWebUINodeArtifacts)
-	mux.HandleFunc("/webui/api/node_artifacts/export", s.handleWebUINodeArtifactsExport)
-	mux.HandleFunc("/webui/api/node_artifacts/download", s.handleWebUINodeArtifactDownload)
-	mux.HandleFunc("/webui/api/node_artifacts/delete", s.handleWebUINodeArtifactDelete)
-	mux.HandleFunc("/webui/api/node_artifacts/prune", s.handleWebUINodeArtifactPrune)
-	mux.HandleFunc("/webui/api/cron", s.handleWebUICron)
-	mux.HandleFunc("/webui/api/skills", s.handleWebUISkills)
-	mux.HandleFunc("/webui/api/sessions", s.handleWebUISessions)
-	mux.HandleFunc("/webui/api/memory", s.handleWebUIMemory)
-	mux.HandleFunc("/webui/api/subagent_profiles", s.handleWebUISubagentProfiles)
-	mux.HandleFunc("/webui/api/subagents_runtime", s.handleWebUISubagentsRuntime)
-	mux.HandleFunc("/webui/api/subagents_runtime/live", s.handleWebUISubagentsRuntimeLive)
-	mux.HandleFunc("/webui/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
-	mux.HandleFunc("/webui/api/tools", s.handleWebUITools)
-	mux.HandleFunc("/webui/api/mcp/install", s.handleWebUIMCPInstall)
-	mux.HandleFunc("/webui/api/task_audit", s.handleWebUITaskAudit)
-	mux.HandleFunc("/webui/api/task_queue", s.handleWebUITaskQueue)
-	mux.HandleFunc("/webui/api/ekg_stats", s.handleWebUIEKGStats)
-	mux.HandleFunc("/webui/api/exec_approvals", s.handleWebUIExecApprovals)
-	mux.HandleFunc("/webui/api/logs/stream", s.handleWebUILogsStream)
-	mux.HandleFunc("/webui/api/logs/live", s.handleWebUILogsLive)
-	mux.HandleFunc("/webui/api/logs/recent", s.handleWebUILogsRecent)
+	mux.HandleFunc("/", s.handleWebUIAsset)
+	mux.HandleFunc("/api/config", s.handleWebUIConfig)
+	mux.HandleFunc("/api/chat", s.handleWebUIChat)
+	mux.HandleFunc("/api/chat/history", s.handleWebUIChatHistory)
+	mux.HandleFunc("/api/chat/stream", s.handleWebUIChatStream)
+	mux.HandleFunc("/api/chat/live", s.handleWebUIChatLive)
+	mux.HandleFunc("/api/runtime", s.handleWebUIRuntime)
+	mux.HandleFunc("/api/version", s.handleWebUIVersion)
+	mux.HandleFunc("/api/provider/oauth/start", s.handleWebUIProviderOAuthStart)
+	mux.HandleFunc("/api/provider/oauth/complete", s.handleWebUIProviderOAuthComplete)
+	mux.HandleFunc("/api/provider/oauth/import", s.handleWebUIProviderOAuthImport)
+	mux.HandleFunc("/api/provider/oauth/accounts", s.handleWebUIProviderOAuthAccounts)
+	mux.HandleFunc("/api/provider/models", s.handleWebUIProviderModels)
+	mux.HandleFunc("/api/provider/runtime", s.handleWebUIProviderRuntime)
+	mux.HandleFunc("/api/provider/runtime/summary", s.handleWebUIProviderRuntimeSummary)
+	mux.HandleFunc("/api/whatsapp/status", s.handleWebUIWhatsAppStatus)
+	mux.HandleFunc("/api/whatsapp/logout", s.handleWebUIWhatsAppLogout)
+	mux.HandleFunc("/api/whatsapp/qr.svg", s.handleWebUIWhatsAppQR)
+	mux.HandleFunc("/api/upload", s.handleWebUIUpload)
+	mux.HandleFunc("/api/nodes", s.handleWebUINodes)
+	mux.HandleFunc("/api/node_dispatches", s.handleWebUINodeDispatches)
+	mux.HandleFunc("/api/node_dispatches/replay", s.handleWebUINodeDispatchReplay)
+	mux.HandleFunc("/api/node_artifacts", s.handleWebUINodeArtifacts)
+	mux.HandleFunc("/api/node_artifacts/export", s.handleWebUINodeArtifactsExport)
+	mux.HandleFunc("/api/node_artifacts/download", s.handleWebUINodeArtifactDownload)
+	mux.HandleFunc("/api/node_artifacts/delete", s.handleWebUINodeArtifactDelete)
+	mux.HandleFunc("/api/node_artifacts/prune", s.handleWebUINodeArtifactPrune)
+	mux.HandleFunc("/api/cron", s.handleWebUICron)
+	mux.HandleFunc("/api/skills", s.handleWebUISkills)
+	mux.HandleFunc("/api/sessions", s.handleWebUISessions)
+	mux.HandleFunc("/api/memory", s.handleWebUIMemory)
+	mux.HandleFunc("/api/subagent_profiles", s.handleWebUISubagentProfiles)
+	mux.HandleFunc("/api/subagents_runtime", s.handleWebUISubagentsRuntime)
+	mux.HandleFunc("/api/subagents_runtime/live", s.handleWebUISubagentsRuntimeLive)
+	mux.HandleFunc("/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
+	mux.HandleFunc("/api/tools", s.handleWebUITools)
+	mux.HandleFunc("/api/mcp/install", s.handleWebUIMCPInstall)
+	mux.HandleFunc("/api/task_audit", s.handleWebUITaskAudit)
+	mux.HandleFunc("/api/task_queue", s.handleWebUITaskQueue)
+	mux.HandleFunc("/api/ekg_stats", s.handleWebUIEKGStats)
+	mux.HandleFunc("/api/exec_approvals", s.handleWebUIExecApprovals)
+	mux.HandleFunc("/api/logs/stream", s.handleWebUILogsStream)
+	mux.HandleFunc("/api/logs/live", s.handleWebUILogsLive)
+	mux.HandleFunc("/api/logs/recent", s.handleWebUILogsRecent)
 	base := strings.TrimRight(strings.TrimSpace(s.whatsAppBase), "/")
 	if base == "" {
 		base = "/whatsapp"
@@ -702,7 +701,7 @@ func (s *Server) handleWebUI(w http.ResponseWriter, r *http.Request) {
 			MaxAge:   86400,
 		})
 	}
-	if s.tryServeWebUIDist(w, r, "/webui/index.html") {
+	if s.tryServeWebUIDist(w, r, "/index.html") {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -718,11 +717,19 @@ func (s *Server) handleWebUIAsset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		http.NotFound(w, r)
+		return
+	}
+	if r.URL.Path == "/" {
+		s.handleWebUI(w, r)
+		return
+	}
 	if s.tryServeWebUIDist(w, r, r.URL.Path) {
 		return
 	}
 	// SPA fallback
-	if s.tryServeWebUIDist(w, r, "/webui/index.html") {
+	if s.tryServeWebUIDist(w, r, "/index.html") {
 		return
 	}
 	http.NotFound(w, r)
@@ -733,8 +740,8 @@ func (s *Server) tryServeWebUIDist(w http.ResponseWriter, r *http.Request, reqPa
 	if dir == "" {
 		return false
 	}
-	p := strings.TrimPrefix(reqPath, "/webui/")
-	if reqPath == "/webui" || reqPath == "/webui/" || reqPath == "/webui/index.html" {
+	p := strings.TrimPrefix(reqPath, "/")
+	if reqPath == "/" || reqPath == "/index.html" {
 		p = "index.html"
 	}
 	p = filepath.Clean(strings.TrimPrefix(p, "/"))
@@ -1600,7 +1607,7 @@ func (s *Server) handleWebUIChatHistory(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleWebUIChatStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Deprecation", "true")
-	w.Header().Set("X-Clawgo-Replaced-By", "/webui/api/chat/live")
+	w.Header().Set("X-Clawgo-Replaced-By", "/api/chat/live")
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -3559,7 +3566,7 @@ func (s *Server) fetchRemoteNodeRegistry(ctx context.Context, node nodes.NodeInf
 	if baseURL == "" {
 		return nil, fmt.Errorf("node %s endpoint missing", strings.TrimSpace(node.ID))
 	}
-	reqURL := baseURL + "/webui/api/subagents_runtime?action=registry"
+	reqURL := baseURL + "/api/subagents_runtime?action=registry"
 	if tok := strings.TrimSpace(node.Token); tok != "" {
 		reqURL += "&token=" + url.QueryEscape(tok)
 	}
@@ -6023,7 +6030,7 @@ func (s *Server) handleWebUILogsLive(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleWebUILogsStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Deprecation", "true")
-	w.Header().Set("X-Clawgo-Replaced-By", "/webui/api/logs/live")
+	w.Header().Set("X-Clawgo-Replaced-By", "/api/logs/live")
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -6132,13 +6139,13 @@ const webUIHTML = `<!doctype html>
 <div id="chatlog"></div>
 <script>
 function auth(){const t=document.getElementById('token').value.trim();return t?('?token='+encodeURIComponent(t)):''}
-async function loadCfg(){let r=await fetch('/webui/api/config'+auth());document.getElementById('cfg').value=await r.text()}
-async function saveCfg(){let j=JSON.parse(document.getElementById('cfg').value);let r=await fetch('/webui/api/config'+auth(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(j)});alert(await r.text())}
+async function loadCfg(){let r=await fetch('/api/config'+auth());document.getElementById('cfg').value=await r.text()}
+async function saveCfg(){let j=JSON.parse(document.getElementById('cfg').value);let r=await fetch('/api/config'+auth(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(j)});alert(await r.text())}
 async function sendChat(){
  let media='';const f=document.getElementById('file').files[0];
- if(f){let fd=new FormData();fd.append('file',f);let ur=await fetch('/webui/api/upload'+auth(),{method:'POST',body:fd});let uj=await ur.json();media=uj.path||''}
+ if(f){let fd=new FormData();fd.append('file',f);let ur=await fetch('/api/upload'+auth(),{method:'POST',body:fd});let uj=await ur.json();media=uj.path||''}
  const payload={session:document.getElementById('session').value,message:document.getElementById('msg').value,media};
- let r=await fetch('/webui/api/chat'+auth(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});let t=await r.text();
+ let r=await fetch('/api/chat'+auth(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});let t=await r.text();
  document.getElementById('chatlog').textContent += '\nUSER> '+payload.message+(media?(' [file:'+media+']'):'')+'\nBOT> '+t+'\n';
 }
 loadCfg();

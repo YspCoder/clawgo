@@ -58,7 +58,7 @@ func TestHandleWebUIWhatsAppStatus(t *testing.T) {
 	srv := NewServer("127.0.0.1", 0, "", nil)
 	srv.SetConfigPath(cfgPath)
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/whatsapp/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/whatsapp/status", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUIWhatsAppStatus(rec, req)
 
@@ -108,7 +108,7 @@ func TestHandleWebUIWhatsAppQR(t *testing.T) {
 	srv := NewServer("127.0.0.1", 0, "", nil)
 	srv.SetConfigPath(cfgPath)
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/whatsapp/qr.svg", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/whatsapp/qr.svg", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUIWhatsAppQR(rec, req)
 
@@ -158,7 +158,7 @@ func TestHandleWebUIWhatsAppStatusWithNestedBridgePath(t *testing.T) {
 	srv := NewServer("127.0.0.1", 0, "", nil)
 	srv.SetConfigPath(cfgPath)
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/whatsapp/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/whatsapp/status", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUIWhatsAppStatus(rec, req)
 
@@ -220,7 +220,7 @@ func TestHandleWebUIWhatsAppStatusMapsLegacyBridgeURLToEmbeddedPath(t *testing.T
 	srv := NewServer("127.0.0.1", 0, "", nil)
 	srv.SetConfigPath(cfgPath)
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/whatsapp/status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/whatsapp/status", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUIWhatsAppStatus(rec, req)
 
@@ -270,7 +270,7 @@ func TestHandleWebUIConfigRequiresConfirmForProviderAPIBaseChange(t *testing.T) 
 	srv := NewServer("127.0.0.1", 0, "", nil)
 	srv.SetConfigPath(cfgPath)
 
-	req := httptest.NewRequest(http.MethodPost, "/webui/api/config", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -323,7 +323,7 @@ func TestHandleWebUIConfigRequiresConfirmForCustomProviderSecretChange(t *testin
 	srv := NewServer("127.0.0.1", 0, "", nil)
 	srv.SetConfigPath(cfgPath)
 
-	req := httptest.NewRequest(http.MethodPost, "/webui/api/config", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -364,7 +364,7 @@ func TestHandleWebUIConfigRunsReloadHookSynchronously(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/webui/api/config", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -400,7 +400,7 @@ func TestHandleWebUIConfigReturnsReloadHookError(t *testing.T) {
 		return fmt.Errorf("reload boom")
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/webui/api/config", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/config", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -600,7 +600,7 @@ func TestHandleWebUISessionsHidesInternalSessionsByDefault(t *testing.T) {
 	srv := NewServer("127.0.0.1", 0, "", nil)
 	srv.SetWorkspacePath(filepath.Join(tmp, "workspace"))
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUISessions(rec, req)
 
@@ -659,11 +659,11 @@ func TestHandleWebUISubagentsRuntimeLive(t *testing.T) {
 	})
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/webui/api/subagents_runtime/live", srv.handleWebUISubagentsRuntimeLive)
+	mux.HandleFunc("/api/subagents_runtime/live", srv.handleWebUISubagentsRuntimeLive)
 	httpSrv := httptest.NewServer(mux)
 	defer httpSrv.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/webui/api/subagents_runtime/live?task_id=subagent-1&preview_task_id=subagent-1"
+	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/api/subagents_runtime/live?task_id=subagent-1&preview_task_id=subagent-1"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -698,11 +698,11 @@ func TestHandleWebUIChatLive(t *testing.T) {
 	})
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/webui/api/chat/live", srv.handleWebUIChatLive)
+	mux.HandleFunc("/api/chat/live", srv.handleWebUIChatLive)
 	httpSrv := httptest.NewServer(mux)
 	defer httpSrv.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/webui/api/chat/live"
+	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/api/chat/live"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -744,11 +744,11 @@ func TestHandleWebUILogsLive(t *testing.T) {
 	srv.SetLogFilePath(logPath)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/webui/api/logs/live", srv.handleWebUILogsLive)
+	mux.HandleFunc("/api/logs/live", srv.handleWebUILogsLive)
 	httpSrv := httptest.NewServer(mux)
 	defer httpSrv.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/webui/api/logs/live"
+	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/api/logs/live"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("dial websocket: %v", err)
@@ -805,7 +805,7 @@ func TestHandleWebUINodesIncludesP2PSummary(t *testing.T) {
 		}
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUINodes(rec, req)
 	if rec.Code != http.StatusOK {
@@ -855,7 +855,7 @@ func TestHandleWebUINodesEnrichesLocalNodeMetadata(t *testing.T) {
 		}, nil
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/nodes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUINodes(rec, req)
 	if rec.Code != http.StatusOK {
@@ -909,7 +909,7 @@ func TestHandleWebUINodeDispatchReplay(t *testing.T) {
 	})
 
 	body := `{"node":"edge-a","action":"screen_snapshot","mode":"auto","args":{"quality":"high"}}`
-	req := httptest.NewRequest(http.MethodPost, "/webui/api/node_dispatches/replay", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/node_dispatches/replay", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -940,7 +940,7 @@ func TestHandleWebUINodeArtifactsListAndDelete(t *testing.T) {
 		t.Fatalf("write audit: %v", err)
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/webui/api/node_artifacts", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/node_artifacts", nil)
 	listRec := httptest.NewRecorder()
 	srv.handleWebUINodeArtifacts(listRec, listReq)
 	if listRec.Code != http.StatusOK {
@@ -960,7 +960,7 @@ func TestHandleWebUINodeArtifactsListAndDelete(t *testing.T) {
 		t.Fatalf("expected artifact id, got %+v", item)
 	}
 
-	deleteReq := httptest.NewRequest(http.MethodPost, "/webui/api/node_artifacts/delete", strings.NewReader(fmt.Sprintf(`{"id":"%s"}`, artifactID)))
+	deleteReq := httptest.NewRequest(http.MethodPost, "/api/node_artifacts/delete", strings.NewReader(fmt.Sprintf(`{"id":"%s"}`, artifactID)))
 	deleteReq.Header.Set("Content-Type", "application/json")
 	deleteRec := httptest.NewRecorder()
 	srv.handleWebUINodeArtifactDelete(deleteRec, deleteReq)
@@ -987,7 +987,7 @@ func TestHandleWebUINodeArtifactsExport(t *testing.T) {
 	}
 	srv.mgr.Upsert(nodes.NodeInfo{ID: "edge-a", Name: "Edge A", Online: true})
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/node_artifacts/export?node=edge-a&action=screen_snapshot&kind=text", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/node_artifacts/export?node=edge-a&action=screen_snapshot&kind=text", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUINodeArtifactsExport(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1048,7 +1048,7 @@ func TestHandleWebUINodeArtifactsPrune(t *testing.T) {
 		t.Fatalf("write audit: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/webui/api/node_artifacts/prune", strings.NewReader(`{"node":"edge-a","action":"screen_snapshot","kind":"text","keep_latest":1}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/node_artifacts/prune", strings.NewReader(`{"node":"edge-a","action":"screen_snapshot","kind":"text","keep_latest":1}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.handleWebUINodeArtifactPrune(rec, req)
@@ -1091,7 +1091,7 @@ func TestHandleWebUINodeArtifactsAppliesRetentionConfig(t *testing.T) {
 		t.Fatalf("write audit: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/node_artifacts", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/node_artifacts", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUINodeArtifacts(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1142,7 +1142,7 @@ func TestHandleWebUINodeArtifactsAppliesRetentionDays(t *testing.T) {
 		t.Fatalf("write audit: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/webui/api/node_artifacts", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/node_artifacts", nil)
 	rec := httptest.NewRecorder()
 	srv.handleWebUINodeArtifacts(rec, req)
 	if rec.Code != http.StatusOK {

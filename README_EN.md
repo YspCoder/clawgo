@@ -148,7 +148,7 @@ make dev
 WebUI:
 
 ```text
-http://<host>:<port>/webui?token=<gateway.token>
+http://<host>:<port>/?token=<gateway.token>
 ```
 
 ## Architecture
@@ -269,7 +269,7 @@ Example:
 Notes:
 
 - when `webrtc` session setup fails, dispatch still falls back to the existing relay / tunnel path
-- Dashboard, `status`, and `/webui/api/nodes` expose the current Node P2P runtime summary
+- Dashboard, `status`, and `/api/nodes` expose the current Node P2P runtime summary
 - a reusable public-network validation flow is documented in [docs/node-p2p-e2e.md](/Users/lpf/Desktop/project/clawgo/docs/node-p2p-e2e.md)
 
 ## MCP Server Support

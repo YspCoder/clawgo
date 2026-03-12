@@ -112,6 +112,9 @@ type tuiModel struct {
 	sessionCursor int
 	sessionFilter string
 	sessionActive map[string]time.Time
+	inputHistory  []string
+	historyCursor int
+	historyDraft  string
 	status        string
 	globalErr     string
 }
@@ -153,6 +156,10 @@ func newTUIModel(client *tuiClient, runtime *tuiRuntime, opts tuiOptions) tuiMod
 	input.Focus()
 	input.CharLimit = 0
 	input.Prompt = "› "
+	input.PromptStyle = lipgloss.NewStyle().Bold(true).Foreground(tuiColorShell)
+	input.TextStyle = lipgloss.NewStyle().Foreground(tuiColorText)
+	input.PlaceholderStyle = lipgloss.NewStyle().Foreground(tuiColorTextSoft)
+	input.Cursor.Style = lipgloss.NewStyle().Foreground(tuiColorShell)
 
 	pane := newTUIPane(1, opts.session)
 	if opts.noHistory {
@@ -160,16 +167,17 @@ func newTUIModel(client *tuiClient, runtime *tuiRuntime, opts tuiOptions) tuiMod
 	}
 
 	return tuiModel{
-		client:     client,
-		runtime:    runtime,
-		input:      input,
-		panes:      []tuiPane{pane},
-		focus:      0,
-		nextPaneID: 2,
+		client:        client,
+		runtime:       runtime,
+		input:         input,
+		panes:         []tuiPane{pane},
+		focus:         0,
+		nextPaneID:    2,
+		historyCursor: -1,
 		sessionActive: map[string]time.Time{
 			strings.TrimSpace(opts.session): time.Now(),
 		},
-		status: "Tab/Shift+Tab: focus • Ctrl+O: open selected session • Ctrl+R: replace pane • Enter: send • Ctrl+C: quit",
+		status: "Tab/Shift+Tab: focus • Ctrl+↑/↓: select session • Ctrl+O: open selected • Enter: send • Ctrl+C: quit",
 	}
 }
 
@@ -267,13 +275,23 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "up":
+			if m.recallHistory(-1) {
+				return m, nil
+			}
+			return m, nil
+		case "down":
+			if m.recallHistory(1) {
+				return m, nil
+			}
+			return m, nil
+		case "ctrl+up":
 			filtered := m.filteredSessions()
 			if len(filtered) > 0 && m.sessionCursor > 0 {
 				m.sessionCursor--
 				m.status = "Selected session: " + filtered[m.sessionCursor].Key
 			}
 			return m, nil
-		case "down":
+		case "ctrl+down":
 			filtered := m.filteredSessions()
 			if len(filtered) > 0 && m.sessionCursor < len(filtered)-1 {
 				m.sessionCursor++
@@ -323,6 +341,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.panes) == 0 || m.focusedPane().Sending || m.focusedPane().Loading {
 				return m, nil
 			}
+			m.pushInputHistory(value)
 			m.input.SetValue("")
 			if strings.HasPrefix(value, "/") {
 				return m.handleCommand(value)
@@ -486,7 +505,8 @@ func (m *tuiModel) resize() {
 	}
 	m.bodyHeight = bodyHeight
 	m.sidebarWidth = min(28, max(20, m.width/5))
-	availablePaneWidth := m.width - m.sidebarWidth - 1
+	gapSize := lipgloss.Width(m.paneGap())
+	availablePaneWidth := m.width - m.sidebarWidth - gapSize
 	if availablePaneWidth < 24 {
 		availablePaneWidth = 24
 	}
@@ -495,23 +515,23 @@ func (m *tuiModel) resize() {
 	case 1:
 		m.setPaneSize(0, availablePaneWidth, bodyHeight)
 	case 2:
-		leftWidth := (availablePaneWidth - 1) / 2
-		rightWidth := availablePaneWidth - 1 - leftWidth
+		leftWidth := (availablePaneWidth - gapSize) / 2
+		rightWidth := availablePaneWidth - gapSize - leftWidth
 		m.setPaneSize(0, leftWidth, bodyHeight)
 		m.setPaneSize(1, rightWidth, bodyHeight)
 	case 3:
-		leftWidth := (availablePaneWidth - 1) / 2
-		rightWidth := availablePaneWidth - 1 - leftWidth
-		topHeight := (bodyHeight - 1) / 2
-		bottomHeight := bodyHeight - 1 - topHeight
+		leftWidth := (availablePaneWidth - gapSize) / 2
+		rightWidth := availablePaneWidth - gapSize - leftWidth
+		topHeight := (bodyHeight - gapSize) / 2
+		bottomHeight := bodyHeight - gapSize - topHeight
 		m.setPaneSize(0, leftWidth, bodyHeight)
 		m.setPaneSize(1, rightWidth, topHeight)
 		m.setPaneSize(2, rightWidth, bottomHeight)
 	default:
-		leftWidth := (availablePaneWidth - 1) / 2
-		rightWidth := availablePaneWidth - 1 - leftWidth
-		topHeight := (bodyHeight - 1) / 2
-		bottomHeight := bodyHeight - 1 - topHeight
+		leftWidth := (availablePaneWidth - gapSize) / 2
+		rightWidth := availablePaneWidth - gapSize - leftWidth
+		topHeight := (bodyHeight - gapSize) / 2
+		bottomHeight := bodyHeight - gapSize - topHeight
 		m.setPaneSize(0, leftWidth, topHeight)
 		m.setPaneSize(1, rightWidth, topHeight)
 		m.setPaneSize(2, leftWidth, bottomHeight)
@@ -523,7 +543,7 @@ func (m *tuiModel) resize() {
 func (m *tuiModel) renderPanes() string {
 	sidebar := m.renderSessionSidebar()
 	panes := m.renderPaneGrid()
-	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, tuiPaneGapStyle.Render(" "), panes)
+	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, tuiPaneGapStyle.Render(m.paneGap()), panes)
 }
 
 func (m *tuiModel) renderPane(index int, pane tuiPane) string {
@@ -610,7 +630,8 @@ func (m *tuiModel) renderSessionSidebar() string {
 	if strings.TrimSpace(m.sessionFilter) != "" {
 		lines = append(lines, tuiMutedStyle.Render("Filter: "+m.sessionFilter))
 	}
-	lines = append(lines, tuiMutedStyle.Render("Up/Down: select"))
+	lines = append(lines, tuiMutedStyle.Render("Ctrl+Up/Down: select"))
+	lines = append(lines, tuiMutedStyle.Render("Up/Down: input history"))
 	lines = append(lines, tuiMutedStyle.Render("Enter: open selected"))
 	lines = append(lines, tuiMutedStyle.Render("Ctrl+O: open pane"))
 	lines = append(lines, tuiMutedStyle.Render("Ctrl+N: new pane"))
@@ -628,43 +649,97 @@ func (m *tuiModel) renderPaneGrid() string {
 	if len(m.panes) == 0 {
 		return tuiViewportStyle.Width(max(20, m.width-m.sidebarWidth-1)).Height(m.bodyHeight).Render("No panes.")
 	}
+	gap := tuiPaneGapStyle.Render(m.paneGap())
 	switch len(m.panes) {
 	case 1:
 		return m.renderPane(0, m.panes[0])
 	case 2:
 		return lipgloss.JoinHorizontal(lipgloss.Top,
 			m.renderPane(0, m.panes[0]),
-			tuiPaneGapStyle.Render(" "),
+			gap,
 			m.renderPane(1, m.panes[1]),
 		)
 	case 3:
 		right := lipgloss.JoinVertical(lipgloss.Left,
 			m.renderPane(1, m.panes[1]),
-			tuiPaneGapStyle.Render(" "),
+			gap,
 			m.renderPane(2, m.panes[2]),
 		)
 		return lipgloss.JoinHorizontal(lipgloss.Top,
 			m.renderPane(0, m.panes[0]),
-			tuiPaneGapStyle.Render(" "),
+			gap,
 			right,
 		)
 	default:
 		top := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.renderPane(0, m.panes[0]),
-			tuiPaneGapStyle.Render(" "),
+			gap,
 			m.renderPane(1, m.panes[1]),
 		)
 		bottom := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.renderPane(2, m.panes[2]),
-			tuiPaneGapStyle.Render(" "),
+			gap,
 			m.renderPane(3, m.panes[3]),
 		)
 		return lipgloss.JoinVertical(lipgloss.Left,
 			top,
-			tuiPaneGapStyle.Render(" "),
+			gap,
 			bottom,
 		)
 	}
+}
+
+func (m *tuiModel) paneGap() string {
+	if len(m.panes) >= 4 {
+		return ""
+	}
+	return " "
+}
+
+func (m *tuiModel) pushInputHistory(value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	if n := len(m.inputHistory); n > 0 && m.inputHistory[n-1] == value {
+		m.historyCursor = len(m.inputHistory)
+		m.historyDraft = ""
+		return
+	}
+	m.inputHistory = append(m.inputHistory, value)
+	m.historyCursor = len(m.inputHistory)
+	m.historyDraft = ""
+}
+
+func (m *tuiModel) recallHistory(delta int) bool {
+	if len(m.inputHistory) == 0 {
+		return false
+	}
+	if m.historyCursor < 0 || m.historyCursor > len(m.inputHistory) {
+		m.historyCursor = len(m.inputHistory)
+	}
+	if m.historyCursor == len(m.inputHistory) {
+		m.historyDraft = m.input.Value()
+	}
+	next := m.historyCursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next > len(m.inputHistory) {
+		next = len(m.inputHistory)
+	}
+	if next == m.historyCursor {
+		return true
+	}
+	m.historyCursor = next
+	if m.historyCursor == len(m.inputHistory) {
+		m.input.SetValue(m.historyDraft)
+	} else {
+		m.input.SetValue(m.inputHistory[m.historyCursor])
+	}
+	m.input.CursorEnd()
+	m.input.Focus()
+	return true
 }
 
 func (m tuiModel) loadHistoryCmd(paneID int, session string) tea.Cmd {
@@ -1312,108 +1387,124 @@ func (c *tuiClient) newRequest(ctx context.Context, method, path string, body io
 }
 
 var (
+	tuiColorBorder      = lipgloss.Color("#F7B08A")
+	tuiColorClaw        = lipgloss.Color("#FFB36B")
+	tuiColorShell       = lipgloss.Color("#F05A28")
+	tuiColorShellDeep   = lipgloss.Color("#D9481C")
+	tuiColorAccent      = lipgloss.Color("#C44B21")
+	tuiColorAccentDeep  = lipgloss.Color("#A43A18")
+	tuiColorText        = lipgloss.Color("#472018")
+	tuiColorTextSoft    = lipgloss.Color("#6E3B2E")
+	tuiColorError       = lipgloss.Color("#B93815")
+	tuiColorSurfaceText = lipgloss.Color("#FFF4EE")
+
 	tuiHeaderStyle = lipgloss.NewStyle().
 			Padding(0, 1).
 			BorderBottom(true).
 			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("240"))
+			Foreground(tuiColorText).
+			BorderForeground(tuiColorBorder)
 
 	tuiTitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("212"))
+			Foreground(tuiColorShellDeep)
 
 	tuiBannerClawStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("69"))
+				Foreground(tuiColorClaw)
 
 	tuiBannerGoStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("204"))
+				Foreground(tuiColorShell)
 
 	tuiMutedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
+			Foreground(tuiColorTextSoft)
 
 	tuiInputBoxStyle = lipgloss.NewStyle().
 				Padding(0, 1).
 				BorderTop(true).
 				BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(lipgloss.Color("240"))
+				Foreground(tuiColorText).
+				BorderForeground(tuiColorBorder)
 
 	tuiViewportStyle = lipgloss.NewStyle().Padding(0, 1)
 
 	tuiFooterStyle = lipgloss.NewStyle().
 			Padding(0, 1).
-			Foreground(lipgloss.Color("245"))
+			Foreground(tuiColorText)
 
 	tuiErrorStyle = lipgloss.NewStyle().
 			Padding(0, 1).
-			Foreground(lipgloss.Color("203"))
+			Foreground(tuiColorError)
 
 	tuiPaneStyle = lipgloss.NewStyle().
 			Padding(0, 1).
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240"))
+			Foreground(tuiColorText).
+			BorderForeground(tuiColorBorder)
 
 	tuiPaneActiveStyle = lipgloss.NewStyle().
 				Padding(0, 1).
 				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("69"))
+				Foreground(tuiColorText).
+				BorderForeground(tuiColorShell)
 
 	tuiPaneTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("252"))
+				Foreground(tuiColorAccentDeep)
 
 	tuiPaneTitleActiveStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("69"))
+				Foreground(tuiColorShellDeep)
 
 	tuiPaneTitleActiveBadgeStyle = lipgloss.NewStyle().
 					Bold(true).
-					Foreground(lipgloss.Color("16")).
-					Background(lipgloss.Color("69"))
+					Foreground(tuiColorSurfaceText).
+					Background(tuiColorShell)
 
 	tuiPaneGapStyle = lipgloss.NewStyle()
 
 	tuiSidebarStyle = lipgloss.NewStyle().
 			Padding(0, 1).
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240"))
+			Foreground(tuiColorText).
+			BorderForeground(tuiColorBorder)
 
 	tuiSidebarItemStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("252"))
+				Foreground(tuiColorText)
 
 	tuiSidebarItemActiveStyle = lipgloss.NewStyle().
 					Bold(true).
-					Foreground(lipgloss.Color("69"))
+					Foreground(tuiColorShellDeep)
 	tuiFooterHintStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241"))
+				Foreground(tuiColorTextSoft)
 
 	tuiPaneReplyingStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("230")).
-				Background(lipgloss.Color("62"))
+				Foreground(tuiColorSurfaceText).
+				Background(tuiColorShellDeep)
 
 	tuiPaneLoadingStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("16")).
-				Background(lipgloss.Color("221"))
+				Foreground(tuiColorText).
+				Background(tuiColorClaw)
 
 	tuiPaneErrorBadgeStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("255")).
-				Background(lipgloss.Color("160"))
+				Foreground(tuiColorSurfaceText).
+				Background(tuiColorError)
 
 	tuiLabelStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("249"))
+			Foreground(tuiColorAccent)
 
-	tuiContentStyle   = lipgloss.NewStyle().PaddingLeft(1)
-	tuiUserStyle      = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.Color("87"))
+	tuiContentStyle   = lipgloss.NewStyle().PaddingLeft(1).Foreground(tuiColorText)
+	tuiUserStyle      = lipgloss.NewStyle().PaddingLeft(1).Foreground(tuiColorShellDeep)
 	tuiAssistantStyle = lipgloss.NewStyle().
 				PaddingLeft(1).
-				Foreground(lipgloss.Color("230"))
-	tuiSystemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.Color("221"))
-	tuiToolStyle   = lipgloss.NewStyle().PaddingLeft(1).Foreground(lipgloss.Color("141"))
+				Foreground(tuiColorText)
+	tuiSystemStyle = lipgloss.NewStyle().PaddingLeft(1).Foreground(tuiColorAccent)
+	tuiToolStyle   = lipgloss.NewStyle().PaddingLeft(1).Foreground(tuiColorAccentDeep)
 )
 
 func renderTUIBanner(width int) string {
