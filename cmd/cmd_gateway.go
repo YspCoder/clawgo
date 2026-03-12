@@ -181,27 +181,39 @@ func gatewayCmd() {
 	registryServer.SetWorkspacePath(cfg.WorkspacePath())
 	registryServer.SetLogFilePath(cfg.LogFilePath())
 	registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
-	registryServer.SetChatHandler(func(cctx context.Context, sessionKey, content string) (string, error) {
-		if strings.TrimSpace(content) == "" {
-			return "", nil
-		}
-		return agentLoop.ProcessDirect(cctx, content, sessionKey)
-	})
-	registryServer.SetChatHistoryHandler(func(sessionKey string) []map[string]interface{} {
-		h := agentLoop.GetSessionHistory(sessionKey)
-		out := make([]map[string]interface{}, 0, len(h))
-		for _, m := range h {
-			entry := map[string]interface{}{"role": m.Role, "content": m.Content}
-			if strings.TrimSpace(m.ToolCallID) != "" {
-				entry["tool_call_id"] = m.ToolCallID
+	bindAgentLoopHandlers := func(loop *agent.AgentLoop) {
+		registryServer.SetChatHandler(func(cctx context.Context, sessionKey, content string) (string, error) {
+			if strings.TrimSpace(content) == "" {
+				return "", nil
 			}
-			if len(m.ToolCalls) > 0 {
-				entry["tool_calls"] = m.ToolCalls
+			return loop.ProcessDirect(cctx, content, sessionKey)
+		})
+		registryServer.SetChatHistoryHandler(func(sessionKey string) []map[string]interface{} {
+			h := loop.GetSessionHistory(sessionKey)
+			out := make([]map[string]interface{}, 0, len(h))
+			for _, m := range h {
+				entry := map[string]interface{}{"role": m.Role, "content": m.Content}
+				if strings.TrimSpace(m.ToolCallID) != "" {
+					entry["tool_call_id"] = m.ToolCallID
+				}
+				if len(m.ToolCalls) > 0 {
+					entry["tool_calls"] = m.ToolCalls
+				}
+				out = append(out, entry)
 			}
-			out = append(out, entry)
-		}
-		return out
-	})
+			return out
+		})
+		registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
+			return loop.HandleSubagentRuntime(cctx, action, args)
+		})
+		registryServer.SetNodeDispatchHandler(func(cctx context.Context, req nodes.Request, mode string) (nodes.Response, error) {
+			return loop.DispatchNodeRequest(cctx, req, mode)
+		})
+		registryServer.SetToolsCatalogHandler(func() interface{} {
+			return loop.GetToolCatalog()
+		})
+	}
+	bindAgentLoopHandlers(agentLoop)
 	var reloadMu sync.Mutex
 	var applyReload func() error
 	registryServer.SetConfigAfterHook(func() error {
@@ -211,15 +223,6 @@ func gatewayCmd() {
 			return fmt.Errorf("reload handler not ready")
 		}
 		return applyReload()
-	})
-	registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
-		return agentLoop.HandleSubagentRuntime(cctx, action, args)
-	})
-	registryServer.SetNodeDispatchHandler(func(cctx context.Context, req nodes.Request, mode string) (nodes.Response, error) {
-		return agentLoop.DispatchNodeRequest(cctx, req, mode)
-	})
-	registryServer.SetToolsCatalogHandler(func() interface{} {
-		return agentLoop.GetToolCatalog()
 	})
 	whatsAppBridge, whatsAppEmbedded := setupEmbeddedWhatsAppBridge(ctx, cfg)
 	if whatsAppBridge != nil {
@@ -458,6 +461,7 @@ func gatewayCmd() {
 		whatsAppBridge = newWhatsAppBridge
 		whatsAppEmbedded = newWhatsAppBridge != nil
 		runtimecfg.Set(cfg)
+		bindAgentLoopHandlers(agentLoop)
 		configureLogging(newCfg)
 		registryServer.SetToken(cfg.Gateway.Token)
 		registryServer.SetWorkspacePath(cfg.WorkspacePath())

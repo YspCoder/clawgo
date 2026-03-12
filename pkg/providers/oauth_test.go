@@ -80,7 +80,7 @@ func TestHTTPProviderOAuthRefreshesExpiredSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new oauth manager failed: %v", err)
 	}
-	provider := NewHTTPProvider("test-oauth", "", pc.APIBase, "gpt-test", false, "oauth", 5*time.Second, oauth)
+	provider := NewHTTPProvider("test-oauth-refresh", "", pc.APIBase, "gpt-test", false, "oauth", 5*time.Second, oauth)
 
 	resp, err := provider.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}}, nil, "gpt-test", nil)
 	if err != nil {
@@ -184,7 +184,7 @@ func TestHTTPProviderOAuthSwitchesAccountOnQuota(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new oauth manager failed: %v", err)
 	}
-	provider := NewHTTPProvider("test-oauth", "", pc.APIBase, "gpt-test", false, "oauth", 5*time.Second, oauth)
+	provider := NewHTTPProvider("test-oauth-quota", "", pc.APIBase, "gpt-test", false, "oauth", 5*time.Second, oauth)
 	resp, err := provider.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}}, nil, "gpt-test", nil)
 	if err != nil {
 		t.Fatalf("chat failed: %v", err)
@@ -481,7 +481,7 @@ func TestHTTPProviderOAuthSessionProxyRoutesRefreshAndResponses(t *testing.T) {
 	}
 	defer oauth.bgCancel()
 
-	provider := NewHTTPProvider("test-oauth", "", pc.APIBase, "gpt-test", false, "oauth", 5*time.Second, oauth)
+	provider := NewHTTPProvider("test-oauth-proxy", "", pc.APIBase, "gpt-test", false, "oauth", 5*time.Second, oauth)
 	resp, err := provider.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}}, nil, "gpt-test", nil)
 	if err != nil {
 		t.Fatalf("chat failed: %v", err)
@@ -930,7 +930,7 @@ func TestHTTPProviderHybridFallsBackFromAPIKeyToOAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new oauth manager failed: %v", err)
 	}
-	provider := NewHTTPProvider("test-hybrid", pc.APIKey, pc.APIBase, "gpt-test", false, "hybrid", 5*time.Second, oauth)
+	provider := NewHTTPProvider("test-hybrid-fallback", pc.APIKey, pc.APIBase, "gpt-test", false, "hybrid", 5*time.Second, oauth)
 	resp, err := provider.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}}, nil, "gpt-test", nil)
 	if err != nil {
 		t.Fatalf("chat failed: %v", err)
@@ -999,7 +999,7 @@ func TestHTTPProviderHybridOAuthFirstUsesOAuthBeforeAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new oauth manager failed: %v", err)
 	}
-	provider := NewHTTPProvider("test-hybrid", pc.APIKey, pc.APIBase, "gpt-test", false, "hybrid", 5*time.Second, oauth)
+	provider := NewHTTPProvider("test-hybrid-oauth-first", pc.APIKey, pc.APIBase, "gpt-test", false, "hybrid", 5*time.Second, oauth)
 	resp, err := provider.Chat(context.Background(), []Message{{Role: "user", Content: "hello"}}, nil, "gpt-test", nil)
 	if err != nil {
 		t.Fatalf("chat failed: %v", err)

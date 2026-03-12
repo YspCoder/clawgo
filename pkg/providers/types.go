@@ -65,6 +65,18 @@ type ResponsesCompactor interface {
 	BuildSummaryViaResponsesCompact(ctx context.Context, model string, existingSummary string, messages []Message, maxSummaryChars int) (string, error)
 }
 
+// TokenCounter is an optional capability for providers that expose a native
+// token counting endpoint.
+type TokenCounter interface {
+	CountTokens(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*UsageInfo, error)
+}
+
+// ExecutionSessionCloser is an optional capability for providers that keep
+// reusable upstream execution sessions, such as websocket-backed Codex sessions.
+type ExecutionSessionCloser interface {
+	CloseExecutionSession(sessionID string)
+}
+
 type ToolDefinition struct {
 	Type        string                 `json:"type"`
 	Name        string                 `json:"name,omitempty"`

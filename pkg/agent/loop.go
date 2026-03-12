@@ -369,13 +369,13 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		if dup {
 			continue
 		}
-			if p2, err := providers.CreateProviderByName(cfg, name); err == nil {
-				loop.providerPool[name] = p2
-				loop.providerNames = append(loop.providerNames, name)
-				if pc, ok := config.ProviderConfigByName(cfg, name); ok {
-					loop.providerResponses[name] = pc.Responses
-				}
+		if p2, err := providers.CreateProviderByName(cfg, name); err == nil {
+			loop.providerPool[name] = p2
+			loop.providerNames = append(loop.providerNames, name)
+			if pc, ok := config.ProviderConfigByName(cfg, name); ok {
+				loop.providerResponses[name] = pc.Responses
 			}
+		}
 	}
 
 	// Inject recursive run logic so subagents can use full tool-calling flows.
@@ -642,6 +642,13 @@ func (al *AgentLoop) getSessionProvider(sessionKey string) string {
 	v := al.sessionProvider[key]
 	al.providerMu.RUnlock()
 	return v
+}
+
+func (al *AgentLoop) syncSessionDefaultProvider(sessionKey string) {
+	if al == nil || len(al.providerNames) == 0 {
+		return
+	}
+	al.setSessionProvider(sessionKey, al.providerNames[0])
 }
 
 func (al *AgentLoop) markSessionStreamed(sessionKey string) {
@@ -977,6 +984,7 @@ func (al *AgentLoop) ProcessDirectWithOptions(ctx context.Context, content, sess
 	if sessionKey == "" {
 		sessionKey = "main"
 	}
+	al.syncSessionDefaultProvider(sessionKey)
 	ns := normalizeMemoryNamespace(memoryNamespace)
 	var metadata map[string]string
 	if ns != "main" {
@@ -1015,9 +1023,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return "", err
 	}
 	defer release()
-	if len(al.providerNames) > 0 {
-		al.setSessionProvider(msg.SessionKey, al.providerNames[0])
-	}
+	al.syncSessionDefaultProvider(msg.SessionKey)
 	// Add message preview to log
 	preview := truncate(msg.Content, 80)
 	logger.InfoCF("agent", logger.C0171,
@@ -1732,6 +1738,11 @@ func (al *AgentLoop) buildResponsesOptions(sessionKey string, maxTokens int64, t
 	options := map[string]interface{}{
 		"max_tokens":  maxTokens,
 		"temperature": temperature,
+	}
+	if strings.EqualFold(strings.TrimSpace(al.getSessionProvider(sessionKey)), "codex") {
+		if key := strings.TrimSpace(sessionKey); key != "" {
+			options["codex_execution_session"] = key
+		}
 	}
 	responsesCfg := al.responsesConfigForSession(sessionKey)
 	responseTools := make([]map[string]interface{}, 0, 2)

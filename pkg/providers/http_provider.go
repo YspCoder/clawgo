@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"github.com/YspCoder/clawgo/pkg/config"
@@ -14,9 +15,20 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
+)
+
+const (
+	codexCompatBaseURL   = "https://chatgpt.com/backend-api/codex"
+	codexClientVersion   = "0.101.0"
+	codexCompatUserAgent = "codex_cli_rs/0.101.0 (Mac OS 26.0.1; arm64) Apple_Terminal/464"
+	qwenCompatBaseURL    = "https://portal.qwen.ai/v1"
+	qwenCompatUserAgent  = "QwenCode/0.10.3 (darwin; arm64)"
+	kimiCompatBaseURL    = "https://api.kimi.com/coding/v1"
+	kimiCompatUserAgent  = "KimiCLI/1.10.6"
 )
 
 type providerAPIRuntimeState struct {
@@ -224,6 +236,9 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", statusCode, contentType, previewResponseBody(body))
 	}
+	if p.useOpenAICompatChatUpstream() {
+		return parseOpenAICompatResponse(body)
+	}
 	return parseResponsesAPIResponse(body)
 }
 
@@ -243,6 +258,9 @@ func (p *HTTPProvider) ChatStream(ctx context.Context, messages []Message, tools
 	}
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", status, ctype, previewResponseBody(body))
+	}
+	if p.useOpenAICompatChatUpstream() {
+		return parseOpenAICompatResponse(body)
 	}
 	return parseResponsesAPIResponse(body)
 }
@@ -282,6 +300,14 @@ func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, to
 	}
 	if prevID, ok := stringOption(options, "responses_previous_response_id"); ok && prevID != "" {
 		requestBody["previous_response_id"] = prevID
+	}
+	if p.useOpenAICompatChatUpstream() {
+		chatBody := p.buildOpenAICompatChatRequest(messages, tools, model, options)
+		return p.postJSON(ctx, endpointFor(p.compatBase(), "/chat/completions"), chatBody)
+	}
+	if p.useCodexCompat() {
+		requestBody = p.codexCompatRequestBody(requestBody)
+		return p.postJSONStream(ctx, endpointFor(p.codexCompatBase(), "/responses"), requestBody, nil)
 	}
 	return p.postJSON(ctx, endpointFor(p.apiBase, "/responses"), requestBody)
 }
@@ -624,6 +650,44 @@ func (p *HTTPProvider) callResponsesStream(ctx context.Context, messages []Messa
 	if streamOpts, ok := mapOption(options, "responses_stream_options"); ok && len(streamOpts) > 0 {
 		requestBody["stream_options"] = streamOpts
 	}
+	if p.useOpenAICompatChatUpstream() {
+		chatBody := p.buildOpenAICompatChatRequest(messages, tools, model, options)
+		chatBody["stream"] = true
+		streamOptions := map[string]interface{}{"include_usage": true}
+		chatBody["stream_options"] = streamOptions
+		return p.postJSONStream(ctx, endpointFor(p.compatBase(), "/chat/completions"), chatBody, func(event string) {
+			var obj map[string]interface{}
+			if err := json.Unmarshal([]byte(event), &obj); err != nil {
+				return
+			}
+			choices, _ := obj["choices"].([]interface{})
+			for _, choice := range choices {
+				item, _ := choice.(map[string]interface{})
+				delta, _ := item["delta"].(map[string]interface{})
+				if txt := strings.TrimSpace(fmt.Sprintf("%v", delta["content"])); txt != "" {
+					onDelta(txt)
+				}
+			}
+		})
+	}
+	if p.useCodexCompat() {
+		requestBody = p.codexCompatRequestBody(requestBody)
+		return p.postJSONStream(ctx, endpointFor(p.codexCompatBase(), "/responses"), requestBody, func(event string) {
+			var obj map[string]interface{}
+			if err := json.Unmarshal([]byte(event), &obj); err != nil {
+				return
+			}
+			if d := strings.TrimSpace(fmt.Sprintf("%v", obj["delta"])); d != "" {
+				onDelta(d)
+				return
+			}
+			if delta, ok := obj["delta"].(map[string]interface{}); ok {
+				if txt := strings.TrimSpace(fmt.Sprintf("%v", delta["text"])); txt != "" {
+					onDelta(txt)
+				}
+			}
+		})
+	}
 	return p.postJSONStream(ctx, endpointFor(p.apiBase, "/responses"), requestBody, func(event string) {
 		var obj map[string]interface{}
 		if err := json.Unmarshal([]byte(event), &obj); err != nil {
@@ -664,6 +728,7 @@ func (p *HTTPProvider) postJSONStream(ctx context.Context, endpoint string, payl
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "text/event-stream")
 		applyAttemptAuth(req, attempt)
+		applyAttemptProviderHeaders(req, attempt, p, true)
 
 		body, status, ctype, quotaHit, err := p.doStreamAttempt(req, attempt, onEvent)
 		if err != nil {
@@ -705,7 +770,9 @@ func (p *HTTPProvider) postJSON(ctx context.Context, endpoint string, payload in
 			return nil, 0, "", fmt.Errorf("failed to create request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
 		applyAttemptAuth(req, attempt)
+		applyAttemptProviderHeaders(req, attempt, p, false)
 
 		body, status, ctype, err := p.doJSONAttempt(req, attempt)
 		if err != nil {
@@ -823,11 +890,119 @@ func applyAttemptAuth(req *http.Request, attempt authAttempt) {
 	if strings.TrimSpace(attempt.token) == "" {
 		return
 	}
-	if strings.Contains(req.URL.Host, "googleapis.com") {
+	if attempt.kind == "api_key" && strings.Contains(req.URL.Host, "googleapis.com") {
 		req.Header.Set("x-goog-api-key", attempt.token)
+		req.Header.Del("Authorization")
 		return
 	}
+	req.Header.Del("x-goog-api-key")
 	req.Header.Set("Authorization", "Bearer "+attempt.token)
+}
+
+func applyAttemptProviderHeaders(req *http.Request, attempt authAttempt, provider *HTTPProvider, stream bool) {
+	if req == nil || provider == nil {
+		return
+	}
+	switch provider.oauthProvider() {
+	case defaultClaudeOAuthProvider:
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Anthropic-Version", "2023-06-01")
+		req.Header.Set("Anthropic-Beta", "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05")
+		req.Header.Set("Anthropic-Dangerous-Direct-Browser-Access", "true")
+		req.Header.Set("X-App", "cli")
+		req.Header.Set("X-Stainless-Retry-Count", "0")
+		req.Header.Set("X-Stainless-Runtime-Version", "v24.3.0")
+		req.Header.Set("X-Stainless-Package-Version", "0.74.0")
+		req.Header.Set("X-Stainless-Runtime", "node")
+		req.Header.Set("X-Stainless-Lang", "js")
+		req.Header.Set("X-Stainless-Arch", "arm64")
+		req.Header.Set("X-Stainless-Os", "macos")
+		req.Header.Set("X-Stainless-Timeout", "600")
+		req.Header.Set("User-Agent", "claude-cli/2.1.63 (external, cli)")
+		req.Header.Set("Connection", "keep-alive")
+		if stream {
+			req.Header.Set("Accept", "text/event-stream")
+			req.Header.Set("Accept-Encoding", "identity")
+		} else {
+			req.Header.Set("Accept", "application/json")
+			req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+		}
+		if attempt.kind == "api_key" {
+			req.Header.Del("Authorization")
+			req.Header.Set("x-api-key", strings.TrimSpace(attempt.token))
+		} else {
+			req.Header.Del("x-api-key")
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(attempt.token))
+		}
+		return
+	case defaultQwenOAuthProvider:
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(attempt.token))
+		req.Header.Set("User-Agent", qwenCompatUserAgent)
+		req.Header.Set("X-Dashscope-Useragent", qwenCompatUserAgent)
+		req.Header.Set("X-Stainless-Runtime-Version", "v22.17.0")
+		req.Header.Set("Sec-Fetch-Mode", "cors")
+		req.Header.Set("X-Stainless-Lang", "js")
+		req.Header.Set("X-Stainless-Arch", "arm64")
+		req.Header.Set("X-Stainless-Package-Version", "5.11.0")
+		req.Header.Set("X-Dashscope-Cachecontrol", "enable")
+		req.Header.Set("X-Stainless-Retry-Count", "0")
+		req.Header.Set("X-Stainless-Os", "MacOS")
+		req.Header.Set("X-Dashscope-Authtype", "qwen-oauth")
+		req.Header.Set("X-Stainless-Runtime", "node")
+		if stream {
+			req.Header.Set("Accept", "text/event-stream")
+		} else {
+			req.Header.Set("Accept", "application/json")
+		}
+		return
+	case defaultKimiOAuthProvider:
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(attempt.token))
+		req.Header.Set("User-Agent", kimiCompatUserAgent)
+		req.Header.Set("X-Msh-Platform", "kimi_cli")
+		req.Header.Set("X-Msh-Version", "1.10.6")
+		req.Header.Set("X-Msh-Device-Name", "clawgo")
+		req.Header.Set("X-Msh-Device-Model", runtime.GOOS+" "+runtime.GOARCH)
+		if attempt.session != nil && strings.TrimSpace(attempt.session.DeviceID) != "" {
+			req.Header.Set("X-Msh-Device-Id", strings.TrimSpace(attempt.session.DeviceID))
+		} else {
+			req.Header.Set("X-Msh-Device-Id", "clawgo-device")
+		}
+		if stream {
+			req.Header.Set("Accept", "text/event-stream")
+		} else {
+			req.Header.Set("Accept", "application/json")
+		}
+		return
+	case defaultCodexOAuthProvider:
+	default:
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Version", codexClientVersion)
+	req.Header.Set("Session_id", randomSessionID())
+	req.Header.Set("User-Agent", codexCompatUserAgent)
+	req.Header.Set("Connection", "Keep-Alive")
+	if stream {
+		req.Header.Set("Accept", "text/event-stream")
+	} else {
+		req.Header.Set("Accept", "application/json")
+	}
+	if attempt.kind != "api_key" {
+		req.Header.Set("Originator", "codex_cli_rs")
+		if attempt.session != nil && strings.TrimSpace(attempt.session.AccountID) != "" {
+			req.Header.Set("Chatgpt-Account-Id", strings.TrimSpace(attempt.session.AccountID))
+		}
+	}
+}
+
+func randomSessionID() string {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16])
 }
 
 func (p *HTTPProvider) httpClientForAttempt(attempt authAttempt) (*http.Client, error) {
@@ -1790,7 +1965,7 @@ func RerankProviderRuntime(cfg *config.Config, providerName string) ([]providerR
 	if err != nil {
 		return nil, err
 	}
-	httpProvider, ok := provider.(*HTTPProvider)
+	httpProvider, ok := unwrapHTTPProvider(provider)
 	if !ok {
 		return nil, fmt.Errorf("provider %q does not support runtime rerank", providerName)
 	}
@@ -1802,6 +1977,40 @@ func RerankProviderRuntime(cfg *config.Config, providerName string) ([]providerR
 	order := append([]providerRuntimeCandidate(nil), providerRuntimeRegistry.api[strings.TrimSpace(providerName)].CandidateOrder...)
 	providerRuntimeRegistry.mu.Unlock()
 	return order, nil
+}
+
+func unwrapHTTPProvider(provider LLMProvider) (*HTTPProvider, bool) {
+	switch typed := provider.(type) {
+	case *HTTPProvider:
+		return typed, true
+	case *CodexProvider:
+		if typed == nil {
+			return nil, false
+		}
+		return typed.base, typed.base != nil
+	case *AntigravityProvider:
+		if typed == nil {
+			return nil, false
+		}
+		return typed.base, typed.base != nil
+	case *ClaudeProvider:
+		if typed == nil {
+			return nil, false
+		}
+		return typed.base, typed.base != nil
+	case *QwenProvider:
+		if typed == nil {
+			return nil, false
+		}
+		return typed.base, typed.base != nil
+	case *KimiProvider:
+		if typed == nil {
+			return nil, false
+		}
+		return typed.base, typed.base != nil
+	default:
+		return nil, false
+	}
 }
 
 func parseResponsesAPIResponse(body []byte) (*LLMResponse, error) {
@@ -1888,6 +2097,63 @@ func parseResponsesAPIResponse(body []byte) (*LLMResponse, error) {
 	return &LLMResponse{Content: strings.TrimSpace(outputText), ToolCalls: toolCalls, FinishReason: finishReason, Usage: usage}, nil
 }
 
+func parseOpenAICompatResponse(body []byte) (*LLMResponse, error) {
+	var payload struct {
+		Choices []struct {
+			Message struct {
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Type     string `json:"type"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if len(payload.Choices) == 0 {
+		return &LLMResponse{}, nil
+	}
+	choice := payload.Choices[0]
+	resp := &LLMResponse{
+		Content:      choice.Message.Content,
+		FinishReason: choice.FinishReason,
+	}
+	if payload.Usage.TotalTokens > 0 || payload.Usage.PromptTokens > 0 || payload.Usage.CompletionTokens > 0 {
+		resp.Usage = &UsageInfo{
+			PromptTokens:     payload.Usage.PromptTokens,
+			CompletionTokens: payload.Usage.CompletionTokens,
+			TotalTokens:      payload.Usage.TotalTokens,
+		}
+	}
+	if len(choice.Message.ToolCalls) > 0 {
+		resp.ToolCalls = make([]ToolCall, 0, len(choice.Message.ToolCalls))
+		for _, tc := range choice.Message.ToolCalls {
+			resp.ToolCalls = append(resp.ToolCalls, ToolCall{
+				ID:   tc.ID,
+				Type: tc.Type,
+				Function: &FunctionCall{
+					Name:      tc.Function.Name,
+					Arguments: tc.Function.Arguments,
+				},
+				Name: tc.Function.Name,
+			})
+		}
+	}
+	return resp, nil
+}
+
 func previewResponseBody(body []byte) string {
 	preview := strings.TrimSpace(string(body))
 	preview = strings.ReplaceAll(preview, "\n", " ")
@@ -1970,6 +2236,200 @@ func endpointFor(base, relative string) string {
 		return strings.TrimSuffix(b, "/compact")
 	}
 	return b + relative
+}
+
+func (p *HTTPProvider) useCodexCompat() bool {
+	if p == nil || p.oauth == nil {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(p.oauth.cfg.Provider), defaultCodexOAuthProvider) {
+		return false
+	}
+	base := strings.ToLower(strings.TrimSpace(p.apiBase))
+	if base == "" {
+		return true
+	}
+	return strings.Contains(base, "api.openai.com") || strings.Contains(base, "chatgpt.com/backend-api/codex")
+}
+
+func (p *HTTPProvider) codexCompatBase() string {
+	if p == nil {
+		return codexCompatBaseURL
+	}
+	base := strings.ToLower(strings.TrimSpace(p.apiBase))
+	if strings.Contains(base, "chatgpt.com/backend-api/codex") {
+		return normalizeAPIBase(p.apiBase)
+	}
+	if base != "" && !strings.Contains(base, "api.openai.com") {
+		return normalizeAPIBase(p.apiBase)
+	}
+	return codexCompatBaseURL
+}
+
+func (p *HTTPProvider) codexCompatRequestBody(requestBody map[string]interface{}) map[string]interface{} {
+	return codexCompatRequestBody(requestBody)
+}
+
+func (p *HTTPProvider) useClaudeCompat() bool {
+	if p == nil || p.oauth == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(p.oauth.cfg.Provider), defaultClaudeOAuthProvider)
+}
+
+func (p *HTTPProvider) oauthProvider() string {
+	if p == nil || p.oauth == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(p.oauth.cfg.Provider))
+}
+
+func (p *HTTPProvider) useOpenAICompatChatUpstream() bool {
+	switch p.oauthProvider() {
+	case defaultQwenOAuthProvider, defaultKimiOAuthProvider:
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *HTTPProvider) compatBase() string {
+	switch p.oauthProvider() {
+	case defaultQwenOAuthProvider:
+		if strings.TrimSpace(p.apiBase) != "" && !strings.Contains(strings.ToLower(p.apiBase), "api.openai.com") {
+			return normalizeAPIBase(p.apiBase)
+		}
+		return qwenCompatBaseURL
+	case defaultKimiOAuthProvider:
+		if strings.TrimSpace(p.apiBase) != "" && !strings.Contains(strings.ToLower(p.apiBase), "api.openai.com") {
+			return normalizeAPIBase(p.apiBase)
+		}
+		return kimiCompatBaseURL
+	default:
+		return normalizeAPIBase(p.apiBase)
+	}
+}
+
+func (p *HTTPProvider) compatModel(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if p.oauthProvider() == defaultKimiOAuthProvider && strings.HasPrefix(strings.ToLower(trimmed), "kimi-") {
+		return trimmed[5:]
+	}
+	return trimmed
+}
+
+func (p *HTTPProvider) buildOpenAICompatChatRequest(messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) map[string]interface{} {
+	requestBody := map[string]interface{}{
+		"model":    p.compatModel(model),
+		"messages": openAICompatMessages(messages),
+	}
+	if len(tools) > 0 {
+		requestBody["tools"] = openAICompatTools(tools)
+		requestBody["tool_choice"] = "auto"
+		if tc, ok := rawOption(options, "tool_choice"); ok {
+			requestBody["tool_choice"] = tc
+		}
+	}
+	if maxTokens, ok := int64FromOption(options, "max_tokens"); ok {
+		requestBody["max_tokens"] = maxTokens
+	}
+	if temperature, ok := float64FromOption(options, "temperature"); ok {
+		requestBody["temperature"] = temperature
+	}
+	return requestBody
+}
+
+func openAICompatMessages(messages []Message) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(messages))
+	for _, msg := range messages {
+		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		switch role {
+		case "system":
+			out = append(out, map[string]interface{}{"role": "system", "content": msg.Content})
+		case "developer":
+			out = append(out, map[string]interface{}{"role": "user", "content": msg.Content})
+		case "assistant":
+			item := map[string]interface{}{"role": "assistant", "content": msg.Content}
+			if len(msg.ToolCalls) > 0 {
+				toolCalls := make([]map[string]interface{}, 0, len(msg.ToolCalls))
+				for _, tc := range msg.ToolCalls {
+					args := ""
+					if tc.Function != nil {
+						args = tc.Function.Arguments
+					}
+					if args == "" {
+						raw, _ := json.Marshal(tc.Arguments)
+						args = string(raw)
+					}
+					name := tc.Name
+					if tc.Function != nil && strings.TrimSpace(tc.Function.Name) != "" {
+						name = tc.Function.Name
+					}
+					toolCalls = append(toolCalls, map[string]interface{}{
+						"id":   tc.ID,
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      name,
+							"arguments": args,
+						},
+					})
+				}
+				item["tool_calls"] = toolCalls
+			}
+			out = append(out, item)
+		case "tool":
+			out = append(out, map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": msg.ToolCallID,
+				"content":      msg.Content,
+			})
+		default:
+			out = append(out, map[string]interface{}{"role": "user", "content": msg.Content})
+		}
+	}
+	return out
+}
+
+func openAICompatTools(tools []ToolDefinition) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(tools))
+	for _, tool := range tools {
+		out = append(out, map[string]interface{}{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        tool.Function.Name,
+				"description": tool.Function.Description,
+				"parameters":  tool.Function.Parameters,
+			},
+		})
+	}
+	return out
+}
+
+func codexCompatRequestBody(requestBody map[string]interface{}) map[string]interface{} {
+	if requestBody == nil {
+		requestBody = map[string]interface{}{}
+	}
+	requestBody["stream"] = true
+	requestBody["store"] = false
+	requestBody["parallel_tool_calls"] = true
+	if _, ok := requestBody["include"]; !ok {
+		requestBody["include"] = []string{"reasoning.encrypted_content"}
+	}
+	delete(requestBody, "max_output_tokens")
+	delete(requestBody, "max_completion_tokens")
+	delete(requestBody, "temperature")
+	delete(requestBody, "top_p")
+	delete(requestBody, "truncation")
+	delete(requestBody, "user")
+	if input, ok := requestBody["input"].([]map[string]interface{}); ok {
+		for _, item := range input {
+			if strings.EqualFold(strings.TrimSpace(fmt.Sprintf("%v", item["role"])), "system") {
+				item["role"] = "developer"
+			}
+		}
+		requestBody["input"] = input
+	}
+	return requestBody
 }
 
 func parseCompatFunctionCalls(content string) ([]ToolCall, string) {
@@ -2154,7 +2614,8 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 		return nil, err
 	}
 	ConfigureProviderRuntime(name, pc)
-	if pc.APIBase == "" {
+	oauthProvider := strings.ToLower(strings.TrimSpace(pc.OAuth.Provider))
+	if pc.APIBase == "" && oauthProvider != defaultAntigravityOAuthProvider {
 		return nil, fmt.Errorf("no API base configured for provider %q", name)
 	}
 	if pc.TimeoutSec <= 0 {
@@ -2170,6 +2631,21 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 		if err != nil {
 			return nil, err
 		}
+	}
+	if oauthProvider == defaultAntigravityOAuthProvider {
+		return NewAntigravityProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
+	if oauthProvider == defaultCodexOAuthProvider {
+		return NewCodexProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
+	if oauthProvider == defaultClaudeOAuthProvider {
+		return NewClaudeProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
+	if oauthProvider == defaultQwenOAuthProvider {
+		return NewQwenProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	}
+	if oauthProvider == defaultKimiOAuthProvider {
+		return NewKimiProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
 	return NewHTTPProvider(name, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 }
