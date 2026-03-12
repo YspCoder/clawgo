@@ -526,7 +526,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc(joinServerRoute(base, "ws"), s.handleWhatsAppBridgeWS)
 	mux.HandleFunc(joinServerRoute(base, "status"), s.handleWhatsAppBridgeStatus)
 	mux.HandleFunc(joinServerRoute(base, "logout"), s.handleWhatsAppBridgeLogout)
-	s.server = &http.Server{Addr: s.addr, Handler: mux}
+	s.server = &http.Server{Addr: s.addr, Handler: s.withCORS(mux)}
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -535,6 +535,23 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 	go func() { _ = s.server.ListenAndServe() }()
 	return nil
+}
+
+func (s *Server) withCORS(next http.Handler) http.Handler {
+	if next == nil {
+		next = http.NotFoundHandler()
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With")
+		w.Header().Set("Access-Control-Expose-Headers", "*")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
