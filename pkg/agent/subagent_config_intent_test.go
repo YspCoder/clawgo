@@ -27,17 +27,24 @@ func TestFormatCreatedSubagentForUserReadsNestedFields(t *testing.T) {
 	}, "/tmp/config.json")
 
 	for _, want := range []string{
+		"subagent 已写入 config.json。",
+		"path: /tmp/config.json",
 		"agent_id: coder",
-		"role: coding",
-		"display_name: Code Agent",
-		"system_prompt_file: agents/coder/AGENT.md",
-		"routing_keywords: [code fix]",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected output to contain %q, got:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "<nil>") {
-		t.Fatalf("did not expect nil placeholders, got:\n%s", out)
+	for _, unwanted := range []string{
+		"role:",
+		"display_name:",
+		"tool_allowlist:",
+		"routing_keywords:",
+		"system_prompt_file:",
+		"<nil>",
+	} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("did not expect %q in output, got:\n%s", unwanted, out)
+		}
 	}
 }

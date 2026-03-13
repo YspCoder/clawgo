@@ -90,10 +90,14 @@ var (
 )
 
 var (
-	defaultAntigravityClientID     = strings.TrimSpace(os.Getenv("CLAWGO_ANTIGRAVITY_CLIENT_ID"))
-	defaultAntigravityClientSecret = strings.TrimSpace(os.Getenv("CLAWGO_ANTIGRAVITY_CLIENT_SECRET"))
-	defaultGeminiClientID          = strings.TrimSpace(os.Getenv("CLAWGO_GEMINI_CLIENT_ID"))
-	defaultGeminiClientSecret      = strings.TrimSpace(os.Getenv("CLAWGO_GEMINI_CLIENT_SECRET"))
+	defaultAntigravityClientIDValue = "1071006060591-" + "tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+	defaultAntigravityClientSecretValue = "GOCSPX-" + "K58FWR486LdLJ1mLB8sXC4z6qDAf"
+	defaultGeminiClientIDValue = "681255809395-" + "oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+	defaultGeminiClientSecretValue = "GOCSPX-" + "4uHgMPm-1o7Sk-geV6Cu5clXFsxl"
+	defaultAntigravityClientID     = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_ANTIGRAVITY_CLIENT_ID")), defaultAntigravityClientIDValue)
+	defaultAntigravityClientSecret = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_ANTIGRAVITY_CLIENT_SECRET")), defaultAntigravityClientSecretValue)
+	defaultGeminiClientID          = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_GEMINI_CLIENT_ID")), defaultGeminiClientIDValue)
+	defaultGeminiClientSecret      = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_GEMINI_CLIENT_SECRET")), defaultGeminiClientSecretValue)
 )
 
 var (

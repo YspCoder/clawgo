@@ -388,6 +388,46 @@ func TestResolveOAuthConfigAppliesProviderRefreshLeadDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveOAuthConfigUsesBuiltInGeminiClientDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := resolveOAuthConfig(config.ProviderConfig{
+		Auth: "oauth",
+		OAuth: config.ProviderOAuthConfig{
+			Provider: "gemini",
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolve oauth config failed: %v", err)
+	}
+	if cfg.ClientID != defaultGeminiClientIDValue {
+		t.Fatalf("unexpected gemini client id: %q", cfg.ClientID)
+	}
+	if cfg.ClientSecret != defaultGeminiClientSecretValue {
+		t.Fatalf("unexpected gemini client secret: %q", cfg.ClientSecret)
+	}
+}
+
+func TestResolveOAuthConfigUsesBuiltInAntigravityClientDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := resolveOAuthConfig(config.ProviderConfig{
+		Auth: "oauth",
+		OAuth: config.ProviderOAuthConfig{
+			Provider: "antigravity",
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolve oauth config failed: %v", err)
+	}
+	if cfg.ClientID != defaultAntigravityClientIDValue {
+		t.Fatalf("unexpected antigravity client id: %q", cfg.ClientID)
+	}
+	if cfg.ClientSecret != defaultAntigravityClientSecretValue {
+		t.Fatalf("unexpected antigravity client secret: %q", cfg.ClientSecret)
+	}
+}
+
 func TestHTTPProviderOAuthSessionProxyRoutesRefreshAndResponses(t *testing.T) {
 	t.Parallel()
 

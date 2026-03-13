@@ -13,7 +13,7 @@ import (
 func TestSummarizePlannedTaskProgressBodyPreservesUsefulLines(t *testing.T) {
 	t.Parallel()
 
-	body := "subagent 已写入 config.json。\npath: /root/.clawgo/config.json\nagent_id: tester\nrole: testing\ndisplay_name: Test Agent\ntool_allowlist: [filesystem shell]\nrouting_keywords: [test qa]\nsystem_prompt_file: agents/tester/AGENT.md"
+	body := "subagent 已写入 config.json。\npath: /root/.clawgo/config.json\nagent_id: tester"
 	out := summarizePlannedTaskProgressBody(body, 6, 320)
 
 	if !strings.Contains(out, "subagent 已写入 config.json。") {

@@ -88,49 +88,10 @@ func extractSubagentDescription(content string) string {
 }
 
 func formatCreatedSubagentForUser(result map[string]interface{}, configPath string) string {
-	subagent, _ := result["subagent"].(map[string]interface{})
-	role := ""
-	displayName := ""
-	toolAllowlist := interface{}(nil)
-	systemPromptFile := ""
-	if subagent != nil {
-		if v, _ := subagent["role"].(string); v != "" {
-			role = v
-		}
-		if v, _ := subagent["display_name"].(string); v != "" {
-			displayName = v
-		}
-		if tools, ok := subagent["tools"].(map[string]interface{}); ok {
-			toolAllowlist = tools["allowlist"]
-		}
-		if v, _ := subagent["system_prompt_file"].(string); v != "" {
-			systemPromptFile = v
-		}
-	}
-	routingKeywords := interface{}(nil)
-	if rules, ok := result["rules"].([]interface{}); ok {
-		agentID, _ := result["agent_id"].(string)
-		for _, raw := range rules {
-			rule, ok := raw.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if strings.TrimSpace(fmt.Sprint(rule["agent_id"])) != agentID {
-				continue
-			}
-			routingKeywords = rule["keywords"]
-			break
-		}
-	}
 	return fmt.Sprintf(
-		"subagent 已写入 config.json。\npath: %s\nagent_id: %v\nrole: %v\ndisplay_name: %v\ntool_allowlist: %v\nrouting_keywords: %v\nsystem_prompt_file: %v",
+		"subagent 已写入 config.json。\npath: %s\nagent_id: %v",
 		configPath,
 		result["agent_id"],
-		role,
-		displayName,
-		toolAllowlist,
-		routingKeywords,
-		systemPromptFile,
 	)
 }
 
