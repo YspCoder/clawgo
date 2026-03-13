@@ -24,6 +24,6 @@ build
 .vscode
 
 cmd/workspace/*
-channels
+/channels
 
 *.pid
