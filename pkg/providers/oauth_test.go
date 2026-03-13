@@ -1082,6 +1082,76 @@ func TestOAuthManagerCooldownSkipsExhaustedAccount(t *testing.T) {
 	}
 }
 
+func TestOAuthManagerDisableSessionSkipsAccount(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	firstFile := filepath.Join(dir, "first.json")
+	secondFile := filepath.Join(dir, "second.json")
+	writeSession := func(path, token string) {
+		t.Helper()
+		raw, err := json.Marshal(oauthSession{
+			Provider:    "codex",
+			AccessToken: token,
+			Expire:      time.Now().Add(time.Hour).Format(time.RFC3339),
+		})
+		if err != nil {
+			t.Fatalf("marshal session failed: %v", err)
+		}
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatalf("write session failed: %v", err)
+		}
+	}
+	writeSession(firstFile, "token-a")
+	writeSession(secondFile, "token-b")
+
+	manager, err := newOAuthManager(config.ProviderConfig{
+		Auth:       "oauth",
+		TimeoutSec: 5,
+		OAuth: config.ProviderOAuthConfig{
+			Provider:        "codex",
+			CredentialFile:  firstFile,
+			CredentialFiles: []string{firstFile, secondFile},
+			CooldownSec:     3600,
+		},
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("new oauth manager failed: %v", err)
+	}
+
+	attempts, err := manager.prepareAttemptsLocked(context.Background())
+	if err != nil {
+		t.Fatalf("prepare attempts failed: %v", err)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("expected 2 attempts, got %d", len(attempts))
+	}
+	manager.disableSession(attempts[0].Session, oauthFailureRevoked, "oauth token revoked")
+
+	nextAttempts, err := manager.prepareAttemptsLocked(context.Background())
+	if err != nil {
+		t.Fatalf("prepare attempts after disable failed: %v", err)
+	}
+	if len(nextAttempts) != 1 {
+		t.Fatalf("expected 1 available attempt after disable, got %d", len(nextAttempts))
+	}
+	if nextAttempts[0].Token != "token-b" {
+		t.Fatalf("unexpected token after disable: %s", nextAttempts[0].Token)
+	}
+
+	raw, err := os.ReadFile(firstFile)
+	if err != nil {
+		t.Fatalf("read disabled session failed: %v", err)
+	}
+	var saved oauthSession
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatalf("unmarshal disabled session failed: %v", err)
+	}
+	if !saved.Disabled || saved.DisableReason != string(oauthFailureRevoked) {
+		t.Fatalf("expected disabled session to persist, got %#v", saved)
+	}
+}
+
 func TestOAuthManagerPrefersHealthierAccount(t *testing.T) {
 	t.Parallel()
 

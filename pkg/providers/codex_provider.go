@@ -545,6 +545,16 @@ func (p *CodexProvider) postWebsocketStream(ctx context.Context, endpoint string
 }
 
 func (p *CodexProvider) handleAttemptFailure(attempt authAttempt, status int, body []byte) {
+	if reason, detail, disabled := classifyCodexPermanentDisable(status, body); disabled {
+		if attempt.kind == "oauth" && attempt.session != nil && p.base != nil && p.base.oauth != nil {
+			p.base.oauth.disableSession(attempt.session, reason, detail)
+			recordProviderOAuthError(p.base.providerName, attempt.session, reason)
+		}
+		if attempt.kind == "api_key" && p.base != nil {
+			p.base.markAPIKeyFailure(reason)
+		}
+		return
+	}
 	reason, retry := classifyOAuthFailure(status, body)
 	if !retry {
 		return
@@ -555,6 +565,21 @@ func (p *CodexProvider) handleAttemptFailure(attempt authAttempt, status int, bo
 	}
 	if attempt.kind == "api_key" && p.base != nil {
 		p.base.markAPIKeyFailure(reason)
+	}
+}
+
+func classifyCodexPermanentDisable(status int, body []byte) (oauthFailureReason, string, bool) {
+	if status != http.StatusUnauthorized && status != http.StatusPaymentRequired {
+		return "", "", false
+	}
+	lower := strings.ToLower(strings.TrimSpace(string(body)))
+	switch {
+	case strings.Contains(lower, "token_revoked"), strings.Contains(lower, "invalidated oauth token"):
+		return oauthFailureRevoked, "oauth token revoked", true
+	case strings.Contains(lower, "deactivated_workspace"):
+		return oauthFailureDisabled, "workspace deactivated", true
+	default:
+		return "", "", false
 	}
 }
 

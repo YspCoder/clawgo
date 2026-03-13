@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/YspCoder/clawgo/pkg/config"
 	"github.com/google/uuid"
 )
 
@@ -227,6 +230,68 @@ func TestCodexHandleAttemptFailureMarksAPIKeyCooldown(t *testing.T) {
 	}
 	if state.API.LastFailure != string(oauthFailureRateLimit) {
 		t.Fatalf("expected last failure %q, got %#v", oauthFailureRateLimit, state.API.LastFailure)
+	}
+}
+
+func TestCodexHandleAttemptFailureDisablesRevokedOAuthSession(t *testing.T) {
+	dir := t.TempDir()
+	credFile := filepath.Join(dir, "codex.json")
+	raw, err := json.Marshal(oauthSession{
+		Provider:    "codex",
+		AccessToken: "token-a",
+		Expire:      time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("marshal session: %v", err)
+	}
+	if err := os.WriteFile(credFile, raw, 0o600); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+	manager, err := newOAuthManager(config.ProviderConfig{
+		Auth:       "oauth",
+		TimeoutSec: 5,
+		OAuth: config.ProviderOAuthConfig{
+			Provider:       "codex",
+			CredentialFile: credFile,
+		},
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("new oauth manager: %v", err)
+	}
+	provider := NewCodexProvider("codex-disable-revoked", "", "", "gpt-5.4", false, "oauth", 5*time.Second, manager)
+	attempts, err := manager.prepareAttemptsLocked(t.Context())
+	if err != nil || len(attempts) != 1 {
+		t.Fatalf("prepare attempts = %d, err=%v", len(attempts), err)
+	}
+
+	provider.handleAttemptFailure(authAttempt{kind: "oauth", session: attempts[0].Session, token: attempts[0].Token}, http.StatusUnauthorized, []byte(`{"error":{"message":"Encountered invalidated oauth token for user, failing request","code":"token_revoked"}}`))
+
+	next, err := manager.prepareAttemptsLocked(t.Context())
+	if err != nil {
+		t.Fatalf("prepare attempts after disable: %v", err)
+	}
+	if len(next) != 0 {
+		t.Fatalf("expected disabled oauth account to be skipped, got %d attempts", len(next))
+	}
+}
+
+func TestClassifyCodexPermanentDisable(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   oauthFailureReason
+	}{
+		{name: "revoked", status: http.StatusUnauthorized, body: `{"error":{"message":"Encountered invalidated oauth token for user, failing request","code":"token_revoked"}}`, want: oauthFailureRevoked},
+		{name: "workspace", status: http.StatusPaymentRequired, body: `{"detail":{"code":"deactivated_workspace"}}`, want: oauthFailureDisabled},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, ok := classifyCodexPermanentDisable(tt.status, []byte(tt.body))
+			if !ok || got != tt.want {
+				t.Fatalf("classifyCodexPermanentDisable() = (%q, %v), want (%q, true)", got, ok, tt.want)
+			}
+		})
 	}
 }
 

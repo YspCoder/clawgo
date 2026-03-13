@@ -129,6 +129,8 @@ type oauthSession struct {
 	NetworkProxy  string         `json:"network_proxy,omitempty"`
 	Scope         string         `json:"scope,omitempty"`
 	Token         map[string]any `json:"token,omitempty"`
+	Disabled      bool           `json:"disabled,omitempty"`
+	DisableReason string         `json:"disable_reason,omitempty"`
 	CooldownUntil string         `json:"-"`
 	FailureCount  int            `json:"-"`
 	LastFailure   string         `json:"-"`
@@ -244,6 +246,8 @@ type OAuthAccountInfo struct {
 	DeviceID       string `json:"device_id,omitempty"`
 	ResourceURL    string `json:"resource_url,omitempty"`
 	NetworkProxy   string `json:"network_proxy,omitempty"`
+	Disabled       bool   `json:"disabled,omitempty"`
+	DisableReason  string `json:"disable_reason,omitempty"`
 	CooldownUntil  string `json:"cooldown_until,omitempty"`
 	FailureCount   int    `json:"failure_count,omitempty"`
 	LastFailure    string `json:"last_failure,omitempty"`
@@ -267,6 +271,8 @@ const (
 	oauthFailureQuota     oauthFailureReason = "quota"
 	oauthFailureRateLimit oauthFailureReason = "rate_limit"
 	oauthFailureForbidden oauthFailureReason = "forbidden"
+	oauthFailureRevoked   oauthFailureReason = "token_revoked"
+	oauthFailureDisabled  oauthFailureReason = "deactivated_workspace"
 )
 
 type oauthCallbackResult struct {
@@ -461,6 +467,8 @@ func buildOAuthAccountInfo(session *oauthSession) OAuthAccountInfo {
 		DeviceID:       session.DeviceID,
 		ResourceURL:    session.ResourceURL,
 		NetworkProxy:   maskedProxyURL(session.NetworkProxy),
+		Disabled:       session.Disabled,
+		DisableReason:  session.DisableReason,
 		CooldownUntil:  session.CooldownUntil,
 		FailureCount:   session.FailureCount,
 		LastFailure:    session.LastFailure,
@@ -919,6 +927,9 @@ func (m *oauthManager) prepareAttemptsLocked(ctx context.Context) ([]oauthAttemp
 		if session == nil || strings.TrimSpace(session.AccessToken) == "" {
 			continue
 		}
+		if session.Disabled {
+			continue
+		}
 		if m.sessionOnCooldown(session) {
 			continue
 		}
@@ -972,6 +983,27 @@ func (m *oauthManager) markExhausted(session *oauthSession, reason oauthFailureR
 	}
 	rotated = append(rotated, session)
 	m.cached = rotated
+}
+
+func (m *oauthManager) disableSession(session *oauthSession, reason oauthFailureReason, detail string) {
+	if session == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	session.Disabled = true
+	session.DisableReason = string(reason)
+	session.FailureCount++
+	session.LastFailure = firstNonEmpty(strings.TrimSpace(detail), string(reason))
+	session.HealthScore = 0
+	session.CooldownUntil = ""
+	if path := strings.TrimSpace(session.FilePath); path != "" {
+		delete(m.cooldowns, path)
+	}
+	if err := m.persistSessionLocked(session); err == nil {
+		m.cached = appendLoadedSession(m.cached, session)
+	}
+	recordProviderRuntimeChange(m.providerName, "oauth", firstNonEmpty(session.Email, session.AccountID, session.FilePath), "oauth_disabled_"+string(reason), "oauth credential disabled after unrecoverable upstream error")
 }
 
 func (m *oauthManager) markSuccess(session *oauthSession) {
@@ -1046,6 +1078,9 @@ func healthPenaltyForReason(reason oauthFailureReason) int {
 
 func sessionHealthScore(session *oauthSession) int {
 	if session == nil {
+		return 0
+	}
+	if session.Disabled {
 		return 0
 	}
 	if session.HealthScore <= 0 {
@@ -1228,6 +1263,8 @@ func (m *oauthManager) refreshSessionLocked(ctx context.Context, session *oauthS
 	refreshed.FailureCount = session.FailureCount
 	refreshed.LastFailure = session.LastFailure
 	refreshed.CooldownUntil = session.CooldownUntil
+	refreshed.Disabled = session.Disabled
+	refreshed.DisableReason = session.DisableReason
 	if err := m.persistSessionLocked(refreshed); err != nil {
 		return nil, err
 	}
