@@ -784,9 +784,9 @@ func clampTelegramHTML(markdown string, maxRunes int) string {
 	return sanitizeTelegramHTML(markdownToTelegramHTML(chunks[0]))
 }
 
-func (c *TelegramChannel) handleStreamAction(ctx context.Context, chatID int64, msg bus.OutboundMessage) error {
+func (c *TelegramChannel) handleStreamAction(ctx context.Context, chatID int64, msg bus.OutboundMessage, finalizeRich bool) error {
 	streamKey := telegramStreamKey(chatID, msg.ReplyToID)
-	chunks := renderTelegramStreamChunks(msg.Content)
+	chunks := renderTelegramStreamChunksWithFinalize(msg.Content, finalizeRich)
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -855,12 +855,19 @@ func (c *TelegramChannel) handleStreamAction(ctx context.Context, chatID int64, 
 }
 
 func renderTelegramStreamChunks(content string) []telegramRenderedChunk {
+	return renderTelegramStreamChunksWithFinalize(content, false)
+}
+
+func renderTelegramStreamChunksWithFinalize(content string, finalizeRich bool) []telegramRenderedChunk {
 	raw := strings.TrimSpace(content)
 	if raw == "" {
 		return nil
 	}
 	mode, body := detectTelegramStreamMode(raw)
 	if strings.TrimSpace(body) == "" {
+		return nil
+	}
+	if mode == "auto_markdown" && !shouldFlushTelegramStreamSnapshot(body) {
 		return nil
 	}
 
@@ -909,6 +916,16 @@ func renderTelegramStreamChunks(content string) []telegramRenderedChunk {
 				out = append(out, telegramRenderedChunk{payload: payload, parseMode: ""})
 			}
 		default:
+			if !finalizeRich {
+				payload := trimmed
+				if len([]rune(payload)) > telegramStreamSplitMaxRunes {
+					payload = splitTelegramText(payload, telegramStreamSplitMaxRunes)[0]
+				}
+				if strings.TrimSpace(payload) != "" {
+					out = append(out, telegramRenderedChunk{payload: payload, parseMode: ""})
+				}
+				continue
+			}
 			payload := sanitizeTelegramHTML(markdownToTelegramHTML(trimmed))
 			if len([]rune(payload)) > telegramSafeHTMLMaxRunes {
 				payload = clampTelegramHTML(trimmed, telegramSafeHTMLMaxRunes)
@@ -919,6 +936,87 @@ func renderTelegramStreamChunks(content string) []telegramRenderedChunk {
 		}
 	}
 	return out
+}
+
+func shouldFlushTelegramStreamSnapshot(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return false
+	}
+	if strings.Count(trimmed, "```")%2 == 1 {
+		return false
+	}
+
+	inlineBackticks := 0
+	for i := 0; i < len(trimmed); i++ {
+		if trimmed[i] != '`' {
+			continue
+		}
+		if strings.HasPrefix(trimmed[i:], "```") {
+			i += 2
+			continue
+		}
+		inlineBackticks++
+	}
+	if inlineBackticks%2 == 1 {
+		return false
+	}
+
+	if hasOddUnescapedMarkdownMarker(trimmed, "**") {
+		return false
+	}
+	if hasOddUnescapedMarkdownMarker(trimmed, "__") {
+		return false
+	}
+	if hasOddSingleMarkdownMarker(trimmed, '*') {
+		return false
+	}
+	if hasOddSingleMarkdownMarker(trimmed, '_') {
+		return false
+	}
+	if strings.Count(trimmed, "[") != strings.Count(trimmed, "]") {
+		return false
+	}
+	if strings.Count(trimmed, "(") < strings.Count(trimmed, "]") {
+		return false
+	}
+	if strings.Count(trimmed, "](") > 0 && strings.Count(trimmed, "(") != strings.Count(trimmed, ")") {
+		return false
+	}
+	return true
+}
+
+func hasOddUnescapedMarkdownMarker(s, marker string) bool {
+	count := 0
+	for i := 0; i+len(marker) <= len(s); i++ {
+		if s[i:i+len(marker)] != marker {
+			continue
+		}
+		if i > 0 && s[i-1] == '\\' {
+			continue
+		}
+		count++
+		i += len(marker) - 1
+	}
+	return count%2 == 1
+}
+
+func hasOddSingleMarkdownMarker(s string, marker byte) bool {
+	count := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] != marker {
+			continue
+		}
+		if i > 0 && s[i-1] == '\\' {
+			continue
+		}
+		if i+1 < len(s) && s[i+1] == marker {
+			i++
+			continue
+		}
+		count++
+	}
+	return count%2 == 1
 }
 
 func detectTelegramStreamMode(content string) (mode string, body string) {
@@ -1083,16 +1181,16 @@ func (c *TelegramChannel) handleAction(ctx context.Context, chatID int64, action
 		_, err := c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{ChatID: telegoutil.ID(chatID), MessageID: messageID, Text: htmlContent, ParseMode: telego.ModeHTML})
 		return err
 	case "stream":
-		return c.handleStreamAction(ctx, chatID, msg)
+		return c.handleStreamAction(ctx, chatID, msg, false)
 	case "finalize":
 		if strings.TrimSpace(msg.Content) != "" {
-			// Final pass in auto-markdown mode to recover rich formatting after plain streaming.
+			// Final pass to recover rich formatting after conservative plain streaming.
 			if err := c.handleStreamAction(ctx, chatID, bus.OutboundMessage{
 				ChatID:    msg.ChatID,
 				ReplyToID: msg.ReplyToID,
 				Content:   msg.Content,
 				Action:    "stream",
-			}); err != nil {
+			}, true); err != nil {
 				return err
 			}
 		}
@@ -1148,15 +1246,15 @@ func markdownToTelegramHTML(text string) string {
 	text = escapeHTML(text)
 
 	text = regexp.MustCompile("(?m)^#{1,6}\\s+(.+)$").ReplaceAllString(text, "<b>$1</b>")
-	text = regexp.MustCompile("(?m)^>\\s*(.*)$").ReplaceAllString(text, "鈹?$1")
+	text = regexp.MustCompile("(?m)^\\s*>\\s*(.*)$").ReplaceAllString(text, "&gt; $1")
 	text = regexp.MustCompile("\\[([^\\]]+)\\]\\(([^)]+)\\)").ReplaceAllString(text, `<a href="$2">$1</a>`)
 	text = regexp.MustCompile("\\*\\*(.+?)\\*\\*").ReplaceAllString(text, "<b>$1</b>")
 	text = regexp.MustCompile("__(.+?)__").ReplaceAllString(text, "<b>$1</b>")
 	text = regexp.MustCompile("\\*([^*\\n]+)\\*").ReplaceAllString(text, "<i>$1</i>")
 	text = regexp.MustCompile("_([^_\\n]+)_").ReplaceAllString(text, "<i>$1</i>")
 	text = regexp.MustCompile("~~(.+?)~~").ReplaceAllString(text, "<s>$1</s>")
-	text = regexp.MustCompile("(?m)^[-*]\\s+").ReplaceAllString(text, "鈥?")
-	text = regexp.MustCompile("(?m)^\\d+\\.\\s+").ReplaceAllString(text, "鈥?")
+	text = regexp.MustCompile("(?m)^\\s*[-*]\\s+").ReplaceAllString(text, "• ")
+	text = regexp.MustCompile("(?m)^\\s*(\\d+\\.\\s+)").ReplaceAllString(text, "$1")
 
 	for i, code := range inlineCodes.codes {
 		escaped := escapeHTML(code)
