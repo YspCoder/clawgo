@@ -1152,6 +1152,54 @@ func TestOAuthManagerDisableSessionSkipsAccount(t *testing.T) {
 	}
 }
 
+func TestOAuthLoginManagerListAccountsSkipsInvalidCredentialFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	invalidFile := filepath.Join(dir, "invalid.json")
+	validFile := filepath.Join(dir, "valid.json")
+	if err := os.WriteFile(invalidFile, []byte(`{"not":"a valid oauth session"}`), 0o600); err != nil {
+		t.Fatalf("write invalid credential failed: %v", err)
+	}
+	raw, err := json.Marshal(oauthSession{
+		Provider:     "codex",
+		AccessToken:  "oauth-token",
+		RefreshToken: "refresh-token",
+		Email:        "user@example.com",
+		Expire:       time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatalf("marshal valid session failed: %v", err)
+	}
+	if err := os.WriteFile(validFile, raw, 0o600); err != nil {
+		t.Fatalf("write valid credential failed: %v", err)
+	}
+
+	manager, err := newOAuthManager(config.ProviderConfig{
+		Auth:       "oauth",
+		TimeoutSec: 5,
+		OAuth: config.ProviderOAuthConfig{
+			Provider:        "codex",
+			CredentialFile:  invalidFile,
+			CredentialFiles: []string{invalidFile, validFile},
+		},
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("new oauth manager failed: %v", err)
+	}
+
+	accounts, err := (&OAuthLoginManager{manager: manager}).ListAccounts()
+	if err != nil {
+		t.Fatalf("list accounts failed: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 valid account, got %d (%#v)", len(accounts), accounts)
+	}
+	if accounts[0].Email != "user@example.com" {
+		t.Fatalf("unexpected account: %#v", accounts[0])
+	}
+}
+
 func TestOAuthManagerPrefersHealthierAccount(t *testing.T) {
 	t.Parallel()
 

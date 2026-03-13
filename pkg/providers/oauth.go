@@ -1402,11 +1402,13 @@ func (m *oauthManager) loadAllLocked() ([]*oauthSession, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("read oauth credential file failed: %w", err)
+			recordProviderRuntimeChange(m.providerName, "oauth", path, "credential_read_failed", err.Error())
+			continue
 		}
 		session, err := parseImportedOAuthSession(m.cfg.Provider, filepath.Base(path), raw)
 		if err != nil {
-			return nil, fmt.Errorf("decode oauth credential file failed: %w", err)
+			recordProviderRuntimeChange(m.providerName, "oauth", path, "credential_decode_failed", err.Error())
+			continue
 		}
 		session.FilePath = path
 		if until, ok := m.cooldowns[strings.TrimSpace(path)]; ok && time.Now().Before(until) {
