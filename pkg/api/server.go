@@ -5205,6 +5205,7 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 			Action           string   `json:"action"`
 			AgentID          string   `json:"agent_id"`
 			Name             string   `json:"name"`
+			NotifyMainPolicy string   `json:"notify_main_policy"`
 			Role             string   `json:"role"`
 			SystemPromptFile string   `json:"system_prompt_file"`
 			MemoryNamespace  string   `json:"memory_namespace"`
@@ -5242,6 +5243,7 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 			profile, err := store.Upsert(tools.SubagentProfile{
 				AgentID:          agentID,
 				Name:             body.Name,
+				NotifyMainPolicy: body.NotifyMainPolicy,
 				Role:             body.Role,
 				SystemPromptFile: body.SystemPromptFile,
 				MemoryNamespace:  body.MemoryNamespace,
@@ -5270,6 +5272,7 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 			}
 			next := *existing
 			next.Name = body.Name
+			next.NotifyMainPolicy = body.NotifyMainPolicy
 			next.Role = body.Role
 			next.SystemPromptFile = body.SystemPromptFile
 			next.MemoryNamespace = body.MemoryNamespace
@@ -5331,6 +5334,7 @@ func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Requ
 			profile, err := store.Upsert(tools.SubagentProfile{
 				AgentID:          agentID,
 				Name:             body.Name,
+				NotifyMainPolicy: body.NotifyMainPolicy,
 				Role:             body.Role,
 				SystemPromptFile: body.SystemPromptFile,
 				MemoryNamespace:  body.MemoryNamespace,
