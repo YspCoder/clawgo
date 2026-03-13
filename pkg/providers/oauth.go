@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -1883,7 +1884,7 @@ func extractOAuthBalanceMetadata(session *oauthSession) (planType, quotaSource, 
 			}
 			switch {
 			case subActiveStart != "" && subActiveUntil != "":
-				balanceDetail = fmt.Sprintf("%s ~ %s", subActiveStart, subActiveUntil)
+				balanceDetail = formatSubscriptionWindow(subActiveStart, subActiveUntil)
 			case subActiveUntil != "":
 				balanceDetail = fmt.Sprintf("until %s", subActiveUntil)
 			case subActiveStart != "":
@@ -1917,6 +1918,55 @@ func normalizeBalanceTime(value string) string {
 		}
 	}
 	return trimmed
+}
+
+func formatSubscriptionWindow(startRaw, untilRaw string) string {
+	startRaw = strings.TrimSpace(startRaw)
+	untilRaw = strings.TrimSpace(untilRaw)
+	if startRaw == "" || untilRaw == "" {
+		return strings.TrimSpace(strings.TrimSpace(startRaw) + " ~ " + strings.TrimSpace(untilRaw))
+	}
+	startAt, okStart := parseBalanceTime(startRaw)
+	untilAt, okUntil := parseBalanceTime(untilRaw)
+	if !okStart || !okUntil || !untilAt.After(startAt) {
+		return fmt.Sprintf("%s ~ %s", startRaw, untilRaw)
+	}
+	now := time.Now().UTC()
+	total := untilAt.Sub(startAt)
+	elapsed := now.Sub(startAt)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	if elapsed > total {
+		elapsed = total
+	}
+	usedPct := int(math.Round(float64(elapsed) * 100 / float64(total)))
+	if usedPct < 0 {
+		usedPct = 0
+	}
+	if usedPct > 100 {
+		usedPct = 100
+	}
+	return fmt.Sprintf("%s ~ %s (%d%% used, %d%% left)", startRaw, untilRaw, usedPct, 100-usedPct)
+}
+
+func parseBalanceTime(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}, false
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+		"2006-01-02",
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, trimmed); err == nil {
+			return parsed.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func firstNonEmpty(values ...string) string {

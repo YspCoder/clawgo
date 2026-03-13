@@ -1429,35 +1429,56 @@ func (s *Server) handleWebUIProviderRuntime(w http.ResponseWriter, r *http.Reque
 	}
 	switch strings.ToLower(strings.TrimSpace(body.Action)) {
 	case "clear_api_cooldown":
-		providers.ClearProviderAPICooldown(strings.TrimSpace(body.Provider))
+		cfg, providerName, err := s.loadRuntimeProviderName(strings.TrimSpace(body.Provider))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		_ = cfg
+		providers.ClearProviderAPICooldown(providerName)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cleared": true})
 	case "clear_history":
-		providers.ClearProviderRuntimeHistory(strings.TrimSpace(body.Provider))
+		cfg, providerName, err := s.loadRuntimeProviderName(strings.TrimSpace(body.Provider))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		_ = cfg
+		providers.ClearProviderRuntimeHistory(providerName)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cleared": true})
 	case "refresh_now":
-		cfg, err := cfgpkg.LoadConfig(s.configPath)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		result, err := providers.RefreshProviderRuntimeNow(cfg, strings.TrimSpace(body.Provider), body.OnlyExpiring)
+		cfg, providerName, err := s.loadRuntimeProviderName(strings.TrimSpace(body.Provider))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "refreshed": true, "result": result})
+		result, err := providers.RefreshProviderRuntimeNow(cfg, providerName, body.OnlyExpiring)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		order, _ := providers.RerankProviderRuntime(cfg, providerName)
+		summary := providers.GetProviderRuntimeSummary(cfg, providers.ProviderRuntimeQuery{Provider: providerName, HealthBelow: 50})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok":              true,
+			"provider":        providerName,
+			"refreshed":       true,
+			"result":          result,
+			"candidate_order": order,
+			"summary":         summary,
+		})
 	case "rerank":
-		cfg, err := cfgpkg.LoadConfig(s.configPath)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		order, err := providers.RerankProviderRuntime(cfg, strings.TrimSpace(body.Provider))
+		cfg, providerName, err := s.loadRuntimeProviderName(strings.TrimSpace(body.Provider))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reranked": true, "candidate_order": order})
+		order, err := providers.RerankProviderRuntime(cfg, providerName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "provider": providerName, "reranked": true, "candidate_order": order})
 	default:
 		http.Error(w, "unsupported action", http.StatusBadRequest)
 	}
@@ -1509,11 +1530,32 @@ func (s *Server) loadProviderConfig(name string) (*cfgpkg.Config, cfgpkg.Provide
 		return nil, cfgpkg.ProviderConfig{}, err
 	}
 	providerName := strings.TrimSpace(name)
-	pc, ok := cfg.Models.Providers[providerName]
+	if providerName == "" {
+		providerName = cfgpkg.PrimaryProviderName(cfg)
+	}
+	pc, ok := cfgpkg.ProviderConfigByName(cfg, providerName)
 	if !ok {
 		return nil, cfgpkg.ProviderConfig{}, fmt.Errorf("provider %q not found", providerName)
 	}
 	return cfg, pc, nil
+}
+
+func (s *Server) loadRuntimeProviderName(name string) (*cfgpkg.Config, string, error) {
+	if strings.TrimSpace(s.configPath) == "" {
+		return nil, "", fmt.Errorf("config path not set")
+	}
+	cfg, err := cfgpkg.LoadConfig(s.configPath)
+	if err != nil {
+		return nil, "", err
+	}
+	providerName := strings.TrimSpace(name)
+	if providerName == "" {
+		providerName = cfgpkg.PrimaryProviderName(cfg)
+	}
+	if !cfgpkg.ProviderExists(cfg, providerName) {
+		return nil, "", fmt.Errorf("provider %q not found", providerName)
+	}
+	return cfg, providerName, nil
 }
 
 func (s *Server) resolveProviderConfig(name string, inline cfgpkg.ProviderConfig) (*cfgpkg.Config, cfgpkg.ProviderConfig, error) {
