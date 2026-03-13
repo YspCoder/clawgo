@@ -1201,25 +1201,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	} else {
 		specTaskRef = normalizeSpecCodingTaskRef(taskRef)
 	}
-	if configAction, handled, configErr := al.maybeHandleSubagentConfigIntent(ctx, msg); handled {
-		if configErr != nil && specTaskRef.Summary != "" {
-			if err := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, configErr.Error()); err != nil {
-				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-					"session_key": msg.SessionKey,
-					"error":       err.Error(),
-				})
-			}
-		}
-		if configErr == nil && specTaskRef.Summary != "" {
-			if err := al.maybeCompleteSpecCodingTask(specTaskRef, configAction); err != nil {
-				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-					"session_key": msg.SessionKey,
-					"error":       err.Error(),
-				})
-			}
-		}
-		return configAction, configErr
-	}
 	if routed, ok, routeErr := al.maybeAutoRoute(ctx, msg); ok {
 		if routeErr != nil && specTaskRef.Summary != "" {
 			if err := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, routeErr.Error()); err != nil {
