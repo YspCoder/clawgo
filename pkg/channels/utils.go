@@ -18,15 +18,6 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen]
 }
 
-func safeCloseSignal(v interface{}) {
-	ch, ok := v.(chan struct{})
-	if !ok || ch == nil {
-		return
-	}
-	defer func() { _ = recover() }()
-	close(ch)
-}
-
 type cancelGuard struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc

@@ -358,7 +358,6 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			CreatedAt:     task.Updated,
 		})
 		sm.persistTaskLocked(task, "failed", task.Result)
-		sm.notifyTaskWaitersLocked(task.ID)
 	} else {
 		task.Status = RuntimeStatusCompleted
 		task.Result = applySubagentResultQuota(result, task.MaxResultChars)
@@ -376,7 +375,6 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			CreatedAt:     task.Updated,
 		})
 		sm.persistTaskLocked(task, "completed", task.Result)
-		sm.notifyTaskWaitersLocked(task.ID)
 	}
 	sm.mu.Unlock()
 
@@ -405,6 +403,9 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
 			},
 		})
 	}
+	sm.mu.Lock()
+	sm.notifyTaskWaitersLocked(task.ID)
+	sm.mu.Unlock()
 }
 
 func (sm *SubagentManager) recordEKG(task *SubagentTask, runErr error) {

@@ -54,81 +54,86 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 	if t.manager == nil {
 		return "", fmt.Errorf("nodes manager not configured")
 	}
-
-	switch action {
-	case "status", "describe":
-		if nodeID != "" {
-			n, ok := t.manager.Get(nodeID)
-			if !ok {
-				return "", fmt.Errorf("node not found: %s", nodeID)
+	var statusHandler func() (string, error)
+	handlers := map[string]func() (string, error){
+		"status": func() (string, error) {
+			if nodeID != "" {
+				n, ok := t.manager.Get(nodeID)
+				if !ok {
+					return "", fmt.Errorf("node not found: %s", nodeID)
+				}
+				b, _ := json.Marshal(n)
+				return string(b), nil
 			}
-			b, _ := json.Marshal(n)
+			b, _ := json.Marshal(t.manager.List())
 			return string(b), nil
-		}
-		b, _ := json.Marshal(t.manager.List())
-		return string(b), nil
-	default:
-		reqArgs := map[string]interface{}{}
-		if raw, ok := args["args"].(map[string]interface{}); ok {
-			for k, v := range raw {
-				reqArgs[k] = v
-			}
-		}
-		if rawPaths := MapStringListArg(args, "artifact_paths"); len(rawPaths) > 0 {
-			reqArgs["artifact_paths"] = rawPaths
-		}
-		if cmd, ok := args["command"].([]interface{}); ok && len(cmd) > 0 {
-			reqArgs["command"] = cmd
-		}
-		if facing := MapStringArg(args, "facing"); facing != "" {
-			f := strings.ToLower(strings.TrimSpace(facing))
-			if f != "front" && f != "back" && f != "both" {
-				return "", fmt.Errorf("invalid_args: facing must be front|back|both")
-			}
-			reqArgs["facing"] = f
-		}
-		if di := MapIntArg(args, "duration_ms", 0); di > 0 {
-			if di <= 0 || di > 300000 {
-				return "", fmt.Errorf("invalid_args: duration_ms must be in 1..300000")
-			}
-			reqArgs["duration_ms"] = di
-		}
-		task := MapStringArg(args, "task")
-		model := MapStringArg(args, "model")
-		if action == "agent_task" && strings.TrimSpace(task) == "" {
-			return "", fmt.Errorf("invalid_args: agent_task requires task")
-		}
-		if action == "canvas_action" {
-			if act := MapStringArg(reqArgs, "action"); act == "" {
-				return "", fmt.Errorf("invalid_args: canvas_action requires args.action")
-			}
-		}
-		if nodeID == "" {
-			if picked, ok := t.manager.PickRequest(nodes.Request{Action: action, Task: task, Model: model, Args: reqArgs}, mode); ok {
-				nodeID = picked.ID
-			}
-		}
-		if nodeID == "" {
-			return "", fmt.Errorf("no eligible node found for action=%s", action)
-		}
-		req := nodes.Request{Action: action, Node: nodeID, Task: task, Model: model, Args: reqArgs}
-		if !t.manager.SupportsRequest(nodeID, req) {
-			return "", fmt.Errorf("node %s does not support action=%s", nodeID, action)
-		}
-		if t.router == nil {
-			return "", fmt.Errorf("nodes transport router not configured")
-		}
-		started := time.Now()
-		resp, err := t.router.Dispatch(ctx, req, mode)
-		durationMs := int(time.Since(started).Milliseconds())
-		if err != nil {
-			t.writeAudit(req, nodes.Response{OK: false, Code: "transport_error", Error: err.Error(), Node: nodeID, Action: action}, mode, durationMs)
-			return "", err
-		}
-		t.writeAudit(req, resp, mode, durationMs)
-		b, _ := json.Marshal(resp)
-		return string(b), nil
+		},
 	}
+	statusHandler = handlers["status"]
+	handlers["describe"] = func() (string, error) { return statusHandler() }
+	if handler := handlers[action]; handler != nil {
+		return handler()
+	}
+	reqArgs := map[string]interface{}{}
+	if raw, ok := args["args"].(map[string]interface{}); ok {
+		for k, v := range raw {
+			reqArgs[k] = v
+		}
+	}
+	if rawPaths := MapStringListArg(args, "artifact_paths"); len(rawPaths) > 0 {
+		reqArgs["artifact_paths"] = rawPaths
+	}
+	if cmd, ok := args["command"].([]interface{}); ok && len(cmd) > 0 {
+		reqArgs["command"] = cmd
+	}
+	if facing := MapStringArg(args, "facing"); facing != "" {
+		f := strings.ToLower(strings.TrimSpace(facing))
+		if f != "front" && f != "back" && f != "both" {
+			return "", fmt.Errorf("invalid_args: facing must be front|back|both")
+		}
+		reqArgs["facing"] = f
+	}
+	if di := MapIntArg(args, "duration_ms", 0); di > 0 {
+		if di <= 0 || di > 300000 {
+			return "", fmt.Errorf("invalid_args: duration_ms must be in 1..300000")
+		}
+		reqArgs["duration_ms"] = di
+	}
+	task := MapStringArg(args, "task")
+	model := MapStringArg(args, "model")
+	if action == "agent_task" && strings.TrimSpace(task) == "" {
+		return "", fmt.Errorf("invalid_args: agent_task requires task")
+	}
+	if action == "canvas_action" {
+		if act := MapStringArg(reqArgs, "action"); act == "" {
+			return "", fmt.Errorf("invalid_args: canvas_action requires args.action")
+		}
+	}
+	if nodeID == "" {
+		if picked, ok := t.manager.PickRequest(nodes.Request{Action: action, Task: task, Model: model, Args: reqArgs}, mode); ok {
+			nodeID = picked.ID
+		}
+	}
+	if nodeID == "" {
+		return "", fmt.Errorf("no eligible node found for action=%s", action)
+	}
+	req := nodes.Request{Action: action, Node: nodeID, Task: task, Model: model, Args: reqArgs}
+	if !t.manager.SupportsRequest(nodeID, req) {
+		return "", fmt.Errorf("node %s does not support action=%s", nodeID, action)
+	}
+	if t.router == nil {
+		return "", fmt.Errorf("nodes transport router not configured")
+	}
+	started := time.Now()
+	resp, err := t.router.Dispatch(ctx, req, mode)
+	durationMs := int(time.Since(started).Milliseconds())
+	if err != nil {
+		t.writeAudit(req, nodes.Response{OK: false, Code: "transport_error", Error: err.Error(), Node: nodeID, Action: action}, mode, durationMs)
+		return "", err
+	}
+	t.writeAudit(req, resp, mode, durationMs)
+	b, _ := json.Marshal(resp)
+	return string(b), nil
 }
 
 func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode string, durationMs int) {

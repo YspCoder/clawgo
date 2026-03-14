@@ -131,66 +131,72 @@ func (t *MCPTool) Execute(ctx context.Context, args map[string]interface{}) (str
 		return "", err
 	}
 	defer client.Close()
-
-	switch action {
-	case "list_tools":
-		out, err := client.listAll(callCtx, "tools/list", "tools")
-		if err != nil {
-			return "", err
-		}
-		return prettyJSON(out)
-	case "call_tool":
-		toolName := strings.TrimSpace(mcpStringArg(args, "tool"))
-		if toolName == "" {
-			return "", fmt.Errorf("tool is required for action=call_tool")
-		}
-		params := map[string]interface{}{
-			"name":      toolName,
-			"arguments": mcpObjectArg(args, "arguments"),
-		}
-		out, err := client.request(callCtx, "tools/call", params)
-		if err != nil {
-			return "", err
-		}
-		return prettyJSON(out)
-	case "list_resources":
-		out, err := client.listAll(callCtx, "resources/list", "resources")
-		if err != nil {
-			return "", err
-		}
-		return prettyJSON(out)
-	case "read_resource":
-		resourceURI := strings.TrimSpace(mcpStringArg(args, "uri"))
-		if resourceURI == "" {
-			return "", fmt.Errorf("uri is required for action=read_resource")
-		}
-		out, err := client.request(callCtx, "resources/read", map[string]interface{}{"uri": resourceURI})
-		if err != nil {
-			return "", err
-		}
-		return prettyJSON(out)
-	case "list_prompts":
-		out, err := client.listAll(callCtx, "prompts/list", "prompts")
-		if err != nil {
-			return "", err
-		}
-		return prettyJSON(out)
-	case "get_prompt":
-		promptName := strings.TrimSpace(mcpStringArg(args, "prompt"))
-		if promptName == "" {
-			return "", fmt.Errorf("prompt is required for action=get_prompt")
-		}
-		out, err := client.request(callCtx, "prompts/get", map[string]interface{}{
-			"name":      promptName,
-			"arguments": mcpObjectArg(args, "arguments"),
-		})
-		if err != nil {
-			return "", err
-		}
-		return prettyJSON(out)
-	default:
-		return "", fmt.Errorf("unsupported action %q", action)
+	handlers := map[string]func() (string, error){
+		"list_tools": func() (string, error) {
+			out, err := client.listAll(callCtx, "tools/list", "tools")
+			if err != nil {
+				return "", err
+			}
+			return prettyJSON(out)
+		},
+		"call_tool": func() (string, error) {
+			toolName := strings.TrimSpace(mcpStringArg(args, "tool"))
+			if toolName == "" {
+				return "", fmt.Errorf("tool is required for action=call_tool")
+			}
+			out, err := client.request(callCtx, "tools/call", map[string]interface{}{
+				"name":      toolName,
+				"arguments": mcpObjectArg(args, "arguments"),
+			})
+			if err != nil {
+				return "", err
+			}
+			return prettyJSON(out)
+		},
+		"list_resources": func() (string, error) {
+			out, err := client.listAll(callCtx, "resources/list", "resources")
+			if err != nil {
+				return "", err
+			}
+			return prettyJSON(out)
+		},
+		"read_resource": func() (string, error) {
+			resourceURI := strings.TrimSpace(mcpStringArg(args, "uri"))
+			if resourceURI == "" {
+				return "", fmt.Errorf("uri is required for action=read_resource")
+			}
+			out, err := client.request(callCtx, "resources/read", map[string]interface{}{"uri": resourceURI})
+			if err != nil {
+				return "", err
+			}
+			return prettyJSON(out)
+		},
+		"list_prompts": func() (string, error) {
+			out, err := client.listAll(callCtx, "prompts/list", "prompts")
+			if err != nil {
+				return "", err
+			}
+			return prettyJSON(out)
+		},
+		"get_prompt": func() (string, error) {
+			promptName := strings.TrimSpace(mcpStringArg(args, "prompt"))
+			if promptName == "" {
+				return "", fmt.Errorf("prompt is required for action=get_prompt")
+			}
+			out, err := client.request(callCtx, "prompts/get", map[string]interface{}{
+				"name":      promptName,
+				"arguments": mcpObjectArg(args, "arguments"),
+			})
+			if err != nil {
+				return "", err
+			}
+			return prettyJSON(out)
+		},
 	}
+	if handler := handlers[action]; handler != nil {
+		return handler()
+	}
+	return "", fmt.Errorf("unsupported action %q", action)
 }
 
 func (t *MCPTool) DiscoverTools(ctx context.Context) []Tool {

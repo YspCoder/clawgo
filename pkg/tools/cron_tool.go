@@ -34,6 +34,7 @@ func (t *CronTool) Parameters() map[string]interface{} {
 }
 
 func (t *CronTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	_ = ctx
 	if t.cs == nil {
 		return "Error: cron service not available", nil
 	}
@@ -42,40 +43,41 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]interface{}) (st
 		action = "list"
 	}
 	id := MapStringArg(args, "id")
-
-	switch action {
-	case "list":
-		jobs := t.cs.ListJobs(true)
-		b, _ := json.Marshal(jobs)
-		return string(b), nil
-	case "delete":
-		if id == "" {
-			return "", fmt.Errorf("%w: id for action=delete", ErrMissingField)
-		}
-		ok := t.cs.RemoveJob(id)
-		if !ok {
-			return fmt.Sprintf("job not found: %s", id), nil
-		}
-		return fmt.Sprintf("deleted job: %s", id), nil
-	case "enable":
-		if id == "" {
-			return "", fmt.Errorf("%w: id for action=enable", ErrMissingField)
-		}
-		job := t.cs.EnableJob(id, true)
-		if job == nil {
-			return fmt.Sprintf("job not found: %s", id), nil
-		}
-		return fmt.Sprintf("enabled job: %s", id), nil
-	case "disable":
-		if id == "" {
-			return "", fmt.Errorf("%w: id for action=disable", ErrMissingField)
-		}
-		job := t.cs.EnableJob(id, false)
-		if job == nil {
-			return fmt.Sprintf("job not found: %s", id), nil
-		}
-		return fmt.Sprintf("disabled job: %s", id), nil
-	default:
-		return "", fmt.Errorf("%w: %s", ErrUnsupportedAction, action)
+	handlers := map[string]func() (string, error){
+		"list": func() (string, error) {
+			b, _ := json.Marshal(t.cs.ListJobs(true))
+			return string(b), nil
+		},
+		"delete": func() (string, error) {
+			if id == "" {
+				return "", fmt.Errorf("%w: id for action=delete", ErrMissingField)
+			}
+			if !t.cs.RemoveJob(id) {
+				return fmt.Sprintf("job not found: %s", id), nil
+			}
+			return fmt.Sprintf("deleted job: %s", id), nil
+		},
+		"enable": func() (string, error) {
+			if id == "" {
+				return "", fmt.Errorf("%w: id for action=enable", ErrMissingField)
+			}
+			if t.cs.EnableJob(id, true) == nil {
+				return fmt.Sprintf("job not found: %s", id), nil
+			}
+			return fmt.Sprintf("enabled job: %s", id), nil
+		},
+		"disable": func() (string, error) {
+			if id == "" {
+				return "", fmt.Errorf("%w: id for action=disable", ErrMissingField)
+			}
+			if t.cs.EnableJob(id, false) == nil {
+				return fmt.Sprintf("job not found: %s", id), nil
+			}
+			return fmt.Sprintf("disabled job: %s", id), nil
+		},
 	}
+	if handler := handlers[action]; handler != nil {
+		return handler()
+	}
+	return "", fmt.Errorf("%w: %s", ErrUnsupportedAction, action)
 }

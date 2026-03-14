@@ -50,15 +50,14 @@ func (t *BrowserTool) Parameters() map[string]interface{} {
 func (t *BrowserTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	action := MapStringArg(args, "action")
 	url := MapStringArg(args, "url")
-
-	switch action {
-	case "screenshot":
-		return t.takeScreenshot(ctx, url)
-	case "content":
-		return t.fetchDynamicContent(ctx, url)
-	default:
-		return "", fmt.Errorf("unknown browser action: %s", action)
+	handlers := map[string]func(context.Context, string) (string, error){
+		"screenshot": t.takeScreenshot,
+		"content":    t.fetchDynamicContent,
 	}
+	if handler := handlers[action]; handler != nil {
+		return handler(ctx, url)
+	}
+	return "", fmt.Errorf("unknown browser action: %s", action)
 }
 
 func (t *BrowserTool) takeScreenshot(ctx context.Context, url string) (string, error) {

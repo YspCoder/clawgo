@@ -73,185 +73,189 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 			kindFilter[s] = struct{}{}
 		}
 	}
+	type sessionActionHandler func() (string, error)
+	handlers := map[string]sessionActionHandler{
+		"list": func() (string, error) {
+			if t.listFn == nil {
+				return "sessions list unavailable", nil
+			}
+			items := t.listFn(limit * 3)
+			if len(items) == 0 {
+				return "No sessions.", nil
+			}
+			if len(kindFilter) > 0 {
+				filtered := make([]SessionInfo, 0, len(items))
+				for _, s := range items {
+					k := strings.ToLower(strings.TrimSpace(s.Kind))
+					if _, ok := kindFilter[k]; ok {
+						filtered = append(filtered, s)
+					}
+				}
+				items = filtered
+			}
+			if activeMinutes > 0 {
+				cutoff := time.Now().Add(-time.Duration(activeMinutes) * time.Minute)
+				filtered := make([]SessionInfo, 0, len(items))
+				for _, s := range items {
+					if s.UpdatedAt.After(cutoff) {
+						filtered = append(filtered, s)
+					}
+				}
+				items = filtered
+			}
+			if query != "" {
+				filtered := make([]SessionInfo, 0, len(items))
+				for _, s := range items {
+					blob := strings.ToLower(s.Key + "\n" + s.Kind + "\n" + s.Summary)
+					if strings.Contains(blob, query) {
+						filtered = append(filtered, s)
+					}
+				}
+				items = filtered
+			}
+			if len(items) == 0 {
+				return "No sessions (after filters).", nil
+			}
+			sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+			if len(items) > limit {
+				items = items[:limit]
+			}
+			var sb strings.Builder
+			sb.WriteString("Sessions:\n")
+			for _, s := range items {
+				sb.WriteString(fmt.Sprintf("- %s kind=%s compactions=%d updated=%s\n", s.Key, s.Kind, s.CompactionCount, s.UpdatedAt.Format(time.RFC3339)))
+			}
+			return sb.String(), nil
+		},
+		"history": func() (string, error) {
+			if t.historyFn == nil {
+				return "sessions history unavailable", nil
+			}
+			key := MapStringArg(args, "key")
+			if key == "" {
+				return "key is required for history", nil
+			}
+			raw := t.historyFn(key, 0)
+			if len(raw) == 0 {
+				return "No history.", nil
+			}
+			type indexedMsg struct {
+				idx int
+				msg providers.Message
+			}
+			window := make([]indexedMsg, 0, len(raw))
+			for i, m := range raw {
+				window = append(window, indexedMsg{idx: i + 1, msg: m})
+			}
 
-	switch action {
-	case "list":
-		if t.listFn == nil {
-			return "sessions list unavailable", nil
-		}
-		items := t.listFn(limit * 3)
-		if len(items) == 0 {
-			return "No sessions.", nil
-		}
-		if len(kindFilter) > 0 {
-			filtered := make([]SessionInfo, 0, len(items))
-			for _, s := range items {
-				k := strings.ToLower(strings.TrimSpace(s.Kind))
-				if _, ok := kindFilter[k]; ok {
-					filtered = append(filtered, s)
+			// Window selectors are 1-indexed (human-friendly)
+			if around > 0 {
+				center := around - 1
+				if center < 0 {
+					center = 0
 				}
-			}
-			items = filtered
-		}
-		if activeMinutes > 0 {
-			cutoff := time.Now().Add(-time.Duration(activeMinutes) * time.Minute)
-			filtered := make([]SessionInfo, 0, len(items))
-			for _, s := range items {
-				if s.UpdatedAt.After(cutoff) {
-					filtered = append(filtered, s)
+				if center >= len(window) {
+					center = len(window) - 1
 				}
-			}
-			items = filtered
-		}
-		if query != "" {
-			filtered := make([]SessionInfo, 0, len(items))
-			for _, s := range items {
-				blob := strings.ToLower(s.Key + "\n" + s.Kind + "\n" + s.Summary)
-				if strings.Contains(blob, query) {
-					filtered = append(filtered, s)
+				half := limit / 2
+				if half < 1 {
+					half = 1
 				}
-			}
-			items = filtered
-		}
-		if len(items) == 0 {
-			return "No sessions (after filters).", nil
-		}
-		sort.Slice(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
-		if len(items) > limit {
-			items = items[:limit]
-		}
-		var sb strings.Builder
-		sb.WriteString("Sessions:\n")
-		for _, s := range items {
-			sb.WriteString(fmt.Sprintf("- %s kind=%s compactions=%d updated=%s\n", s.Key, s.Kind, s.CompactionCount, s.UpdatedAt.Format(time.RFC3339)))
-		}
-		return sb.String(), nil
-	case "history":
-		if t.historyFn == nil {
-			return "sessions history unavailable", nil
-		}
-		key := MapStringArg(args, "key")
-		if key == "" {
-			return "key is required for history", nil
-		}
-		raw := t.historyFn(key, 0)
-		if len(raw) == 0 {
-			return "No history.", nil
-		}
-		type indexedMsg struct {
-			idx int
-			msg providers.Message
-		}
-		window := make([]indexedMsg, 0, len(raw))
-		for i, m := range raw {
-			window = append(window, indexedMsg{idx: i + 1, msg: m})
-		}
-
-		// Window selectors are 1-indexed (human-friendly)
-		if around > 0 {
-			center := around - 1
-			if center < 0 {
-				center = 0
-			}
-			if center >= len(window) {
-				center = len(window) - 1
-			}
-			half := limit / 2
-			if half < 1 {
-				half = 1
-			}
-			start := center - half
-			if start < 0 {
-				start = 0
-			}
-			end := center + half + 1
-			if end > len(window) {
-				end = len(window)
-			}
-			window = window[start:end]
-		} else {
-			start := 0
-			end := len(window)
-			if after > 0 {
-				start = after
-				if start > len(window) {
-					start = len(window)
+				start := center - half
+				if start < 0 {
+					start = 0
 				}
-			}
-			if before > 0 {
-				end = before - 1
-				if end < 0 {
-					end = 0
-				}
+				end := center + half + 1
 				if end > len(window) {
 					end = len(window)
 				}
+				window = window[start:end]
+			} else {
+				start := 0
+				end := len(window)
+				if after > 0 {
+					start = after
+					if start > len(window) {
+						start = len(window)
+					}
+				}
+				if before > 0 {
+					end = before - 1
+					if end < 0 {
+						end = 0
+					}
+					if end > len(window) {
+						end = len(window)
+					}
+				}
+				if start > end {
+					start = end
+				}
+				window = window[start:end]
 			}
-			if start > end {
-				start = end
-			}
-			window = window[start:end]
-		}
 
-		if !includeTools {
-			filtered := make([]indexedMsg, 0, len(window))
-			for _, m := range window {
-				if strings.ToLower(m.msg.Role) == "tool" {
-					continue
-				}
-				filtered = append(filtered, m)
-			}
-			window = filtered
-		}
-		if roleFilter != "" {
-			filtered := make([]indexedMsg, 0, len(window))
-			for _, m := range window {
-				if strings.ToLower(m.msg.Role) == roleFilter {
+			if !includeTools {
+				filtered := make([]indexedMsg, 0, len(window))
+				for _, m := range window {
+					if strings.ToLower(m.msg.Role) == "tool" {
+						continue
+					}
 					filtered = append(filtered, m)
 				}
+				window = filtered
 			}
-			window = filtered
-		}
-		if fromMeSet {
-			targetRole := "user"
-			if fromMe {
-				targetRole = "assistant"
-			}
-			filtered := make([]indexedMsg, 0, len(window))
-			for _, m := range window {
-				if strings.ToLower(m.msg.Role) == targetRole {
-					filtered = append(filtered, m)
+			if roleFilter != "" {
+				filtered := make([]indexedMsg, 0, len(window))
+				for _, m := range window {
+					if strings.ToLower(m.msg.Role) == roleFilter {
+						filtered = append(filtered, m)
+					}
 				}
+				window = filtered
 			}
-			window = filtered
-		}
-		if query != "" {
-			filtered := make([]indexedMsg, 0, len(window))
-			for _, m := range window {
-				blob := strings.ToLower(m.msg.Role + "\n" + m.msg.Content)
-				if strings.Contains(blob, query) {
-					filtered = append(filtered, m)
+			if fromMeSet {
+				targetRole := "user"
+				if fromMe {
+					targetRole = "assistant"
 				}
+				filtered := make([]indexedMsg, 0, len(window))
+				for _, m := range window {
+					if strings.ToLower(m.msg.Role) == targetRole {
+						filtered = append(filtered, m)
+					}
+				}
+				window = filtered
 			}
-			window = filtered
-		}
-		if len(window) == 0 {
-			return "No history (after filters).", nil
-		}
-		if len(window) > limit {
-			window = window[len(window)-limit:]
-		}
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("History for %s:\n", key))
-		for _, item := range window {
-			content := item.msg.Content
-			if len(content) > 180 {
-				content = content[:180] + "..."
+			if query != "" {
+				filtered := make([]indexedMsg, 0, len(window))
+				for _, m := range window {
+					blob := strings.ToLower(m.msg.Role + "\n" + m.msg.Content)
+					if strings.Contains(blob, query) {
+						filtered = append(filtered, m)
+					}
+				}
+				window = filtered
 			}
-			sb.WriteString(fmt.Sprintf("- [#%d][%s] %s\n", item.idx, item.msg.Role, content))
-		}
-		return sb.String(), nil
-	default:
-		return "unsupported action", nil
+			if len(window) == 0 {
+				return "No history (after filters).", nil
+			}
+			if len(window) > limit {
+				window = window[len(window)-limit:]
+			}
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("History for %s:\n", key))
+			for _, item := range window {
+				content := item.msg.Content
+				if len(content) > 180 {
+					content = content[:180] + "..."
+				}
+				sb.WriteString(fmt.Sprintf("- [#%d][%s] %s\n", item.idx, item.msg.Role, content))
+			}
+			return sb.String(), nil
+		},
 	}
+	if handler := handlers[action]; handler != nil {
+		return handler()
+	}
+	return "unsupported action", nil
 }

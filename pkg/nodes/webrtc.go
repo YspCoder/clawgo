@@ -186,6 +186,23 @@ func (t *WebRTCTransport) currentSignaler(nodeID string) WireSender {
 	return t.signal[strings.TrimSpace(nodeID)]
 }
 
+var webRTCSignalHandlers = map[string]func(*gatewayRTCSession, WireMessage) error{
+	"signal_answer": func(session *gatewayRTCSession, msg WireMessage) error {
+		var desc webrtc.SessionDescription
+		if err := mapInto(msg.Payload, &desc); err != nil {
+			return err
+		}
+		return session.pc.SetRemoteDescription(desc)
+	},
+	"signal_candidate": func(session *gatewayRTCSession, msg WireMessage) error {
+		var candidate webrtc.ICECandidateInit
+		if err := mapInto(msg.Payload, &candidate); err != nil {
+			return err
+		}
+		return session.pc.AddICECandidate(candidate)
+	},
+}
+
 func (t *WebRTCTransport) HandleSignal(msg WireMessage) error {
 	nodeID := strings.TrimSpace(msg.From)
 	if nodeID == "" {
@@ -195,22 +212,10 @@ func (t *WebRTCTransport) HandleSignal(msg WireMessage) error {
 	if err != nil {
 		return err
 	}
-	switch strings.ToLower(strings.TrimSpace(msg.Type)) {
-	case "signal_answer":
-		var desc webrtc.SessionDescription
-		if err := mapInto(msg.Payload, &desc); err != nil {
-			return err
-		}
-		return session.pc.SetRemoteDescription(desc)
-	case "signal_candidate":
-		var candidate webrtc.ICECandidateInit
-		if err := mapInto(msg.Payload, &candidate); err != nil {
-			return err
-		}
-		return session.pc.AddICECandidate(candidate)
-	default:
-		return fmt.Errorf("unsupported signal type: %s", msg.Type)
+	if handler := webRTCSignalHandlers[strings.ToLower(strings.TrimSpace(msg.Type))]; handler != nil {
+		return handler(session, msg)
 	}
+	return fmt.Errorf("unsupported signal type: %s", msg.Type)
 }
 
 func (t *WebRTCTransport) Send(ctx context.Context, req Request) (Response, error) {

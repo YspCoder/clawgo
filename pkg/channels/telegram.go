@@ -1173,51 +1173,58 @@ func (c *TelegramChannel) handleAction(ctx context.Context, chatID int64, action
 	if !ok && action != "send" && action != "stream" && action != "finalize" {
 		return fmt.Errorf("message_id required for action=%s", action)
 	}
-	switch action {
-	case "edit":
-		htmlContent := clampTelegramHTML(msg.Content, telegramSafeHTMLMaxRunes)
-		editCtx, cancel := withTelegramAPITimeout(ctx)
-		defer cancel()
-		_, err := c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{ChatID: telegoutil.ID(chatID), MessageID: messageID, Text: htmlContent, ParseMode: telego.ModeHTML})
-		return err
-	case "stream":
-		return c.handleStreamAction(ctx, chatID, msg, false)
-	case "finalize":
-		if strings.TrimSpace(msg.Content) != "" {
-			// Final pass to recover rich formatting after conservative plain streaming.
-			if err := c.handleStreamAction(ctx, chatID, bus.OutboundMessage{
-				ChatID:    msg.ChatID,
-				ReplyToID: msg.ReplyToID,
-				Content:   msg.Content,
-				Action:    "stream",
-			}, true); err != nil {
-				return err
+	handlers := map[string]func() error{
+		"edit": func() error {
+			htmlContent := clampTelegramHTML(msg.Content, telegramSafeHTMLMaxRunes)
+			editCtx, cancel := withTelegramAPITimeout(ctx)
+			defer cancel()
+			_, err := c.bot.EditMessageText(editCtx, &telego.EditMessageTextParams{ChatID: telegoutil.ID(chatID), MessageID: messageID, Text: htmlContent, ParseMode: telego.ModeHTML})
+			return err
+		},
+		"stream": func() error {
+			return c.handleStreamAction(ctx, chatID, msg, false)
+		},
+		"finalize": func() error {
+			if strings.TrimSpace(msg.Content) != "" {
+				// Final pass to recover rich formatting after conservative plain streaming.
+				if err := c.handleStreamAction(ctx, chatID, bus.OutboundMessage{
+					ChatID:    msg.ChatID,
+					ReplyToID: msg.ReplyToID,
+					Content:   msg.Content,
+					Action:    "stream",
+				}, true); err != nil {
+					return err
+				}
 			}
-		}
-		streamKey := telegramStreamKey(chatID, msg.ReplyToID)
-		c.streamMu.Lock()
-		delete(c.streamState, streamKey)
-		c.streamMu.Unlock()
-		return nil
-	case "delete":
-		delCtx, cancel := withTelegramAPITimeout(ctx)
-		defer cancel()
-		return c.bot.DeleteMessage(delCtx, &telego.DeleteMessageParams{ChatID: telegoutil.ID(chatID), MessageID: messageID})
-	case "react":
-		reactCtx, cancel := withTelegramAPITimeout(ctx)
-		defer cancel()
-		emoji := strings.TrimSpace(msg.Emoji)
-		if emoji == "" {
-			return fmt.Errorf("emoji required for react action")
-		}
-		return c.bot.SetMessageReaction(reactCtx, &telego.SetMessageReactionParams{
-			ChatID:    telegoutil.ID(chatID),
-			MessageID: messageID,
-			Reaction:  []telego.ReactionType{&telego.ReactionTypeEmoji{Emoji: emoji}},
-		})
-	default:
-		return fmt.Errorf("unsupported telegram action: %s", action)
+			streamKey := telegramStreamKey(chatID, msg.ReplyToID)
+			c.streamMu.Lock()
+			delete(c.streamState, streamKey)
+			c.streamMu.Unlock()
+			return nil
+		},
+		"delete": func() error {
+			delCtx, cancel := withTelegramAPITimeout(ctx)
+			defer cancel()
+			return c.bot.DeleteMessage(delCtx, &telego.DeleteMessageParams{ChatID: telegoutil.ID(chatID), MessageID: messageID})
+		},
+		"react": func() error {
+			reactCtx, cancel := withTelegramAPITimeout(ctx)
+			defer cancel()
+			emoji := strings.TrimSpace(msg.Emoji)
+			if emoji == "" {
+				return fmt.Errorf("emoji required for react action")
+			}
+			return c.bot.SetMessageReaction(reactCtx, &telego.SetMessageReactionParams{
+				ChatID:    telegoutil.ID(chatID),
+				MessageID: messageID,
+				Reaction:  []telego.ReactionType{&telego.ReactionTypeEmoji{Emoji: emoji}},
+			})
+		},
 	}
+	if handler := handlers[action]; handler != nil {
+		return handler()
+	}
+	return fmt.Errorf("unsupported telegram action: %s", action)
 }
 
 func parseTelegramMessageID(raw string) (int, bool) {

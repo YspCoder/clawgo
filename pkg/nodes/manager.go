@@ -47,7 +47,52 @@ type DispatchPolicy struct {
 
 var defaultManager = NewManager()
 
+var nodeActionCapabilityChecks = map[string]func(Capabilities) bool{
+	"run":             func(c Capabilities) bool { return c.Run },
+	"agent_task":      func(c Capabilities) bool { return c.Model },
+	"camera_snap":     func(c Capabilities) bool { return c.Camera },
+	"camera_clip":     func(c Capabilities) bool { return c.Camera },
+	"screen_record":   func(c Capabilities) bool { return c.Screen },
+	"screen_snapshot": func(c Capabilities) bool { return c.Screen },
+	"location_get":    func(c Capabilities) bool { return c.Location },
+	"canvas_snapshot": func(c Capabilities) bool { return c.Canvas },
+	"canvas_action":   func(c Capabilities) bool { return c.Canvas },
+}
+
+var realtimePreferredActions = map[string]struct{}{
+	"camera_snap":     {},
+	"camera_clip":     {},
+	"screen_record":   {},
+	"screen_snapshot": {},
+	"canvas_snapshot": {},
+	"canvas_action":   {},
+}
+
+var wireMessageHandlers = map[string]func(*Manager, WireMessage) bool{
+	"node_response": handleWireNodeResponse,
+}
+
 func DefaultManager() *Manager { return defaultManager }
+
+func handleWireNodeResponse(m *Manager, msg WireMessage) bool {
+	if strings.TrimSpace(msg.ID) == "" {
+		return false
+	}
+	m.mu.Lock()
+	ch := m.pending[msg.ID]
+	if ch != nil {
+		delete(m.pending, msg.ID)
+	}
+	m.mu.Unlock()
+	if ch == nil {
+		return false
+	}
+	select {
+	case ch <- msg:
+	default:
+	}
+	return true
+}
 
 func NewManager() *Manager {
 	m := &Manager{
@@ -199,28 +244,10 @@ func (m *Manager) RegisterWireSender(nodeID string, sender WireSender) {
 }
 
 func (m *Manager) HandleWireMessage(msg WireMessage) bool {
-	switch strings.ToLower(strings.TrimSpace(msg.Type)) {
-	case "node_response":
-		if strings.TrimSpace(msg.ID) == "" {
-			return false
-		}
-		m.mu.Lock()
-		ch := m.pending[msg.ID]
-		if ch != nil {
-			delete(m.pending, msg.ID)
-		}
-		m.mu.Unlock()
-		if ch == nil {
-			return false
-		}
-		select {
-		case ch <- msg:
-		default:
-		}
-		return true
-	default:
-		return false
+	if handler := wireMessageHandlers[strings.ToLower(strings.TrimSpace(msg.Type))]; handler != nil {
+		return handler(m, msg)
 	}
+	return false
 }
 
 func (m *Manager) SendWireRequest(ctx context.Context, nodeID string, req Request) (Response, error) {
@@ -314,22 +341,10 @@ func nodeSupportsRequest(n NodeInfo, req Request) bool {
 			return false
 		}
 	}
-	switch action {
-	case "run":
-		return n.Capabilities.Run
-	case "agent_task":
-		return n.Capabilities.Model
-	case "camera_snap", "camera_clip":
-		return n.Capabilities.Camera
-	case "screen_record", "screen_snapshot":
-		return n.Capabilities.Screen
-	case "location_get":
-		return n.Capabilities.Location
-	case "canvas_snapshot", "canvas_action":
-		return n.Capabilities.Canvas
-	default:
-		return n.Capabilities.Invoke
+	if check := nodeActionCapabilityChecks[action]; check != nil {
+		return check(n.Capabilities)
 	}
+	return n.Capabilities.Invoke
 }
 
 func (m *Manager) PickFor(action string) (NodeInfo, bool) {
@@ -595,12 +610,8 @@ func nodeHasAgent(n NodeInfo, agentID string) bool {
 }
 
 func prefersRealtimeTransport(action string) bool {
-	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "camera_snap", "camera_clip", "screen_record", "screen_snapshot", "canvas_snapshot", "canvas_action":
-		return true
-	default:
-		return false
-	}
+	_, ok := realtimePreferredActions[strings.ToLower(strings.TrimSpace(action))]
+	return ok
 }
 
 func (m *Manager) reaperLoop() {

@@ -144,25 +144,37 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 	}
 	messageID := MapStringArg(args, "message_id")
 	emoji := MapStringArg(args, "emoji")
-
-	switch action {
-	case "send":
-		if content == "" && media == "" {
-			return "", fmt.Errorf("%w: message/content or media for action=send", ErrMissingField)
+	validators := map[string]func() error{
+		"send": func() error {
+			if content == "" && media == "" {
+				return fmt.Errorf("%w: message/content or media for action=send", ErrMissingField)
+			}
+			return nil
+		},
+		"edit": func() error {
+			if messageID == "" || content == "" {
+				return fmt.Errorf("%w: message_id and message/content for action=edit", ErrMissingField)
+			}
+			return nil
+		},
+		"delete": func() error {
+			if messageID == "" {
+				return fmt.Errorf("%w: message_id for action=delete", ErrMissingField)
+			}
+			return nil
+		},
+		"react": func() error {
+			if messageID == "" || emoji == "" {
+				return fmt.Errorf("%w: message_id and emoji for action=react", ErrMissingField)
+			}
+			return nil
+		},
+	}
+	if validate := validators[action]; validate != nil {
+		if err := validate(); err != nil {
+			return "", err
 		}
-	case "edit":
-		if messageID == "" || content == "" {
-			return "", fmt.Errorf("%w: message_id and message/content for action=edit", ErrMissingField)
-		}
-	case "delete":
-		if messageID == "" {
-			return "", fmt.Errorf("%w: message_id for action=delete", ErrMissingField)
-		}
-	case "react":
-		if messageID == "" || emoji == "" {
-			return "", fmt.Errorf("%w: message_id and emoji for action=react", ErrMissingField)
-		}
-	default:
+	} else {
 		return "", fmt.Errorf("%w: %s", ErrUnsupportedAction, action)
 	}
 

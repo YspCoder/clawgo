@@ -96,6 +96,127 @@ type subagentDigestState struct {
 	dueAt   time.Time
 }
 
+type localNodeActionHandler func(nodes.Request) nodes.Response
+
+var localNodeActionHandlers = map[string]localNodeActionHandler{
+	"run":             handleLocalNodeRun,
+	"agent_task":      handleLocalNodeAgentTask,
+	"camera_snap":     handleLocalNodeCameraSnap,
+	"camera_clip":     handleLocalNodeCameraClip,
+	"screen_snapshot": handleLocalNodeScreenSnapshot,
+	"screen_record":   handleLocalNodeScreenRecord,
+	"location_get":    handleLocalNodeLocationGet,
+	"canvas_snapshot": handleLocalNodeCanvasSnapshot,
+	"canvas_action":   handleLocalNodeCanvasAction,
+}
+
+var fallbackProviderPriority = map[string]int{
+	"claude":               10,
+	"codex":                20,
+	"gemini":               30,
+	"gemini-cli":           40,
+	"aistudio":             50,
+	"vertex":               60,
+	"antigravity":          70,
+	"qwen":                 80,
+	"kimi":                 90,
+	"iflow":                100,
+	"openai-compatibility": 110,
+}
+
+func localSimulatedPayload(extra map[string]interface{}) map[string]interface{} {
+	payload := map[string]interface{}{
+		"transport": "relay-local",
+		"simulated": true,
+	}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	return payload
+}
+
+func handleLocalNodeRun(req nodes.Request) nodes.Response {
+	payload := localSimulatedPayload(nil)
+	if cmdRaw, ok := req.Args["command"].([]interface{}); ok && len(cmdRaw) > 0 {
+		parts := make([]string, 0, len(cmdRaw))
+		for _, x := range cmdRaw {
+			parts = append(parts, fmt.Sprint(x))
+		}
+		payload["command"] = parts
+	}
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: payload}
+}
+
+func handleLocalNodeAgentTask(req nodes.Request) nodes.Response {
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: localSimulatedPayload(map[string]interface{}{
+		"model":  req.Model,
+		"task":   req.Task,
+		"result": "local child-model simulated execution completed",
+	})}
+}
+
+func handleLocalNodeCameraSnap(req nodes.Request) nodes.Response {
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: localSimulatedPayload(map[string]interface{}{
+		"media_type": "image",
+		"storage":    "inline",
+		"facing":     req.Args["facing"],
+		"meta":       map[string]interface{}{"width": 1280, "height": 720},
+	})}
+}
+
+func handleLocalNodeCameraClip(req nodes.Request) nodes.Response {
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: localSimulatedPayload(map[string]interface{}{
+		"media_type":  "video",
+		"storage":     "path",
+		"path":        "/tmp/camera_clip.mp4",
+		"duration_ms": req.Args["duration_ms"],
+		"meta":        map[string]interface{}{"fps": 30},
+	})}
+}
+
+func handleLocalNodeScreenSnapshot(req nodes.Request) nodes.Response {
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: localSimulatedPayload(map[string]interface{}{
+		"media_type": "image",
+		"storage":    "inline",
+		"meta":       map[string]interface{}{"width": 1920, "height": 1080},
+	})}
+}
+
+func handleLocalNodeScreenRecord(req nodes.Request) nodes.Response {
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: localSimulatedPayload(map[string]interface{}{
+		"media_type":  "video",
+		"storage":     "path",
+		"path":        "/tmp/screen_record.mp4",
+		"duration_ms": req.Args["duration_ms"],
+		"meta":        map[string]interface{}{"fps": 30},
+	})}
+}
+
+func handleLocalNodeLocationGet(req nodes.Request) nodes.Response {
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: localSimulatedPayload(map[string]interface{}{
+		"lat":      0.0,
+		"lng":      0.0,
+		"accuracy": "simulated",
+		"meta":     map[string]interface{}{"provider": "simulated"},
+	})}
+}
+
+func handleLocalNodeCanvasSnapshot(req nodes.Request) nodes.Response {
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: localSimulatedPayload(map[string]interface{}{
+		"image":      "data:image/png;base64,<simulated>",
+		"media_type": "image",
+		"storage":    "inline",
+		"meta":       map[string]interface{}{"width": 1280, "height": 720},
+	})}
+}
+
+func handleLocalNodeCanvasAction(req nodes.Request) nodes.Response {
+	return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: localSimulatedPayload(map[string]interface{}{
+		"applied": true,
+		"args":    req.Args,
+	})}
+}
+
 func (al *AgentLoop) SetConfigPath(path string) {
 	if al == nil {
 		return
@@ -170,36 +291,10 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	nodesManager.SetStatePath(filepath.Join(workspace, "memory", "nodes-state.json"))
 	nodesManager.Upsert(nodes.NodeInfo{ID: "local", Name: "local", Capabilities: nodes.Capabilities{Run: true, Invoke: true, Model: true, Camera: true, Screen: true, Location: true, Canvas: true}, Models: []string{"local-sim"}, Online: true})
 	nodesManager.RegisterHandler("local", func(req nodes.Request) nodes.Response {
-		switch req.Action {
-		case "run":
-			payload := map[string]interface{}{"transport": "relay-local", "simulated": true}
-			if cmdRaw, ok := req.Args["command"].([]interface{}); ok && len(cmdRaw) > 0 {
-				parts := make([]string, 0, len(cmdRaw))
-				for _, x := range cmdRaw {
-					parts = append(parts, fmt.Sprint(x))
-				}
-				payload["command"] = parts
-			}
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: payload}
-		case "agent_task":
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "simulated": true, "model": req.Model, "task": req.Task, "result": "local child-model simulated execution completed"}}
-		case "camera_snap":
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "media_type": "image", "storage": "inline", "facing": req.Args["facing"], "simulated": true, "meta": map[string]interface{}{"width": 1280, "height": 720}}}
-		case "camera_clip":
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "media_type": "video", "storage": "path", "path": "/tmp/camera_clip.mp4", "duration_ms": req.Args["duration_ms"], "simulated": true, "meta": map[string]interface{}{"fps": 30}}}
-		case "screen_snapshot":
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "media_type": "image", "storage": "inline", "simulated": true, "meta": map[string]interface{}{"width": 1920, "height": 1080}}}
-		case "screen_record":
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "media_type": "video", "storage": "path", "path": "/tmp/screen_record.mp4", "duration_ms": req.Args["duration_ms"], "simulated": true, "meta": map[string]interface{}{"fps": 30}}}
-		case "location_get":
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "lat": 0.0, "lng": 0.0, "accuracy": "simulated", "meta": map[string]interface{}{"provider": "simulated"}}}
-		case "canvas_snapshot":
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "image": "data:image/png;base64,<simulated>", "media_type": "image", "storage": "inline", "simulated": true, "meta": map[string]interface{}{"width": 1280, "height": 720}}}
-		case "canvas_action":
-			return nodes.Response{OK: true, Code: "ok", Node: "local", Action: req.Action, Payload: map[string]interface{}{"transport": "relay-local", "applied": true, "simulated": true, "args": req.Args}}
-		default:
-			return nodes.Response{OK: false, Code: "unsupported_action", Node: "local", Action: req.Action, Error: "unsupported local simulated action"}
+		if handler := localNodeActionHandlers[req.Action]; handler != nil {
+			return handler(req)
 		}
+		return nodes.Response{OK: false, Code: "unsupported_action", Node: "local", Action: req.Action, Error: "unsupported local simulated action"}
 	})
 	nodeDispatchPolicy := nodes.DispatchPolicy{
 		PreferLocal:        cfg.Gateway.Nodes.Dispatch.PreferLocal,
@@ -733,32 +828,10 @@ func (al *AgentLoop) ensureProviderCandidate(candidate providerCandidate) (provi
 }
 
 func automaticFallbackPriority(name string) int {
-	switch normalizeFallbackProviderName(name) {
-	case "claude":
-		return 10
-	case "codex":
-		return 20
-	case "gemini":
-		return 30
-	case "gemini-cli":
-		return 40
-	case "aistudio":
-		return 50
-	case "vertex":
-		return 60
-	case "antigravity":
-		return 70
-	case "qwen":
-		return 80
-	case "kimi":
-		return 90
-	case "iflow":
-		return 100
-	case "openai-compatibility":
-		return 110
-	default:
-		return 1000
+	if priority, ok := fallbackProviderPriority[normalizeFallbackProviderName(name)]; ok {
+		return priority
 	}
+	return 1000
 }
 
 func normalizeFallbackProviderName(name string) string {
@@ -871,15 +944,13 @@ func buildAuditTaskID(msg bus.InboundMessage) string {
 		trigger = strings.ToLower(strings.TrimSpace(msg.Metadata["trigger"]))
 	}
 	sessionPart := shortSessionKey(msg.SessionKey)
-	switch trigger {
-	case "heartbeat":
+	if trigger == "heartbeat" {
 		if sessionPart == "" {
 			sessionPart = "default"
 		}
 		return "heartbeat:" + sessionPart
-	default:
-		return fmt.Sprintf("%s-%d", sessionPart, time.Now().Unix()%100000)
 	}
+	return fmt.Sprintf("%s-%d", sessionPart, time.Now().Unix()%100000)
 }
 
 func (al *AgentLoop) appendTaskAudit(taskID string, msg bus.InboundMessage, started time.Time, runErr error, suppressed bool) {
@@ -2185,9 +2256,7 @@ func withToolContextArgs(toolName string, args map[string]interface{}, channel, 
 	if channel == "" || chatID == "" {
 		return args
 	}
-	switch toolName {
-	case "message", "spawn", "remind":
-	default:
+	if !toolContextEligibleTool(toolName) {
 		return args
 	}
 
@@ -2254,9 +2323,7 @@ func withToolMemoryNamespaceArgs(toolName string, args map[string]interface{}, n
 	if ns == "main" {
 		return args
 	}
-	switch strings.TrimSpace(toolName) {
-	case "memory_search", "memory_get", "memory_write":
-	default:
+	if !toolNeedsMemoryNamespace(toolName) {
 		return args
 	}
 
@@ -2356,12 +2423,34 @@ func validateParallelAllowlistArgs(allow map[string]struct{}, args map[string]in
 }
 
 func isImplicitlyAllowedSubagentTool(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "skill_exec":
-		return true
-	default:
-		return false
-	}
+	_, ok := implicitSubagentToolSet[strings.ToLower(strings.TrimSpace(name))]
+	return ok
+}
+
+var toolContextEligibleSet = map[string]struct{}{
+	"message": {},
+	"spawn":   {},
+	"remind":  {},
+}
+
+func toolContextEligibleTool(name string) bool {
+	_, ok := toolContextEligibleSet[strings.TrimSpace(name)]
+	return ok
+}
+
+var toolMemoryNamespaceSet = map[string]struct{}{
+	"memory_search": {},
+	"memory_get":    {},
+	"memory_write":  {},
+}
+
+func toolNeedsMemoryNamespace(name string) bool {
+	_, ok := toolMemoryNamespaceSet[strings.TrimSpace(name)]
+	return ok
+}
+
+var implicitSubagentToolSet = map[string]struct{}{
+	"skill_exec": {},
 }
 
 func normalizeToolAllowlist(in []string) map[string]struct{} {

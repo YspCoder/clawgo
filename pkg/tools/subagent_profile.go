@@ -563,149 +563,171 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 	}
 	action := strings.ToLower(MapStringArg(args, "action"))
 	agentID := normalizeSubagentIdentifier(MapStringArg(args, "agent_id"))
-
-	switch action {
-	case "list":
-		items, err := t.store.List()
-		if err != nil {
-			return "", err
-		}
-		if len(items) == 0 {
-			return "No subagent profiles.", nil
-		}
-		var sb strings.Builder
-		sb.WriteString("Subagent Profiles:\n")
-		for i, p := range items {
-			sb.WriteString(fmt.Sprintf("- #%d %s [%s] role=%s memory_ns=%s\n", i+1, p.AgentID, p.Status, p.Role, p.MemoryNamespace))
-		}
-		return strings.TrimSpace(sb.String()), nil
-	case "get":
-		if agentID == "" {
-			return "agent_id is required", nil
-		}
-		p, ok, err := t.store.Get(agentID)
-		if err != nil {
-			return "", err
-		}
-		if !ok {
-			return "subagent profile not found", nil
-		}
-		b, _ := json.MarshalIndent(p, "", "  ")
-		return string(b), nil
-	case "create":
-		if agentID == "" {
-			return "agent_id is required", nil
-		}
-		if _, ok, err := t.store.Get(agentID); err != nil {
-			return "", err
-		} else if ok {
-			return "subagent profile already exists", nil
-		}
-		p := SubagentProfile{
-			AgentID:          agentID,
-			Name:             stringArg(args, "name"),
-			NotifyMainPolicy: stringArg(args, "notify_main_policy"),
-			Role:             stringArg(args, "role"),
-			SystemPromptFile: stringArg(args, "system_prompt_file"),
-			MemoryNamespace:  stringArg(args, "memory_namespace"),
-			Status:           stringArg(args, "status"),
-			ToolAllowlist:    parseStringList(args["tool_allowlist"]),
-			MaxRetries:       profileIntArg(args, "max_retries"),
-			RetryBackoff:     profileIntArg(args, "retry_backoff_ms"),
-			TimeoutSec:       profileIntArg(args, "timeout_sec"),
-			MaxTaskChars:     profileIntArg(args, "max_task_chars"),
-			MaxResultChars:   profileIntArg(args, "max_result_chars"),
-		}
-		saved, err := t.store.Upsert(p)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("Created subagent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
-	case "update":
-		if agentID == "" {
-			return "agent_id is required", nil
-		}
-		existing, ok, err := t.store.Get(agentID)
-		if err != nil {
-			return "", err
-		}
-		if !ok {
-			return "subagent profile not found", nil
-		}
-		next := *existing
-		if _, ok := args["name"]; ok {
-			next.Name = stringArg(args, "name")
-		}
-		if _, ok := args["role"]; ok {
-			next.Role = stringArg(args, "role")
-		}
-		if _, ok := args["notify_main_policy"]; ok {
-			next.NotifyMainPolicy = stringArg(args, "notify_main_policy")
-		}
-		if _, ok := args["system_prompt_file"]; ok {
-			next.SystemPromptFile = stringArg(args, "system_prompt_file")
-		}
-		if _, ok := args["memory_namespace"]; ok {
-			next.MemoryNamespace = stringArg(args, "memory_namespace")
-		}
-		if _, ok := args["status"]; ok {
-			next.Status = stringArg(args, "status")
-		}
-		if _, ok := args["tool_allowlist"]; ok {
-			next.ToolAllowlist = parseStringList(args["tool_allowlist"])
-		}
-		if _, ok := args["max_retries"]; ok {
-			next.MaxRetries = profileIntArg(args, "max_retries")
-		}
-		if _, ok := args["retry_backoff_ms"]; ok {
-			next.RetryBackoff = profileIntArg(args, "retry_backoff_ms")
-		}
-		if _, ok := args["timeout_sec"]; ok {
-			next.TimeoutSec = profileIntArg(args, "timeout_sec")
-		}
-		if _, ok := args["max_task_chars"]; ok {
-			next.MaxTaskChars = profileIntArg(args, "max_task_chars")
-		}
-		if _, ok := args["max_result_chars"]; ok {
-			next.MaxResultChars = profileIntArg(args, "max_result_chars")
-		}
-		saved, err := t.store.Upsert(next)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("Updated subagent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
-	case "enable", "disable":
-		if agentID == "" {
-			return "agent_id is required", nil
-		}
-		existing, ok, err := t.store.Get(agentID)
-		if err != nil {
-			return "", err
-		}
-		if !ok {
-			return "subagent profile not found", nil
-		}
-		if action == "enable" {
+	type subagentProfileActionHandler func() (string, error)
+	handlers := map[string]subagentProfileActionHandler{
+		"list": func() (string, error) {
+			items, err := t.store.List()
+			if err != nil {
+				return "", err
+			}
+			if len(items) == 0 {
+				return "No subagent profiles.", nil
+			}
+			var sb strings.Builder
+			sb.WriteString("Subagent Profiles:\n")
+			for i, p := range items {
+				sb.WriteString(fmt.Sprintf("- #%d %s [%s] role=%s memory_ns=%s\n", i+1, p.AgentID, p.Status, p.Role, p.MemoryNamespace))
+			}
+			return strings.TrimSpace(sb.String()), nil
+		},
+		"get": func() (string, error) {
+			if agentID == "" {
+				return "agent_id is required", nil
+			}
+			p, ok, err := t.store.Get(agentID)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				return "subagent profile not found", nil
+			}
+			b, _ := json.MarshalIndent(p, "", "  ")
+			return string(b), nil
+		},
+		"create": func() (string, error) {
+			if agentID == "" {
+				return "agent_id is required", nil
+			}
+			if _, ok, err := t.store.Get(agentID); err != nil {
+				return "", err
+			} else if ok {
+				return "subagent profile already exists", nil
+			}
+			p := SubagentProfile{
+				AgentID:          agentID,
+				Name:             stringArg(args, "name"),
+				NotifyMainPolicy: stringArg(args, "notify_main_policy"),
+				Role:             stringArg(args, "role"),
+				SystemPromptFile: stringArg(args, "system_prompt_file"),
+				MemoryNamespace:  stringArg(args, "memory_namespace"),
+				Status:           stringArg(args, "status"),
+				ToolAllowlist:    parseStringList(args["tool_allowlist"]),
+				MaxRetries:       profileIntArg(args, "max_retries"),
+				RetryBackoff:     profileIntArg(args, "retry_backoff_ms"),
+				TimeoutSec:       profileIntArg(args, "timeout_sec"),
+				MaxTaskChars:     profileIntArg(args, "max_task_chars"),
+				MaxResultChars:   profileIntArg(args, "max_result_chars"),
+			}
+			saved, err := t.store.Upsert(p)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Created subagent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
+		},
+		"update": func() (string, error) {
+			if agentID == "" {
+				return "agent_id is required", nil
+			}
+			existing, ok, err := t.store.Get(agentID)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				return "subagent profile not found", nil
+			}
+			next := *existing
+			if _, ok := args["name"]; ok {
+				next.Name = stringArg(args, "name")
+			}
+			if _, ok := args["role"]; ok {
+				next.Role = stringArg(args, "role")
+			}
+			if _, ok := args["notify_main_policy"]; ok {
+				next.NotifyMainPolicy = stringArg(args, "notify_main_policy")
+			}
+			if _, ok := args["system_prompt_file"]; ok {
+				next.SystemPromptFile = stringArg(args, "system_prompt_file")
+			}
+			if _, ok := args["memory_namespace"]; ok {
+				next.MemoryNamespace = stringArg(args, "memory_namespace")
+			}
+			if _, ok := args["status"]; ok {
+				next.Status = stringArg(args, "status")
+			}
+			if _, ok := args["tool_allowlist"]; ok {
+				next.ToolAllowlist = parseStringList(args["tool_allowlist"])
+			}
+			if _, ok := args["max_retries"]; ok {
+				next.MaxRetries = profileIntArg(args, "max_retries")
+			}
+			if _, ok := args["retry_backoff_ms"]; ok {
+				next.RetryBackoff = profileIntArg(args, "retry_backoff_ms")
+			}
+			if _, ok := args["timeout_sec"]; ok {
+				next.TimeoutSec = profileIntArg(args, "timeout_sec")
+			}
+			if _, ok := args["max_task_chars"]; ok {
+				next.MaxTaskChars = profileIntArg(args, "max_task_chars")
+			}
+			if _, ok := args["max_result_chars"]; ok {
+				next.MaxResultChars = profileIntArg(args, "max_result_chars")
+			}
+			saved, err := t.store.Upsert(next)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Updated subagent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
+		},
+		"enable": func() (string, error) {
+			if agentID == "" {
+				return "agent_id is required", nil
+			}
+			existing, ok, err := t.store.Get(agentID)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				return "subagent profile not found", nil
+			}
 			existing.Status = "active"
-		} else {
+			saved, err := t.store.Upsert(*existing)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Subagent profile %s set to %s", saved.AgentID, saved.Status), nil
+		},
+		"disable": func() (string, error) {
+			if agentID == "" {
+				return "agent_id is required", nil
+			}
+			existing, ok, err := t.store.Get(agentID)
+			if err != nil {
+				return "", err
+			}
+			if !ok {
+				return "subagent profile not found", nil
+			}
 			existing.Status = "disabled"
-		}
-		saved, err := t.store.Upsert(*existing)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("Subagent profile %s set to %s", saved.AgentID, saved.Status), nil
-	case "delete":
-		if agentID == "" {
-			return "agent_id is required", nil
-		}
-		if err := t.store.Delete(agentID); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("Deleted subagent profile: %s", agentID), nil
-	default:
-		return "unsupported action", nil
+			saved, err := t.store.Upsert(*existing)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Subagent profile %s set to %s", saved.AgentID, saved.Status), nil
+		},
+		"delete": func() (string, error) {
+			if agentID == "" {
+				return "agent_id is required", nil
+			}
+			if err := t.store.Delete(agentID); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Deleted subagent profile: %s", agentID), nil
+		},
 	}
+	if handler := handlers[action]; handler != nil {
+		return handler()
+	}
+	return "unsupported action", nil
 }
 
 func stringArg(args map[string]interface{}, key string) string {

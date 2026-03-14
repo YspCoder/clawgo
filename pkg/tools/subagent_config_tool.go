@@ -69,16 +69,20 @@ func (t *SubagentConfigTool) SetConfigPath(path string) {
 
 func (t *SubagentConfigTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	_ = ctx
-	switch stringArgFromMap(args, "action") {
-	case "upsert":
-		result, err := UpsertConfigSubagent(t.getConfigPath(), cloneSubagentConfigArgs(args))
-		if err != nil {
-			return "", err
-		}
-		return marshalSubagentConfigPayload(result)
-	default:
-		return "", fmt.Errorf("unsupported action")
+	action := stringArgFromMap(args, "action")
+	handlers := map[string]func() (string, error){
+		"upsert": func() (string, error) {
+			result, err := UpsertConfigSubagent(t.getConfigPath(), cloneSubagentConfigArgs(args))
+			if err != nil {
+				return "", err
+			}
+			return marshalSubagentConfigPayload(result)
+		},
 	}
+	if handler := handlers[action]; handler != nil {
+		return handler()
+	}
+	return "", fmt.Errorf("%w: %s", ErrUnsupportedAction, action)
 }
 
 func (t *SubagentConfigTool) getConfigPath() string {

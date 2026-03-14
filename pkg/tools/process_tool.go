@@ -29,54 +29,58 @@ func (t *ProcessTool) Execute(ctx context.Context, args map[string]interface{}) 
 	if sid == "" {
 		sid = MapStringArg(args, "sessionId")
 	}
-	switch action {
-	case "list":
-		b, _ := json.Marshal(t.m.List())
-		return string(b), nil
-	case "log":
-		off := MapIntArg(args, "offset", 0)
-		lim := MapIntArg(args, "limit", 0)
-		return t.m.Log(sid, off, lim)
-	case "kill":
-		if err := t.m.Kill(sid); err != nil {
-			return "", err
-		}
-		return "killed", nil
-	case "poll":
-		timeout := MapIntArg(args, "timeout_ms", 0)
-		if timeout < 0 {
-			timeout = 0
-		}
-		s, ok := t.m.Get(sid)
-		if !ok {
-			return "", nil
-		}
-		if timeout > 0 {
-			select {
-			case <-s.done:
-			case <-time.After(time.Duration(timeout) * time.Millisecond):
-			case <-ctx.Done():
+	handlers := map[string]func() (string, error){
+		"list": func() (string, error) {
+			b, _ := json.Marshal(t.m.List())
+			return string(b), nil
+		},
+		"log": func() (string, error) {
+			return t.m.Log(sid, MapIntArg(args, "offset", 0), MapIntArg(args, "limit", 0))
+		},
+		"kill": func() (string, error) {
+			if err := t.m.Kill(sid); err != nil {
+				return "", err
 			}
-		}
-		off := MapIntArg(args, "offset", 0)
-		lim := MapIntArg(args, "limit", 0)
-		if lim <= 0 {
-			lim = 1200
-		}
-		if off < 0 {
-			off = 0
-		}
-		chunk, _ := t.m.Log(sid, off, lim)
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-		resp := map[string]interface{}{"id": s.ID, "running": s.ExitCode == nil, "started_at": s.StartedAt.Format(time.RFC3339), "log": chunk, "next_offset": off + len(chunk)}
-		if s.ExitCode != nil {
-			resp["exit_code"] = *s.ExitCode
-			resp["ended_at"] = s.EndedAt.Format(time.RFC3339)
-		}
-		b, _ := json.Marshal(resp)
-		return string(b), nil
-	default:
-		return "", nil
+			return "killed", nil
+		},
+		"poll": func() (string, error) {
+			timeout := MapIntArg(args, "timeout_ms", 0)
+			if timeout < 0 {
+				timeout = 0
+			}
+			s, ok := t.m.Get(sid)
+			if !ok {
+				return "", nil
+			}
+			if timeout > 0 {
+				select {
+				case <-s.done:
+				case <-time.After(time.Duration(timeout) * time.Millisecond):
+				case <-ctx.Done():
+				}
+			}
+			off := MapIntArg(args, "offset", 0)
+			lim := MapIntArg(args, "limit", 0)
+			if lim <= 0 {
+				lim = 1200
+			}
+			if off < 0 {
+				off = 0
+			}
+			chunk, _ := t.m.Log(sid, off, lim)
+			s.mu.RLock()
+			defer s.mu.RUnlock()
+			resp := map[string]interface{}{"id": s.ID, "running": s.ExitCode == nil, "started_at": s.StartedAt.Format(time.RFC3339), "log": chunk, "next_offset": off + len(chunk)}
+			if s.ExitCode != nil {
+				resp["exit_code"] = *s.ExitCode
+				resp["ended_at"] = s.EndedAt.Format(time.RFC3339)
+			}
+			b, _ := json.Marshal(resp)
+			return string(b), nil
+		},
 	}
+	if handler := handlers[action]; handler != nil {
+		return handler()
+	}
+	return "", nil
 }

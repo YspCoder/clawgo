@@ -111,31 +111,24 @@ type HTTPRelayTransport struct {
 
 func (s *HTTPRelayTransport) Name() string { return "relay" }
 
+var actionHTTPPaths = map[string]string{
+	"run":             "/run",
+	"invoke":          "/invoke",
+	"agent_task":      "/agent/task",
+	"camera_snap":     "/camera/snap",
+	"camera_clip":     "/camera/clip",
+	"screen_record":   "/screen/record",
+	"screen_snapshot": "/screen/snapshot",
+	"location_get":    "/location/get",
+	"canvas_snapshot": "/canvas/snapshot",
+	"canvas_action":   "/canvas/action",
+}
+
 func actionHTTPPath(action string) string {
-	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "run":
-		return "/run"
-	case "invoke":
-		return "/invoke"
-	case "agent_task":
-		return "/agent/task"
-	case "camera_snap":
-		return "/camera/snap"
-	case "camera_clip":
-		return "/camera/clip"
-	case "screen_record":
-		return "/screen/record"
-	case "screen_snapshot":
-		return "/screen/snapshot"
-	case "location_get":
-		return "/location/get"
-	case "canvas_snapshot":
-		return "/canvas/snapshot"
-	case "canvas_action":
-		return "/canvas/action"
-	default:
-		return "/invoke"
+	if path := actionHTTPPaths[strings.ToLower(strings.TrimSpace(action))]; path != "" {
+		return path
 	}
+	return "/invoke"
 }
 
 func DoEndpointRequest(ctx context.Context, client *http.Client, endpoint, token string, req Request) (Response, error) {
