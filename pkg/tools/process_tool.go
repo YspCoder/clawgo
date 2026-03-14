@@ -24,18 +24,18 @@ func (t *ProcessTool) Parameters() map[string]interface{} {
 }
 
 func (t *ProcessTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	action, _ := args["action"].(string)
-	sid, _ := args["session_id"].(string)
+	action := MapStringArg(args, "action")
+	sid := MapStringArg(args, "session_id")
 	if sid == "" {
-		sid, _ = args["sessionId"].(string)
+		sid = MapStringArg(args, "sessionId")
 	}
 	switch action {
 	case "list":
 		b, _ := json.Marshal(t.m.List())
 		return string(b), nil
 	case "log":
-		off := toInt(args["offset"])
-		lim := toInt(args["limit"])
+		off := MapIntArg(args, "offset", 0)
+		lim := MapIntArg(args, "limit", 0)
 		return t.m.Log(sid, off, lim)
 	case "kill":
 		if err := t.m.Kill(sid); err != nil {
@@ -43,7 +43,7 @@ func (t *ProcessTool) Execute(ctx context.Context, args map[string]interface{}) 
 		}
 		return "killed", nil
 	case "poll":
-		timeout := toInt(args["timeout_ms"])
+		timeout := MapIntArg(args, "timeout_ms", 0)
 		if timeout < 0 {
 			timeout = 0
 		}
@@ -58,8 +58,8 @@ func (t *ProcessTool) Execute(ctx context.Context, args map[string]interface{}) 
 			case <-ctx.Done():
 			}
 		}
-		off := toInt(args["offset"])
-		lim := toInt(args["limit"])
+		off := MapIntArg(args, "offset", 0)
+		lim := MapIntArg(args, "limit", 0)
 		if lim <= 0 {
 			lim = 1200
 		}
@@ -78,16 +78,5 @@ func (t *ProcessTool) Execute(ctx context.Context, args map[string]interface{}) 
 		return string(b), nil
 	default:
 		return "", nil
-	}
-}
-
-func toInt(v interface{}) int {
-	switch x := v.(type) {
-	case float64:
-		return int(x)
-	case int:
-		return x
-	default:
-		return 0
 	}
 }

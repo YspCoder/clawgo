@@ -337,6 +337,47 @@ func parseThreadSequence(threadID string) int {
 	return n
 }
 
+func threadToThreadRecord(thread *AgentThread) ThreadRecord {
+	if thread == nil {
+		return ThreadRecord{}
+	}
+	return ThreadRecord{
+		ID:           thread.ThreadID,
+		OwnerAgentID: thread.Owner,
+		Participants: append([]string(nil), thread.Participants...),
+		Status:       thread.Status,
+		Topic:        thread.Topic,
+		CreatedAt:    thread.CreatedAt,
+		UpdatedAt:    thread.UpdatedAt,
+	}
+}
+
+func messageToArtifactRecord(msg AgentMessage) ArtifactRecord {
+	agentID := strings.TrimSpace(msg.FromAgent)
+	if agentID == "" {
+		agentID = strings.TrimSpace(msg.ToAgent)
+	}
+	return ArtifactRecord{
+		ID:            msg.MessageID,
+		RunID:         msg.CorrelationID,
+		TaskID:        msg.CorrelationID,
+		ThreadID:      msg.ThreadID,
+		Kind:          "message",
+		Name:          msg.Type,
+		Content:       msg.Content,
+		AgentID:       agentID,
+		FromAgent:     msg.FromAgent,
+		ToAgent:       msg.ToAgent,
+		ReplyTo:       msg.ReplyTo,
+		CorrelationID: msg.CorrelationID,
+		Status:        msg.Status,
+		RequiresReply: msg.RequiresReply,
+		CreatedAt:     msg.CreatedAt,
+		Visible:       true,
+		SourceType:    "agent_message",
+	}
+}
+
 func parseMessageSequence(messageID string) int {
 	messageID = strings.TrimSpace(messageID)
 	if !strings.HasPrefix(messageID, "msg-") {

@@ -440,7 +440,7 @@ func GetConfigDir() string {
 
 func DefaultConfig() *Config {
 	configDir := GetConfigDir()
-	return &Config{
+	cfg := &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:         filepath.Join(configDir, "workspace"),
@@ -657,6 +657,8 @@ func DefaultConfig() *Config {
 			},
 		},
 	}
+	cfg.Normalize()
+	return cfg
 }
 
 func normalizeProviderNameAlias(name string) string {
@@ -767,6 +769,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+	cfg.Normalize()
 
 	return cfg, nil
 }

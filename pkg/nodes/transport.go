@@ -240,29 +240,29 @@ func normalizeArtifacts(payload map[string]interface{}, action string) []map[str
 	}
 
 	artifact := map[string]interface{}{}
-	if mediaType, _ := payload["media_type"].(string); strings.TrimSpace(mediaType) != "" {
-		artifact["kind"] = strings.TrimSpace(mediaType)
+	if mediaType := payloadString(payload, "media_type"); mediaType != "" {
+		artifact["kind"] = mediaType
 	}
-	if mimeType, _ := payload["mime_type"].(string); strings.TrimSpace(mimeType) != "" {
-		artifact["mime_type"] = strings.TrimSpace(mimeType)
+	if mimeType := payloadString(payload, "mime_type"); mimeType != "" {
+		artifact["mime_type"] = mimeType
 	}
-	if storage, _ := payload["storage"].(string); strings.TrimSpace(storage) != "" {
-		artifact["storage"] = strings.TrimSpace(storage)
+	if storage := payloadString(payload, "storage"); storage != "" {
+		artifact["storage"] = storage
 	}
-	if path, _ := payload["path"].(string); strings.TrimSpace(path) != "" {
-		artifact["path"] = filepath.Clean(strings.TrimSpace(path))
+	if path := payloadString(payload, "path"); path != "" {
+		artifact["path"] = filepath.Clean(path)
 	}
-	if url, _ := payload["url"].(string); strings.TrimSpace(url) != "" {
-		artifact["url"] = strings.TrimSpace(url)
+	if url := payloadString(payload, "url"); url != "" {
+		artifact["url"] = url
 	}
-	if image, _ := payload["image"].(string); strings.TrimSpace(image) != "" {
-		artifact["content_base64"] = strings.TrimSpace(image)
+	if image := payloadString(payload, "image"); image != "" {
+		artifact["content_base64"] = image
 	}
-	if text, _ := payload["content_text"].(string); strings.TrimSpace(text) != "" {
+	if text := payloadString(payload, "content_text"); text != "" {
 		artifact["content_text"] = text
 	}
-	if name, _ := payload["name"].(string); strings.TrimSpace(name) != "" {
-		artifact["name"] = strings.TrimSpace(name)
+	if name := payloadString(payload, "name"); name != "" {
+		artifact["name"] = name
 	}
 	if size := int64FromPayload(payload["size_bytes"]); size > 0 {
 		artifact["size_bytes"] = size
@@ -277,34 +277,52 @@ func normalizeArtifacts(payload map[string]interface{}, action string) []map[str
 }
 
 func normalizeArtifactList(raw interface{}) []map[string]interface{} {
-	items, ok := raw.([]interface{})
-	if !ok {
-		return []map[string]interface{}{}
-	}
-	out := make([]map[string]interface{}, 0, len(items))
-	for _, item := range items {
-		row, ok := item.(map[string]interface{})
-		if !ok || len(row) == 0 {
-			continue
-		}
-		normalized := map[string]interface{}{}
-		for _, key := range []string{"id", "name", "kind", "mime_type", "storage", "path", "url", "content_text", "content_base64", "source_path"} {
-			if value, ok := row[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
-				normalized[key] = value
+	switch items := raw.(type) {
+	case []map[string]interface{}:
+		out := make([]map[string]interface{}, 0, len(items))
+		for _, item := range items {
+			if normalized, ok := normalizeArtifactRow(item); ok {
+				out = append(out, normalized)
 			}
 		}
-		if truncated, ok := row["truncated"].(bool); ok && truncated {
-			normalized["truncated"] = true
+		return out
+	case []interface{}:
+		out := make([]map[string]interface{}, 0, len(items))
+		for _, item := range items {
+			row, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if normalized, ok := normalizeArtifactRow(row); ok {
+				out = append(out, normalized)
+			}
 		}
-		if size := int64FromPayload(row["size_bytes"]); size > 0 {
-			normalized["size_bytes"] = size
-		}
-		if len(normalized) == 0 {
-			continue
-		}
-		out = append(out, normalized)
+		return out
+	default:
+		return []map[string]interface{}{}
 	}
-	return out
+}
+
+func normalizeArtifactRow(row map[string]interface{}) (map[string]interface{}, bool) {
+	if len(row) == 0 {
+		return nil, false
+	}
+	normalized := map[string]interface{}{}
+	for _, key := range []string{"id", "name", "kind", "mime_type", "storage", "path", "url", "content_text", "content_base64", "source_path"} {
+		if value, ok := row[key]; ok && strings.TrimSpace(fmt.Sprint(value)) != "" {
+			normalized[key] = value
+		}
+	}
+	if truncated, ok := row["truncated"].(bool); ok && truncated {
+		normalized["truncated"] = true
+	}
+	if size := int64FromPayload(row["size_bytes"]); size > 0 {
+		normalized["size_bytes"] = size
+	}
+	if len(normalized) == 0 {
+		return nil, false
+	}
+	return normalized, true
 }
 
 func int64FromPayload(v interface{}) int64 {
@@ -318,7 +336,21 @@ func int64FromPayload(v interface{}) int64 {
 	case json.Number:
 		n, _ := value.Int64()
 		return n
+	case string:
+		n, _ := json.Number(strings.TrimSpace(value)).Int64()
+		return n
 	default:
 		return 0
 	}
+}
+
+func payloadString(payload map[string]interface{}, key string) string {
+	if payload == nil {
+		return ""
+	}
+	v, ok := payload[key]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(v))
 }

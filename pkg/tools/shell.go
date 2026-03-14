@@ -65,13 +65,13 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 }
 
 func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	command, ok := args["command"].(string)
-	if !ok {
+	command := MapRawStringArg(args, "command")
+	if strings.TrimSpace(command) == "" {
 		return "", fmt.Errorf("command is required")
 	}
 
 	cwd := t.workingDir
-	if wd, ok := args["working_dir"].(string); ok && wd != "" {
+	if wd := MapStringArg(args, "working_dir"); wd != "" {
 		cwd = wd
 	}
 
@@ -87,7 +87,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 	}
 	globalCommandWatchdog.setQueuePath(resolveCommandQueuePath(queueBase))
 
-	if bg, _ := args["background"].(bool); bg {
+	if bg, _ := MapBoolArg(args, "background"); bg {
 		if t.procManager == nil {
 			return "", fmt.Errorf("background process manager not configured")
 		}

@@ -70,8 +70,6 @@ type Server struct {
 	liveRuntimeMu   sync.Mutex
 	liveRuntimeSubs map[chan []byte]struct{}
 	liveRuntimeOn   bool
-	liveSubagentMu  sync.Mutex
-	liveSubagents   map[string]*liveSubagentGroup
 	whatsAppBridge  *channels.WhatsAppBridgeService
 	whatsAppBase    string
 	oauthFlowMu     sync.Mutex
@@ -100,7 +98,6 @@ func NewServer(host string, port int, token string, mgr *nodes.Manager) *Server 
 		nodeSockets:     map[string]*nodeSocketConn{},
 		artifactStats:   map[string]interface{}{},
 		liveRuntimeSubs: map[chan []byte]struct{}{},
-		liveSubagents:   map[string]*liveSubagentGroup{},
 		oauthFlows:      map[string]*providers.OAuthPendingFlow{},
 		extraRoutes:     map[string]http.Handler{},
 	}
@@ -110,13 +107,6 @@ type nodeSocketConn struct {
 	connID string
 	conn   *websocket.Conn
 	mu     sync.Mutex
-}
-
-type liveSubagentGroup struct {
-	taskID        string
-	previewTaskID string
-	subs          map[chan []byte]struct{}
-	stopCh        chan struct{}
 }
 
 func (c *nodeSocketConn) Send(msg nodes.WireMessage) error {
@@ -210,87 +200,6 @@ func (s *Server) publishRuntimeSnapshot(ctx context.Context) bool {
 	return true
 }
 
-func buildSubagentLiveKey(taskID, previewTaskID string) string {
-	return strings.TrimSpace(taskID) + "\x00" + strings.TrimSpace(previewTaskID)
-}
-
-func (s *Server) subscribeSubagentLive(ctx context.Context, taskID, previewTaskID string) chan []byte {
-	ch := make(chan []byte, 1)
-	key := buildSubagentLiveKey(taskID, previewTaskID)
-	s.liveSubagentMu.Lock()
-	group := s.liveSubagents[key]
-	if group == nil {
-		group = &liveSubagentGroup{
-			taskID:        strings.TrimSpace(taskID),
-			previewTaskID: strings.TrimSpace(previewTaskID),
-			subs:          map[chan []byte]struct{}{},
-			stopCh:        make(chan struct{}),
-		}
-		s.liveSubagents[key] = group
-		go s.subagentLiveLoop(key, group)
-	}
-	group.subs[ch] = struct{}{}
-	s.liveSubagentMu.Unlock()
-	go func() {
-		<-ctx.Done()
-		s.unsubscribeSubagentLive(key, ch)
-	}()
-	return ch
-}
-
-func (s *Server) unsubscribeSubagentLive(key string, ch chan []byte) {
-	s.liveSubagentMu.Lock()
-	group := s.liveSubagents[key]
-	if group == nil {
-		s.liveSubagentMu.Unlock()
-		return
-	}
-	delete(group.subs, ch)
-	if len(group.subs) == 0 {
-		delete(s.liveSubagents, key)
-		close(group.stopCh)
-	}
-	s.liveSubagentMu.Unlock()
-}
-
-func (s *Server) subagentLiveLoop(key string, group *liveSubagentGroup) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		if !s.publishSubagentLiveSnapshot(context.Background(), key, group.taskID, group.previewTaskID) {
-			return
-		}
-		select {
-		case <-group.stopCh:
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func (s *Server) publishSubagentLiveSnapshot(ctx context.Context, key, taskID, previewTaskID string) bool {
-	if s == nil {
-		return false
-	}
-	payload := map[string]interface{}{
-		"ok":      true,
-		"type":    "subagents_live",
-		"payload": s.buildSubagentsLivePayload(ctx, taskID, previewTaskID),
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return false
-	}
-	s.liveSubagentMu.Lock()
-	defer s.liveSubagentMu.Unlock()
-	group := s.liveSubagents[key]
-	if group == nil || len(group.subs) == 0 {
-		return false
-	}
-	publishLiveSnapshot(group.subs, data)
-	return true
-}
-
 func (s *Server) SetConfigPath(path string)    { s.configPath = strings.TrimSpace(path) }
 func (s *Server) SetWorkspacePath(path string) { s.workspacePath = strings.TrimSpace(path) }
 func (s *Server) SetLogFilePath(path string)   { s.logFilePath = strings.TrimSpace(path) }
@@ -369,6 +278,35 @@ func joinServerRoute(base, endpoint string) string {
 		return "/" + strings.TrimPrefix(endpoint, "/")
 	}
 	return base + "/" + strings.TrimPrefix(endpoint, "/")
+}
+
+func writeJSON(w http.ResponseWriter, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeJSONStatus(w http.ResponseWriter, code int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func queryBoundedPositiveInt(r *http.Request, key string, fallback int, max int) int {
+	if r == nil {
+		return fallback
+	}
+	value := strings.TrimSpace(r.URL.Query().Get(strings.TrimSpace(key)))
+	if value == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	if max > 0 && n > max {
+		return max
+	}
+	return n
 }
 
 func (s *Server) rememberNodeConnection(nodeID, connID string) {
@@ -465,7 +403,6 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/config", s.handleWebUIConfig)
 	mux.HandleFunc("/api/chat", s.handleWebUIChat)
 	mux.HandleFunc("/api/chat/history", s.handleWebUIChatHistory)
-	mux.HandleFunc("/api/chat/stream", s.handleWebUIChatStream)
 	mux.HandleFunc("/api/chat/live", s.handleWebUIChatLive)
 	mux.HandleFunc("/api/runtime", s.handleWebUIRuntime)
 	mux.HandleFunc("/api/version", s.handleWebUIVersion)
@@ -475,7 +412,6 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/provider/oauth/accounts", s.handleWebUIProviderOAuthAccounts)
 	mux.HandleFunc("/api/provider/models", s.handleWebUIProviderModels)
 	mux.HandleFunc("/api/provider/runtime", s.handleWebUIProviderRuntime)
-	mux.HandleFunc("/api/provider/runtime/summary", s.handleWebUIProviderRuntimeSummary)
 	mux.HandleFunc("/api/whatsapp/status", s.handleWebUIWhatsAppStatus)
 	mux.HandleFunc("/api/whatsapp/logout", s.handleWebUIWhatsAppLogout)
 	mux.HandleFunc("/api/whatsapp/qr.svg", s.handleWebUIWhatsAppQR)
@@ -492,17 +428,13 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/skills", s.handleWebUISkills)
 	mux.HandleFunc("/api/sessions", s.handleWebUISessions)
 	mux.HandleFunc("/api/memory", s.handleWebUIMemory)
-	mux.HandleFunc("/api/subagent_profiles", s.handleWebUISubagentProfiles)
+	mux.HandleFunc("/api/workspace_file", s.handleWebUIWorkspaceFile)
 	mux.HandleFunc("/api/subagents_runtime", s.handleWebUISubagentsRuntime)
-	mux.HandleFunc("/api/subagents_runtime/live", s.handleWebUISubagentsRuntimeLive)
 	mux.HandleFunc("/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
 	mux.HandleFunc("/api/tools", s.handleWebUITools)
 	mux.HandleFunc("/api/mcp/install", s.handleWebUIMCPInstall)
-	mux.HandleFunc("/api/task_audit", s.handleWebUITaskAudit)
 	mux.HandleFunc("/api/task_queue", s.handleWebUITaskQueue)
 	mux.HandleFunc("/api/ekg_stats", s.handleWebUIEKGStats)
-	mux.HandleFunc("/api/exec_approvals", s.handleWebUIExecApprovals)
-	mux.HandleFunc("/api/logs/stream", s.handleWebUILogsStream)
 	mux.HandleFunc("/api/logs/live", s.handleWebUILogsLive)
 	mux.HandleFunc("/api/logs/recent", s.handleWebUILogsRecent)
 	s.extraRoutesMu.RLock()
@@ -573,8 +505,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mgr.Upsert(n)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": n.ID})
+	writeJSON(w, map[string]interface{}{"ok": true, "id": n.ID})
 }
 
 func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
@@ -601,8 +532,7 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	n.LastSeenAt = time.Now().UTC()
 	n.Online = true
 	s.mgr.Upsert(n)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": body.ID})
+	writeJSON(w, map[string]interface{}{"ok": true, "id": body.ID})
 }
 
 func (s *Server) handleNodeConnect(w http.ResponseWriter, r *http.Request) {
@@ -814,6 +744,31 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "normalized") {
+			cfg, err := cfgpkg.LoadConfig(s.configPath)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			payload := map[string]interface{}{
+				"ok":         true,
+				"config":     cfg.NormalizedView(),
+				"raw_config": cfg,
+			}
+			if r.URL.Query().Get("include_hot_reload_fields") == "1" {
+				info := hotReloadFieldInfo()
+				paths := make([]string, 0, len(info))
+				for _, it := range info {
+					if p := stringFromMap(it, "path"); p != "" {
+						paths = append(paths, p)
+					}
+				}
+				payload["hot_reload_fields"] = paths
+				payload["hot_reload_field_details"] = info
+			}
+			writeJSON(w, payload)
+			return
+		}
 		b, err := os.ReadFile(s.configPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -831,15 +786,14 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 		merged = mergeJSONMap(merged, loaded)
 
 		if r.URL.Query().Get("include_hot_reload_fields") == "1" || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "hot") {
-			w.Header().Set("Content-Type", "application/json")
 			info := hotReloadFieldInfo()
 			paths := make([]string, 0, len(info))
 			for _, it := range info {
-				if p, ok := it["path"].(string); ok && strings.TrimSpace(p) != "" {
+				if p := stringFromMap(it, "path"); p != "" {
 					paths = append(paths, p)
 				}
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			writeJSON(w, map[string]interface{}{
 				"ok":                       true,
 				"config":                   merged,
 				"hot_reload_fields":        paths,
@@ -856,23 +810,31 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		confirmRisky, _ := body["confirm_risky"].(bool)
+		confirmRisky, _ := tools.MapBoolArg(body, "confirm_risky")
 		delete(body, "confirm_risky")
 
 		oldCfgRaw, _ := os.ReadFile(s.configPath)
 		var oldMap map[string]interface{}
 		_ = json.Unmarshal(oldCfgRaw, &oldMap)
+		riskyOldMap := oldMap
+		riskyNewMap := body
+		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "normalized") {
+			if loaded, err := cfgpkg.LoadConfig(s.configPath); err == nil && loaded != nil {
+				if raw, err := json.Marshal(loaded.NormalizedView()); err == nil {
+					_ = json.Unmarshal(raw, &riskyOldMap)
+				}
+			}
+		}
 
-		riskyPaths := collectRiskyConfigPaths(oldMap, body)
+		riskyPaths := collectRiskyConfigPaths(riskyOldMap, riskyNewMap)
 		changedRisky := make([]string, 0)
 		for _, p := range riskyPaths {
-			if fmt.Sprintf("%v", getPathValue(oldMap, p)) != fmt.Sprintf("%v", getPathValue(body, p)) {
+			if fmt.Sprintf("%v", getPathValue(riskyOldMap, p)) != fmt.Sprintf("%v", getPathValue(riskyNewMap, p)) {
 				changedRisky = append(changedRisky, p)
 			}
 		}
 		if len(changedRisky) > 0 && !confirmRisky {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			writeJSONStatus(w, http.StatusBadRequest, map[string]interface{}{
 				"ok":               false,
 				"error":            "risky fields changed; confirmation required",
 				"requires_confirm": true,
@@ -881,39 +843,50 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		candidate, err := json.Marshal(body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
 		cfg := cfgpkg.DefaultConfig()
-		dec := json.NewDecoder(bytes.NewReader(candidate))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(cfg); err != nil {
-			http.Error(w, "config schema validation failed: "+err.Error(), http.StatusBadRequest)
-			return
+		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "normalized") {
+			loaded, err := cfgpkg.LoadConfig(s.configPath)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			cfg = loaded
+			candidate, err := json.Marshal(body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			var normalized cfgpkg.NormalizedConfig
+			dec := json.NewDecoder(bytes.NewReader(candidate))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&normalized); err != nil {
+				http.Error(w, "normalized config validation failed: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			cfg.ApplyNormalizedView(normalized)
+		} else {
+			candidate, err := json.Marshal(body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			dec := json.NewDecoder(bytes.NewReader(candidate))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(cfg); err != nil {
+				http.Error(w, "config schema validation failed: "+err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 		if errs := cfgpkg.Validate(cfg); len(errs) > 0 {
 			list := make([]string, 0, len(errs))
 			for _, e := range errs {
 				list = append(list, e.Error())
 			}
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "config validation failed", "details": list})
+			writeJSONStatus(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "config validation failed", "details": list})
 			return
 		}
 
-		b, err := json.MarshalIndent(body, "", "  ")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		tmp := s.configPath + ".tmp"
-		if err := os.WriteFile(tmp, b, 0644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if err := os.Rename(tmp, s.configPath); err != nil {
+		if err := cfgpkg.SaveConfig(s.configPath, cfg); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -928,7 +901,11 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reloaded": true})
+		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "normalized") {
+			writeJSON(w, map[string]interface{}{"ok": true, "reloaded": true, "config": cfg.NormalizedView()})
+			return
+		}
+		writeJSON(w, map[string]interface{}{"ok": true, "reloaded": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -975,6 +952,8 @@ func collectRiskyConfigPaths(oldMap, newMap map[string]interface{}) []string {
 		"channels.telegram.allow_chats",
 		"models.providers.openai.api_base",
 		"models.providers.openai.api_key",
+		"runtime.providers.openai.api_base",
+		"runtime.providers.openai.api_key",
 		"gateway.token",
 		"gateway.port",
 	}
@@ -989,6 +968,11 @@ func collectRiskyConfigPaths(oldMap, newMap map[string]interface{}) []string {
 				paths = append(paths, path)
 				seen[path] = true
 			}
+			normalizedPath := "runtime.providers." + name + "." + field
+			if !seen[normalizedPath] {
+				paths = append(paths, normalizedPath)
+				seen[normalizedPath] = true
+			}
 		}
 	}
 	return paths
@@ -1001,6 +985,15 @@ func collectProviderNames(maps ...map[string]interface{}) []string {
 		models, _ := root["models"].(map[string]interface{})
 		providers, _ := models["providers"].(map[string]interface{})
 		for name := range providers {
+			if strings.TrimSpace(name) == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
+		}
+		runtimeMap, _ := root["runtime"].(map[string]interface{})
+		runtimeProviders, _ := runtimeMap["providers"].(map[string]interface{})
+		for name := range runtimeProviders {
 			if strings.TrimSpace(name) == "" || seen[name] {
 				continue
 			}
@@ -1045,7 +1038,7 @@ func (s *Server) handleWebUIUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "path": path, "name": h.Filename})
+	writeJSON(w, map[string]interface{}{"ok": true, "path": path, "name": h.Filename})
 }
 
 func (s *Server) handleWebUIProviderOAuthStart(w http.ResponseWriter, r *http.Request) {
@@ -1100,7 +1093,7 @@ func (s *Server) handleWebUIProviderOAuthStart(w http.ResponseWriter, r *http.Re
 	s.oauthFlowMu.Lock()
 	s.oauthFlows[flowID] = flow
 	s.oauthFlowMu.Unlock()
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":            true,
 		"flow_id":       flowID,
 		"mode":          flow.Mode,
@@ -1171,7 +1164,7 @@ func (s *Server) handleWebUIProviderOAuthComplete(w http.ResponseWriter, r *http
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":              true,
 		"account":         session.Email,
 		"credential_file": session.CredentialFile,
@@ -1245,7 +1238,7 @@ func (s *Server) handleWebUIProviderOAuthImport(w http.ResponseWriter, r *http.R
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":              true,
 		"account":         session.Email,
 		"credential_file": session.CredentialFile,
@@ -1282,7 +1275,7 @@ func (s *Server) handleWebUIProviderOAuthAccounts(w http.ResponseWriter, r *http
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "accounts": accounts})
+		writeJSON(w, map[string]interface{}{"ok": true, "accounts": accounts})
 	case http.MethodPost:
 		var body struct {
 			Action         string `json:"action"`
@@ -1299,7 +1292,7 @@ func (s *Server) handleWebUIProviderOAuthAccounts(w http.ResponseWriter, r *http
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "account": account})
+			writeJSON(w, map[string]interface{}{"ok": true, "account": account})
 		case "delete":
 			if err := loginMgr.DeleteAccount(body.CredentialFile); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1316,13 +1309,13 @@ func (s *Server) handleWebUIProviderOAuthAccounts(w http.ResponseWriter, r *http
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true})
+			writeJSON(w, map[string]interface{}{"ok": true, "deleted": true})
 		case "clear_cooldown":
 			if err := loginMgr.ClearCooldown(body.CredentialFile); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cleared": true})
+			writeJSON(w, map[string]interface{}{"ok": true, "cleared": true})
 		default:
 			http.Error(w, "unsupported action", http.StatusBadRequest)
 		}
@@ -1368,7 +1361,7 @@ func (s *Server) handleWebUIProviderModels(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":     true,
 		"models": pc.Models,
 	})
@@ -1408,7 +1401,7 @@ func (s *Server) handleWebUIProviderRuntime(w http.ResponseWriter, r *http.Reque
 		if secs, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("cooldown_until_before_sec"))); secs > 0 {
 			query.CooldownBefore = time.Now().Add(time.Duration(secs) * time.Second)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		writeJSON(w, map[string]interface{}{
 			"ok":   true,
 			"view": providers.GetProviderRuntimeView(cfg, query),
 		})
@@ -1436,7 +1429,7 @@ func (s *Server) handleWebUIProviderRuntime(w http.ResponseWriter, r *http.Reque
 		}
 		_ = cfg
 		providers.ClearProviderAPICooldown(providerName)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cleared": true})
+		writeJSON(w, map[string]interface{}{"ok": true, "cleared": true})
 	case "clear_history":
 		cfg, providerName, err := s.loadRuntimeProviderName(strings.TrimSpace(body.Provider))
 		if err != nil {
@@ -1445,7 +1438,7 @@ func (s *Server) handleWebUIProviderRuntime(w http.ResponseWriter, r *http.Reque
 		}
 		_ = cfg
 		providers.ClearProviderRuntimeHistory(providerName)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cleared": true})
+		writeJSON(w, map[string]interface{}{"ok": true, "cleared": true})
 	case "refresh_now":
 		cfg, providerName, err := s.loadRuntimeProviderName(strings.TrimSpace(body.Provider))
 		if err != nil {
@@ -1459,7 +1452,7 @@ func (s *Server) handleWebUIProviderRuntime(w http.ResponseWriter, r *http.Reque
 		}
 		order, _ := providers.RerankProviderRuntime(cfg, providerName)
 		summary := providers.GetProviderRuntimeSummary(cfg, providers.ProviderRuntimeQuery{Provider: providerName, HealthBelow: 50})
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		writeJSON(w, map[string]interface{}{
 			"ok":              true,
 			"provider":        providerName,
 			"refreshed":       true,
@@ -1478,47 +1471,10 @@ func (s *Server) handleWebUIProviderRuntime(w http.ResponseWriter, r *http.Reque
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "provider": providerName, "reranked": true, "candidate_order": order})
+		writeJSON(w, map[string]interface{}{"ok": true, "provider": providerName, "reranked": true, "candidate_order": order})
 	default:
 		http.Error(w, "unsupported action", http.StatusBadRequest)
 	}
-}
-
-func (s *Server) handleWebUIProviderRuntimeSummary(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	cfg, err := cfgpkg.LoadConfig(s.configPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	query := providers.ProviderRuntimeQuery{
-		Provider: strings.TrimSpace(r.URL.Query().Get("provider")),
-		Reason:   strings.TrimSpace(r.URL.Query().Get("reason")),
-		Target:   strings.TrimSpace(r.URL.Query().Get("target")),
-	}
-	if secs, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("window_sec"))); secs > 0 {
-		query.Window = time.Duration(secs) * time.Second
-	}
-	if healthBelow, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("health_below"))); healthBelow > 0 {
-		query.HealthBelow = healthBelow
-	}
-	if query.HealthBelow <= 0 {
-		query.HealthBelow = 50
-	}
-	if secs, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("cooldown_until_before_sec"))); secs > 0 {
-		query.CooldownBefore = time.Now().Add(time.Duration(secs) * time.Second)
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":      true,
-		"summary": providers.GetProviderRuntimeSummary(cfg, query),
-	})
 }
 
 func (s *Server) loadProviderConfig(name string) (*cfgpkg.Config, cfgpkg.ProviderConfig, error) {
@@ -1670,7 +1626,7 @@ func (s *Server) handleWebUIChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reply": resp, "session": session})
+	writeJSON(w, map[string]interface{}{"ok": true, "reply": resp, "session": session})
 }
 
 func (s *Server) handleWebUIChatHistory(w http.ResponseWriter, r *http.Request) {
@@ -1687,74 +1643,10 @@ func (s *Server) handleWebUIChatHistory(w http.ResponseWriter, r *http.Request) 
 		session = "main"
 	}
 	if s.onChatHistory == nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session": session, "messages": []interface{}{}})
+		writeJSON(w, map[string]interface{}{"ok": true, "session": session, "messages": []interface{}{}})
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session": session, "messages": s.onChatHistory(session)})
-}
-
-func (s *Server) handleWebUIChatStream(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Deprecation", "true")
-	w.Header().Set("X-Clawgo-Replaced-By", "/api/chat/live")
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if s.onChat == nil {
-		http.Error(w, "chat handler not configured", http.StatusInternalServerError)
-		return
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "stream unsupported", http.StatusInternalServerError)
-		return
-	}
-	var body struct {
-		Session string `json:"session"`
-		Message string `json:"message"`
-		Media   string `json:"media"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-	session := body.Session
-	if session == "" {
-		session = r.URL.Query().Get("session")
-	}
-	if session == "" {
-		session = "main"
-	}
-	prompt := body.Message
-	if body.Media != "" {
-		if prompt != "" {
-			prompt += "\n"
-		}
-		prompt += "[file: " + body.Media + "]"
-	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	resp, err := s.onChat(r.Context(), session, prompt)
-	if err != nil {
-		_, _ = w.Write([]byte("Error: " + err.Error()))
-		flusher.Flush()
-		return
-	}
-	chunk := 180
-	for i := 0; i < len(resp); i += chunk {
-		end := i + chunk
-		if end > len(resp) {
-			end = len(resp)
-		}
-		_, _ = w.Write([]byte(resp[i:end]))
-		flusher.Flush()
-	}
+	writeJSON(w, map[string]interface{}{"ok": true, "session": session, "messages": s.onChatHistory(session)})
 }
 
 func (s *Server) handleWebUIChatLive(w http.ResponseWriter, r *http.Request) {
@@ -1837,7 +1729,7 @@ func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":                true,
 		"gateway_version":   firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
 		"webui_version":     firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
@@ -1855,9 +1747,7 @@ func (s *Server) handleWebUIWhatsAppStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	payload, code := s.webUIWhatsAppStatusPayload(r.Context())
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(payload)
+	writeJSONStatus(w, code, payload)
 }
 
 func (s *Server) handleWebUIWhatsAppLogout(w http.ResponseWriter, r *http.Request) {
@@ -1906,7 +1796,7 @@ func (s *Server) handleWebUIWhatsAppQR(w http.ResponseWriter, r *http.Request) {
 	status, _ := payload["status"].(map[string]interface{})
 	qrCode := ""
 	if status != nil {
-		qrCode, _ = status["qr_code"].(string)
+		qrCode = stringFromMap(status, "qr_code")
 	}
 	if code != http.StatusOK || strings.TrimSpace(qrCode) == "" {
 		http.Error(w, "qr unavailable", http.StatusNotFound)
@@ -2136,49 +2026,33 @@ func (s *Server) handleWebUIRuntime(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) buildWebUIRuntimeSnapshot(ctx context.Context) map[string]interface{} {
 	var providerPayload map[string]interface{}
+	var normalizedConfig interface{}
 	if strings.TrimSpace(s.configPath) != "" {
 		if cfg, err := cfgpkg.LoadConfig(strings.TrimSpace(s.configPath)); err == nil {
 			providerPayload = providers.GetProviderRuntimeSnapshot(cfg)
+			normalizedConfig = cfg.NormalizedView()
 		}
 	}
 	if providerPayload == nil {
 		providerPayload = map[string]interface{}{"items": []interface{}{}}
 	}
+	runtimePayload := map[string]interface{}{}
+	if s.onSubagents != nil {
+		if res, err := s.onSubagents(ctx, "snapshot", map[string]interface{}{"limit": 200}); err == nil {
+			if m, ok := res.(map[string]interface{}); ok {
+				runtimePayload = m
+			}
+		}
+	}
 	return map[string]interface{}{
 		"version":    s.webUIVersionPayload(),
+		"config":     normalizedConfig,
+		"runtime":    runtimePayload,
 		"nodes":      s.webUINodesPayload(ctx),
 		"sessions":   s.webUISessionsPayload(),
 		"task_queue": s.webUITaskQueuePayload(false),
 		"ekg":        s.webUIEKGSummaryPayload("24h"),
-		"subagents":  s.webUISubagentsRuntimePayload(ctx),
 		"providers":  providerPayload,
-	}
-}
-
-func (s *Server) webUISubagentsRuntimePayload(ctx context.Context) map[string]interface{} {
-	if s.onSubagents == nil {
-		return map[string]interface{}{
-			"items":    []interface{}{},
-			"registry": []interface{}{},
-			"stream":   []interface{}{},
-		}
-	}
-	call := func(action string, args map[string]interface{}) interface{} {
-		res, err := s.onSubagents(ctx, action, args)
-		if err != nil {
-			return []interface{}{}
-		}
-		if m, ok := res.(map[string]interface{}); ok {
-			if items, ok := m["items"]; ok {
-				return items
-			}
-		}
-		return []interface{}{}
-	}
-	return map[string]interface{}{
-		"items":    call("list", map[string]interface{}{}),
-		"registry": call("registry", map[string]interface{}{}),
-		"stream":   call("stream_all", map[string]interface{}{"limit": 300, "task_limit": 36}),
 	}
 }
 
@@ -2303,7 +2177,7 @@ func (s *Server) webUINodeAlertsPayload(nodeList []nodes.NodeInfo, p2p map[strin
 		if nodeID == "" {
 			continue
 		}
-		if ok, _ := row["ok"].(bool); ok {
+		if ok, _ := tools.MapBoolArg(row, "ok"); ok {
 			continue
 		}
 		failuresByNode[nodeID]++
@@ -2374,11 +2248,10 @@ func int64Value(v interface{}) int64 {
 }
 
 func (s *Server) webUINodesDispatchPayload(limit int) []map[string]interface{} {
-	workspace := strings.TrimSpace(s.workspacePath)
-	if workspace == "" {
+	path := s.memoryFilePath("nodes-dispatch-audit.jsonl")
+	if path == "" {
 		return []map[string]interface{}{}
 	}
-	path := filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return []map[string]interface{}{}
@@ -2459,11 +2332,10 @@ func (s *Server) webUINodeArtifactsPayloadFiltered(nodeFilter, actionFilter, kin
 }
 
 func (s *Server) readNodeDispatchAuditRows() ([]map[string]interface{}, string) {
-	workspace := strings.TrimSpace(s.workspacePath)
-	if workspace == "" {
+	path := s.memoryFilePath("nodes-dispatch-audit.jsonl")
+	if path == "" {
 		return nil, ""
 	}
-	path := filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, path
@@ -2576,6 +2448,75 @@ func readArtifactBytes(workspace string, item map[string]interface{}) ([]byte, s
 		return []byte(contentText), "text/plain; charset=utf-8", nil
 	}
 	return nil, "", fmt.Errorf("artifact content unavailable")
+}
+
+func resolveRelativeFilePath(root, raw string) (string, string, error) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return "", "", fmt.Errorf("workspace not configured")
+	}
+	clean := filepath.Clean(strings.TrimSpace(raw))
+	if clean == "." || clean == "" || strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
+		return "", "", fmt.Errorf("invalid path")
+	}
+	full := filepath.Join(root, clean)
+	cleanRoot := filepath.Clean(root)
+	if full != cleanRoot {
+		prefix := cleanRoot + string(os.PathSeparator)
+		if !strings.HasPrefix(filepath.Clean(full), prefix) {
+			return "", "", fmt.Errorf("invalid path")
+		}
+	}
+	return clean, full, nil
+}
+
+func relativeFilePathStatus(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	if err.Error() == "workspace not configured" {
+		return http.StatusInternalServerError
+	}
+	return http.StatusBadRequest
+}
+
+func readRelativeTextFile(root, raw string) (string, string, bool, error) {
+	clean, full, err := resolveRelativeFilePath(root, raw)
+	if err != nil {
+		return "", "", false, err
+	}
+	b, err := os.ReadFile(full)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return clean, "", false, nil
+		}
+		return clean, "", false, err
+	}
+	return clean, string(b), true, nil
+}
+
+func writeRelativeTextFile(root, raw string, content string, ensureDir bool) (string, error) {
+	clean, full, err := resolveRelativeFilePath(root, raw)
+	if err != nil {
+		return "", err
+	}
+	if ensureDir {
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			return "", err
+		}
+	}
+	if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+		return "", err
+	}
+	return clean, nil
+}
+
+func (s *Server) memoryFilePath(name string) string {
+	workspace := strings.TrimSpace(s.workspacePath)
+	if workspace == "" {
+		return ""
+	}
+	return filepath.Join(workspace, "memory", strings.TrimSpace(name))
 }
 
 func (s *Server) filteredNodeDispatches(nodeFilter, actionFilter string, limit int) []map[string]interface{} {
@@ -2821,7 +2762,7 @@ func (s *Server) webUISessionsPayload() map[string]interface{} {
 }
 
 func (s *Server) webUITaskQueuePayload(includeHeartbeat bool) map[string]interface{} {
-	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+	path := s.memoryFilePath("task-audit.jsonl")
 	b, err := os.ReadFile(path)
 	lines := []string{}
 	if err == nil {
@@ -2875,7 +2816,7 @@ func (s *Server) webUITaskQueuePayload(includeHeartbeat bool) map[string]interfa
 			running = append(running, row)
 		}
 	}
-	queuePath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task_queue.json")
+	queuePath := s.memoryFilePath("task_queue.json")
 	if qb, qErr := os.ReadFile(queuePath); qErr == nil {
 		var q map[string]interface{}
 		if json.Unmarshal(qb, &q) == nil {
@@ -2901,8 +2842,7 @@ func (s *Server) webUITaskQueuePayload(includeHeartbeat bool) map[string]interfa
 }
 
 func (s *Server) webUIEKGSummaryPayload(window string) map[string]interface{} {
-	workspace := strings.TrimSpace(s.workspacePath)
-	ekgPath := filepath.Join(workspace, "memory", "ekg-events.jsonl")
+	ekgPath := s.memoryFilePath("ekg-events.jsonl")
 	window = strings.ToLower(strings.TrimSpace(window))
 	windowDur := 24 * time.Hour
 	switch window {
@@ -3052,8 +2992,7 @@ func (s *Server) handleWebUITools(w http.ResponseWriter, r *http.Request) {
 			serverChecks = buildMCPServerChecks(cfg)
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"tools":             toolsList,
 		"mcp_tools":         mcpItems,
 		"mcp_server_checks": serverChecks,
@@ -3203,7 +3142,7 @@ func (s *Server) handleWebUIMCPInstall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, strings.TrimSpace(msg), http.StatusInternalServerError)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":       true,
 		"package":  pkgName,
 		"output":   out,
@@ -3221,7 +3160,7 @@ func (s *Server) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		payload := s.webUINodesPayload(r.Context())
 		payload["ok"] = true
-		_ = json.NewEncoder(w).Encode(payload)
+		writeJSON(w, payload)
 	case http.MethodPost:
 		var body struct {
 			Action string `json:"action"`
@@ -3242,7 +3181,7 @@ func (s *Server) handleWebUINodes(w http.ResponseWriter, r *http.Request) {
 		}
 		id := body.ID
 		ok := s.mgr.Remove(id)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": ok, "id": id})
+		writeJSON(w, map[string]interface{}{"ok": true, "deleted": ok, "id": id})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -3257,16 +3196,8 @@ func (s *Server) handleWebUINodeDispatches(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	limit := 50
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-			if n > 500 {
-				n = 500
-			}
-			limit = n
-		}
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	limit := queryBoundedPositiveInt(r, "limit", 50, 500)
+	writeJSON(w, map[string]interface{}{
 		"ok":    true,
 		"items": s.webUINodesDispatchPayload(limit),
 	})
@@ -3313,7 +3244,7 @@ func (s *Server) handleWebUINodeDispatchReplay(w http.ResponseWriter, r *http.Re
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":     true,
 		"result": resp,
 	})
@@ -3328,20 +3259,12 @@ func (s *Server) handleWebUINodeArtifacts(w http.ResponseWriter, r *http.Request
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	limit := 200
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-			if n > 1000 {
-				n = 1000
-			}
-			limit = n
-		}
-	}
+	limit := queryBoundedPositiveInt(r, "limit", 200, 1000)
 	retentionSummary := s.applyNodeArtifactRetention()
 	nodeFilter := strings.TrimSpace(r.URL.Query().Get("node"))
 	actionFilter := strings.TrimSpace(r.URL.Query().Get("action"))
 	kindFilter := strings.TrimSpace(r.URL.Query().Get("kind"))
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":                 true,
 		"items":              s.webUINodeArtifactsPayloadFiltered(nodeFilter, actionFilter, kindFilter, limit),
 		"artifact_retention": retentionSummary,
@@ -3358,15 +3281,7 @@ func (s *Server) handleWebUINodeArtifactsExport(w http.ResponseWriter, r *http.R
 		return
 	}
 	retentionSummary := s.applyNodeArtifactRetention()
-	limit := 200
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-			if n > 1000 {
-				n = 1000
-			}
-			limit = n
-		}
-	}
+	limit := queryBoundedPositiveInt(r, "limit", 200, 1000)
 	nodeFilter := strings.TrimSpace(r.URL.Query().Get("node"))
 	actionFilter := strings.TrimSpace(r.URL.Query().Get("action"))
 	kindFilter := strings.TrimSpace(r.URL.Query().Get("kind"))
@@ -3531,7 +3446,7 @@ func (s *Server) handleWebUINodeArtifactDelete(w http.ResponseWriter, r *http.Re
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":            true,
 		"id":            strings.TrimSpace(body.ID),
 		"deleted_file":  deletedFile,
@@ -3583,7 +3498,7 @@ func (s *Server) handleWebUINodeArtifactPrune(w http.ResponseWriter, r *http.Req
 			deletedFiles++
 		}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":            true,
 		"pruned":        pruned,
 		"deleted_files": deletedFiles,
@@ -3654,6 +3569,43 @@ func (s *Server) fetchRemoteNodeRegistry(ctx context.Context, node nodes.NodeInf
 	if baseURL == "" {
 		return nil, fmt.Errorf("node %s endpoint missing", strings.TrimSpace(node.ID))
 	}
+	reqURL := baseURL + "/api/config?mode=normalized"
+	if tok := strings.TrimSpace(node.Token); tok != "" {
+		reqURL += "&token=" + url.QueryEscape(tok)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return s.fetchRemoteNodeRegistryLegacy(ctx, node)
+	}
+	var payload struct {
+		OK        bool                    `json:"ok"`
+		Config    cfgpkg.NormalizedConfig `json:"config"`
+		RawConfig map[string]interface{}  `json:"raw_config"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return s.fetchRemoteNodeRegistryLegacy(ctx, node)
+	}
+	items := buildRegistryItemsFromNormalizedConfig(payload.Config)
+	if len(items) > 0 {
+		return items, nil
+	}
+	return s.fetchRemoteNodeRegistryLegacy(ctx, node)
+}
+
+func (s *Server) fetchRemoteNodeRegistryLegacy(ctx context.Context, node nodes.NodeInfo) ([]map[string]interface{}, error) {
+	baseURL := nodeWebUIBaseURL(node)
+	if baseURL == "" {
+		return nil, fmt.Errorf("node %s endpoint missing", strings.TrimSpace(node.ID))
+	}
 	reqURL := baseURL + "/api/subagents_runtime?action=registry"
 	if tok := strings.TrimSpace(node.Token); tok != "" {
 		reqURL += "&token=" + url.QueryEscape(tok)
@@ -3681,6 +3633,50 @@ func (s *Server) fetchRemoteNodeRegistry(ctx context.Context, node nodes.NodeInf
 		return nil, err
 	}
 	return payload.Result.Items, nil
+}
+
+func buildRegistryItemsFromNormalizedConfig(view cfgpkg.NormalizedConfig) []map[string]interface{} {
+	items := make([]map[string]interface{}, 0, len(view.Core.Subagents))
+	for agentID, subcfg := range view.Core.Subagents {
+		if strings.TrimSpace(agentID) == "" {
+			continue
+		}
+		items = append(items, map[string]interface{}{
+			"agent_id":           agentID,
+			"enabled":            subcfg.Enabled,
+			"type":               "subagent",
+			"transport":          fallbackString(strings.TrimSpace(subcfg.RuntimeClass), "local"),
+			"node_id":            "",
+			"parent_agent_id":    "",
+			"notify_main_policy": "final_only",
+			"display_name":       "",
+			"role":               strings.TrimSpace(subcfg.Role),
+			"description":        "",
+			"system_prompt_file": strings.TrimSpace(subcfg.Prompt),
+			"prompt_file_found":  false,
+			"memory_namespace":   "",
+			"tool_allowlist":     append([]string(nil), subcfg.ToolAllowlist...),
+			"tool_visibility":    map[string]interface{}{},
+			"effective_tools":    []string{},
+			"inherited_tools":    []string{},
+			"routing_keywords":   routeKeywordsForRegistry(view.Runtime.Router.Rules, agentID),
+			"managed_by":         "config.json",
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return stringFromMap(items[i], "agent_id") < stringFromMap(items[j], "agent_id")
+	})
+	return items
+}
+
+func routeKeywordsForRegistry(rules []cfgpkg.AgentRouteRule, agentID string) []string {
+	agentID = strings.TrimSpace(agentID)
+	for _, rule := range rules {
+		if strings.TrimSpace(rule.AgentID) == agentID {
+			return append([]string(nil), rule.Keywords...)
+		}
+	}
+	return nil
 }
 
 func nodeWebUIBaseURL(node nodes.NodeInfo) string {
@@ -3769,19 +3765,27 @@ func buildAgentTreeRoot(nodeID string, items []map[string]interface{}) map[strin
 }
 
 func stringFromMap(item map[string]interface{}, key string) string {
-	if item == nil {
-		return ""
-	}
-	v, _ := item[key].(string)
-	return strings.TrimSpace(v)
+	return tools.MapStringArg(item, key)
 }
 
 func boolFromMap(item map[string]interface{}, key string) bool {
 	if item == nil {
 		return false
 	}
-	v, _ := item[key].(bool)
+	v, _ := tools.MapBoolArg(item, key)
 	return v
+}
+
+func rawStringFromMap(item map[string]interface{}, key string) string {
+	return tools.MapRawStringArg(item, key)
+}
+
+func stringListFromMap(item map[string]interface{}, key string) []string {
+	return tools.MapStringListArg(item, key)
+}
+
+func intFromMap(item map[string]interface{}, key string, fallback int) int {
+	return tools.MapIntArg(item, key, fallback)
 }
 
 func fallbackString(value, fallback string) string {
@@ -3815,9 +3819,9 @@ func (s *Server) handleWebUICron(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if action == "list" {
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "jobs": normalizeCronJobs(res)})
+			writeJSON(w, map[string]interface{}{"ok": true, "jobs": normalizeCronJobs(res)})
 		} else {
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "job": normalizeCronJob(res)})
+			writeJSON(w, map[string]interface{}{"ok": true, "job": normalizeCronJob(res)})
 		}
 	case http.MethodPost:
 		args := map[string]interface{}{}
@@ -3828,7 +3832,7 @@ func (s *Server) handleWebUICron(w http.ResponseWriter, r *http.Request) {
 			args["id"] = id
 		}
 		action := "create"
-		if a, ok := args["action"].(string); ok && strings.TrimSpace(a) != "" {
+		if a := tools.MapStringArg(args, "action"); a != "" {
 			action = strings.ToLower(strings.TrimSpace(a))
 		}
 		res, err := s.onCron(action, args)
@@ -3836,7 +3840,7 @@ func (s *Server) handleWebUICron(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "result": normalizeCronJob(res)})
+		writeJSON(w, map[string]interface{}{"ok": true, "result": normalizeCronJob(res)})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -3899,22 +3903,20 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 					files = append(files, filepath.ToSlash(rel))
 					return nil
 				})
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id, "files": files})
+				writeJSON(w, map[string]interface{}{"ok": true, "id": id, "files": files})
 				return
 			}
 			if f := strings.TrimSpace(r.URL.Query().Get("file")); f != "" {
-				clean := filepath.Clean(f)
-				if strings.HasPrefix(clean, "..") {
-					http.Error(w, "invalid file path", http.StatusBadRequest)
-					return
-				}
-				full := filepath.Join(skillPath, clean)
-				b, err := os.ReadFile(full)
+				clean, content, found, err := readRelativeTextFile(skillPath, f)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
+					http.Error(w, err.Error(), relativeFilePathStatus(err))
 					return
 				}
-				_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "id": id, "file": filepath.ToSlash(clean), "content": string(b)})
+				if !found {
+					http.Error(w, os.ErrNotExist.Error(), http.StatusInternalServerError)
+					return
+				}
+				writeJSON(w, map[string]interface{}{"ok": true, "id": id, "file": filepath.ToSlash(clean), "content": content})
 				return
 			}
 		}
@@ -3996,7 +3998,7 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 				items = append(items, it)
 			}
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		writeJSON(w, map[string]interface{}{
 			"ok":                true,
 			"skills":            items,
 			"source":            "clawhub",
@@ -4012,7 +4014,7 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "imported": imported})
+			writeJSON(w, map[string]interface{}{"ok": true, "imported": imported})
 			return
 		}
 
@@ -4021,15 +4023,14 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		action, _ := body["action"].(string)
-		action = strings.ToLower(strings.TrimSpace(action))
+		action := strings.ToLower(stringFromMap(body, "action"))
 		if action == "install_clawhub" {
 			output, err := ensureClawHubReady(r.Context())
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			writeJSON(w, map[string]interface{}{
 				"ok":           true,
 				"output":       output,
 				"installed":    true,
@@ -4037,8 +4038,8 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		id, _ := body["id"].(string)
-		name, _ := body["name"].(string)
+		id := stringFromMap(body, "id")
+		name := stringFromMap(body, "name")
 		if strings.TrimSpace(name) == "" {
 			name = id
 		}
@@ -4057,13 +4058,7 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "clawhub is not installed. please install clawhub first.", http.StatusPreconditionFailed)
 				return
 			}
-			ignoreSuspicious := false
-			switch v := body["ignore_suspicious"].(type) {
-			case bool:
-				ignoreSuspicious = v
-			case string:
-				ignoreSuspicious = strings.EqualFold(strings.TrimSpace(v), "true") || strings.TrimSpace(v) == "1"
-			}
+			ignoreSuspicious, _ := tools.MapBoolArg(body, "ignore_suspicious")
 			args := []string{"install", name}
 			if ignoreSuspicious {
 				args = append(args, "--force")
@@ -4081,7 +4076,7 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("install failed: %v\n%s", err, outText), http.StatusInternalServerError)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "installed": name, "output": string(out)})
+			writeJSON(w, map[string]interface{}{"ok": true, "installed": name, "output": string(out)})
 		case "enable":
 			if _, err := os.Stat(disabledPath); err == nil {
 				if err := os.Rename(disabledPath, enabledPath); err != nil {
@@ -4089,7 +4084,7 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			writeJSON(w, map[string]interface{}{"ok": true})
 		case "disable":
 			if _, err := os.Stat(enabledPath); err == nil {
 				if err := os.Rename(enabledPath, disabledPath); err != nil {
@@ -4097,41 +4092,25 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			writeJSON(w, map[string]interface{}{"ok": true})
 		case "write_file":
 			skillPath, err := resolveSkillPath(name)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
-			filePath, _ := body["file"].(string)
-			clean := filepath.Clean(strings.TrimSpace(filePath))
-			if clean == "" || strings.HasPrefix(clean, "..") {
-				http.Error(w, "invalid file path", http.StatusBadRequest)
+			content := rawStringFromMap(body, "content")
+			filePath := stringFromMap(body, "file")
+			clean, err := writeRelativeTextFile(skillPath, filePath, content, true)
+			if err != nil {
+				http.Error(w, err.Error(), relativeFilePathStatus(err))
 				return
 			}
-			content, _ := body["content"].(string)
-			full := filepath.Join(skillPath, clean)
-			if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if err := os.WriteFile(full, []byte(content), 0644); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "name": name, "file": filepath.ToSlash(clean)})
+			writeJSON(w, map[string]interface{}{"ok": true, "name": name, "file": filepath.ToSlash(clean)})
 		case "create", "update":
-			desc, _ := body["description"].(string)
-			sys, _ := body["system_prompt"].(string)
-			var toolsList []string
-			if arr, ok := body["tools"].([]interface{}); ok {
-				for _, v := range arr {
-					if sv, ok := v.(string); ok && strings.TrimSpace(sv) != "" {
-						toolsList = append(toolsList, strings.TrimSpace(sv))
-					}
-				}
-			}
+			desc := rawStringFromMap(body, "description")
+			sys := rawStringFromMap(body, "system_prompt")
+			toolsList := stringListFromMap(body, "tools")
 			if action == "create" {
 				if _, err := os.Stat(enabledPath); err == nil {
 					http.Error(w, "skill already exists", http.StatusBadRequest)
@@ -4147,7 +4126,7 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+			writeJSON(w, map[string]interface{}{"ok": true})
 		default:
 			http.Error(w, "unsupported action", http.StatusBadRequest)
 		}
@@ -4167,7 +4146,7 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 		if err := os.RemoveAll(pathB); err == nil {
 			deleted = true
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": deleted, "id": id})
+		writeJSON(w, map[string]interface{}{"ok": true, "deleted": deleted, "id": id})
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -4336,15 +4315,15 @@ func normalizeCronJob(v interface{}) map[string]interface{} {
 		out[k] = val
 	}
 	if sch, ok := m["schedule"].(map[string]interface{}); ok {
-		kind, _ := sch["kind"].(string)
-		if expr, ok := sch["expr"].(string); ok && expr != "" {
+		kind := stringFromMap(sch, "kind")
+		if expr := stringFromMap(sch, "expr"); expr != "" {
 			out["expr"] = expr
 		} else if strings.EqualFold(strings.TrimSpace(kind), "every") {
-			if every, ok := sch["everyMs"].(float64); ok && every > 0 {
-				out["expr"] = fmt.Sprintf("@every %s", (time.Duration(int64(every)) * time.Millisecond).String())
+			if every := intFromMap(sch, "everyMs", 0); every > 0 {
+				out["expr"] = fmt.Sprintf("@every %s", (time.Duration(every) * time.Millisecond).String())
 			}
 		} else if strings.EqualFold(strings.TrimSpace(kind), "at") {
-			if at, ok := sch["atMs"].(float64); ok && at > 0 {
+			if at := intFromMap(sch, "atMs", 0); at > 0 {
 				out["expr"] = time.UnixMilli(int64(at)).Format(time.RFC3339)
 			}
 		}
@@ -5133,7 +5112,7 @@ func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 	if len(out) == 0 {
 		out = append(out, item{Key: "main", Channel: "main"})
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "sessions": out})
+	writeJSON(w, map[string]interface{}{"ok": true, "sessions": out})
 }
 
 func isUserFacingSessionKey(key string) bool {
@@ -5159,206 +5138,6 @@ func isUserFacingSessionKey(key string) bool {
 	}
 }
 
-func (s *Server) handleWebUISubagentProfiles(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	workspace := strings.TrimSpace(s.workspacePath)
-	if workspace == "" {
-		http.Error(w, "workspace path not set", http.StatusInternalServerError)
-		return
-	}
-	store := tools.NewSubagentProfileStore(workspace)
-
-	switch r.Method {
-	case http.MethodGet:
-		agentID := strings.TrimSpace(r.URL.Query().Get("agent_id"))
-		if agentID != "" {
-			profile, ok, err := store.Get(agentID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "found": ok, "profile": profile})
-			return
-		}
-		profiles, err := store.List()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profiles": profiles})
-	case http.MethodDelete:
-		agentID := strings.TrimSpace(r.URL.Query().Get("agent_id"))
-		if agentID == "" {
-			http.Error(w, "agent_id required", http.StatusBadRequest)
-			return
-		}
-		if err := store.Delete(agentID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true, "agent_id": agentID})
-	case http.MethodPost:
-		var body struct {
-			Action           string   `json:"action"`
-			AgentID          string   `json:"agent_id"`
-			Name             string   `json:"name"`
-			NotifyMainPolicy string   `json:"notify_main_policy"`
-			Role             string   `json:"role"`
-			SystemPromptFile string   `json:"system_prompt_file"`
-			MemoryNamespace  string   `json:"memory_namespace"`
-			Status           string   `json:"status"`
-			ToolAllowlist    []string `json:"tool_allowlist"`
-			MaxRetries       *int     `json:"max_retries"`
-			RetryBackoffMS   *int     `json:"retry_backoff_ms"`
-			TimeoutSec       *int     `json:"timeout_sec"`
-			MaxTaskChars     *int     `json:"max_task_chars"`
-			MaxResultChars   *int     `json:"max_result_chars"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		action := strings.ToLower(strings.TrimSpace(body.Action))
-		if action == "" {
-			action = "upsert"
-		}
-		agentID := strings.TrimSpace(body.AgentID)
-		if agentID == "" {
-			http.Error(w, "agent_id required", http.StatusBadRequest)
-			return
-		}
-
-		switch action {
-		case "create":
-			if _, ok, err := store.Get(agentID); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			} else if ok {
-				http.Error(w, "subagent profile already exists", http.StatusConflict)
-				return
-			}
-			profile, err := store.Upsert(tools.SubagentProfile{
-				AgentID:          agentID,
-				Name:             body.Name,
-				NotifyMainPolicy: body.NotifyMainPolicy,
-				Role:             body.Role,
-				SystemPromptFile: body.SystemPromptFile,
-				MemoryNamespace:  body.MemoryNamespace,
-				Status:           body.Status,
-				ToolAllowlist:    body.ToolAllowlist,
-				MaxRetries:       derefInt(body.MaxRetries),
-				RetryBackoff:     derefInt(body.RetryBackoffMS),
-				TimeoutSec:       derefInt(body.TimeoutSec),
-				MaxTaskChars:     derefInt(body.MaxTaskChars),
-				MaxResultChars:   derefInt(body.MaxResultChars),
-			})
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profile": profile})
-		case "update":
-			existing, ok, err := store.Get(agentID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if !ok || existing == nil {
-				http.Error(w, "subagent profile not found", http.StatusNotFound)
-				return
-			}
-			next := *existing
-			next.Name = body.Name
-			next.NotifyMainPolicy = body.NotifyMainPolicy
-			next.Role = body.Role
-			next.SystemPromptFile = body.SystemPromptFile
-			next.MemoryNamespace = body.MemoryNamespace
-			if body.Status != "" {
-				next.Status = body.Status
-			}
-			if body.ToolAllowlist != nil {
-				next.ToolAllowlist = body.ToolAllowlist
-			}
-			if body.MaxRetries != nil {
-				next.MaxRetries = *body.MaxRetries
-			}
-			if body.RetryBackoffMS != nil {
-				next.RetryBackoff = *body.RetryBackoffMS
-			}
-			if body.TimeoutSec != nil {
-				next.TimeoutSec = *body.TimeoutSec
-			}
-			if body.MaxTaskChars != nil {
-				next.MaxTaskChars = *body.MaxTaskChars
-			}
-			if body.MaxResultChars != nil {
-				next.MaxResultChars = *body.MaxResultChars
-			}
-			profile, err := store.Upsert(next)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profile": profile})
-		case "enable", "disable":
-			existing, ok, err := store.Get(agentID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if !ok || existing == nil {
-				http.Error(w, "subagent profile not found", http.StatusNotFound)
-				return
-			}
-			if action == "enable" {
-				existing.Status = "active"
-			} else {
-				existing.Status = "disabled"
-			}
-			profile, err := store.Upsert(*existing)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profile": profile})
-		case "delete":
-			if err := store.Delete(agentID); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true, "agent_id": agentID})
-		case "upsert":
-			profile, err := store.Upsert(tools.SubagentProfile{
-				AgentID:          agentID,
-				Name:             body.Name,
-				NotifyMainPolicy: body.NotifyMainPolicy,
-				Role:             body.Role,
-				SystemPromptFile: body.SystemPromptFile,
-				MemoryNamespace:  body.MemoryNamespace,
-				Status:           body.Status,
-				ToolAllowlist:    body.ToolAllowlist,
-				MaxRetries:       derefInt(body.MaxRetries),
-				RetryBackoff:     derefInt(body.RetryBackoffMS),
-				TimeoutSec:       derefInt(body.TimeoutSec),
-				MaxTaskChars:     derefInt(body.MaxTaskChars),
-				MaxResultChars:   derefInt(body.MaxResultChars),
-			})
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "profile": profile})
-		default:
-			http.Error(w, "unsupported action", http.StatusBadRequest)
-		}
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
 func (s *Server) handleWebUIToolAllowlistGroups(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -5368,7 +5147,7 @@ func (s *Server) handleWebUIToolAllowlistGroups(w http.ResponseWriter, r *http.R
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":     true,
 		"groups": tools.ToolAllowlistGroups(),
 	})
@@ -5407,7 +5186,7 @@ func (s *Server) handleWebUISubagentsRuntime(w http.ResponseWriter, r *http.Requ
 			body = map[string]interface{}{}
 		}
 		if action == "" {
-			if raw, _ := body["action"].(string); raw != "" {
+			if raw := stringFromMap(body, "action"); raw != "" {
 				action = strings.ToLower(strings.TrimSpace(raw))
 			}
 		}
@@ -5423,72 +5202,7 @@ func (s *Server) handleWebUISubagentsRuntime(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "result": result})
-}
-
-func (s *Server) handleWebUISubagentsRuntimeLive(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if s.onSubagents == nil {
-		http.Error(w, "subagent runtime handler not configured", http.StatusServiceUnavailable)
-		return
-	}
-	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-
-	ctx := r.Context()
-	taskID := strings.TrimSpace(r.URL.Query().Get("task_id"))
-	previewTaskID := strings.TrimSpace(r.URL.Query().Get("preview_task_id"))
-	sub := s.subscribeSubagentLive(ctx, taskID, previewTaskID)
-	initial := map[string]interface{}{
-		"ok":      true,
-		"type":    "subagents_live",
-		"payload": s.buildSubagentsLivePayload(ctx, taskID, previewTaskID),
-	}
-	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	if err := conn.WriteJSON(initial); err != nil {
-		return
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case payload := <-sub:
-			_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-				return
-			}
-		}
-	}
-}
-
-func (s *Server) buildSubagentsLivePayload(ctx context.Context, taskID, previewTaskID string) map[string]interface{} {
-	call := func(action string, args map[string]interface{}) map[string]interface{} {
-		res, err := s.onSubagents(ctx, action, args)
-		if err != nil {
-			return map[string]interface{}{}
-		}
-		if m, ok := res.(map[string]interface{}); ok {
-			return m
-		}
-		return map[string]interface{}{}
-	}
-	payload := map[string]interface{}{}
-	taskID = strings.TrimSpace(taskID)
-	previewTaskID = strings.TrimSpace(previewTaskID)
-	if taskID != "" {
-		payload["thread"] = call("thread", map[string]interface{}{"id": taskID, "limit": 50})
-		payload["inbox"] = call("inbox", map[string]interface{}{"id": taskID, "limit": 50})
-	}
-	if previewTaskID != "" {
-		payload["preview"] = call("stream", map[string]interface{}{"id": previewTaskID, "limit": 12})
-	}
-	return payload
+	writeJSON(w, map[string]interface{}{"ok": true, "result": result})
 }
 
 func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
@@ -5514,21 +5228,19 @@ func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
 				}
 				files = append(files, e.Name())
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "files": files})
+			writeJSON(w, map[string]interface{}{"ok": true, "files": files})
 			return
 		}
-		clean := filepath.Clean(path)
-		if strings.HasPrefix(clean, "..") {
-			http.Error(w, "invalid path", http.StatusBadRequest)
-			return
-		}
-		full := filepath.Join(memoryDir, clean)
-		b, err := os.ReadFile(full)
+		clean, content, found, err := readRelativeTextFile(memoryDir, path)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "path": clean, "content": string(b)})
+		if !found {
+			http.Error(w, os.ErrNotExist.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]interface{}{"ok": true, "path": clean, "content": content})
 	case http.MethodPost:
 		var body struct {
 			Path    string `json:"path"`
@@ -5538,81 +5250,61 @@ func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		clean := filepath.Clean(body.Path)
-		if clean == "" || strings.HasPrefix(clean, "..") {
-			http.Error(w, "invalid path", http.StatusBadRequest)
+		clean, err := writeRelativeTextFile(memoryDir, body.Path, body.Content, false)
+		if err != nil {
+			http.Error(w, err.Error(), relativeFilePathStatus(err))
 			return
 		}
-		full := filepath.Join(memoryDir, clean)
-		if err := os.WriteFile(full, []byte(body.Content), 0644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "path": clean})
+		writeJSON(w, map[string]interface{}{"ok": true, "path": clean})
 	case http.MethodDelete:
-		path := filepath.Clean(r.URL.Query().Get("path"))
-		if path == "" || strings.HasPrefix(path, "..") {
-			http.Error(w, "invalid path", http.StatusBadRequest)
+		clean, full, err := resolveRelativeFilePath(memoryDir, r.URL.Query().Get("path"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		full := filepath.Join(memoryDir, path)
 		if err := os.Remove(full); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "deleted": true, "path": path})
+		writeJSON(w, map[string]interface{}{"ok": true, "deleted": true, "path": clean})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *Server) handleWebUITaskAudit(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleWebUIWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if r.Method != http.MethodGet {
+	workspace := strings.TrimSpace(s.workspacePath)
+	switch r.Method {
+	case http.MethodGet:
+		path := strings.TrimSpace(r.URL.Query().Get("path"))
+		clean, content, found, err := readRelativeTextFile(workspace, path)
+		if err != nil {
+			http.Error(w, err.Error(), relativeFilePathStatus(err))
+			return
+		}
+		writeJSON(w, map[string]interface{}{"ok": true, "path": clean, "found": found, "content": content})
+	case http.MethodPost:
+		var body struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		clean, err := writeRelativeTextFile(workspace, body.Path, body.Content, true)
+		if err != nil {
+			http.Error(w, err.Error(), relativeFilePathStatus(err))
+			return
+		}
+		writeJSON(w, map[string]interface{}{"ok": true, "path": clean, "saved": true})
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
-	includeHeartbeat := r.URL.Query().Get("include_heartbeat") == "1"
-	limit := 100
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			if n > 500 {
-				n = 500
-			}
-			limit = n
-		}
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": []map[string]interface{}{}})
-		return
-	}
-	lines := strings.Split(string(b), "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	if len(lines) > limit {
-		lines = lines[len(lines)-limit:]
-	}
-	items := make([]map[string]interface{}, 0, len(lines))
-	for _, ln := range lines {
-		if ln == "" {
-			continue
-		}
-		var row map[string]interface{}
-		if err := json.Unmarshal([]byte(ln), &row); err == nil {
-			source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
-			if !includeHeartbeat && source == "heartbeat" {
-				continue
-			}
-			items = append(items, row)
-		}
-	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "items": items})
 }
 
 func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
@@ -5624,7 +5316,7 @@ func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	path := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task-audit.jsonl")
+	path := s.memoryFilePath("task-audit.jsonl")
 	includeHeartbeat := r.URL.Query().Get("include_heartbeat") == "1"
 	b, err := os.ReadFile(path)
 	lines := []string{}
@@ -5681,7 +5373,7 @@ func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Merge command watchdog queue from memory/task_queue.json for visibility.
-	queuePath := filepath.Join(strings.TrimSpace(s.workspacePath), "memory", "task_queue.json")
+	queuePath := s.memoryFilePath("task_queue.json")
 	if qb, qErr := os.ReadFile(queuePath); qErr == nil {
 		var q map[string]interface{}
 		if json.Unmarshal(qb, &q) == nil {
@@ -5780,7 +5472,7 @@ func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(items, func(i, j int) bool { return fmt.Sprintf("%v", items[i]["time"]) > fmt.Sprintf("%v", items[j]["time"]) })
 	stats := map[string]int{"total": len(items), "running": len(running)}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "running": running, "items": items, "stats": stats})
+	writeJSON(w, map[string]interface{}{"ok": true, "running": running, "items": items, "stats": stats})
 }
 
 func (s *Server) loadEKGRowsCached(path string, maxLines int) []map[string]interface{} {
@@ -5834,8 +5526,7 @@ func (s *Server) handleWebUIEKGStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	workspace := strings.TrimSpace(s.workspacePath)
-	ekgPath := filepath.Join(workspace, "memory", "ekg-events.jsonl")
+	ekgPath := s.memoryFilePath("ekg-events.jsonl")
 	window := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("window")))
 	windowDur := 24 * time.Hour
 	switch window {
@@ -5929,7 +5620,7 @@ func (s *Server) handleWebUIEKGStats(w http.ResponseWriter, r *http.Request) {
 		}
 		return out
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"ok":                    true,
 		"window":                selectedWindow,
 		"provider_top":          toTopScore(providerScore, 5),
@@ -5941,72 +5632,6 @@ func (s *Server) handleWebUIEKGStats(w http.ResponseWriter, r *http.Request) {
 		"channel_stats":         channelStats,
 		"escalation_count":      0,
 	})
-}
-
-func (s *Server) handleWebUIExecApprovals(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if strings.TrimSpace(s.configPath) == "" {
-		http.Error(w, "config path not set", http.StatusInternalServerError)
-		return
-	}
-	b, err := os.ReadFile(s.configPath)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	var cfg map[string]interface{}
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if r.Method == http.MethodGet {
-		toolsMap, _ := cfg["tools"].(map[string]interface{})
-		shellMap, _ := toolsMap["shell"].(map[string]interface{})
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "exec_approvals": shellMap})
-		return
-	}
-	if r.Method == http.MethodPost {
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		toolsMap, _ := cfg["tools"].(map[string]interface{})
-		if toolsMap == nil {
-			toolsMap = map[string]interface{}{}
-			cfg["tools"] = toolsMap
-		}
-		shellMap, _ := toolsMap["shell"].(map[string]interface{})
-		if shellMap == nil {
-			shellMap = map[string]interface{}{}
-			toolsMap["shell"] = shellMap
-		}
-		for k, v := range body {
-			shellMap[k] = v
-		}
-		out, _ := json.MarshalIndent(cfg, "", "  ")
-		tmp := s.configPath + ".tmp"
-		if err := os.WriteFile(tmp, out, 0644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if err := os.Rename(tmp, s.configPath); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if s.onConfigAfter != nil {
-			if err := s.onConfigAfter(); err != nil {
-				http.Error(w, "config saved but reload failed: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "reloaded": true})
-		return
-	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (s *Server) handleWebUILogsRecent(w http.ResponseWriter, r *http.Request) {
@@ -6023,12 +5648,7 @@ func (s *Server) handleWebUILogsRecent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "log path not configured", http.StatusInternalServerError)
 		return
 	}
-	limit := 10
-	if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
-			limit = n
-		}
-	}
+	limit := queryBoundedPositiveInt(r, "limit", 10, 200)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -6048,7 +5668,7 @@ func (s *Server) handleWebUILogsRecent(w http.ResponseWriter, r *http.Request) {
 			out = append(out, parsed)
 		}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "logs": out})
+	writeJSON(w, map[string]interface{}{"ok": true, "logs": out})
 }
 
 func parseLogLine(line string) (map[string]interface{}, bool) {
@@ -6111,62 +5731,6 @@ func (s *Server) handleWebUILogsLive(w http.ResponseWriter, r *http.Request) {
 				_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if writeErr := conn.WriteJSON(map[string]interface{}{"ok": true, "type": "log_entry", "entry": parsed}); writeErr != nil {
 					return
-				}
-			}
-			if err != nil {
-				time.Sleep(500 * time.Millisecond)
-			}
-		}
-	}
-}
-
-func (s *Server) handleWebUILogsStream(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Deprecation", "true")
-	w.Header().Set("X-Clawgo-Replaced-By", "/api/logs/live")
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	path := strings.TrimSpace(s.logFilePath)
-	if path == "" {
-		http.Error(w, "log path not configured", http.StatusInternalServerError)
-		return
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-	fi, _ := f.Stat()
-	if fi != nil {
-		_, _ = f.Seek(fi.Size(), io.SeekStart)
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "stream unsupported", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	reader := bufio.NewReader(f)
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		default:
-			line, err := reader.ReadString('\n')
-			if len(line) > 0 {
-				if parsed, ok := parseLogLine(line); ok {
-					b, _ := json.Marshal(parsed)
-					_, _ = w.Write(append(b, '\n'))
-					flusher.Flush()
 				}
 			}
 			if err != nil {

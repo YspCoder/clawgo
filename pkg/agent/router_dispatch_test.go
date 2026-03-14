@@ -29,7 +29,7 @@ func TestResolveAutoRouteTargetRulesFirst(t *testing.T) {
 	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing", SystemPromptFile: "agents/tester/AGENT.md"}
 	cfg.Agents.Router.Rules = []config.AgentRouteRule{{AgentID: "coder", Keywords: []string{"鐧诲綍", "bug"}}}
 
-	agentID, task := resolveAutoRouteTarget(cfg, "璇峰府鎴戜慨澶嶇櫥褰曟帴鍙ｇ殑 bug 骞舵敼浠ｇ爜")
+	agentID, task := resolveAutoRouteTarget(cfg, "please fix the login bug and update the code")
 	if agentID != "coder" || task == "" {
 		t.Fatalf("expected coder route, got %s / %s", agentID, task)
 	}
@@ -113,7 +113,7 @@ func TestMaybeAutoRouteDispatchesRulesFirstMatch(t *testing.T) {
 		Channel:    "cli",
 		ChatID:     "direct",
 		SessionKey: "main",
-		Content:    "璇峰仛涓€娆″洖褰掓祴璇曞苟楠岃瘉杩欎釜淇",
+		Content:    "please run regression testing and verify this fix",
 	})
 	if err != nil {
 		t.Fatalf("rules-first auto route failed: %v", err)
@@ -123,6 +123,21 @@ func TestMaybeAutoRouteDispatchesRulesFirstMatch(t *testing.T) {
 	}
 	if out == "" {
 		t.Fatalf("expected merged output")
+	}
+}
+
+func TestResolveDispatchDecisionIncludesReason(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Router.Enabled = true
+	cfg.Agents.Router.Strategy = "rules_first"
+	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing", SystemPromptFile: "agents/tester/AGENT.md"}
+
+	decision := resolveDispatchDecision(cfg, "run regression testing for this change")
+	if !decision.Valid() {
+		t.Fatalf("expected valid decision")
+	}
+	if decision.TargetAgent != "tester" || decision.RouteSource == "" || decision.Reason == "" {
+		t.Fatalf("unexpected decision: %+v", decision)
 	}
 }
 

@@ -118,33 +118,32 @@ func (t *MessageTool) SetSendCallback(callback SendCallback) {
 }
 
 func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	action, _ := args["action"].(string)
-	action = strings.ToLower(strings.TrimSpace(action))
+	action := strings.ToLower(MapStringArg(args, "action"))
 	if action == "" {
 		action = "send"
 	}
-	content, _ := args["content"].(string)
-	if msg, _ := args["message"].(string); msg != "" {
+	content := MapRawStringArg(args, "content")
+	if msg := MapRawStringArg(args, "message"); msg != "" {
 		content = msg
 	}
-	media, _ := args["media"].(string)
+	media := MapStringArg(args, "media")
 	if media == "" {
-		if p, _ := args["path"].(string); p != "" {
+		if p := MapStringArg(args, "path"); p != "" {
 			media = p
 		}
 	}
 	if media == "" {
-		if p, _ := args["file_path"].(string); p != "" {
+		if p := MapStringArg(args, "file_path"); p != "" {
 			media = p
 		}
 	}
 	if media == "" {
-		if p, _ := args["filePath"].(string); p != "" {
+		if p := MapStringArg(args, "filePath"); p != "" {
 			media = p
 		}
 	}
-	messageID, _ := args["message_id"].(string)
-	emoji, _ := args["emoji"].(string)
+	messageID := MapStringArg(args, "message_id")
+	emoji := MapStringArg(args, "emoji")
 
 	switch action {
 	case "send":
@@ -167,9 +166,9 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 		return "", fmt.Errorf("%w: %s", ErrUnsupportedAction, action)
 	}
 
-	channel, _ := args["channel"].(string)
-	chatID, _ := args["chat_id"].(string)
-	if to, _ := args["to"].(string); to != "" {
+	channel := MapStringArg(args, "channel")
+	chatID := MapStringArg(args, "chat_id")
+	if to := MapStringArg(args, "to"); to != "" {
 		chatID = to
 	}
 
@@ -202,8 +201,8 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]interface{}) 
 				buttonRow := pooled[:0]
 				for _, b := range rowArr {
 					if bMap, ok := b.(map[string]interface{}); ok {
-						text, _ := bMap["text"].(string)
-						data, _ := bMap["data"].(string)
+						text := MapStringArg(bMap, "text")
+						data := MapStringArg(bMap, "data")
 						if text != "" && data != "" {
 							buttonRow = append(buttonRow, bus.Button{Text: text, Data: data})
 						}

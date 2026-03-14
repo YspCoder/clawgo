@@ -90,19 +90,19 @@ func (t *SpawnTool) SetContext(channel, chatID string) {
 }
 
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	task, ok := args["task"].(string)
-	if !ok {
+	task := MapStringArg(args, "task")
+	if task == "" {
 		return "", fmt.Errorf("task is required")
 	}
 
-	label, _ := args["label"].(string)
-	role, _ := args["role"].(string)
-	agentID, _ := args["agent_id"].(string)
-	maxRetries := intArg(args, "max_retries")
-	retryBackoff := intArg(args, "retry_backoff_ms")
-	timeoutSec := intArg(args, "timeout_sec")
-	maxTaskChars := intArg(args, "max_task_chars")
-	maxResultChars := intArg(args, "max_result_chars")
+	label := MapStringArg(args, "label")
+	role := MapStringArg(args, "role")
+	agentID := MapStringArg(args, "agent_id")
+	maxRetries := MapIntArg(args, "max_retries", 0)
+	retryBackoff := MapIntArg(args, "retry_backoff_ms", 0)
+	timeoutSec := MapIntArg(args, "timeout_sec", 0)
+	maxTaskChars := MapIntArg(args, "max_task_chars", 0)
+	maxResultChars := MapIntArg(args, "max_result_chars", 0)
 	if label == "" && role != "" {
 		label = role
 	} else if label == "" && agentID != "" {
@@ -113,8 +113,8 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		return "Error: Subagent manager not configured", nil
 	}
 
-	originChannel, _ := args["channel"].(string)
-	originChatID, _ := args["chat_id"].(string)
+	originChannel := MapStringArg(args, "channel")
+	originChatID := MapStringArg(args, "chat_id")
 	if originChannel == "" || originChatID == "" {
 		t.mu.RLock()
 		defaultChannel := t.originChannel
@@ -146,20 +146,4 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 	}
 
 	return result, nil
-}
-
-func intArg(args map[string]interface{}, key string) int {
-	if args == nil {
-		return 0
-	}
-	if v, ok := args[key].(float64); ok {
-		return int(v)
-	}
-	if v, ok := args[key].(int); ok {
-		return v
-	}
-	if v, ok := args[key].(int64); ok {
-		return int(v)
-	}
-	return 0
 }

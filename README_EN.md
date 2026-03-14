@@ -180,7 +180,14 @@ ClawGo currently has four layers:
 
 ## Config Layout
 
-Recommended structure:
+There are now two configuration views:
+
+- the persisted file still uses the raw structure shown below
+- the WebUI and runtime-facing APIs prefer a normalized view:
+  - `core`
+  - `runtime`
+
+Recommended raw structure:
 
 ```json
 {
@@ -217,6 +224,13 @@ Notes:
   - `agents.defaults.execution`
   - `agents.defaults.summary_policy`
   - `agents.router.policy`
+- the WebUI now saves through the normalized schema first:
+  - `core.default_provider`
+  - `core.main_agent_id`
+  - `core.subagents`
+  - `runtime.router`
+  - `runtime.providers`
+- runtime panels now consume the unified `runtime snapshot / runtime live`
 - enabled local subagents must define `system_prompt_file`
 - remote branches require:
   - `transport: "node"`

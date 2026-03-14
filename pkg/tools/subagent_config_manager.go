@@ -154,53 +154,15 @@ func DeleteConfigSubagent(configPath, agentID string) (map[string]interface{}, e
 }
 
 func stringArgFromMap(args map[string]interface{}, key string) string {
-	if args == nil {
-		return ""
-	}
-	v, _ := args[key].(string)
-	return strings.TrimSpace(v)
+	return MapStringArg(args, key)
 }
 
 func boolArgFromMap(args map[string]interface{}, key string) (bool, bool) {
-	if args == nil {
-		return false, false
-	}
-	raw, ok := args[key]
-	if !ok {
-		return false, false
-	}
-	switch v := raw.(type) {
-	case bool:
-		return v, true
-	default:
-		return false, false
-	}
+	return MapBoolArg(args, key)
 }
 
 func stringListArgFromMap(args map[string]interface{}, key string) []string {
-	if args == nil {
-		return nil
-	}
-	raw, ok := args[key]
-	if !ok {
-		return nil
-	}
-	switch v := raw.(type) {
-	case []string:
-		return normalizeKeywords(v)
-	case []interface{}:
-		items := make([]string, 0, len(v))
-		for _, item := range v {
-			s, _ := item.(string)
-			s = strings.TrimSpace(s)
-			if s != "" {
-				items = append(items, s)
-			}
-		}
-		return normalizeKeywords(items)
-	default:
-		return nil
-	}
+	return normalizeKeywords(MapStringListArg(args, key))
 }
 
 func upsertRouteRuleConfig(rules []config.AgentRouteRule, rule config.AgentRouteRule) []config.AgentRouteRule {

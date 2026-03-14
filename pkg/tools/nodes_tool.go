@@ -45,13 +45,12 @@ func (t *NodesTool) Parameters() map[string]interface{} {
 
 func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	_ = ctx
-	action, _ := args["action"].(string)
-	action = strings.TrimSpace(strings.ToLower(action))
+	action := strings.TrimSpace(strings.ToLower(MapStringArg(args, "action")))
 	if action == "" {
 		return "", fmt.Errorf("action is required")
 	}
-	nodeID, _ := args["node"].(string)
-	mode, _ := args["mode"].(string)
+	nodeID := MapStringArg(args, "node")
+	mode := MapStringArg(args, "mode")
 	if t.manager == nil {
 		return "", fmt.Errorf("nodes manager not configured")
 	}
@@ -75,33 +74,32 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 				reqArgs[k] = v
 			}
 		}
-		if rawPaths, ok := args["artifact_paths"].([]interface{}); ok && len(rawPaths) > 0 {
+		if rawPaths := MapStringListArg(args, "artifact_paths"); len(rawPaths) > 0 {
 			reqArgs["artifact_paths"] = rawPaths
 		}
 		if cmd, ok := args["command"].([]interface{}); ok && len(cmd) > 0 {
 			reqArgs["command"] = cmd
 		}
-		if facing, _ := args["facing"].(string); strings.TrimSpace(facing) != "" {
+		if facing := MapStringArg(args, "facing"); facing != "" {
 			f := strings.ToLower(strings.TrimSpace(facing))
 			if f != "front" && f != "back" && f != "both" {
 				return "", fmt.Errorf("invalid_args: facing must be front|back|both")
 			}
 			reqArgs["facing"] = f
 		}
-		if d, ok := args["duration_ms"].(float64); ok {
-			di := int(d)
+		if di := MapIntArg(args, "duration_ms", 0); di > 0 {
 			if di <= 0 || di > 300000 {
 				return "", fmt.Errorf("invalid_args: duration_ms must be in 1..300000")
 			}
 			reqArgs["duration_ms"] = di
 		}
-		task, _ := args["task"].(string)
-		model, _ := args["model"].(string)
+		task := MapStringArg(args, "task")
+		model := MapStringArg(args, "model")
 		if action == "agent_task" && strings.TrimSpace(task) == "" {
 			return "", fmt.Errorf("invalid_args: agent_task requires task")
 		}
 		if action == "canvas_action" {
-			if act, _ := reqArgs["action"].(string); strings.TrimSpace(act) == "" {
+			if act := MapStringArg(reqArgs, "action"); act == "" {
 				return "", fmt.Errorf("invalid_args: canvas_action requires args.action")
 			}
 		}
@@ -153,11 +151,11 @@ func (t *NodesTool) writeAudit(req nodes.Request, resp nodes.Response, mode stri
 	if len(req.Args) > 0 {
 		row["request_args"] = req.Args
 	}
-	if used, _ := resp.Payload["used_transport"].(string); strings.TrimSpace(used) != "" {
-		row["used_transport"] = strings.TrimSpace(used)
+	if used := MapStringArg(resp.Payload, "used_transport"); used != "" {
+		row["used_transport"] = used
 	}
-	if fallback, _ := resp.Payload["fallback_from"].(string); strings.TrimSpace(fallback) != "" {
-		row["fallback_from"] = strings.TrimSpace(fallback)
+	if fallback := MapStringArg(resp.Payload, "fallback_from"); fallback != "" {
+		row["fallback_from"] = fallback
 	}
 	if count, kinds := artifactAuditSummary(resp.Payload["artifacts"]); count > 0 {
 		row["artifact_count"] = count
@@ -196,8 +194,8 @@ func artifactAuditSummary(raw interface{}) (int, []string) {
 		if !ok {
 			continue
 		}
-		if kind, _ := row["kind"].(string); strings.TrimSpace(kind) != "" {
-			kinds = append(kinds, strings.TrimSpace(kind))
+		if kind := MapStringArg(row, "kind"); kind != "" {
+			kinds = append(kinds, kind)
 		}
 	}
 	return len(items), kinds
@@ -231,14 +229,14 @@ func artifactAuditPreviews(raw interface{}) []map[string]interface{} {
 		if size, ok := row["size_bytes"]; ok {
 			entry["size_bytes"] = size
 		}
-		if text, _ := row["content_text"].(string); strings.TrimSpace(text) != "" {
+		if text := MapStringArg(row, "content_text"); text != "" {
 			entry["content_text"] = trimAuditContent(text)
 		}
-		if b64, _ := row["content_base64"].(string); strings.TrimSpace(b64) != "" {
+		if b64 := MapStringArg(row, "content_base64"); b64 != "" {
 			entry["content_base64"] = trimAuditContent(b64)
 			entry["content_base64_truncated"] = len(b64) > nodeAuditArtifactPreviewLimit
 		}
-		if truncated, ok := row["truncated"].(bool); ok && truncated {
+		if truncated, ok := MapBoolArg(row, "truncated"); ok && truncated {
 			entry["truncated"] = true
 		}
 		if len(entry) > 0 {

@@ -61,8 +61,8 @@ func (t *ReadFileTool) Parameters() map[string]interface{} {
 }
 
 func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	path, ok := args["path"].(string)
-	if !ok {
+	path := MapStringArg(args, "path")
+	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
@@ -83,12 +83,12 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 
 	offset := int64(0)
-	if o, ok := args["offset"].(float64); ok {
+	if o := MapIntArg(args, "offset", 0); o > 0 {
 		offset = int64(o)
 	}
 
 	limit := int64(stat.Size())
-	if l, ok := args["limit"].(float64); ok {
+	if l := MapIntArg(args, "limit", 0); l > 0 {
 		limit = int64(l)
 	}
 
@@ -145,16 +145,23 @@ func (t *WriteFileTool) Parameters() map[string]interface{} {
 }
 
 func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	path, ok := args["path"].(string)
-	if !ok {
+	path := MapStringArg(args, "path")
+	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
-	content, ok := args["content"].(string)
+	if args == nil {
+		return "", fmt.Errorf("content is required")
+	}
+	rawContent, ok := args["content"]
 	if !ok {
 		return "", fmt.Errorf("content is required")
 	}
-	appendMode, _ := args["append"].(bool)
+	content, ok := rawContent.(string)
+	if !ok {
+		return "", fmt.Errorf("content is required")
+	}
+	appendMode, _ := MapBoolArg(args, "append")
 
 	resolvedPath, err := resolveToolPath(t.allowedDir, path)
 	if err != nil {
@@ -217,12 +224,12 @@ func (t *ListDirTool) Parameters() map[string]interface{} {
 }
 
 func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	path, ok := args["path"].(string)
-	if !ok {
+	path := MapStringArg(args, "path")
+	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
-	recursive, _ := args["recursive"].(bool)
+	recursive, _ := MapBoolArg(args, "recursive")
 
 	resolvedPath, err := resolveToolPath(t.allowedDir, path)
 	if err != nil {
@@ -310,17 +317,25 @@ func (t *EditFileTool) Parameters() map[string]interface{} {
 }
 
 func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	path, ok := args["path"].(string)
-	if !ok {
+	path := MapStringArg(args, "path")
+	if path == "" {
 		return "", fmt.Errorf("path is required")
 	}
 
-	oldText, ok := args["old_text"].(string)
+	rawOldText, ok := args["old_text"]
 	if !ok {
 		return "", fmt.Errorf("old_text is required")
 	}
+	oldText, ok := rawOldText.(string)
+	if !ok || oldText == "" {
+		return "", fmt.Errorf("old_text is required")
+	}
 
-	newText, ok := args["new_text"].(string)
+	rawNewText, ok := args["new_text"]
+	if !ok {
+		return "", fmt.Errorf("new_text is required")
+	}
+	newText, ok := rawNewText.(string)
 	if !ok {
 		return "", fmt.Errorf("new_text is required")
 	}

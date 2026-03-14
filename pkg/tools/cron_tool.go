@@ -37,13 +37,11 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]interface{}) (st
 	if t.cs == nil {
 		return "Error: cron service not available", nil
 	}
-	action, _ := args["action"].(string)
-	action = strings.ToLower(strings.TrimSpace(action))
+	action := strings.ToLower(MapStringArg(args, "action"))
 	if action == "" {
 		action = "list"
 	}
-	id, _ := args["id"].(string)
-	id = strings.TrimSpace(id)
+	id := MapStringArg(args, "id")
 
 	switch action {
 	case "list":

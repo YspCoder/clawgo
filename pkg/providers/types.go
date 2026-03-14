@@ -92,3 +92,21 @@ type ToolFunctionDefinition struct {
 	Parameters  map[string]interface{} `json:"parameters"`
 	Strict      *bool                  `json:"strict,omitempty"`
 }
+
+type ProviderExecutionError struct {
+	Code      string `json:"code,omitempty"`
+	Message   string `json:"message,omitempty"`
+	Stage     string `json:"stage,omitempty"`
+	Retryable bool   `json:"retryable,omitempty"`
+	Source    string `json:"source,omitempty"`
+}
+
+type ProviderExecutionResult struct {
+	Body        []byte                  `json:"-"`
+	StatusCode  int                     `json:"status_code,omitempty"`
+	ContentType string                  `json:"content_type,omitempty"`
+	AttemptKind string                  `json:"attempt_kind,omitempty"`
+	Retryable   bool                    `json:"retryable,omitempty"`
+	Failure     oauthFailureReason      `json:"failure_reason,omitempty"`
+	Error       *ProviderExecutionError `json:"error,omitempty"`
+}

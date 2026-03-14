@@ -27,8 +27,8 @@ func (al *AgentLoop) maybeAutoRoute(ctx context.Context, msg bus.InboundMessage)
 	if cfg == nil || !cfg.Agents.Router.Enabled {
 		return "", false, nil
 	}
-	agentID, taskText := resolveAutoRouteTarget(cfg, msg.Content)
-	if agentID == "" || strings.TrimSpace(taskText) == "" {
+	decision := resolveDispatchDecision(cfg, msg.Content)
+	if !decision.Valid() {
 		return "", false, nil
 	}
 	waitTimeout := cfg.Agents.Router.DefaultTimeoutSec
@@ -38,8 +38,9 @@ func (al *AgentLoop) maybeAutoRoute(ctx context.Context, msg bus.InboundMessage)
 	waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitTimeout)*time.Second)
 	defer cancel()
 	task, err := al.subagentRouter.DispatchTask(waitCtx, tools.RouterDispatchRequest{
-		Task:             taskText,
-		AgentID:          agentID,
+		Task:             decision.TaskText,
+		AgentID:          decision.TargetAgent,
+		Decision:         &decision,
 		NotifyMainPolicy: "internal_only",
 		OriginChannel:    msg.Channel,
 		OriginChatID:     msg.ChatID,
@@ -55,16 +56,21 @@ func (al *AgentLoop) maybeAutoRoute(ctx context.Context, msg bus.InboundMessage)
 }
 
 func resolveAutoRouteTarget(cfg *config.Config, raw string) (string, string) {
+	decision := resolveDispatchDecision(cfg, raw)
+	return decision.TargetAgent, decision.TaskText
+}
+
+func resolveDispatchDecision(cfg *config.Config, raw string) tools.DispatchDecision {
 	if cfg == nil {
-		return "", ""
+		return tools.DispatchDecision{}
 	}
 	content := strings.TrimSpace(raw)
 	if content == "" || len(cfg.Agents.Subagents) == 0 {
-		return "", ""
+		return tools.DispatchDecision{}
 	}
 	maxChars := cfg.Agents.Router.Policy.IntentMaxInputChars
 	if maxChars > 0 && len([]rune(content)) > maxChars {
-		return "", ""
+		return tools.DispatchDecision{}
 	}
 	lower := strings.ToLower(content)
 	for agentID, subcfg := range cfg.Agents.Subagents {
@@ -73,19 +79,37 @@ func resolveAutoRouteTarget(cfg *config.Config, raw string) (string, string) {
 		}
 		marker := "@" + strings.ToLower(strings.TrimSpace(agentID))
 		if strings.HasPrefix(lower, marker+" ") || lower == marker {
-			return agentID, strings.TrimSpace(content[len(marker):])
+			return tools.DispatchDecision{
+				TargetAgent: agentID,
+				Reason:      "explicit agent mention",
+				Confidence:  1,
+				TaskText:    strings.TrimSpace(content[len(marker):]),
+				RouteSource: "explicit",
+			}
 		}
 		prefix := "agent:" + strings.ToLower(strings.TrimSpace(agentID))
 		if strings.HasPrefix(lower, prefix+" ") || lower == prefix {
-			return agentID, strings.TrimSpace(content[len(prefix):])
+			return tools.DispatchDecision{
+				TargetAgent: agentID,
+				Reason:      "explicit agent prefix",
+				Confidence:  1,
+				TaskText:    strings.TrimSpace(content[len(prefix):]),
+				RouteSource: "explicit",
+			}
 		}
 	}
 	if strings.EqualFold(strings.TrimSpace(cfg.Agents.Router.Strategy), "rules_first") {
 		if agentID := selectAgentByRules(cfg, content); agentID != "" {
-			return agentID, content
+			return tools.DispatchDecision{
+				TargetAgent: agentID,
+				Reason:      "matched router rules or role keywords",
+				Confidence:  0.8,
+				TaskText:    content,
+				RouteSource: "rules",
+			}
 		}
 	}
-	return "", ""
+	return tools.DispatchDecision{}
 }
 
 func selectAgentByRules(cfg *config.Config, content string) string {

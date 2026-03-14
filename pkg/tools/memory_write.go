@@ -69,24 +69,21 @@ func (t *MemoryWriteTool) Parameters() map[string]interface{} {
 }
 
 func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	content, _ := args["content"].(string)
+	content := MapRawStringArg(args, "content")
 	if content == "" {
 		return "error: content is required", nil
 	}
 	namespace := parseMemoryNamespaceArg(args)
 	baseDir := memoryNamespaceBaseDir(t.workspace, namespace)
 
-	kind, _ := args["kind"].(string)
-	kind = strings.ToLower(strings.TrimSpace(kind))
+	kind := strings.ToLower(MapStringArg(args, "kind"))
 	if kind == "" {
 		kind = "daily"
 	}
 
-	importance, _ := args["importance"].(string)
-	importance = normalizeImportance(importance)
+	importance := normalizeImportance(MapStringArg(args, "importance"))
 
-	source, _ := args["source"].(string)
-	source = strings.TrimSpace(source)
+	source := MapStringArg(args, "source")
 	if source == "" {
 		source = "user"
 	}
@@ -94,7 +91,7 @@ func (t *MemoryWriteTool) Execute(ctx context.Context, args map[string]interface
 	tags := parseTags(args["tags"])
 
 	appendMode := true
-	if v, ok := args["append"].(bool); ok {
+	if v, ok := MapBoolArg(args, "append"); ok {
 		appendMode = v
 	}
 
@@ -160,23 +157,13 @@ func normalizeImportance(v string) string {
 }
 
 func parseTags(raw interface{}) []string {
-	items, ok := raw.([]interface{})
-	if !ok {
+	items := MapStringListArg(map[string]interface{}{"tags": raw}, "tags")
+	if len(items) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(items))
-	seen := map[string]struct{}{}
-	for _, it := range items {
-		s, _ := it.(string)
-		s = strings.ToLower(strings.TrimSpace(s))
-		if s == "" {
-			continue
-		}
-		if _, exists := seen[s]; exists {
-			continue
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
+	for _, item := range items {
+		out = append(out, strings.ToLower(strings.TrimSpace(item)))
 	}
 	return out
 }

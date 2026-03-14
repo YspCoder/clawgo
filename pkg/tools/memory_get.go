@@ -54,8 +54,7 @@ func (t *MemoryGetTool) Parameters() map[string]interface{} {
 }
 
 func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	rawPath, _ := args["path"].(string)
-	rawPath = strings.TrimSpace(rawPath)
+	rawPath := MapStringArg(args, "path")
 	if rawPath == "" {
 		return "", fmt.Errorf("path is required")
 	}
@@ -64,14 +63,8 @@ func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}
 	}
 	namespace := parseMemoryNamespaceArg(args)
 
-	from := 1
-	if v, ok := args["from"].(float64); ok && int(v) > 0 {
-		from = int(v)
-	}
-	lines := 80
-	if v, ok := args["lines"].(float64); ok && int(v) > 0 {
-		lines = int(v)
-	}
+	from := MapIntArg(args, "from", 1)
+	lines := MapIntArg(args, "lines", 80)
 	if lines > 500 {
 		lines = 500
 	}

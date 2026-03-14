@@ -40,10 +40,8 @@ func (t *CameraTool) Parameters() map[string]interface{} {
 }
 
 func (t *CameraTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	filename := ""
-	if v, ok := args["filename"].(string); ok && v != "" {
-		filename = v
-	} else {
+	filename := MapStringArg(args, "filename")
+	if filename == "" {
 		filename = fmt.Sprintf("snap_%d.jpg", time.Now().Unix())
 	}
 

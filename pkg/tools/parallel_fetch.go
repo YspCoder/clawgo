@@ -47,8 +47,8 @@ func (t *ParallelFetchTool) Parameters() map[string]interface{} {
 }
 
 func (t *ParallelFetchTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	urlsRaw, ok := args["urls"].([]interface{})
-	if !ok {
+	urlsRaw := interfaceSliceArg(args, "urls")
+	if len(urlsRaw) == 0 {
 		return "", fmt.Errorf("urls must be an array")
 	}
 
@@ -66,8 +66,8 @@ func (t *ParallelFetchTool) Execute(ctx context.Context, args map[string]interfa
 	sem := make(chan struct{}, minParallelLimit(maxParallel, len(urlsRaw)))
 
 	for i, u := range urlsRaw {
-		urlStr, ok := u.(string)
-		if !ok {
+		urlStr := strings.TrimSpace(fmt.Sprint(u))
+		if urlStr == "" || urlStr == "<nil>" {
 			results[i] = "Error: invalid url"
 			continue
 		}
@@ -95,8 +95,8 @@ func (t *ParallelFetchTool) Execute(ctx context.Context, args map[string]interfa
 func (t *ParallelFetchTool) executeSerial(ctx context.Context, urlsRaw []interface{}) string {
 	results := make([]string, len(urlsRaw))
 	for i, u := range urlsRaw {
-		urlStr, ok := u.(string)
-		if !ok {
+		urlStr := strings.TrimSpace(fmt.Sprint(u))
+		if urlStr == "" || urlStr == "<nil>" {
 			results[i] = "Error: invalid url"
 			continue
 		}
@@ -140,4 +140,32 @@ func minParallelLimit(maxParallel, total int) int {
 		return total
 	}
 	return maxParallel
+}
+
+func interfaceSliceArg(args map[string]interface{}, key string) []interface{} {
+	if args == nil {
+		return nil
+	}
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch v := raw.(type) {
+	case []interface{}:
+		return v
+	case []string:
+		out := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			out = append(out, item)
+		}
+		return out
+	case []map[string]interface{}:
+		out := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return nil
+	}
 }

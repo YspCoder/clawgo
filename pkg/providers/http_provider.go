@@ -2,7 +2,6 @@ package providers
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -709,90 +708,19 @@ func (p *HTTPProvider) callResponsesStream(ctx context.Context, messages []Messa
 }
 
 func (p *HTTPProvider) postJSONStream(ctx context.Context, endpoint string, payload interface{}, onEvent func(string)) ([]byte, int, string, error) {
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return nil, 0, "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-	attempts, err := p.authAttempts(ctx)
+	result, err := p.executeStreamAttempts(ctx, endpoint, payload, nil, onEvent)
 	if err != nil {
 		return nil, 0, "", err
 	}
-	var lastBody []byte
-	var lastStatus int
-	var lastType string
-	for _, attempt := range attempts {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
-		if err != nil {
-			return nil, 0, "", fmt.Errorf("failed to create request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "text/event-stream")
-		applyAttemptAuth(req, attempt)
-		applyAttemptProviderHeaders(req, attempt, p, true)
-
-		body, status, ctype, quotaHit, err := p.doStreamAttempt(req, attempt, onEvent)
-		if err != nil {
-			return nil, 0, "", err
-		}
-		if !quotaHit {
-			p.markAttemptSuccess(attempt)
-			return body, status, ctype, nil
-		}
-		lastBody, lastStatus, lastType = body, status, ctype
-		if attempt.kind == "oauth" && attempt.session != nil && p.oauth != nil {
-			reason, _ := classifyOAuthFailure(status, body)
-			p.oauth.markExhausted(attempt.session, reason)
-			recordProviderOAuthError(p.providerName, attempt.session, reason)
-		}
-		if attempt.kind == "api_key" {
-			reason, _ := classifyOAuthFailure(status, body)
-			p.markAPIKeyFailure(reason)
-		}
-	}
-	return lastBody, lastStatus, lastType, nil
+	return result.Body, result.StatusCode, result.ContentType, nil
 }
 
 func (p *HTTPProvider) postJSON(ctx context.Context, endpoint string, payload interface{}) ([]byte, int, string, error) {
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return nil, 0, "", fmt.Errorf("failed to marshal request: %w", err)
-	}
-	attempts, err := p.authAttempts(ctx)
+	result, err := p.executeJSONAttempts(ctx, endpoint, payload, nil, classifyOAuthFailure)
 	if err != nil {
 		return nil, 0, "", err
 	}
-	var lastBody []byte
-	var lastStatus int
-	var lastType string
-	for _, attempt := range attempts {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
-		if err != nil {
-			return nil, 0, "", fmt.Errorf("failed to create request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json")
-		applyAttemptAuth(req, attempt)
-		applyAttemptProviderHeaders(req, attempt, p, false)
-
-		body, status, ctype, err := p.doJSONAttempt(req, attempt)
-		if err != nil {
-			return nil, 0, "", err
-		}
-		reason, retry := classifyOAuthFailure(status, body)
-		if !retry {
-			p.markAttemptSuccess(attempt)
-			return body, status, ctype, nil
-		}
-		lastBody, lastStatus, lastType = body, status, ctype
-		if attempt.kind == "oauth" && attempt.session != nil && p.oauth != nil {
-			p.oauth.markExhausted(attempt.session, reason)
-			recordProviderOAuthError(p.providerName, attempt.session, reason)
-		}
-		if attempt.kind == "api_key" {
-			p.markAPIKeyFailure(reason)
-		}
-	}
-	return lastBody, lastStatus, lastType, nil
+	return result.Body, result.StatusCode, result.ContentType, nil
 }
 
 type authAttempt struct {

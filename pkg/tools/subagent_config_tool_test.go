@@ -63,3 +63,50 @@ func TestSubagentConfigToolUpsert(t *testing.T) {
 		t.Fatalf("expected router rules to persist")
 	}
 }
+
+func TestSubagentConfigToolUpsertParsesStringAndCSVArgs(t *testing.T) {
+	workspace := t.TempDir()
+	configPath := filepath.Join(workspace, "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Router.Enabled = true
+	cfg.Agents.Subagents["main"] = config.SubagentConfig{
+		Enabled:          true,
+		Type:             "router",
+		Role:             "orchestrator",
+		SystemPromptFile: "agents/main/AGENT.md",
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("save config failed: %v", err)
+	}
+	runtimecfg.Set(cfg)
+	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
+
+	tool := NewSubagentConfigTool(configPath)
+	_, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":             "upsert",
+		"agent_id":           "reviewer",
+		"enabled":            "true",
+		"role":               "testing",
+		"system_prompt_file": "agents/reviewer/AGENT.md",
+		"routing_keywords":   "review, regression",
+		"tool_allowlist":     "shell, sessions",
+	})
+	if err != nil {
+		t.Fatalf("upsert failed: %v", err)
+	}
+
+	reloaded, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("reload config failed: %v", err)
+	}
+	subcfg := reloaded.Agents.Subagents["reviewer"]
+	if !subcfg.Enabled {
+		t.Fatalf("expected reviewer to be enabled, got %+v", subcfg)
+	}
+	if len(subcfg.Tools.Allowlist) != 2 {
+		t.Fatalf("expected allowlist to parse from csv, got %+v", subcfg.Tools.Allowlist)
+	}
+	if len(reloaded.Agents.Router.Rules) != 1 || len(reloaded.Agents.Router.Rules[0].Keywords) != 2 {
+		t.Fatalf("expected routing keywords to parse from csv, got %+v", reloaded.Agents.Router.Rules)
+	}
+}

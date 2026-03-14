@@ -44,6 +44,40 @@ func TestSubagentProfileStoreNormalization(t *testing.T) {
 	}
 }
 
+func TestSubagentProfileToolCreateParsesStringNumericArgs(t *testing.T) {
+	store := NewSubagentProfileStore(t.TempDir())
+	tool := NewSubagentProfileTool(store)
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":             "create",
+		"agent_id":           "reviewer",
+		"role":               "testing",
+		"status":             "active",
+		"system_prompt_file": "agents/reviewer/AGENT.md",
+		"tool_allowlist":     "shell,sessions",
+		"max_retries":        "2",
+		"retry_backoff_ms":   "100",
+		"timeout_sec":        "5",
+	})
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if !strings.Contains(out, "Created subagent profile") {
+		t.Fatalf("unexpected output: %s", out)
+	}
+
+	profile, ok, err := store.Get("reviewer")
+	if err != nil || !ok {
+		t.Fatalf("expected created profile, got ok=%v err=%v", ok, err)
+	}
+	if profile.MaxRetries != 2 || profile.TimeoutSec != 5 {
+		t.Fatalf("unexpected numeric fields: %+v", profile)
+	}
+	if len(profile.ToolAllowlist) != 2 {
+		t.Fatalf("unexpected allowlist: %+v", profile.ToolAllowlist)
+	}
+}
+
 func TestSubagentManagerSpawnRejectsDisabledProfile(t *testing.T) {
 	workspace := t.TempDir()
 	manager := NewSubagentManager(nil, workspace, nil)

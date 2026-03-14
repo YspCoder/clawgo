@@ -570,7 +570,7 @@ func (c *mcpSSEClient) listAll(ctx context.Context, method, field string) (map[s
 		}
 		batch, _ := result[field].([]interface{})
 		items = append(items, batch...)
-		next, _ := result["nextCursor"].(string)
+		next := mcpStringArg(result, "nextCursor")
 		if strings.TrimSpace(next) == "" {
 			return map[string]interface{}{field: items}, nil
 		}
@@ -821,7 +821,7 @@ func (c *mcpHTTPClient) listAll(ctx context.Context, method, field string) (map[
 		}
 		batch, _ := result[field].([]interface{})
 		items = append(items, batch...)
-		next, _ := result["nextCursor"].(string)
+		next := mcpStringArg(result, "nextCursor")
 		if strings.TrimSpace(next) == "" {
 			return map[string]interface{}{field: items}, nil
 		}
@@ -956,7 +956,7 @@ func (c *mcpClient) listAll(ctx context.Context, method, field string) (map[stri
 		}
 		batch, _ := result[field].([]interface{})
 		items = append(items, batch...)
-		next, _ := result["nextCursor"].(string)
+		next := mcpStringArg(result, "nextCursor")
 		if strings.TrimSpace(next) == "" {
 			return map[string]interface{}{field: items}, nil
 		}
@@ -1322,14 +1322,9 @@ func renderMCPToolCallResult(result map[string]interface{}) (string, error) {
 }
 
 func mcpStringArg(args map[string]interface{}, key string) string {
-	v, _ := args[key].(string)
-	return v
+	return MapRawStringArg(args, key)
 }
 
 func mcpObjectArg(args map[string]interface{}, key string) map[string]interface{} {
-	v, _ := args[key].(map[string]interface{})
-	if v == nil {
-		return map[string]interface{}{}
-	}
-	return v
+	return MapObjectArg(args, key)
 }

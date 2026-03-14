@@ -22,11 +22,7 @@ func memoryNamespaceBaseDir(workspace, namespace string) string {
 }
 
 func parseMemoryNamespaceArg(args map[string]interface{}) string {
-	if args == nil {
-		return "main"
-	}
-	raw, _ := args["namespace"].(string)
-	return normalizeMemoryNamespace(raw)
+	return normalizeMemoryNamespace(MapStringArg(args, "namespace"))
 }
 
 func isPathUnder(parent, child string) bool {

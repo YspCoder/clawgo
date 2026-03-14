@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -312,7 +313,7 @@ func (sm *SessionManager) rewriteSessionFileLocked(session *Session) error {
 		e := toOpenClawMessageEvent(msg)
 		b, err := json.Marshal(e)
 		if err != nil {
-			continue
+			return fmt.Errorf("marshal session message: %w", err)
 		}
 		if _, err := f.Write(append(b, '\n')); err != nil {
 			return err
@@ -671,6 +672,7 @@ func (sm *SessionManager) loadSessions() error {
 			continue
 		}
 		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 		session.mu.Lock()
 		for scanner.Scan() {
 			if msg, ok := fromJSONLLine(scanner.Bytes()); ok {
@@ -678,7 +680,13 @@ func (sm *SessionManager) loadSessions() error {
 			}
 		}
 		session.mu.Unlock()
-		f.Close()
+		closeErr := f.Close()
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("scan session file %s: %w", file.Name(), err)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close session file %s: %w", file.Name(), closeErr)
+		}
 	}
 
 	return sm.writeOpenClawSessionsIndex()

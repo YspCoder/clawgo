@@ -38,6 +38,9 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 		}
 		sort.Slice(items, func(i, j int) bool { return items[i].Created > items[j].Created })
 		return map[string]interface{}{"items": items}, nil
+	case "snapshot":
+		limit := runtimeIntArg(args, "limit", 100)
+		return map[string]interface{}{"snapshot": sm.RuntimeSnapshot(limit)}, nil
 	case "get", "info":
 		taskID, err := resolveSubagentTaskIDForRuntime(sm, runtimeStringArg(args, "id"))
 		if err != nil {
@@ -194,7 +197,7 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 		if al.isProtectedMainAgent(agentID) {
 			return nil, fmt.Errorf("main agent %q cannot be disabled", agentID)
 		}
-		enabled, ok := args["enabled"].(bool)
+		enabled, ok := runtimeBoolArg(args, "enabled")
 		if !ok {
 			return nil, fmt.Errorf("enabled is required")
 		}
@@ -400,22 +403,6 @@ func (al *AgentLoop) HandleSubagentRuntime(ctx context.Context, action string, a
 			"thread": thread,
 			"items":  stream,
 		}, nil
-	case "stream_all":
-		tasks := sm.ListTasks()
-		sort.Slice(tasks, func(i, j int) bool {
-			left := maxInt64(tasks[i].Updated, tasks[i].Created)
-			right := maxInt64(tasks[j].Updated, tasks[j].Created)
-			if left != right {
-				return left > right
-			}
-			return tasks[i].ID > tasks[j].ID
-		})
-		taskLimit := runtimeIntArg(args, "task_limit", 16)
-		if taskLimit > 0 && len(tasks) > taskLimit {
-			tasks = tasks[:taskLimit]
-		}
-		items := mergeAllSubagentStreams(sm, tasks, runtimeIntArg(args, "limit", 200))
-		return map[string]interface{}{"found": true, "items": items}, nil
 	case "inbox":
 		agentID := runtimeStringArg(args, "agent_id")
 		if agentID == "" {
@@ -528,90 +515,6 @@ func mergeSubagentStream(events []tools.SubagentRunEvent, messages []tools.Agent
 	return items
 }
 
-func mergeAllSubagentStreams(sm *tools.SubagentManager, tasks []*tools.SubagentTask, limit int) []map[string]interface{} {
-	if sm == nil || len(tasks) == 0 {
-		return nil
-	}
-	items := make([]map[string]interface{}, 0)
-	seenEvents := map[string]struct{}{}
-	seenMessages := map[string]struct{}{}
-	for _, task := range tasks {
-		if task == nil {
-			continue
-		}
-		if events, err := sm.Events(task.ID, limit); err == nil {
-			for _, evt := range events {
-				key := fmt.Sprintf("%s:%s:%d:%s", evt.RunID, evt.Type, evt.At, evt.Message)
-				if _, ok := seenEvents[key]; ok {
-					continue
-				}
-				seenEvents[key] = struct{}{}
-				items = append(items, map[string]interface{}{
-					"kind":        "event",
-					"at":          evt.At,
-					"task_id":     task.ID,
-					"label":       task.Label,
-					"run_id":      evt.RunID,
-					"agent_id":    firstNonEmptyString(evt.AgentID, task.AgentID),
-					"event_type":  evt.Type,
-					"status":      evt.Status,
-					"message":     evt.Message,
-					"retry_count": evt.RetryCount,
-				})
-			}
-		}
-		if strings.TrimSpace(task.ThreadID) == "" {
-			continue
-		}
-		if messages, err := sm.ThreadMessages(task.ThreadID, limit); err == nil {
-			for _, msg := range messages {
-				if _, ok := seenMessages[msg.MessageID]; ok {
-					continue
-				}
-				seenMessages[msg.MessageID] = struct{}{}
-				items = append(items, map[string]interface{}{
-					"kind":           "message",
-					"at":             msg.CreatedAt,
-					"task_id":        task.ID,
-					"label":          task.Label,
-					"message_id":     msg.MessageID,
-					"thread_id":      msg.ThreadID,
-					"from_agent":     msg.FromAgent,
-					"to_agent":       msg.ToAgent,
-					"reply_to":       msg.ReplyTo,
-					"correlation_id": msg.CorrelationID,
-					"message_type":   msg.Type,
-					"content":        msg.Content,
-					"status":         msg.Status,
-					"requires_reply": msg.RequiresReply,
-				})
-			}
-		}
-	}
-	sort.Slice(items, func(i, j int) bool {
-		left, _ := items[i]["at"].(int64)
-		right, _ := items[j]["at"].(int64)
-		if left != right {
-			return left < right
-		}
-		return fmt.Sprintf("%v", items[i]["task_id"]) < fmt.Sprintf("%v", items[j]["task_id"])
-	})
-	if limit > 0 && len(items) > limit {
-		items = items[len(items)-limit:]
-	}
-	return items
-}
-
-func maxInt64(values ...int64) int64 {
-	var out int64
-	for _, v := range values {
-		if v > out {
-			out = v
-		}
-	}
-	return out
-}
-
 func firstNonEmptyString(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {
@@ -665,40 +568,19 @@ func resolveSubagentTaskIDForRuntime(sm *tools.SubagentManager, raw string) (str
 }
 
 func runtimeStringArg(args map[string]interface{}, key string) string {
-	if args == nil {
-		return ""
-	}
-	v, _ := args[key].(string)
-	return strings.TrimSpace(v)
+	return tools.MapStringArg(args, key)
 }
 
 func runtimeRawStringArg(args map[string]interface{}, key string) string {
-	if args == nil {
-		return ""
-	}
-	v, _ := args[key].(string)
-	return v
+	return tools.MapRawStringArg(args, key)
 }
 
 func runtimeIntArg(args map[string]interface{}, key string, fallback int) int {
-	if args == nil {
-		return fallback
-	}
-	switch v := args[key].(type) {
-	case int:
-		if v > 0 {
-			return v
-		}
-	case int64:
-		if v > 0 {
-			return int(v)
-		}
-	case float64:
-		if v > 0 {
-			return int(v)
-		}
-	}
-	return fallback
+	return tools.MapIntArg(args, key, fallback)
+}
+
+func runtimeBoolArg(args map[string]interface{}, key string) (bool, bool) {
+	return tools.MapBoolArg(args, key)
 }
 
 func fallbackString(v, fallback string) string {

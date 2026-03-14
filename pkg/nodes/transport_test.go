@@ -92,6 +92,27 @@ func TestNormalizeDevicePayloadBuildsArtifacts(t *testing.T) {
 	}
 }
 
+func TestNormalizeDevicePayloadNormalizesExistingArtifactRows(t *testing.T) {
+	t.Parallel()
+
+	payload := normalizeDevicePayload("screen_snapshot", map[string]interface{}{
+		"artifacts": []map[string]interface{}{
+			{
+				"path":       "/tmp/screen.png",
+				"kind":       "image",
+				"size_bytes": "42",
+			},
+		},
+	})
+	artifacts, ok := payload["artifacts"].([]map[string]interface{})
+	if !ok || len(artifacts) != 1 {
+		t.Fatalf("expected one normalized artifact, got %+v", payload["artifacts"])
+	}
+	if got := artifacts[0]["size_bytes"]; got != int64(42) {
+		t.Fatalf("expected normalized size_bytes, got %#v", got)
+	}
+}
+
 func TestWebRTCTransportSendEndToEnd(t *testing.T) {
 	t.Parallel()
 

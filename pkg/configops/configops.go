@@ -40,13 +40,22 @@ func LoadConfigAsMap(path string) (map[string]interface{}, error) {
 func NormalizeConfigPath(path string) string {
 	p := strings.TrimSpace(path)
 	p = strings.Trim(p, ".")
-	parts := strings.Split(p, ".")
-	for i, part := range parts {
-		if part == "enable" {
-			parts[i] = "enabled"
-		}
+	if p == "" {
+		return ""
 	}
-	return strings.Join(parts, ".")
+	parts := strings.Split(p, ".")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if part == "enable" {
+			part = "enabled"
+		}
+		out = append(out, part)
+	}
+	return strings.Join(out, ".")
 }
 
 func ParseConfigValue(raw string) interface{} {
@@ -70,10 +79,20 @@ func ParseConfigValue(raw string) interface{} {
 	if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
 		return v[1 : len(v)-1]
 	}
+	if strings.HasPrefix(v, "{") || strings.HasPrefix(v, "[") {
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(v), &parsed); err == nil {
+			return parsed
+		}
+	}
 	return v
 }
 
 func SetMapValueByPath(root map[string]interface{}, path string, value interface{}) error {
+	if root == nil {
+		return fmt.Errorf("root is nil")
+	}
+	path = NormalizeConfigPath(path)
 	if path == "" {
 		return fmt.Errorf("path is empty")
 	}
@@ -106,6 +125,10 @@ func SetMapValueByPath(root map[string]interface{}, path string, value interface
 }
 
 func GetMapValueByPath(root map[string]interface{}, path string) (interface{}, bool) {
+	if root == nil {
+		return nil, false
+	}
+	path = NormalizeConfigPath(path)
 	if path == "" {
 		return nil, false
 	}

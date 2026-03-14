@@ -77,16 +77,13 @@ type searchResult struct {
 }
 
 func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	query, ok := args["query"].(string)
-	if !ok || query == "" {
+	query := MapStringArg(args, "query")
+	if query == "" {
 		return "", fmt.Errorf("query is required")
 	}
 	namespace := parseMemoryNamespaceArg(args)
 
-	maxResults := 5
-	if m, ok := args["maxResults"].(float64); ok {
-		maxResults = int(m)
-	}
+	maxResults := MapIntArg(args, "maxResults", 5)
 	if maxResults <= 0 {
 		maxResults = 5
 	}

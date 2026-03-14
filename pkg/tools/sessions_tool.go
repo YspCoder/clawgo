@@ -56,51 +56,21 @@ func (t *SessionsTool) Parameters() map[string]interface{} {
 
 func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	_ = ctx
-	action, _ := args["action"].(string)
-	action = strings.ToLower(strings.TrimSpace(action))
-	limit := 20
-	if v, ok := args["limit"].(float64); ok && int(v) > 0 {
-		limit = int(v)
-	}
-	includeTools := false
-	if v, ok := args["include_tools"].(bool); ok {
-		includeTools = v
-	}
-	around := 0
-	if v, ok := args["around"].(float64); ok && int(v) > 0 {
-		around = int(v)
-	}
-	before := 0
-	if v, ok := args["before"].(float64); ok && int(v) > 0 {
-		before = int(v)
-	}
-	after := 0
-	if v, ok := args["after"].(float64); ok && int(v) > 0 {
-		after = int(v)
-	}
-	activeMinutes := 0
-	if v, ok := args["active_minutes"].(float64); ok && int(v) > 0 {
-		activeMinutes = int(v)
-	}
-	query, _ := args["query"].(string)
-	query = strings.ToLower(strings.TrimSpace(query))
-	roleFilter, _ := args["role"].(string)
-	roleFilter = strings.ToLower(strings.TrimSpace(roleFilter))
-	fromMeSet := false
-	fromMe := false
-	if v, ok := args["from_me"].(bool); ok {
-		fromMeSet = true
-		fromMe = v
-	}
+	action := strings.ToLower(MapStringArg(args, "action"))
+	limit := MapIntArg(args, "limit", 20)
+	includeTools, _ := MapBoolArg(args, "include_tools")
+	around := MapIntArg(args, "around", 0)
+	before := MapIntArg(args, "before", 0)
+	after := MapIntArg(args, "after", 0)
+	activeMinutes := MapIntArg(args, "active_minutes", 0)
+	query := strings.ToLower(MapStringArg(args, "query"))
+	roleFilter := strings.ToLower(MapStringArg(args, "role"))
+	fromMe, fromMeSet := MapBoolArg(args, "from_me")
 	kindFilter := map[string]struct{}{}
-	if rawKinds, ok := args["kinds"].([]interface{}); ok {
-		for _, it := range rawKinds {
-			if s, ok := it.(string); ok {
-				s = strings.ToLower(strings.TrimSpace(s))
-				if s != "" {
-					kindFilter[s] = struct{}{}
-				}
-			}
+	for _, s := range MapStringListArg(args, "kinds") {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s != "" {
+			kindFilter[s] = struct{}{}
 		}
 	}
 
@@ -160,7 +130,7 @@ func (t *SessionsTool) Execute(ctx context.Context, args map[string]interface{})
 		if t.historyFn == nil {
 			return "sessions history unavailable", nil
 		}
-		key, _ := args["key"].(string)
+		key := MapStringArg(args, "key")
 		if key == "" {
 			return "key is required for history", nil
 		}

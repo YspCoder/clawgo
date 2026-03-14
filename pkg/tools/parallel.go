@@ -74,8 +74,8 @@ func (t *ParallelTool) Parameters() map[string]interface{} {
 }
 
 func (t *ParallelTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	callsRaw, ok := args["calls"].([]interface{})
-	if !ok {
+	callsRaw := interfaceSliceArg(args, "calls")
+	if len(callsRaw) == 0 {
 		return "", fmt.Errorf("calls must be an array")
 	}
 
@@ -86,9 +86,9 @@ func (t *ParallelTool) Execute(ctx context.Context, args map[string]interface{})
 			continue
 		}
 
-		toolName, _ := call["tool"].(string)
-		toolArgs, _ := call["arguments"].(map[string]interface{})
-		id, _ := call["id"].(string)
+		toolName := MapStringArg(call, "tool")
+		toolArgs := MapObjectArg(call, "arguments")
+		id := MapStringArg(call, "id")
 		if id == "" {
 			id = fmt.Sprintf("call_%d_%s", i, toolName)
 		}

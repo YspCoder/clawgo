@@ -190,7 +190,14 @@ user -> main -> worker -> main -> user
 
 ## 配置结构
 
-当前推荐结构：
+当前有两层配置视图：
+
+- 落盘文件仍然使用下面的原始结构
+- WebUI 与运行时接口优先使用标准化视图：
+  - `core`
+  - `runtime`
+
+原始配置的推荐结构：
 
 ```json
 {
@@ -227,6 +234,13 @@ user -> main -> worker -> main -> user
   - `agents.defaults.execution`
   - `agents.defaults.summary_policy`
   - `agents.router.policy`
+- WebUI 配置保存优先走 normalized schema：
+  - `core.default_provider`
+  - `core.main_agent_id`
+  - `core.subagents`
+  - `runtime.router`
+  - `runtime.providers`
+- 运行态面板优先消费统一 `runtime snapshot / runtime live`
 - 启用中的本地 subagent 必须配置 `system_prompt_file`
 - 远端分支需要：
   - `transport: "node"`

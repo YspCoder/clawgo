@@ -53,6 +53,15 @@ func TestEnsureToolAllowedByContextParallelNested(t *testing.T) {
 	if err := ensureToolAllowedByContext(restricted, "parallel", skillArgs); err != nil {
 		t.Fatalf("expected parallel with nested skill_exec to pass, got: %v", err)
 	}
+
+	stringToolArgs := map[string]interface{}{
+		"calls": []interface{}{
+			map[string]interface{}{"tool": "read_file", "arguments": map[string]interface{}{"path": "README.md"}},
+		},
+	}
+	if err := ensureToolAllowedByContext(restricted, "parallel", stringToolArgs); err != nil {
+		t.Fatalf("expected parallel with string tool key to pass, got: %v", err)
+	}
 }
 
 func TestEnsureToolAllowedByContext_GroupAllowlist(t *testing.T) {

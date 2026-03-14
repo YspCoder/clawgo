@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,18 +66,18 @@ func (t *RemindTool) Execute(ctx context.Context, args map[string]interface{}) (
 		return "", fmt.Errorf("cron service not available")
 	}
 
-	message, ok := args["message"].(string)
-	if !ok {
+	message := MapRawStringArg(args, "message")
+	if strings.TrimSpace(message) == "" {
 		return "", fmt.Errorf("message is required")
 	}
 
-	timeExpr, ok := args["time_expr"].(string)
-	if !ok {
+	timeExpr := MapStringArg(args, "time_expr")
+	if timeExpr == "" {
 		return "", fmt.Errorf("time_expr is required")
 	}
 
-	channel, _ := args["channel"].(string)
-	chatID, _ := args["chat_id"].(string)
+	channel := MapStringArg(args, "channel")
+	chatID := MapStringArg(args, "chat_id")
 	if channel == "" || chatID == "" {
 		t.mu.RLock()
 		defaultChannel := t.defaultChannel

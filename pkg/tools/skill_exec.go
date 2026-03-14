@@ -59,11 +59,11 @@ func (t *SkillExecTool) Parameters() map[string]interface{} {
 }
 
 func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	skill, _ := args["skill"].(string)
-	script, _ := args["script"].(string)
-	reason, _ := args["reason"].(string)
-	callerAgent, _ := args["caller_agent"].(string)
-	callerScope, _ := args["caller_scope"].(string)
+	skill := MapStringArg(args, "skill")
+	script := MapStringArg(args, "script")
+	reason := MapStringArg(args, "reason")
+	callerAgent := MapStringArg(args, "caller_agent")
+	callerScope := MapStringArg(args, "caller_scope")
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "unspecified"
@@ -115,14 +115,7 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 		return "", err
 	}
 
-	cmdArgs := []string{}
-	if rawArgs, ok := args["args"].([]interface{}); ok {
-		for _, item := range rawArgs {
-			if s, ok := item.(string); ok {
-				cmdArgs = append(cmdArgs, s)
-			}
-		}
-	}
+	cmdArgs := MapStringListArg(args, "args")
 
 	commandLabel := relScript
 	if len(cmdArgs) > 0 {

@@ -48,6 +48,7 @@ func TestHandleSubagentRuntimeDispatchAndWait(t *testing.T) {
 	if merged == "" {
 		t.Fatalf("expected merged output")
 	}
+	time.Sleep(20 * time.Millisecond)
 }
 
 func TestHandleSubagentRuntimeUpsertConfigSubagent(t *testing.T) {
@@ -247,6 +248,50 @@ func TestHandleSubagentRuntimeDeleteConfigSubagent(t *testing.T) {
 	}
 }
 
+func TestHandleSubagentRuntimeToggleEnabledParsesStringBool(t *testing.T) {
+	workspace := t.TempDir()
+	configPath := filepath.Join(workspace, "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Router.Enabled = true
+	cfg.Agents.Subagents["main"] = config.SubagentConfig{
+		Enabled:          true,
+		Type:             "router",
+		Role:             "orchestrator",
+		SystemPromptFile: "agents/main/AGENT.md",
+	}
+	cfg.Agents.Subagents["tester"] = config.SubagentConfig{
+		Enabled:          true,
+		Type:             "worker",
+		Role:             "testing",
+		SystemPromptFile: "agents/tester/AGENT.md",
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("save config failed: %v", err)
+	}
+	runtimecfg.Set(cfg)
+	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
+
+	manager := tools.NewSubagentManager(nil, workspace, nil)
+	loop := &AgentLoop{
+		configPath:      configPath,
+		subagentManager: manager,
+		subagentRouter:  tools.NewSubagentRouter(manager),
+	}
+	if _, err := loop.HandleSubagentRuntime(context.Background(), "set_config_subagent_enabled", map[string]interface{}{
+		"agent_id": "tester",
+		"enabled":  "false",
+	}); err != nil {
+		t.Fatalf("toggle enabled failed: %v", err)
+	}
+	reloaded, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("reload config failed: %v", err)
+	}
+	if reloaded.Agents.Subagents["tester"].Enabled {
+		t.Fatalf("expected tester to be disabled")
+	}
+}
+
 func TestHandleSubagentRuntimePromptFileGetSetBootstrap(t *testing.T) {
 	workspace := t.TempDir()
 	manager := tools.NewSubagentManager(nil, workspace, nil)
@@ -437,19 +482,4 @@ func TestHandleSubagentRuntimeStreamAll(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	out, err := loop.HandleSubagentRuntime(context.Background(), "stream_all", map[string]interface{}{
-		"limit":      100,
-		"task_limit": 10,
-	})
-	if err != nil {
-		t.Fatalf("stream_all failed: %v", err)
-	}
-	payload, ok := out.(map[string]interface{})
-	if !ok || payload["found"] != true {
-		t.Fatalf("unexpected stream_all payload: %#v", out)
-	}
-	items, ok := payload["items"].([]map[string]interface{})
-	if !ok || len(items) == 0 {
-		t.Fatalf("expected grouped stream items, got %#v", payload["items"])
-	}
 }

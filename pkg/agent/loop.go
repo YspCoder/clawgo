@@ -537,11 +537,11 @@ func nodeAgentTaskResult(payload map[string]interface{}) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	if result, _ := payload["result"].(string); strings.TrimSpace(result) != "" {
-		return strings.TrimSpace(result)
+	if result := tools.MapStringArg(payload, "result"); result != "" {
+		return result
 	}
-	if content, _ := payload["content"].(string); strings.TrimSpace(content) != "" {
-		return strings.TrimSpace(content)
+	if content := tools.MapStringArg(payload, "content"); content != "" {
+		return content
 	}
 	return ""
 }
@@ -1804,8 +1804,8 @@ func (al *AgentLoop) buildProviderToolDefs(toolDefs []map[string]interface{}) []
 		if !ok {
 			continue
 		}
-		name, _ := fnRaw["name"].(string)
-		description, _ := fnRaw["description"].(string)
+		name := tools.MapStringArg(fnRaw, "name")
+		description := tools.MapStringArg(fnRaw, "description")
 		params, _ := fnRaw["parameters"].(map[string]interface{})
 		if strings.TrimSpace(name) == "" {
 			continue
@@ -1844,8 +1844,7 @@ func filterToolDefinitionsByContext(ctx context.Context, toolDefs []map[string]i
 		if !ok {
 			continue
 		}
-		name, _ := fnRaw["name"].(string)
-		name = strings.ToLower(strings.TrimSpace(name))
+		name := strings.ToLower(tools.MapStringArg(fnRaw, "name"))
 		if name == "" {
 			continue
 		}
@@ -2261,7 +2260,7 @@ func withToolMemoryNamespaceArgs(toolName string, args map[string]interface{}, n
 		return args
 	}
 
-	if raw, ok := args["namespace"].(string); ok && strings.TrimSpace(raw) != "" {
+	if raw := tools.MapStringArg(args, "namespace"); raw != "" {
 		return args
 	}
 	next := make(map[string]interface{}, len(args)+1)
@@ -2344,7 +2343,7 @@ func validateParallelAllowlistArgs(allow map[string]struct{}, args map[string]in
 		if !ok {
 			continue
 		}
-		tool, _ := m["tool"].(string)
+		tool := tools.MapStringArg(m, "tool")
 		name := strings.ToLower(strings.TrimSpace(tool))
 		if name == "" {
 			continue
@@ -2422,8 +2421,7 @@ func shouldSuppressSelfMessageSend(toolName string, args map[string]interface{},
 	if strings.TrimSpace(toolName) != "message" {
 		return false
 	}
-	action, _ := args["action"].(string)
-	action = strings.ToLower(strings.TrimSpace(action))
+	action := strings.ToLower(tools.MapStringArg(args, "action"))
 	if action == "" {
 		action = "send"
 	}
@@ -2436,17 +2434,15 @@ func shouldSuppressSelfMessageSend(toolName string, args map[string]interface{},
 }
 
 func resolveMessageToolTarget(args map[string]interface{}, fallbackChannel, fallbackChatID string) (string, string) {
-	channel, _ := args["channel"].(string)
-	channel = strings.TrimSpace(channel)
+	channel := tools.MapStringArg(args, "channel")
 	if channel == "" {
 		channel = strings.TrimSpace(fallbackChannel)
 	}
 
-	chatID, _ := args["chat_id"].(string)
-	if to, _ := args["to"].(string); strings.TrimSpace(to) != "" {
+	chatID := tools.MapStringArg(args, "chat_id")
+	if to := tools.MapStringArg(args, "to"); to != "" {
 		chatID = to
 	}
-	chatID = strings.TrimSpace(chatID)
 	if chatID == "" {
 		chatID = strings.TrimSpace(fallbackChatID)
 	}

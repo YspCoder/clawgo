@@ -28,25 +28,13 @@ func NewMessageBus() *MessageBus {
 
 func (mb *MessageBus) PublishInbound(msg InboundMessage) {
 	mb.mu.RLock()
+	defer mb.mu.RUnlock()
 	if mb.closed {
-		mb.mu.RUnlock()
 		return
 	}
-	ch := mb.inbound
-	mb.mu.RUnlock()
-
-	defer func() {
-		if recover() != nil {
-			logger.WarnCF("bus", logger.C0129, map[string]interface{}{
-				logger.FieldChannel: msg.Channel,
-				logger.FieldChatID:  msg.ChatID,
-				"session_key":       msg.SessionKey,
-			})
-		}
-	}()
 
 	select {
-	case ch <- msg:
+	case mb.inbound <- msg:
 	case <-time.After(queueWriteTimeout):
 		logger.ErrorCF("bus", logger.C0130, map[string]interface{}{
 			logger.FieldChannel: msg.Channel,
@@ -67,24 +55,13 @@ func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool)
 
 func (mb *MessageBus) PublishOutbound(msg OutboundMessage) {
 	mb.mu.RLock()
+	defer mb.mu.RUnlock()
 	if mb.closed {
-		mb.mu.RUnlock()
 		return
 	}
-	ch := mb.outbound
-	mb.mu.RUnlock()
-
-	defer func() {
-		if recover() != nil {
-			logger.WarnCF("bus", logger.C0131, map[string]interface{}{
-				logger.FieldChannel: msg.Channel,
-				logger.FieldChatID:  msg.ChatID,
-			})
-		}
-	}()
 
 	select {
-	case ch <- msg:
+	case mb.outbound <- msg:
 	case <-time.After(queueWriteTimeout):
 		logger.ErrorCF("bus", logger.C0132, map[string]interface{}{
 			logger.FieldChannel: msg.Channel,

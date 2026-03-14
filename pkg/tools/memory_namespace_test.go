@@ -101,3 +101,14 @@ func TestMemorySearchToolNamespaceIsolation(t *testing.T) {
 		t.Fatalf("namespace isolation violated, coder search leaked main data: %s", coderRes)
 	}
 }
+
+func TestParseMemoryNamespaceArgUsesHelper(t *testing.T) {
+	t.Parallel()
+
+	if got := parseMemoryNamespaceArg(map[string]interface{}{"namespace": "Coder Agent"}); got != "coder-agent" {
+		t.Fatalf("unexpected namespace parse result: %q", got)
+	}
+	if got := parseMemoryNamespaceArg(nil); got != "main" {
+		t.Fatalf("expected main namespace for nil args, got %q", got)
+	}
+}

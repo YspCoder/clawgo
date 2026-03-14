@@ -39,7 +39,7 @@ func TestGeminiCLIProviderChatUsesCloudCodeEndpoint(t *testing.T) {
 		if got := r.Header.Get("X-Goog-Api-Client"); got != geminiCLIApiClient {
 			t.Fatalf("x-goog-api-client = %q", got)
 		}
-		if got := r.Header.Get("User-Agent"); got != "GeminiCLI/gemini-2.5-pro" {
+		if got := r.Header.Get("User-Agent"); got != geminiCLIUserAgent("gemini-2.5-pro") {
 			t.Fatalf("user-agent = %q", got)
 		}
 		var payload map[string]any

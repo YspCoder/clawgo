@@ -66,16 +66,14 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 		return "Error: BRAVE_API_KEY not configured", nil
 	}
 
-	query, ok := args["query"].(string)
-	if !ok {
+	query := MapStringArg(args, "query")
+	if query == "" {
 		return "", fmt.Errorf("query is required")
 	}
 
 	count := t.maxResults
-	if c, ok := args["count"].(float64); ok {
-		if int(c) > 0 && int(c) <= 10 {
-			count = int(c)
-		}
+	if c := MapIntArg(args, "count", count); c > 0 && c <= 10 {
+		count = c
 	}
 
 	searchURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
@@ -183,8 +181,8 @@ func (t *WebFetchTool) Parameters() map[string]interface{} {
 }
 
 func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	urlStr, ok := args["url"].(string)
-	if !ok {
+	urlStr := MapStringArg(args, "url")
+	if urlStr == "" {
 		return "", fmt.Errorf("url is required")
 	}
 
@@ -202,10 +200,8 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 
 	maxChars := t.maxChars
-	if mc, ok := args["maxChars"].(float64); ok {
-		if int(mc) > 100 {
-			maxChars = int(mc)
-		}
+	if mc := MapIntArg(args, "maxChars", maxChars); mc > 100 {
+		maxChars = mc
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)

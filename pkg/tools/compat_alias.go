@@ -26,14 +26,21 @@ func (t *AliasTool) Description() string {
 func (t *AliasTool) Parameters() map[string]interface{} { return t.base.Parameters() }
 
 func (t *AliasTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+	if args == nil {
+		args = map[string]interface{}{}
+	}
+	normalized := make(map[string]interface{}, len(args)+len(t.argMap))
+	for key, value := range args {
+		normalized[key] = value
+	}
 	if len(t.argMap) > 0 {
 		for from, to := range t.argMap {
-			if v, ok := args[from]; ok {
-				if _, exists := args[to]; !exists {
-					args[to] = v
+			if v, ok := normalized[from]; ok {
+				if _, exists := normalized[to]; !exists {
+					normalized[to] = v
 				}
 			}
 		}
 	}
-	return t.base.Execute(ctx, args)
+	return t.base.Execute(ctx, normalized)
 }

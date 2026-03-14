@@ -269,7 +269,9 @@ sync-embed-workspace:
 
 ## cleanup-embed-workspace: Remove synced embed workspace artifacts
 cleanup-embed-workspace:
-	@rm -rf "$(EMBED_WORKSPACE_DIR)"
+	@if [ -d "$(EMBED_WORKSPACE_DIR)" ]; then \
+		find "$(EMBED_WORKSPACE_DIR)" -mindepth 1 ! -name 'embedkeep.txt' -exec rm -rf {} +; \
+	fi
 	@echo "✓ Cleaned embedded workspace artifacts"
 
 ## install: Install clawgo to system and copy builtin skills

@@ -48,8 +48,8 @@ func (t *BrowserTool) Parameters() map[string]interface{} {
 }
 
 func (t *BrowserTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	action, _ := args["action"].(string)
-	url, _ := args["url"].(string)
+	action := MapStringArg(args, "action")
+	url := MapStringArg(args, "url")
 
 	switch action {
 	case "screenshot":

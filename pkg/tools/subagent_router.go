@@ -12,6 +12,7 @@ type RouterDispatchRequest struct {
 	Label            string
 	Role             string
 	AgentID          string
+	Decision         *DispatchDecision
 	NotifyMainPolicy string
 	ThreadID         string
 	CorrelationID    string
@@ -32,6 +33,8 @@ type RouterReply struct {
 	AgentID       string
 	Status        string
 	Result        string
+	Run           RunRecord
+	Error         *RuntimeError
 }
 
 type SubagentRouter struct {
@@ -45,6 +48,14 @@ func NewSubagentRouter(manager *SubagentManager) *SubagentRouter {
 func (r *SubagentRouter) DispatchTask(ctx context.Context, req RouterDispatchRequest) (*SubagentTask, error) {
 	if r == nil || r.manager == nil {
 		return nil, fmt.Errorf("subagent router is not configured")
+	}
+	if req.Decision != nil {
+		if strings.TrimSpace(req.AgentID) == "" {
+			req.AgentID = strings.TrimSpace(req.Decision.TargetAgent)
+		}
+		if strings.TrimSpace(req.Task) == "" {
+			req.Task = strings.TrimSpace(req.Decision.TaskText)
+		}
 	}
 	task, err := r.manager.SpawnTask(ctx, SubagentSpawnOptions{
 		Task:             req.Task,
@@ -92,6 +103,8 @@ func (r *SubagentRouter) WaitReply(ctx context.Context, taskID string, interval 
 		AgentID:       task.AgentID,
 		Status:        task.Status,
 		Result:        strings.TrimSpace(task.Result),
+		Run:           taskToRunRecord(task),
+		Error:         taskRuntimeError(task),
 	}, nil
 }
 

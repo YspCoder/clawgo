@@ -65,12 +65,9 @@ type repoMapEntry struct {
 }
 
 func (t *RepoMapTool) Execute(_ context.Context, args map[string]interface{}) (string, error) {
-	query, _ := args["query"].(string)
-	maxResults := 20
-	if raw, ok := args["max_results"].(float64); ok && raw > 0 {
-		maxResults = int(raw)
-	}
-	forceRefresh, _ := args["refresh"].(bool)
+	query := MapStringArg(args, "query")
+	maxResults := MapIntArg(args, "max_results", 20)
+	forceRefresh, _ := MapBoolArg(args, "refresh")
 
 	cache, err := t.loadOrBuildMap(forceRefresh)
 	if err != nil {

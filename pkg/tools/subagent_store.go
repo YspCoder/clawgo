@@ -69,6 +69,23 @@ func (s *SubagentRunStore) load() error {
 		if line == "" {
 			continue
 		}
+		var record RunRecord
+		if err := json.Unmarshal([]byte(line), &record); err == nil && strings.TrimSpace(record.ID) != "" {
+			task := &SubagentTask{
+				ID:            record.ID,
+				Task:          record.Input,
+				AgentID:       record.AgentID,
+				ThreadID:      record.ThreadID,
+				CorrelationID: record.CorrelationID,
+				ParentRunID:   record.ParentRunID,
+				Status:        record.Status,
+				Result:        record.Output,
+				Created:       record.CreatedAt,
+				Updated:       record.UpdatedAt,
+			}
+			s.runs[task.ID] = task
+			continue
+		}
 		var task SubagentTask
 		if err := json.Unmarshal([]byte(line), &task); err != nil {
 			continue
@@ -84,7 +101,7 @@ func (s *SubagentRunStore) AppendRun(task *SubagentTask) error {
 		return nil
 	}
 	cp := cloneSubagentTask(task)
-	data, err := json.Marshal(cp)
+	data, err := json.Marshal(taskToRunRecord(cp))
 	if err != nil {
 		return err
 	}
@@ -110,7 +127,18 @@ func (s *SubagentRunStore) AppendEvent(evt SubagentRunEvent) error {
 	if s == nil {
 		return nil
 	}
-	data, err := json.Marshal(evt)
+	record := EventRecord{
+		ID:         EventRecordID(evt.RunID, evt.Type, evt.At),
+		RunID:      evt.RunID,
+		TaskID:     evt.RunID,
+		AgentID:    evt.AgentID,
+		Type:       evt.Type,
+		Status:     evt.Status,
+		Message:    evt.Message,
+		RetryCount: evt.RetryCount,
+		At:         evt.At,
+	}
+	data, err := json.Marshal(record)
 	if err != nil {
 		return err
 	}
@@ -185,7 +213,19 @@ func (s *SubagentRunStore) Events(runID string, limit int) ([]SubagentRunEvent, 
 		}
 		var evt SubagentRunEvent
 		if err := json.Unmarshal([]byte(line), &evt); err != nil {
-			continue
+			var record EventRecord
+			if err := json.Unmarshal([]byte(line), &record); err != nil {
+				continue
+			}
+			evt = SubagentRunEvent{
+				RunID:      record.RunID,
+				AgentID:    record.AgentID,
+				Type:       record.Type,
+				Status:     record.Status,
+				Message:    record.Message,
+				RetryCount: record.RetryCount,
+				At:         record.At,
+			}
 		}
 		if evt.RunID != runID {
 			continue
@@ -247,6 +287,55 @@ func cloneSubagentTask(task *SubagentTask) *SubagentTask {
 		}
 	}
 	return &cp
+}
+
+func taskToTaskRecord(task *SubagentTask) TaskRecord {
+	if task == nil {
+		return TaskRecord{}
+	}
+	return TaskRecord{
+		ID:            task.ID,
+		ThreadID:      task.ThreadID,
+		CorrelationID: task.CorrelationID,
+		OwnerAgentID:  task.AgentID,
+		Status:        strings.TrimSpace(task.Status),
+		Input:         task.Task,
+		OriginChannel: task.OriginChannel,
+		OriginChatID:  task.OriginChatID,
+		CreatedAt:     task.Created,
+		UpdatedAt:     task.Updated,
+	}
+}
+
+func taskRuntimeError(task *SubagentTask) *RuntimeError {
+	if task == nil || !strings.EqualFold(strings.TrimSpace(task.Status), RuntimeStatusFailed) {
+		return nil
+	}
+	msg := strings.TrimSpace(task.Result)
+	msg = strings.TrimPrefix(msg, "Error:")
+	msg = strings.TrimSpace(msg)
+	return NewRuntimeError("subagent_failed", msg, "subagent", false, "subagent")
+}
+
+func taskToRunRecord(task *SubagentTask) RunRecord {
+	if task == nil {
+		return RunRecord{}
+	}
+	return RunRecord{
+		ID:            task.ID,
+		TaskID:        task.ID,
+		ThreadID:      task.ThreadID,
+		CorrelationID: task.CorrelationID,
+		AgentID:       task.AgentID,
+		ParentRunID:   task.ParentRunID,
+		Kind:          "subagent",
+		Status:        strings.TrimSpace(task.Status),
+		Input:         task.Task,
+		Output:        strings.TrimSpace(task.Result),
+		Error:         taskRuntimeError(task),
+		CreatedAt:     task.Created,
+		UpdatedAt:     task.Updated,
+	}
 }
 
 func formatSubagentEventLog(evt SubagentRunEvent) string {

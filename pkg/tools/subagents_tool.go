@@ -45,26 +45,14 @@ func (t *SubagentsTool) Execute(ctx context.Context, args map[string]interface{}
 	if t.manager == nil {
 		return "subagent manager not available", nil
 	}
-	action, _ := args["action"].(string)
-	action = strings.ToLower(strings.TrimSpace(action))
-	id, _ := args["id"].(string)
-	id = strings.TrimSpace(id)
-	message, _ := args["message"].(string)
-	message = strings.TrimSpace(message)
-	messageID, _ := args["message_id"].(string)
-	messageID = strings.TrimSpace(messageID)
-	threadID, _ := args["thread_id"].(string)
-	threadID = strings.TrimSpace(threadID)
-	agentID, _ := args["agent_id"].(string)
-	agentID = strings.TrimSpace(agentID)
-	limit := 20
-	if v, ok := args["limit"].(float64); ok && int(v) > 0 {
-		limit = int(v)
-	}
-	recentMinutes := 0
-	if v, ok := args["recent_minutes"].(float64); ok && int(v) > 0 {
-		recentMinutes = int(v)
-	}
+	action := strings.ToLower(MapStringArg(args, "action"))
+	id := MapStringArg(args, "id")
+	message := MapStringArg(args, "message")
+	messageID := MapStringArg(args, "message_id")
+	threadID := MapStringArg(args, "thread_id")
+	agentID := MapStringArg(args, "agent_id")
+	limit := MapIntArg(args, "limit", 20)
+	recentMinutes := MapIntArg(args, "recent_minutes", 0)
 
 	switch action {
 	case "list":

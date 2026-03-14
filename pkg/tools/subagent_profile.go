@@ -269,20 +269,7 @@ func clampInt(v, min, max int) int {
 }
 
 func parseStringList(raw interface{}) []string {
-	items, ok := raw.([]interface{})
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		s, _ := item.(string)
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		out = append(out, s)
-	}
-	return normalizeStringList(out)
+	return normalizeStringList(MapStringListArg(map[string]interface{}{"items": raw}, "items"))
 }
 
 func (s *SubagentProfileStore) mergedProfilesLocked() (map[string]SubagentProfile, error) {
@@ -574,10 +561,8 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 	if t.store == nil {
 		return "subagent profile store not available", nil
 	}
-	action, _ := args["action"].(string)
-	action = strings.ToLower(strings.TrimSpace(action))
-	agentID, _ := args["agent_id"].(string)
-	agentID = normalizeSubagentIdentifier(agentID)
+	action := strings.ToLower(MapStringArg(args, "action"))
+	agentID := normalizeSubagentIdentifier(MapStringArg(args, "agent_id"))
 
 	switch action {
 	case "list":
@@ -724,22 +709,9 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 }
 
 func stringArg(args map[string]interface{}, key string) string {
-	v, _ := args[key].(string)
-	return strings.TrimSpace(v)
+	return MapStringArg(args, key)
 }
 
 func profileIntArg(args map[string]interface{}, key string) int {
-	if args == nil {
-		return 0
-	}
-	switch v := args[key].(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	case int64:
-		return int(v)
-	default:
-		return 0
-	}
+	return MapIntArg(args, key, 0)
 }
