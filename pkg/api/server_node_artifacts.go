@@ -317,10 +317,6 @@ func resolveArtifactPath(workspace, raw string) string {
 		return ""
 	}
 	if filepath.IsAbs(raw) {
-		clean := filepath.Clean(raw)
-		if info, err := os.Stat(clean); err == nil && !info.IsDir() {
-			return clean
-		}
 		return ""
 	}
 	root := strings.TrimSpace(workspace)
@@ -338,12 +334,12 @@ func resolveArtifactPath(workspace, raw string) string {
 }
 
 func readArtifactBytes(workspace string, item map[string]interface{}) ([]byte, string, error) {
-	if content := strings.TrimSpace(fmt.Sprint(item["content_base64"])); content != "" {
+	if content := strings.TrimSpace(stringFromMap(item, "content_base64")); content != "" {
 		raw, err := base64.StdEncoding.DecodeString(content)
 		if err != nil {
 			return nil, "", err
 		}
-		return raw, strings.TrimSpace(fmt.Sprint(item["mime_type"])), nil
+		return raw, strings.TrimSpace(stringFromMap(item, "mime_type")), nil
 	}
 	for _, rawPath := range []string{fmt.Sprint(item["source_path"]), fmt.Sprint(item["path"])} {
 		if path := resolveArtifactPath(workspace, rawPath); path != "" {
@@ -351,10 +347,10 @@ func readArtifactBytes(workspace string, item map[string]interface{}) ([]byte, s
 			if err != nil {
 				return nil, "", err
 			}
-			return b, strings.TrimSpace(fmt.Sprint(item["mime_type"])), nil
+			return b, strings.TrimSpace(stringFromMap(item, "mime_type")), nil
 		}
 	}
-	if contentText := fmt.Sprint(item["content_text"]); strings.TrimSpace(contentText) != "" {
+	if contentText := strings.TrimSpace(stringFromMap(item, "content_text")); contentText != "" {
 		return []byte(contentText), "text/plain; charset=utf-8", nil
 	}
 	return nil, "", fmt.Errorf("artifact content unavailable")
@@ -411,9 +407,14 @@ func (s *Server) handleWebUINodeArtifactsExport(w http.ResponseWriter, r *http.R
 	nodeList, _ := payload["nodes"].([]nodes.NodeInfo)
 	p2p, _ := payload["p2p"].(map[string]interface{})
 	alerts := filteredNodeAlerts(s.webUINodeAlertsPayload(nodeList, p2p, dispatches), nodeFilter)
-
-	var archive bytes.Buffer
-	zw := zip.NewWriter(&archive)
+	filename := "node-artifacts-export.zip"
+	if nodeFilter != "" {
+		filename = fmt.Sprintf("node-artifacts-%s.zip", sanitizeZipEntryName(nodeFilter))
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.WriteHeader(http.StatusOK)
+	zw := zip.NewWriter(w)
 	writeZipJSON := func(name string, value interface{}) error {
 		entry, err := zw.Create(name)
 		if err != nil {
@@ -470,26 +471,13 @@ func (s *Server) handleWebUINodeArtifactsExport(w http.ResponseWriter, r *http.R
 		}
 		entry, err := zw.Create(entryName)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if _, err := entry.Write(raw); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
-	if err := zw.Close(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	filename := "node-artifacts-export.zip"
-	if nodeFilter != "" {
-		filename = fmt.Sprintf("node-artifacts-%s.zip", sanitizeZipEntryName(nodeFilter))
-	}
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(archive.Bytes())
+	_ = zw.Close()
 }
 
 func (s *Server) handleWebUINodeArtifactDownload(w http.ResponseWriter, r *http.Request) {
@@ -519,7 +507,7 @@ func (s *Server) handleWebUINodeArtifactDownload(w http.ResponseWriter, r *http.
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	if contentB64 := strings.TrimSpace(fmt.Sprint(item["content_base64"])); contentB64 != "" {
+	if contentB64 := strings.TrimSpace(stringFromMap(item, "content_base64")); contentB64 != "" {
 		payload, err := base64.StdEncoding.DecodeString(contentB64)
 		if err != nil {
 			http.Error(w, "invalid inline artifact payload", http.StatusBadRequest)
@@ -536,7 +524,7 @@ func (s *Server) handleWebUINodeArtifactDownload(w http.ResponseWriter, r *http.
 			return
 		}
 	}
-	if contentText := fmt.Sprint(item["content_text"]); strings.TrimSpace(contentText) != "" {
+	if contentText := strings.TrimSpace(stringFromMap(item, "content_text")); contentText != "" {
 		w.Header().Set("Content-Type", mimeType)
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
 		_, _ = w.Write([]byte(contentText))

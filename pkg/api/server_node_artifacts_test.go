@@ -31,7 +31,7 @@ func TestHandleWebUINodeArtifactsListAndDelete(t *testing.T) {
 	if err := os.WriteFile(artifactPath, []byte("artifact-body"), 0o644); err != nil {
 		t.Fatalf("write artifact: %v", err)
 	}
-	auditLine := fmt.Sprintf("{\"time\":\"2026-03-09T00:00:00Z\",\"node\":\"edge-a\",\"action\":\"run\",\"artifacts\":[{\"name\":\"artifact.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"source_path\":\"%s\",\"size_bytes\":13}]}\n", artifactPath)
+	auditLine := "{\"time\":\"2026-03-09T00:00:00Z\",\"node\":\"edge-a\",\"action\":\"run\",\"artifacts\":[{\"name\":\"artifact.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"source_path\":\"artifact.txt\",\"size_bytes\":13}]}\n"
 	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), []byte(auditLine), 0o644); err != nil {
 		t.Fatalf("write audit: %v", err)
 	}
@@ -65,6 +65,36 @@ func TestHandleWebUINodeArtifactsListAndDelete(t *testing.T) {
 	}
 	if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
 		t.Fatalf("expected artifact file removed, stat err=%v", err)
+	}
+}
+
+func TestHandleWebUINodeArtifactDownloadRejectsAbsoluteSourcePath(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
+	workspace := t.TempDir()
+	srv.SetWorkspacePath(workspace)
+	if err := os.MkdirAll(filepath.Join(workspace, "memory"), 0o755); err != nil {
+		t.Fatalf("mkdir memory: %v", err)
+	}
+	artifactPath := filepath.Join(workspace, "artifact.txt")
+	if err := os.WriteFile(artifactPath, []byte("artifact-body"), 0o644); err != nil {
+		t.Fatalf("write artifact: %v", err)
+	}
+	auditLine := fmt.Sprintf("{\"time\":\"2026-03-09T00:00:00Z\",\"node\":\"edge-a\",\"action\":\"run\",\"artifacts\":[{\"name\":\"artifact.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"source_path\":\"%s\",\"size_bytes\":13}]}\n", artifactPath)
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), []byte(auditLine), 0o644); err != nil {
+		t.Fatalf("write audit: %v", err)
+	}
+
+	items := srv.webUINodeArtifactsPayload(10)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 artifact, got %d", len(items))
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/node_artifacts/download?id="+fmt.Sprint(items[0]["id"]), nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUINodeArtifactDownload(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

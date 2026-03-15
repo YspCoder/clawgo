@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -71,10 +72,6 @@ type Server struct {
 	cronRPCReg       *rpcpkg.Registry
 	skillsRPCOnce    sync.Once
 	skillsRPCReg     *rpcpkg.Registry
-}
-
-var nodesWebsocketUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
 func NewServer(host string, port int, token string, mgr *nodes.Manager) *Server {
@@ -290,15 +287,82 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
+func requestUsesTLS(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+func canonicalOriginHost(host string, https bool) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if parsedHost, parsedPort, err := net.SplitHostPort(host); err == nil {
+		return strings.ToLower(net.JoinHostPort(parsedHost, parsedPort))
+	}
+	port := "80"
+	if https {
+		port = "443"
+	}
+	return strings.ToLower(net.JoinHostPort(host, port))
+}
+
+func (s *Server) isTrustedOrigin(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
+	case "http", "https":
+	default:
+		return false
+	}
+	return canonicalOriginHost(u.Host, strings.EqualFold(u.Scheme, "https")) == canonicalOriginHost(r.Host, requestUsesTLS(r))
+}
+
+func (s *Server) websocketUpgrader() *websocket.Upgrader {
+	return &websocket.Upgrader{
+		CheckOrigin: s.isTrustedOrigin,
+	}
+}
+
+func (s *Server) isBearerAuthorized(r *http.Request) bool {
+	if s == nil || r == nil || strings.TrimSpace(s.token) == "" {
+		return false
+	}
+	return strings.TrimSpace(r.Header.Get("Authorization")) == "Bearer "+s.token
+}
+
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	if next == nil {
 		next = http.NotFoundHandler()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With")
-		w.Header().Set("Access-Control-Expose-Headers", "*")
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		if origin != "" {
+			if !s.isTrustedOrigin(r) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With")
+			w.Header().Set("Access-Control-Expose-Headers", "*")
+			w.Header().Add("Vary", "Origin")
+		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -357,23 +421,11 @@ func (s *Server) checkAuth(r *http.Request) bool {
 	if s.token == "" {
 		return true
 	}
-	auth := strings.TrimSpace(r.Header.Get("Authorization"))
-	if auth == "Bearer "+s.token {
-		return true
-	}
-	if strings.TrimSpace(r.URL.Query().Get("token")) == s.token {
+	if s.isBearerAuthorized(r) {
 		return true
 	}
 	if c, err := r.Cookie("clawgo_webui_token"); err == nil && strings.TrimSpace(c.Value) == s.token {
 		return true
-	}
-	// Browser asset fallback: allow token propagated via Referer query.
-	if ref := strings.TrimSpace(r.Referer()); ref != "" {
-		if u, err := url.Parse(ref); err == nil {
-			if strings.TrimSpace(u.Query().Get("token")) == s.token {
-				return true
-			}
-		}
 	}
 	return false
 }

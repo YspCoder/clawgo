@@ -26,7 +26,7 @@ func (s *Server) handleWebUIRuntime(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
+	conn, err := s.websocketUpgrader().Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

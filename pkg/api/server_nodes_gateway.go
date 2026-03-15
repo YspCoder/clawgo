@@ -103,7 +103,7 @@ func (s *Server) handleNodeConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nodes manager unavailable", http.StatusInternalServerError)
 		return
 	}
-	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
+	conn, err := s.websocketUpgrader().Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

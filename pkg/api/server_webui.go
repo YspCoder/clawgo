@@ -20,12 +20,13 @@ func (s *Server) handleWebUI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if s.token != "" {
+	if s.token != "" && s.isBearerAuthorized(r) {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "clawgo_webui_token",
 			Value:    s.token,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   requestUsesTLS(r),
 			SameSite: http.SameSiteLaxMode,
 			MaxAge:   86400,
 		})
@@ -118,7 +119,7 @@ func (s *Server) handleWebUIUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]interface{}{"ok": true, "path": path, "name": h.Filename})
+	writeJSON(w, map[string]interface{}{"ok": true, "media": name, "name": h.Filename})
 }
 
 func gatewayBuildVersion() string {
@@ -165,14 +166,14 @@ const webUIHTML = `<!doctype html>
 <div>Session: <input id="session" value="webui:default"/> <input id="msg" placeholder="message" style="width:420px"/> <input id="file" type="file"/> <button onclick="sendChat()">Send</button></div>
 <div id="chatlog"></div>
 <script>
-function auth(){const t=document.getElementById('token').value.trim();return t?('?token='+encodeURIComponent(t)):''}
-async function loadCfg(){let r=await fetch('/api/config'+auth());document.getElementById('cfg').value=await r.text()}
-async function saveCfg(){let j=JSON.parse(document.getElementById('cfg').value);let r=await fetch('/api/config'+auth(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(j)});alert(await r.text())}
+function authHeaders(extra){const h=Object.assign({},extra||{});const t=document.getElementById('token').value.trim();if(t)h['Authorization']='Bearer '+t;return h}
+async function loadCfg(){let r=await fetch('/api/config',{headers:authHeaders()});document.getElementById('cfg').value=await r.text()}
+async function saveCfg(){let j=JSON.parse(document.getElementById('cfg').value);let r=await fetch('/api/config',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(j)});alert(await r.text())}
 async function sendChat(){
  let media='';const f=document.getElementById('file').files[0];
- if(f){let fd=new FormData();fd.append('file',f);let ur=await fetch('/api/upload'+auth(),{method:'POST',body:fd});let uj=await ur.json();media=uj.path||''}
+ if(f){let fd=new FormData();fd.append('file',f);let ur=await fetch('/api/upload',{method:'POST',headers:authHeaders(),body:fd});let uj=await ur.json();media=uj.media||uj.name||''}
  const payload={session:document.getElementById('session').value,message:document.getElementById('msg').value,media};
- let r=await fetch('/api/chat'+auth(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});let t=await r.text();
+ let r=await fetch('/api/chat',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(payload)});let t=await r.text();
  document.getElementById('chatlog').textContent += '\nUSER> '+payload.message+(media?(' [file:'+media+']'):'')+'\nBOT> '+t+'\n';
 }
 loadCfg();

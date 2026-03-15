@@ -93,7 +93,7 @@ func (s *Server) handleWebUIChatLive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "chat handler not configured", http.StatusInternalServerError)
 		return
 	}
-	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
+	conn, err := s.websocketUpgrader().Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

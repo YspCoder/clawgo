@@ -19,7 +19,7 @@ func (s *Server) handleWebUIProviderOAuthStart(w http.ResponseWriter, r *http.Re
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -29,15 +29,9 @@ func (s *Server) handleWebUIProviderOAuthStart(w http.ResponseWriter, r *http.Re
 		NetworkProxy   string                `json:"network_proxy"`
 		ProviderConfig cfgpkg.ProviderConfig `json:"provider_config"`
 	}
-	if r.Method == http.MethodPost {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-	} else {
-		body.Provider = strings.TrimSpace(r.URL.Query().Get("provider"))
-		body.AccountLabel = strings.TrimSpace(r.URL.Query().Get("account_label"))
-		body.NetworkProxy = strings.TrimSpace(r.URL.Query().Get("network_proxy"))
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
 	}
 	cfg, pc, err := s.resolveProviderConfig(strings.TrimSpace(body.Provider), body.ProviderConfig)
 	if err != nil {

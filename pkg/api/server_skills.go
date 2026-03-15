@@ -22,6 +22,39 @@ import (
 	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
+const (
+	skillArchiveUploadLimit   int64 = 32 << 20
+	skillArchiveMaxFiles            = 256
+	skillArchiveMaxSingleFile int64 = 8 << 20
+	skillArchiveMaxExpanded   int64 = 32 << 20
+)
+
+type archiveExtractLimits struct {
+	maxFiles      int
+	maxSingleFile int64
+	maxExpanded   int64
+	fileCount     int
+	totalExpanded int64
+}
+
+func (l *archiveExtractLimits) addFile(size int64) error {
+	if size < 0 {
+		return fmt.Errorf("invalid archive entry size")
+	}
+	l.fileCount++
+	if l.maxFiles > 0 && l.fileCount > l.maxFiles {
+		return fmt.Errorf("archive contains too many files")
+	}
+	if l.maxSingleFile > 0 && size > l.maxSingleFile {
+		return fmt.Errorf("archive entry exceeds size limit")
+	}
+	l.totalExpanded += size
+	if l.maxExpanded > 0 && l.totalExpanded > l.maxExpanded {
+		return fmt.Errorf("archive exceeds expanded size limit")
+	}
+	return nil
+}
+
 func mustMap(v interface{}) map[string]interface{} {
 	if v == nil {
 		return map[string]interface{}{}
@@ -262,7 +295,13 @@ func ensureClawHubReady(ctx context.Context) (string, error) {
 }
 
 func importSkillArchiveFromMultipart(r *http.Request, skillsDir string) ([]string, error) {
-	if err := r.ParseMultipartForm(128 << 20); err != nil {
+	if r.ContentLength > skillArchiveUploadLimit {
+		return nil, fmt.Errorf("archive upload exceeds size limit")
+	}
+	if r.Body != nil {
+		r.Body = http.MaxBytesReader(nil, r.Body, skillArchiveUploadLimit)
+	}
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		return nil, err
 	}
 	f, h, err := r.FormFile("file")
@@ -292,7 +331,12 @@ func importSkillArchiveFromMultipart(r *http.Request, skillsDir string) ([]strin
 	}
 	defer os.RemoveAll(extractDir)
 
-	if err := extractArchive(archivePath, extractDir); err != nil {
+	limits := archiveExtractLimits{
+		maxFiles:      skillArchiveMaxFiles,
+		maxSingleFile: skillArchiveMaxSingleFile,
+		maxExpanded:   skillArchiveMaxExpanded,
+	}
+	if err := extractArchive(archivePath, extractDir, &limits); err != nil {
 		return nil, err
 	}
 
@@ -403,21 +447,21 @@ func sanitizeSkillName(name string) string {
 	return out
 }
 
-func extractArchive(archivePath, targetDir string) error {
+func extractArchive(archivePath, targetDir string, limits *archiveExtractLimits) error {
 	lower := strings.ToLower(archivePath)
 	switch {
 	case strings.HasSuffix(lower, ".zip"):
-		return extractZip(archivePath, targetDir)
+		return extractZip(archivePath, targetDir, limits)
 	case strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"):
-		return extractTarGz(archivePath, targetDir)
+		return extractTarGz(archivePath, targetDir, limits)
 	case strings.HasSuffix(lower, ".tar"):
-		return extractTar(archivePath, targetDir)
+		return extractTar(archivePath, targetDir, limits)
 	default:
 		return fmt.Errorf("unsupported archive format: %s", filepath.Base(archivePath))
 	}
 }
 
-func extractZip(archivePath, targetDir string) error {
+func extractZip(archivePath, targetDir string, limits *archiveExtractLimits) error {
 	zr, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return err
@@ -425,16 +469,21 @@ func extractZip(archivePath, targetDir string) error {
 	defer zr.Close()
 
 	for _, f := range zr.File {
+		if !f.FileInfo().IsDir() && limits != nil {
+			if err := limits.addFile(int64(f.UncompressedSize64)); err != nil {
+				return err
+			}
+		}
 		if err := writeArchivedEntry(targetDir, f.Name, f.FileInfo().IsDir(), func() (io.ReadCloser, error) {
 			return f.Open()
-		}); err != nil {
+		}, limits.maxSingleFile); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func extractTarGz(archivePath, targetDir string) error {
+func extractTarGz(archivePath, targetDir string, limits *archiveExtractLimits) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return err
@@ -445,19 +494,19 @@ func extractTarGz(archivePath, targetDir string) error {
 		return err
 	}
 	defer gz.Close()
-	return extractTarReader(tar.NewReader(gz), targetDir)
+	return extractTarReader(tar.NewReader(gz), targetDir, limits)
 }
 
-func extractTar(archivePath, targetDir string) error {
+func extractTar(archivePath, targetDir string, limits *archiveExtractLimits) error {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return extractTarReader(tar.NewReader(f), targetDir)
+	return extractTarReader(tar.NewReader(f), targetDir, limits)
 }
 
-func extractTarReader(tr *tar.Reader, targetDir string) error {
+func extractTarReader(tr *tar.Reader, targetDir string, limits *archiveExtractLimits) error {
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -468,21 +517,34 @@ func extractTarReader(tr *tar.Reader, targetDir string) error {
 		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := writeArchivedEntry(targetDir, hdr.Name, true, nil); err != nil {
+			maxEntryBytes := int64(0)
+			if limits != nil {
+				maxEntryBytes = limits.maxSingleFile
+			}
+			if err := writeArchivedEntry(targetDir, hdr.Name, true, nil, maxEntryBytes); err != nil {
 				return err
 			}
 		case tar.TypeReg, tar.TypeRegA:
+			if limits != nil {
+				if err := limits.addFile(hdr.Size); err != nil {
+					return err
+				}
+			}
 			name := hdr.Name
+			maxEntryBytes := int64(0)
+			if limits != nil {
+				maxEntryBytes = limits.maxSingleFile
+			}
 			if err := writeArchivedEntry(targetDir, name, false, func() (io.ReadCloser, error) {
 				return io.NopCloser(tr), nil
-			}); err != nil {
+			}, maxEntryBytes); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func writeArchivedEntry(targetDir, name string, isDir bool, opener func() (io.ReadCloser, error)) error {
+func writeArchivedEntry(targetDir, name string, isDir bool, opener func() (io.ReadCloser, error), maxBytes int64) error {
 	clean := filepath.Clean(strings.TrimSpace(name))
 	clean = strings.TrimPrefix(clean, string(filepath.Separator))
 	clean = strings.TrimPrefix(clean, "/")
@@ -514,7 +576,17 @@ func writeArchivedEntry(targetDir, name string, isDir bool, opener func() (io.Re
 		return err
 	}
 	defer out.Close()
-	_, err = io.Copy(out, rc)
+	reader := io.Reader(rc)
+	if maxBytes > 0 {
+		reader = io.LimitReader(rc, maxBytes+1)
+	}
+	written, err := io.Copy(out, reader)
+	if err != nil {
+		return err
+	}
+	if maxBytes > 0 && written > maxBytes {
+		return fmt.Errorf("archive entry exceeds size limit")
+	}
 	return err
 }
 

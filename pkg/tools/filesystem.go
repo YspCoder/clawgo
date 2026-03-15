@@ -9,15 +9,30 @@ import (
 )
 
 func resolveToolPath(baseDir, path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("path is required")
+	}
 	if filepath.IsAbs(path) {
-		return filepath.Clean(path), nil
+		return "", fmt.Errorf("absolute path is not allowed")
 	}
+	joined := path
 	if baseDir != "" {
-		return filepath.Clean(filepath.Join(baseDir, path)), nil
+		joined = filepath.Join(baseDir, path)
 	}
-	abs, err := filepath.Abs(path)
+	abs, err := filepath.Abs(joined)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path: %w", err)
+	}
+	if baseDir != "" {
+		absBase, err := filepath.Abs(baseDir)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve base path: %w", err)
+		}
+		rel, err := filepath.Rel(absBase, abs)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("path escapes allowed directory")
+		}
 	}
 	return abs, nil
 }
