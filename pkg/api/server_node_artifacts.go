@@ -13,8 +13,38 @@ import (
 	"strings"
 	"time"
 
+	cfgpkg "github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/nodes"
 )
+
+func (s *Server) webUINodeArtifactsPayload(limit int) []map[string]interface{} {
+	return s.webUINodeArtifactsPayloadFiltered("", "", "", limit)
+}
+
+func (s *Server) readNodeDispatchAuditRows() ([]map[string]interface{}, string) {
+	path := s.memoryFilePath("nodes-dispatch-audit.jsonl")
+	if path == "" {
+		return nil, ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, path
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	rows := make([]map[string]interface{}, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		row := map[string]interface{}{}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	return rows, path
+}
 
 func (s *Server) webUINodeArtifactsPayloadFiltered(nodeFilter, actionFilter, kindFilter string, limit int) []map[string]interface{} {
 	nodeFilter = strings.TrimSpace(nodeFilter)
@@ -63,6 +93,177 @@ func (s *Server) webUINodeArtifactsPayloadFiltered(nodeFilter, actionFilter, kin
 		}
 	}
 	return out
+}
+
+func (s *Server) setArtifactStats(summary map[string]interface{}) {
+	s.artifactStatsMu.Lock()
+	defer s.artifactStatsMu.Unlock()
+	if summary == nil {
+		s.artifactStats = map[string]interface{}{}
+		return
+	}
+	copySummary := make(map[string]interface{}, len(summary))
+	for k, v := range summary {
+		copySummary[k] = v
+	}
+	s.artifactStats = copySummary
+}
+
+func (s *Server) artifactStatsSnapshot() map[string]interface{} {
+	s.artifactStatsMu.Lock()
+	defer s.artifactStatsMu.Unlock()
+	out := make(map[string]interface{}, len(s.artifactStats))
+	for k, v := range s.artifactStats {
+		out[k] = v
+	}
+	return out
+}
+
+func (s *Server) nodeArtifactRetentionConfig() cfgpkg.GatewayNodesArtifactsConfig {
+	cfg := cfgpkg.DefaultConfig()
+	if strings.TrimSpace(s.configPath) != "" {
+		if loaded, err := cfgpkg.LoadConfig(s.configPath); err == nil && loaded != nil {
+			cfg = loaded
+		}
+	}
+	return cfg.Gateway.Nodes.Artifacts
+}
+
+func (s *Server) applyNodeArtifactRetention() map[string]interface{} {
+	retention := s.nodeArtifactRetentionConfig()
+	if !retention.Enabled || !retention.PruneOnRead || retention.KeepLatest <= 0 {
+		summary := map[string]interface{}{
+			"enabled":       retention.Enabled,
+			"keep_latest":   retention.KeepLatest,
+			"retain_days":   retention.RetainDays,
+			"prune_on_read": retention.PruneOnRead,
+			"pruned":        0,
+			"last_run_at":   time.Now().UTC().Format(time.RFC3339),
+		}
+		s.setArtifactStats(summary)
+		return summary
+	}
+	items := s.webUINodeArtifactsPayload(0)
+	cutoff := time.Time{}
+	if retention.RetainDays > 0 {
+		cutoff = time.Now().UTC().Add(-time.Duration(retention.RetainDays) * 24 * time.Hour)
+	}
+	pruned := 0
+	prunedByAge := 0
+	prunedByCount := 0
+	for index, item := range items {
+		drop := false
+		dropByAge := false
+		if !cutoff.IsZero() {
+			if tm, err := time.Parse(time.RFC3339, strings.TrimSpace(fmt.Sprint(item["time"]))); err == nil && tm.Before(cutoff) {
+				drop = true
+				dropByAge = true
+			}
+		}
+		if !drop && index >= retention.KeepLatest {
+			drop = true
+		}
+		if !drop {
+			continue
+		}
+		_, deletedAudit, _ := s.deleteNodeArtifact(strings.TrimSpace(fmt.Sprint(item["id"])))
+		if deletedAudit {
+			pruned++
+			if dropByAge {
+				prunedByAge++
+			} else {
+				prunedByCount++
+			}
+		}
+	}
+	summary := map[string]interface{}{
+		"enabled":         true,
+		"keep_latest":     retention.KeepLatest,
+		"retain_days":     retention.RetainDays,
+		"prune_on_read":   retention.PruneOnRead,
+		"pruned":          pruned,
+		"pruned_by_age":   prunedByAge,
+		"pruned_by_count": prunedByCount,
+		"remaining":       len(s.webUINodeArtifactsPayload(0)),
+		"last_run_at":     time.Now().UTC().Format(time.RFC3339),
+	}
+	s.setArtifactStats(summary)
+	return summary
+}
+
+func (s *Server) deleteNodeArtifact(id string) (bool, bool, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false, false, fmt.Errorf("id is required")
+	}
+	rows, auditPath := s.readNodeDispatchAuditRows()
+	if len(rows) == 0 || auditPath == "" {
+		return false, false, fmt.Errorf("artifact audit is empty")
+	}
+	deletedFile := false
+	deletedAudit := false
+	for rowIndex, row := range rows {
+		artifacts, _ := row["artifacts"].([]interface{})
+		if len(artifacts) == 0 {
+			continue
+		}
+		nextArtifacts := make([]interface{}, 0, len(artifacts))
+		for artifactIndex, raw := range artifacts {
+			artifact, ok := raw.(map[string]interface{})
+			if !ok {
+				nextArtifacts = append(nextArtifacts, raw)
+				continue
+			}
+			if buildNodeArtifactID(row, artifact, artifactIndex) != id {
+				nextArtifacts = append(nextArtifacts, artifact)
+				continue
+			}
+			for _, rawPath := range []string{fmt.Sprint(artifact["source_path"]), fmt.Sprint(artifact["path"])} {
+				if path := resolveArtifactPath(s.workspacePath, rawPath); path != "" {
+					if err := os.Remove(path); err == nil {
+						deletedFile = true
+						break
+					}
+				}
+			}
+			deletedAudit = true
+		}
+		if deletedAudit {
+			row["artifacts"] = nextArtifacts
+			row["artifact_count"] = len(nextArtifacts)
+			kinds := make([]string, 0, len(nextArtifacts))
+			for _, raw := range nextArtifacts {
+				if artifact, ok := raw.(map[string]interface{}); ok {
+					if kind := strings.TrimSpace(fmt.Sprint(artifact["kind"])); kind != "" {
+						kinds = append(kinds, kind)
+					}
+				}
+			}
+			if len(kinds) > 0 {
+				row["artifact_kinds"] = kinds
+			} else {
+				delete(row, "artifact_kinds")
+			}
+			rows[rowIndex] = row
+			break
+		}
+	}
+	if !deletedAudit {
+		return false, false, fmt.Errorf("artifact not found")
+	}
+	var buf bytes.Buffer
+	for _, row := range rows {
+		encoded, err := json.Marshal(row)
+		if err != nil {
+			continue
+		}
+		buf.Write(encoded)
+		buf.WriteByte('\n')
+	}
+	if err := os.WriteFile(auditPath, buf.Bytes(), 0644); err != nil {
+		return deletedFile, false, err
+	}
+	return deletedFile, true, nil
 }
 
 func buildNodeArtifactID(row, artifact map[string]interface{}, artifactIndex int) string {
