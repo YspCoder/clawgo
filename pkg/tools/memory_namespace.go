@@ -6,7 +6,7 @@ import (
 )
 
 func normalizeMemoryNamespace(in string) string {
-	v := normalizeSubagentIdentifier(in)
+	v := normalizeAgentIdentifier(in)
 	if v == "" {
 		return "main"
 	}

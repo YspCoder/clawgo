@@ -20,7 +20,7 @@ func TestEnsureToolAllowedByContext(t *testing.T) {
 		t.Fatalf("expected disallowed tool to fail")
 	}
 	if err := ensureToolAllowedByContext(restricted, "skill_exec", map[string]interface{}{}); err != nil {
-		t.Fatalf("expected skill_exec to bypass subagent allowlist, got: %v", err)
+		t.Fatalf("expected skill_exec to bypass agent allowlist, got: %v", err)
 	}
 }
 
@@ -103,18 +103,18 @@ func TestWithToolRuntimeArgsForSkillExec(t *testing.T) {
 		t.Fatalf("expected main agent runtime args, got: %#v", mainArgs)
 	}
 
-	subagentCtx := withMemoryNamespaceContext(context.Background(), "coder")
-	subArgs := withToolRuntimeArgs(subagentCtx, "skill_exec", map[string]interface{}{"skill": "demo"})
-	if subArgs["caller_agent"] != "coder" || subArgs["caller_scope"] != "subagent" {
-		t.Fatalf("expected subagent runtime args, got: %#v", subArgs)
+	agentCtx := withMemoryNamespaceContext(context.Background(), "coder")
+	agentArgs := withToolRuntimeArgs(agentCtx, "skill_exec", map[string]interface{}{"skill": "demo"})
+	if agentArgs["caller_agent"] != "coder" || agentArgs["caller_scope"] != "agent" {
+		t.Fatalf("expected agent runtime args, got: %#v", agentArgs)
 	}
 }
 
-func TestSubagentToolVisibilityMode(t *testing.T) {
-	if got := subagentToolVisibilityMode("skill_exec"); got != "inherited" {
+func TestAgentToolVisibilityMode(t *testing.T) {
+	if got := agentToolVisibilityMode("skill_exec"); got != "inherited" {
 		t.Fatalf("expected skill_exec inherited, got %q", got)
 	}
-	if got := subagentToolVisibilityMode("write_file"); got != "allowlist" {
+	if got := agentToolVisibilityMode("write_file"); got != "allowlist" {
 		t.Fatalf("expected write_file allowlist, got %q", got)
 	}
 }

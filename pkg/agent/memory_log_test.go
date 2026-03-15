@@ -12,13 +12,13 @@ import (
 	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 )
 
-func TestAppendDailySummaryLogUsesSubagentNamespaceAndTitle(t *testing.T) {
+func TestAppendDailySummaryLogUsesAgentNamespaceAndTitle(t *testing.T) {
 	workspace := t.TempDir()
 	cfg := config.DefaultConfig()
-	cfg.Agents.Subagents["coder"] = config.SubagentConfig{
-		Enabled:          true,
-		DisplayName:      "Code Agent",
-		SystemPromptFile: "agents/coder/AGENT.md",
+	cfg.Agents.Agents["coder"] = config.AgentConfig{
+		Enabled:     true,
+		DisplayName: "Code Agent",
+		PromptFile:  "agents/coder/AGENT.md",
 	}
 	runtimecfg.Set(cfg)
 	t.Cleanup(func() { runtimecfg.Set(config.DefaultConfig()) })
@@ -26,7 +26,7 @@ func TestAppendDailySummaryLogUsesSubagentNamespaceAndTitle(t *testing.T) {
 	loop := &AgentLoop{workspace: workspace}
 	loop.appendDailySummaryLog(bus.InboundMessage{
 		Channel:    "cli",
-		SessionKey: "subagent:coder:subagent-1",
+		SessionKey: "agent:coder:agent-1",
 		Content:    "Role Profile Policy (agents/coder/AGENT.md):\n...\n\nTask:\n修复登录接口并补测试\nextra details",
 		Metadata: map[string]string{
 			"memory_ns": "coder",
@@ -51,10 +51,10 @@ func TestAppendDailySummaryLogUsesSubagentNamespaceAndTitle(t *testing.T) {
 	}
 	mainContent := string(mainEntries)
 	if !strings.Contains(mainContent, "Code Agent | 修复登录接口并补测试") {
-		t.Fatalf("expected main memory to include subagent title, got %s", mainContent)
+		t.Fatalf("expected main memory to include agent title, got %s", mainContent)
 	}
-	if !strings.Contains(mainContent, "- Subagent: Code Agent") {
-		t.Fatalf("expected main memory to include subagent name, got %s", mainContent)
+	if !strings.Contains(mainContent, "- Agent: Code Agent") {
+		t.Fatalf("expected main memory to include agent name, got %s", mainContent)
 	}
 	if !strings.Contains(mainContent, "- Did: 完成了登录接口修复、增加回归测试，并验证通过。") {
 		t.Fatalf("expected main memory to include summary, got %s", mainContent)

@@ -30,66 +30,36 @@ type Config struct {
 }
 
 type AgentsConfig struct {
-	Defaults      AgentDefaults             `json:"defaults"`
-	Router        AgentRouterConfig         `json:"router,omitempty"`
-	Communication AgentCommunicationConfig  `json:"communication,omitempty"`
-	Subagents     map[string]SubagentConfig `json:"subagents,omitempty"`
+	Defaults AgentDefaults          `json:"defaults"`
+	Agents   map[string]AgentConfig `json:"agents,omitempty"`
 }
 
-type AgentRouterConfig struct {
-	Enabled              bool                    `json:"enabled"`
-	MainAgentID          string                  `json:"main_agent_id,omitempty"`
-	Strategy             string                  `json:"strategy,omitempty"`
-	Policy               AgentRouterPolicyConfig `json:"policy,omitempty"`
-	Rules                []AgentRouteRule        `json:"rules,omitempty"`
-	AllowDirectAgentChat bool                    `json:"allow_direct_agent_chat,omitempty"`
-	MaxHops              int                     `json:"max_hops,omitempty"`
-	DefaultTimeoutSec    int                     `json:"default_timeout_sec,omitempty"`
-	DefaultWaitReply     bool                    `json:"default_wait_reply,omitempty"`
-	StickyThreadOwner    bool                    `json:"sticky_thread_owner,omitempty"`
+type AgentConfig struct {
+	Enabled          bool               `json:"enabled"`
+	Kind             string             `json:"kind,omitempty"`
+	Type             string             `json:"type,omitempty"`
+	Transport        string             `json:"transport,omitempty"`
+	NodeID           string             `json:"node_id,omitempty"`
+	ParentAgentID    string             `json:"parent_agent_id,omitempty"`
+	DisplayName      string             `json:"display_name,omitempty"`
+	Role             string             `json:"role,omitempty"`
+	Description      string             `json:"description,omitempty"`
+	Persona          string             `json:"persona,omitempty"`
+	Traits           []string           `json:"traits,omitempty"`
+	Faction          string             `json:"faction,omitempty"`
+	HomeLocation     string             `json:"home_location,omitempty"`
+	DefaultGoals     []string           `json:"default_goals,omitempty"`
+	PerceptionScope  int                `json:"perception_scope,omitempty"`
+	ScheduleHint     string             `json:"schedule_hint,omitempty"`
+	WorldTags        []string           `json:"world_tags,omitempty"`
+	PromptFile       string             `json:"prompt_file,omitempty"`
+	MemoryNamespace  string             `json:"memory_namespace,omitempty"`
+	Tools            AgentToolsConfig   `json:"tools,omitempty"`
+	Runtime          AgentRuntimeConfig `json:"runtime,omitempty"`
 }
 
-type AgentRouterPolicyConfig struct {
-	IntentMaxInputChars  int `json:"intent_max_input_chars" env:"CLAWGO_INTENT_MAX_INPUT_CHARS"`
-	MaxRoundsWithoutUser int `json:"max_rounds_without_user" env:"CLAWGO_AUTOLEARN_MAX_ROUNDS_WITHOUT_USER"`
-}
-
-type AgentRouteRule struct {
-	AgentID  string   `json:"agent_id"`
-	Keywords []string `json:"keywords,omitempty"`
-}
-
-type AgentCommunicationConfig struct {
-	Mode                 string `json:"mode,omitempty"`
-	PersistThreads       bool   `json:"persist_threads,omitempty"`
-	PersistMessages      bool   `json:"persist_messages,omitempty"`
-	MaxMessagesPerThread int    `json:"max_messages_per_thread,omitempty"`
-	DeadLetterQueue      bool   `json:"dead_letter_queue,omitempty"`
-	DefaultMessageTTLSec int    `json:"default_message_ttl_sec,omitempty"`
-}
-
-type SubagentConfig struct {
-	Enabled               bool                  `json:"enabled"`
-	Type                  string                `json:"type,omitempty"`
-	Transport             string                `json:"transport,omitempty"`
-	NodeID                string                `json:"node_id,omitempty"`
-	ParentAgentID         string                `json:"parent_agent_id,omitempty"`
-	NotifyMainPolicy      string                `json:"notify_main_policy,omitempty"`
-	DisplayName           string                `json:"display_name,omitempty"`
-	Role                  string                `json:"role,omitempty"`
-	Description           string                `json:"description,omitempty"`
-	SystemPromptFile      string                `json:"system_prompt_file,omitempty"`
-	MemoryNamespace       string                `json:"memory_namespace,omitempty"`
-	AcceptFrom            []string              `json:"accept_from,omitempty"`
-	CanTalkTo             []string              `json:"can_talk_to,omitempty"`
-	RequiresMainMediation bool                  `json:"requires_main_mediation,omitempty"`
-	DefaultReplyTo        string                `json:"default_reply_to,omitempty"`
-	Tools                 SubagentToolsConfig   `json:"tools,omitempty"`
-	Runtime               SubagentRuntimeConfig `json:"runtime,omitempty"`
-}
-
-func (s *SubagentConfig) UnmarshalJSON(data []byte) error {
-	type alias SubagentConfig
+func (s *AgentConfig) UnmarshalJSON(data []byte) error {
+	type alias AgentConfig
 	var raw struct {
 		alias
 		LegacySystemPrompt string `json:"system_prompt"`
@@ -97,17 +67,17 @@ func (s *SubagentConfig) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	*s = SubagentConfig(raw.alias)
+	*s = AgentConfig(raw.alias)
 	return nil
 }
 
-type SubagentToolsConfig struct {
+type AgentToolsConfig struct {
 	Allowlist        []string `json:"allowlist,omitempty"`
 	Denylist         []string `json:"denylist,omitempty"`
 	MaxParallelCalls int      `json:"max_parallel_calls,omitempty"`
 }
 
-type SubagentRuntimeConfig struct {
+type AgentRuntimeConfig struct {
 	Provider        string  `json:"provider,omitempty"`
 	Model           string  `json:"model,omitempty"`
 	Temperature     float64 `json:"temperature,omitempty"`
@@ -478,30 +448,7 @@ func DefaultConfig() *Config {
 					OutcomesTitle:   "Execution Outcomes",
 				},
 			},
-			Router: AgentRouterConfig{
-				Enabled:     false,
-				MainAgentID: "main",
-				Strategy:    "rules_first",
-				Policy: AgentRouterPolicyConfig{
-					IntentMaxInputChars:  1200,
-					MaxRoundsWithoutUser: 200,
-				},
-				Rules:                []AgentRouteRule{},
-				AllowDirectAgentChat: false,
-				MaxHops:              6,
-				DefaultTimeoutSec:    600,
-				DefaultWaitReply:     true,
-				StickyThreadOwner:    true,
-			},
-			Communication: AgentCommunicationConfig{
-				Mode:                 "mediated",
-				PersistThreads:       true,
-				PersistMessages:      true,
-				MaxMessagesPerThread: 100,
-				DeadLetterQueue:      true,
-				DefaultMessageTTLSec: 86400,
-			},
-			Subagents: map[string]SubagentConfig{},
+			Agents: map[string]AgentConfig{},
 		},
 		Channels: ChannelsConfig{
 			InboundMessageIDDedupeTTLSeconds:  600,

@@ -4,27 +4,26 @@ import "testing"
 
 func TestNormalizedViewProjectsCoreAndRuntime(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Agents.Router.Enabled = true
-	cfg.Agents.Subagents["coder"] = SubagentConfig{
-		Enabled:          true,
-		Role:             "coding",
-		SystemPromptFile: "agents/coder/AGENT.md",
-		Tools:            SubagentToolsConfig{Allowlist: []string{"shell"}},
-		Runtime:          SubagentRuntimeConfig{Provider: "openai"},
+	cfg.Agents.Agents["coder"] = AgentConfig{
+		Enabled:    true,
+		Role:       "coding",
+		PromptFile: "agents/coder/AGENT.md",
+		Tools:      AgentToolsConfig{Allowlist: []string{"shell"}},
+		Runtime:    AgentRuntimeConfig{Provider: "openai"},
 	}
 
 	view := cfg.NormalizedView()
 	if view.Core.DefaultProvider != "openai" || view.Core.DefaultModel != "gpt-5.4" {
 		t.Fatalf("unexpected default model projection: %+v", view.Core)
 	}
-	subcfg, ok := view.Core.Subagents["coder"]
+	subcfg, ok := view.Core.Agents["coder"]
 	if !ok {
-		t.Fatalf("expected normalized subagent")
+		t.Fatalf("expected normalized agent")
 	}
 	if subcfg.Prompt != "agents/coder/AGENT.md" || subcfg.Provider != "openai" {
-		t.Fatalf("unexpected normalized subagent: %+v", subcfg)
+		t.Fatalf("unexpected normalized agent: %+v", subcfg)
 	}
-	if !view.Runtime.Router.Enabled || view.Runtime.Router.Strategy != "rules_first" {
-		t.Fatalf("unexpected runtime router: %+v", view.Runtime.Router)
+	if len(view.Runtime.Providers) == 0 {
+		t.Fatalf("expected normalized providers: %+v", view.Runtime)
 	}
 }

@@ -44,10 +44,10 @@ var defaultToolAllowlistGroups = []ToolAllowlistGroup{
 		Tools:       []string{"memory_search", "memory_get", "memory_write"},
 	},
 	{
-		Name:        "subagents",
-		Description: "Subagent management tools",
-		Aliases:     []string{"subagent", "agent_runtime"},
-		Tools:       []string{"spawn", "subagents", "subagent_profile"},
+		Name:        "agents",
+		Description: "World/NPC and agent profile tools",
+		Aliases:     []string{"agent", "agent_runtime"},
+		Tools:       []string{"agent_profile", "world"},
 	},
 	{
 		Name:        "skills",

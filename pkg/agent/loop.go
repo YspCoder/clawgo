@@ -65,14 +65,14 @@ type AgentLoop struct {
 	sessionProvider      map[string]string
 	streamMu             sync.Mutex
 	sessionStreamed      map[string]bool
-	subagentManager      *tools.SubagentManager
-	subagentRouter       *tools.SubagentRouter
-	subagentConfigTool   *tools.SubagentConfigTool
+	agentManager         *tools.AgentManager
+	agentDispatcher      *tools.AgentDispatcher
+	worldRuntime         *WorldRuntime
 	nodeRouter           *nodes.Router
 	configPath           string
-	subagentDigestMu     sync.Mutex
-	subagentDigestDelay  time.Duration
-	subagentDigests      map[string]*subagentDigestState
+	agentDigestMu        sync.Mutex
+	agentDigestDelay     time.Duration
+	agentDigests         map[string]*agentDigestState
 }
 
 type providerCandidate struct {
@@ -81,7 +81,7 @@ type providerCandidate struct {
 	model string
 }
 
-type subagentDigestItem struct {
+type agentDigestItem struct {
 	agentID       string
 	reason        string
 	status        string
@@ -89,10 +89,10 @@ type subagentDigestItem struct {
 	resultSummary string
 }
 
-type subagentDigestState struct {
+type agentDigestState struct {
 	channel string
 	chatID  string
-	items   map[string]subagentDigestItem
+	items   map[string]agentDigestItem
 	dueAt   time.Time
 }
 
@@ -222,9 +222,6 @@ func (al *AgentLoop) SetConfigPath(path string) {
 		return
 	}
 	al.configPath = strings.TrimSpace(path)
-	if al.subagentConfigTool != nil {
-		al.subagentConfigTool.SetConfigPath(al.configPath)
-	}
 }
 
 func (al *AgentLoop) SetNodeP2PTransport(t nodes.Transport) {
@@ -370,16 +367,12 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	})
 	toolsRegistry.Register(messageTool)
 
-	// Register spawn tool
-	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus)
-	subagentRouter := tools.NewSubagentRouter(subagentManager)
-	subagentConfigTool := tools.NewSubagentConfigTool("")
-	spawnTool := tools.NewSpawnTool(subagentManager)
-	toolsRegistry.Register(spawnTool)
-	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager))
-	toolsRegistry.Register(subagentConfigTool)
-	if store := subagentManager.ProfileStore(); store != nil {
-		toolsRegistry.Register(tools.NewSubagentProfileTool(store))
+	agentManager := tools.NewAgentManager(provider, workspace, msgBus)
+	agentDispatcher := tools.NewAgentDispatcher(agentManager)
+	worldRuntime := NewWorldRuntime(workspace, agentManager.ProfileStore(), agentDispatcher, agentManager)
+	toolsRegistry.Register(tools.NewWorldTool(worldRuntime))
+	if store := agentManager.ProfileStore(); store != nil {
+		toolsRegistry.Register(tools.NewAgentProfileTool(store))
 	}
 	toolsRegistry.Register(tools.NewSessionsTool(
 		func(limit int) []tools.SessionInfo {
@@ -439,17 +432,17 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		sessionStreamed:      map[string]bool{},
 		providerResponses:    map[string]config.ProviderResponsesConfig{},
 		telegramStreaming:    cfg.Channels.Telegram.Streaming,
-		subagentManager:      subagentManager,
-		subagentRouter:       subagentRouter,
-		subagentConfigTool:   subagentConfigTool,
+		agentManager:         agentManager,
+		agentDispatcher:      agentDispatcher,
+		worldRuntime:         worldRuntime,
 		nodeRouter:           nodesRouter,
-		subagentDigestDelay:  5 * time.Second,
-		subagentDigests:      map[string]*subagentDigestState{},
+		agentDigestDelay:     5 * time.Second,
+		agentDigests:         map[string]*agentDigestState{},
 	}
 	if _, primaryModel := config.ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary); strings.TrimSpace(primaryModel) != "" {
 		loop.model = strings.TrimSpace(primaryModel)
 	}
-	go loop.runSubagentDigestTicker()
+	go loop.runAgentDigestTicker()
 	// Initialize provider fallback chain (primary + inferred providers).
 	loop.providerChain = []providerCandidate{}
 	loop.providerPool = map[string]providers.LLMProvider{}
@@ -521,33 +514,26 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		})
 	}
 
-	// Inject recursive run logic so subagents can use full tool-calling flows.
-	subagentManager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
+	// Inject recursive run logic so agents can use full tool-calling flows.
+	agentManager.SetRunFunc(func(ctx context.Context, task *tools.AgentTask) (string, error) {
 		if task == nil {
-			return "", fmt.Errorf("subagent task is nil")
+			return "", fmt.Errorf("agent task is nil")
 		}
-		if strings.EqualFold(strings.TrimSpace(task.Transport), "node") {
-			return loop.dispatchNodeSubagentTask(ctx, task)
+		if tools.IsWorldDecisionTask(task) {
+			return loop.runWorldDecisionTask(ctx, task)
 		}
-		sessionKey := strings.TrimSpace(task.SessionKey)
-		if sessionKey == "" {
-			sessionKey = fmt.Sprintf("subagent:%s", strings.TrimSpace(task.ID))
+		if strings.EqualFold(strings.TrimSpace(tools.TargetTransport(task.Target)), "node") {
+			return loop.dispatchNodeAgentTask(ctx, task)
 		}
-		taskInput := loop.buildSubagentTaskInput(task)
-		ns := normalizeMemoryNamespace(task.MemoryNS)
+		sessionKey := tools.BuildAgentSessionKey(task.AgentID, task.ID)
+		taskInput := loop.buildAgentTaskInput(task)
+		ns := normalizeMemoryNamespace(loop.agentManager.ResolveMemoryNamespace(task.AgentID))
 		ctx = withMemoryNamespaceContext(ctx, ns)
-		ctx = withToolAllowlistContext(ctx, task.ToolAllowlist)
-		channel := strings.TrimSpace(task.OriginChannel)
-		if channel == "" {
-			channel = "cli"
-		}
-		chatID := strings.TrimSpace(task.OriginChatID)
-		if chatID == "" {
-			chatID = "direct"
-		}
+		ctx = withToolAllowlistContext(ctx, tools.ToolAllowlistFromPolicy(task.ExecutionPolicy))
+		channel, chatID := tools.OriginValues(task.Origin)
 		msg := bus.InboundMessage{
 			Channel:    channel,
-			SenderID:   "subagent",
+			SenderID:   "agent",
 			ChatID:     chatID,
 			Content:    taskInput,
 			SessionKey: sessionKey,
@@ -555,7 +541,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 				"memory_namespace": ns,
 				"memory_ns":        ns,
 				"disable_planning": "true",
-				"trigger":          "subagent",
+				"trigger":          "agent",
 			},
 		}
 		return loop.processMessage(ctx, msg)
@@ -564,18 +550,18 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	return loop
 }
 
-func (al *AgentLoop) dispatchNodeSubagentTask(ctx context.Context, task *tools.SubagentTask) (string, error) {
+func (al *AgentLoop) dispatchNodeAgentTask(ctx context.Context, task *tools.AgentTask) (string, error) {
 	if al == nil || task == nil {
-		return "", fmt.Errorf("node subagent task is nil")
+		return "", fmt.Errorf("node agent task is nil")
 	}
 	if al.nodeRouter == nil {
-		return "", fmt.Errorf("node router is not configured")
+		return "", fmt.Errorf("node transport is not configured")
 	}
-	nodeID := strings.TrimSpace(task.NodeID)
+	nodeID := strings.TrimSpace(tools.TargetNodeID(task.Target))
 	if nodeID == "" {
-		return "", fmt.Errorf("node-backed subagent %q missing node_id", task.AgentID)
+		return "", fmt.Errorf("node-backed agent %q missing node_id", task.AgentID)
 	}
-	taskInput := loopTaskInputForNode(task)
+	taskInput := loopAgentTaskInputForNode(task)
 	reqArgs := map[string]interface{}{}
 	if remoteAgentID := remoteAgentIDForNodeBranch(task.AgentID, nodeID); remoteAgentID != "" {
 		reqArgs["remote_agent_id"] = remoteAgentID
@@ -618,11 +604,11 @@ func remoteAgentIDForNodeBranch(agentID, nodeID string) string {
 	return remote
 }
 
-func loopTaskInputForNode(task *tools.SubagentTask) string {
+func loopAgentTaskInputForNode(task *tools.AgentTask) string {
 	if task == nil {
 		return ""
 	}
-	if parent := strings.TrimSpace(task.ParentAgentID); parent != "" {
+	if parent := strings.TrimSpace(tools.TargetParentAgentID(task.Target)); parent != "" {
 		return fmt.Sprintf("Parent Agent: %s\nSubtree Branch: %s\n\nTask:\n%s", parent, task.AgentID, strings.TrimSpace(task.Task))
 	}
 	return strings.TrimSpace(task.Task)
@@ -641,20 +627,176 @@ func nodeAgentTaskResult(payload map[string]interface{}) string {
 	return ""
 }
 
-func (al *AgentLoop) buildSubagentTaskInput(task *tools.SubagentTask) string {
+func (al *AgentLoop) buildAgentTaskInput(task *tools.AgentTask) string {
 	if task == nil {
 		return ""
 	}
+	if tools.IsWorldDecisionTask(task) {
+		return strings.TrimSpace(task.Task)
+	}
 	taskText := strings.TrimSpace(task.Task)
-	if promptFile := strings.TrimSpace(task.SystemPromptFile); promptFile != "" {
-		if promptText := al.readSubagentPromptFile(promptFile); promptText != "" {
+	if promptFile := tools.PromptFileFromPolicy(task.ExecutionPolicy); promptFile != "" {
+		if promptText := al.readAgentPromptFile(promptFile); promptText != "" {
 			return fmt.Sprintf("Role Profile Policy (%s):\n%s\n\nTask:\n%s", promptFile, promptText, taskText)
 		}
 	}
 	return taskText
 }
 
-func (al *AgentLoop) readSubagentPromptFile(relPath string) string {
+func (al *AgentLoop) runWorldDecisionTask(ctx context.Context, task *tools.AgentTask) (string, error) {
+	if task == nil {
+		return "", fmt.Errorf("world decision task is nil")
+	}
+	if out, ok := al.tryWorldDecisionLLM(ctx, task); ok {
+		return out, nil
+	}
+	intent := map[string]interface{}{
+		"actor_id": task.AgentID,
+		"action":   "wait",
+	}
+	worldDecision := task.WorldDecision
+	npcID := strings.TrimSpace(task.AgentID)
+	location := ""
+	if worldDecision != nil && worldDecision.NPCSnapshot != nil {
+		if v := tools.MapStringArg(worldDecision.NPCSnapshot, "current_location"); v != "" {
+			location = v
+		}
+	}
+	for _, evt := range visibleWorldEvents(worldDecision) {
+		if strings.EqualFold(tools.MapStringArg(evt, "type"), "user_input") {
+			if loc := tools.MapStringArg(evt, "location_id"); location == "" || loc == "" || loc == location {
+				intent["action"] = "speak"
+				intent["speech"] = fmt.Sprintf("%s notices the user: %s", firstNonEmptyAgentValue(worldSnapshotMap(worldDecision, "npc"), "display_name", npcID), strings.TrimSpace(tools.MapStringArg(evt, "content")))
+				intent["internal_reasoning_summary"] = "responded to a nearby user event"
+				break
+			}
+		}
+	}
+	if intent["action"] == "wait" && worldDecision != nil && worldDecision.NPCSnapshot != nil {
+		for _, item := range tools.MapStringListArg(worldDecision.NPCSnapshot, "goals_long_term") {
+			text := strings.ToLower(strings.TrimSpace(item))
+			if strings.Contains(text, "patrol") {
+				if target := firstNeighborFromSnapshot(worldSnapshotMap(worldDecision, "world"), location); target != "" {
+					intent["action"] = "move"
+					intent["target_location"] = target
+					intent["internal_reasoning_summary"] = "continues a patrol route"
+					break
+				}
+			}
+			if strings.Contains(text, "watch") || strings.Contains(text, "guard") || strings.Contains(text, "observe") {
+				intent["action"] = "observe"
+				intent["internal_reasoning_summary"] = "keeps watch over the area"
+				break
+			}
+		}
+	}
+	data, err := json.Marshal(intent)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (al *AgentLoop) tryWorldDecisionLLM(ctx context.Context, task *tools.AgentTask) (string, bool) {
+	if al == nil || task == nil || task.WorldDecision == nil || al.provider == nil {
+		return "", false
+	}
+	system := strings.TrimSpace(`You are an NPC mind inside a simulated world.
+Return exactly one JSON object and nothing else.
+Rules:
+- You do not change the world directly.
+- Choose one action from: move, speak, observe, interact, delegate, wait.
+- Prefer actions consistent with persona, goals, current location, and visible events.
+- If information is insufficient, return {"actor_id":"...","action":"wait"}.
+- Keep speech short.
+JSON fields:
+actor_id, action, target_location, target_entity, target_agent, speech, internal_reasoning_summary, proposed_effects`)
+	user := strings.TrimSpace(task.Task)
+	if user == "" {
+		user = "{}"
+	}
+	resp, err := al.provider.Chat(ctx, []providers.Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	}, nil, al.provider.GetDefaultModel(), map[string]interface{}{
+		"max_tokens":  512,
+		"temperature": 0.2,
+	})
+	if err != nil || resp == nil {
+		return "", false
+	}
+	content := strings.TrimSpace(resp.Content)
+	if content == "" {
+		return "", false
+	}
+	if _, err := parseWorldDecisionContent(content); err != nil {
+		return "", false
+	}
+	return content, true
+}
+
+func visibleWorldEvents(ctx *tools.WorldDecisionContext) []map[string]interface{} {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.VisibleEvents
+}
+
+func worldSnapshotMap(ctx *tools.WorldDecisionContext, kind string) map[string]interface{} {
+	if ctx == nil {
+		return nil
+	}
+	switch kind {
+	case "npc":
+		return ctx.NPCSnapshot
+	default:
+		return ctx.WorldSnapshot
+	}
+}
+
+func parseWorldDecisionContent(raw string) (map[string]interface{}, error) {
+	raw = strings.TrimSpace(raw)
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start >= 0 && end >= start {
+		raw = raw[start : end+1]
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func firstNonEmptyAgentValue(m map[string]interface{}, key, fallback string) string {
+	if m != nil {
+		if value := tools.MapStringArg(m, key); value != "" {
+			return value
+		}
+	}
+	return fallback
+}
+
+func firstNeighborFromSnapshot(snapshot map[string]interface{}, location string) string {
+	if snapshot == nil {
+		return ""
+	}
+	locs, ok := snapshot["locations"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	raw, ok := locs[location].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	neighbors, ok := raw["neighbors"].([]interface{})
+	if !ok || len(neighbors) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(neighbors[0]))
+}
+
+func (al *AgentLoop) readAgentPromptFile(relPath string) string {
 	if al == nil {
 		return ""
 	}
@@ -1150,7 +1292,7 @@ func loadHeartbeatAckToken(workspace string) string {
 
 func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (bus.OutboundMessage, bool) {
 	if shouldDropNoReply(response) {
-		if fallback, ok := fallbackSubagentNotification(msg); ok {
+		if fallback, ok := fallbackAgentNotification(msg); ok {
 			response = fallback
 		} else {
 			return bus.OutboundMessage{}, false
@@ -1163,7 +1305,7 @@ func (al *AgentLoop) prepareOutbound(msg bus.InboundMessage, response string) (b
 	clean, replyToID := parseReplyTag(response, currentMsgID)
 	clean = strings.TrimSpace(clean)
 	if clean == "" {
-		if fallback, ok := fallbackSubagentNotification(msg); ok {
+		if fallback, ok := fallbackAgentNotification(msg); ok {
 			clean = fallback
 		} else {
 			return bus.OutboundMessage{}, false
@@ -1272,24 +1414,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	} else {
 		specTaskRef = normalizeSpecCodingTaskRef(taskRef)
 	}
-	if routed, ok, routeErr := al.maybeAutoRoute(ctx, msg); ok {
-		if routeErr != nil && specTaskRef.Summary != "" {
-			if err := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, routeErr.Error()); err != nil {
-				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-					"session_key": msg.SessionKey,
-					"error":       err.Error(),
-				})
-			}
-		}
-		if routeErr == nil && specTaskRef.Summary != "" {
-			if err := al.maybeCompleteSpecCodingTask(specTaskRef, routed); err != nil {
-				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-					"session_key": msg.SessionKey,
-					"error":       err.Error(),
-				})
-			}
-		}
-		return routed, routeErr
+	if al.worldRuntime != nil && al.worldRuntime.Enabled() && al.getTrigger(msg) == "user" && memoryNamespace == "main" {
+		return al.worldRuntime.HandleUserInput(ctx, msg.Content, msg.Channel, msg.ChatID)
 	}
 
 	history := al.sessions.GetHistory(msg.SessionKey)
@@ -1593,7 +1719,7 @@ func (al *AgentLoop) appendDailySummaryLog(msg bus.InboundMessage, response stri
 		logger.WarnCF("agent", logger.C0158, map[string]interface{}{logger.FieldError: err.Error()})
 	}
 	if namespace != "main" {
-		mainLine := al.buildMainMemorySubagentEntry(msg, namespace, respText)
+		mainLine := al.buildMainMemoryAgentEntry(msg, namespace, respText)
 		if err := NewMemoryStore(al.workspace).AppendToday(mainLine); err != nil {
 			logger.WarnCF("agent", logger.C0158, map[string]interface{}{"target": "main", logger.FieldError: err.Error()})
 		}
@@ -1611,9 +1737,9 @@ func (al *AgentLoop) buildDailySummaryEntry(msg bus.InboundMessage, namespace, r
 	)
 }
 
-func (al *AgentLoop) buildMainMemorySubagentEntry(msg bus.InboundMessage, namespace, response string) string {
+func (al *AgentLoop) buildMainMemoryAgentEntry(msg bus.InboundMessage, namespace, response string) string {
 	title := al.dailySummaryTitle(msg, namespace)
-	return fmt.Sprintf("## %s %s\n\n- Subagent: %s\n- Did: %s\n- Session: %s",
+	return fmt.Sprintf("## %s %s\n\n- Agent: %s\n- Did: %s\n- Session: %s",
 		time.Now().Format("15:04"),
 		title,
 		al.memoryAgentTitle(namespace),
@@ -1638,7 +1764,7 @@ func (al *AgentLoop) memoryAgentTitle(namespace string) string {
 	}
 	cfg := runtimecfg.Get()
 	if cfg != nil {
-		if subcfg, ok := cfg.Agents.Subagents[ns]; ok {
+		if subcfg, ok := cfg.Agents.Agents[ns]; ok {
 			if name := strings.TrimSpace(subcfg.DisplayName); name != "" {
 				return name
 			}
@@ -1681,7 +1807,7 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 			"chat_id":   msg.ChatID,
 		})
 
-	if al.handleSubagentSystemMessage(msg) {
+	if al.handleAgentSystemMessage(msg) {
 		return "", nil
 	}
 
@@ -1824,8 +1950,8 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	return finalContent, nil
 }
 
-func (al *AgentLoop) handleSubagentSystemMessage(msg bus.InboundMessage) bool {
-	if !isSubagentSystemMessage(msg) {
+func (al *AgentLoop) handleAgentSystemMessage(msg bus.InboundMessage) bool {
+	if !isAgentSystemMessage(msg) {
 		return false
 	}
 	reason := ""
@@ -1839,12 +1965,12 @@ func (al *AgentLoop) handleSubagentSystemMessage(msg bus.InboundMessage) bool {
 		status = strings.TrimSpace(msg.Metadata["status"])
 	}
 	if agentID == "" {
-		agentID = strings.TrimSpace(strings.TrimPrefix(msg.SenderID, "subagent:"))
+		agentID = strings.TrimSpace(strings.TrimPrefix(msg.SenderID, "agent:"))
 	}
 	if taskSummary == "" || resultSummary == "" {
-		taskSummary, resultSummary = parseSubagentSystemContent(msg.Content)
+		taskSummary, resultSummary = parseAgentSystemContent(msg.Content)
 	}
-	al.enqueueSubagentDigest(msg, subagentDigestItem{
+	al.enqueueAgentDigest(msg, agentDigestItem{
 		agentID:       agentID,
 		reason:        reason,
 		status:        status,
@@ -1919,7 +2045,7 @@ func filterToolDefinitionsByContext(ctx context.Context, toolDefs []map[string]i
 		if name == "" {
 			continue
 		}
-		if isToolNameAllowed(allow, name) || isImplicitlyAllowedSubagentTool(name) {
+		if isToolNameAllowed(allow, name) || isImplicitlyAllowedAgentTool(name) {
 			filtered = append(filtered, td)
 		}
 	}
@@ -2177,14 +2303,14 @@ func (al *AgentLoop) GetToolCatalog() []map[string]interface{} {
 		name := strings.TrimSpace(fmt.Sprint(item["name"]))
 		item["visibility"] = map[string]interface{}{
 			"main_agent": true,
-			"subagent":   subagentToolVisibilityMode(name),
+			"agent":      agentToolVisibilityMode(name),
 		}
 	}
 	return items
 }
 
-func subagentToolVisibilityMode(name string) string {
-	if isImplicitlyAllowedSubagentTool(name) {
+func agentToolVisibilityMode(name string) string {
+	if isImplicitlyAllowedAgentTool(name) {
 		return "inherited"
 	}
 	return "allowlist"
@@ -2292,7 +2418,7 @@ func withToolRuntimeArgs(ctx context.Context, toolName string, args map[string]i
 	}
 	ns := normalizeMemoryNamespace(memoryNamespaceFromContext(ctx))
 	callerAgent := ns
-	callerScope := "subagent"
+	callerScope := "agent"
 	if callerAgent == "" || callerAgent == "main" {
 		callerAgent = "main"
 		callerScope = "main_agent"
@@ -2388,8 +2514,8 @@ func ensureToolAllowedByContext(ctx context.Context, toolName string, args map[s
 	if name == "" {
 		return fmt.Errorf("tool name is empty")
 	}
-	if !isToolNameAllowed(allow, name) && !isImplicitlyAllowedSubagentTool(name) {
-		return fmt.Errorf("tool '%s' is not allowed by subagent profile", toolName)
+	if !isToolNameAllowed(allow, name) && !isImplicitlyAllowedAgentTool(name) {
+		return fmt.Errorf("tool '%s' is not allowed by agent profile", toolName)
 	}
 
 	if name == "parallel" {
@@ -2415,21 +2541,20 @@ func validateParallelAllowlistArgs(allow map[string]struct{}, args map[string]in
 		if name == "" {
 			continue
 		}
-		if !isToolNameAllowed(allow, name) && !isImplicitlyAllowedSubagentTool(name) {
+		if !isToolNameAllowed(allow, name) && !isImplicitlyAllowedAgentTool(name) {
 			return fmt.Errorf("tool 'parallel' contains disallowed call[%d]: %s", i, tool)
 		}
 	}
 	return nil
 }
 
-func isImplicitlyAllowedSubagentTool(name string) bool {
-	_, ok := implicitSubagentToolSet[strings.ToLower(strings.TrimSpace(name))]
+func isImplicitlyAllowedAgentTool(name string) bool {
+	_, ok := implicitAgentToolSet[strings.ToLower(strings.TrimSpace(name))]
 	return ok
 }
 
 var toolContextEligibleSet = map[string]struct{}{
 	"message": {},
-	"spawn":   {},
 	"remind":  {},
 }
 
@@ -2449,7 +2574,7 @@ func toolNeedsMemoryNamespace(name string) bool {
 	return ok
 }
 
-var implicitSubagentToolSet = map[string]struct{}{
+var implicitAgentToolSet = map[string]struct{}{
 	"skill_exec": {},
 }
 
@@ -2576,32 +2701,32 @@ func resolveSystemOrigin(chatID string) (string, string) {
 	}
 }
 
-func isSubagentSystemMessage(msg bus.InboundMessage) bool {
+func isAgentSystemMessage(msg bus.InboundMessage) bool {
 	if msg.Channel != "system" {
 		return false
 	}
-	if msg.Metadata != nil && strings.EqualFold(strings.TrimSpace(msg.Metadata["trigger"]), "subagent") {
+	if msg.Metadata != nil && strings.EqualFold(strings.TrimSpace(msg.Metadata["trigger"]), "agent") {
 		return true
 	}
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(msg.SenderID)), "subagent:")
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(msg.SenderID)), "agent:")
 }
 
-func fallbackSubagentNotification(msg bus.InboundMessage) (string, bool) {
-	if !isSubagentSystemMessage(msg) {
+func fallbackAgentNotification(msg bus.InboundMessage) (string, bool) {
+	if !isAgentSystemMessage(msg) {
 		return "", false
 	}
 	content := strings.TrimSpace(msg.Content)
 	if content == "" {
-		id := strings.TrimSpace(strings.TrimPrefix(msg.SenderID, "subagent:"))
+		id := strings.TrimSpace(strings.TrimPrefix(msg.SenderID, "agent:"))
 		if id == "" {
 			id = "unknown"
 		}
-		content = fmt.Sprintf("Subagent %s completed.", id)
+		content = fmt.Sprintf("Agent %s completed.", id)
 	}
 	return content, true
 }
 
-func parseSubagentSystemContent(content string) (string, string) {
+func parseAgentSystemContent(content string) (string, string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return "", ""
@@ -2641,55 +2766,55 @@ func summarizeSystemNotificationText(s string, max int) string {
 	return s
 }
 
-func (al *AgentLoop) enqueueSubagentDigest(msg bus.InboundMessage, item subagentDigestItem) {
+func (al *AgentLoop) enqueueAgentDigest(msg bus.InboundMessage, item agentDigestItem) {
 	if al == nil || al.bus == nil {
 		return
 	}
 	originChannel, originChatID := resolveSystemOrigin(msg.ChatID)
 	key := originChannel + "\x00" + originChatID
-	delay := al.subagentDigestDelay
+	delay := al.agentDigestDelay
 	if delay <= 0 {
 		delay = 5 * time.Second
 	}
 
-	al.subagentDigestMu.Lock()
-	state, ok := al.subagentDigests[key]
+	al.agentDigestMu.Lock()
+	state, ok := al.agentDigests[key]
 	if !ok || state == nil {
-		state = &subagentDigestState{
+		state = &agentDigestState{
 			channel: originChannel,
 			chatID:  originChatID,
-			items:   map[string]subagentDigestItem{},
+			items:   map[string]agentDigestItem{},
 		}
-		al.subagentDigests[key] = state
+		al.agentDigests[key] = state
 	}
-	itemKey := subagentDigestItemKey(item)
+	itemKey := agentDigestItemKey(item)
 	state.items[itemKey] = item
 	state.dueAt = time.Now().Add(delay)
-	al.subagentDigestMu.Unlock()
+	al.agentDigestMu.Unlock()
 }
 
-func subagentDigestItemKey(item subagentDigestItem) string {
+func agentDigestItemKey(item agentDigestItem) string {
 	agentID := strings.ToLower(strings.TrimSpace(item.agentID))
 	reason := strings.ToLower(strings.TrimSpace(item.reason))
 	task := strings.ToLower(strings.TrimSpace(item.taskSummary))
 	if agentID == "" {
-		agentID = "subagent"
+		agentID = "agent"
 	}
 	return agentID + "\x00" + reason + "\x00" + task
 }
 
-func (al *AgentLoop) flushSubagentDigest(key string) {
+func (al *AgentLoop) flushAgentDigest(key string) {
 	if al == nil || al.bus == nil {
 		return
 	}
-	al.subagentDigestMu.Lock()
-	state := al.subagentDigests[key]
-	delete(al.subagentDigests, key)
-	al.subagentDigestMu.Unlock()
+	al.agentDigestMu.Lock()
+	state := al.agentDigests[key]
+	delete(al.agentDigests, key)
+	al.agentDigestMu.Unlock()
 	if state == nil || len(state.items) == 0 {
 		return
 	}
-	content := formatSubagentDigestSummary(state.items)
+	content := formatAgentDigestSummary(state.items)
 	if strings.TrimSpace(content) == "" {
 		return
 	}
@@ -2700,7 +2825,7 @@ func (al *AgentLoop) flushSubagentDigest(key string) {
 	})
 }
 
-func (al *AgentLoop) runSubagentDigestTicker() {
+func (al *AgentLoop) runAgentDigestTicker() {
 	if al == nil {
 		return
 	}
@@ -2711,33 +2836,33 @@ func (al *AgentLoop) runSubagentDigestTicker() {
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 	for now := range ticker.C {
-		al.flushDueSubagentDigests(now)
+		al.flushDueAgentDigests(now)
 	}
 }
 
-func (al *AgentLoop) flushDueSubagentDigests(now time.Time) {
+func (al *AgentLoop) flushDueAgentDigests(now time.Time) {
 	if al == nil || al.bus == nil {
 		return
 	}
 	dueKeys := make([]string, 0, 4)
-	al.subagentDigestMu.Lock()
-	for key, state := range al.subagentDigests {
+	al.agentDigestMu.Lock()
+	for key, state := range al.agentDigests {
 		if state == nil || state.dueAt.IsZero() || now.Before(state.dueAt) {
 			continue
 		}
 		dueKeys = append(dueKeys, key)
 	}
-	al.subagentDigestMu.Unlock()
+	al.agentDigestMu.Unlock()
 	for _, key := range dueKeys {
-		al.flushSubagentDigest(key)
+		al.flushAgentDigest(key)
 	}
 }
 
-func formatSubagentDigestSummary(items map[string]subagentDigestItem) string {
+func formatAgentDigestSummary(items map[string]agentDigestItem) string {
 	if len(items) == 0 {
 		return ""
 	}
-	list := make([]subagentDigestItem, 0, len(items))
+	list := make([]agentDigestItem, 0, len(items))
 	completed := 0
 	blocked := 0
 	milestone := 0
@@ -2785,7 +2910,7 @@ func formatSubagentDigestSummary(items map[string]subagentDigestItem) string {
 	for _, item := range list {
 		agentLabel := strings.TrimSpace(item.agentID)
 		if agentLabel == "" {
-			agentLabel = "subagent"
+			agentLabel = "agent"
 		}
 		statusText := "已完成"
 		switch {

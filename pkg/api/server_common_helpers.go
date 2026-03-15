@@ -85,12 +85,6 @@ func (s *Server) memoryFilePath(name string) string {
 
 func buildAgentTreeRoot(nodeID string, items []map[string]interface{}) map[string]interface{} {
 	rootID := "main"
-	for _, item := range items {
-		if strings.TrimSpace(stringFromMap(item, "type")) == "router" && strings.TrimSpace(stringFromMap(item, "agent_id")) != "" {
-			rootID = strings.TrimSpace(stringFromMap(item, "agent_id"))
-			break
-		}
-	}
 	nodesByID := make(map[string]map[string]interface{}, len(items)+1)
 	for _, item := range items {
 		id := strings.TrimSpace(stringFromMap(item, "agent_id"))
@@ -116,7 +110,7 @@ func buildAgentTreeRoot(nodeID string, items []map[string]interface{}) map[strin
 			"agent_id":     rootID,
 			"display_name": "Main Agent",
 			"role":         "orchestrator",
-			"type":         "router",
+			"type":         "agent",
 			"transport":    "local",
 			"managed_by":   "derived",
 			"enabled":      true,

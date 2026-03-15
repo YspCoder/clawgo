@@ -9,7 +9,7 @@ import (
 	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
-func TestDispatchNodeSubagentTaskUsesNodeAgentTask(t *testing.T) {
+func TestDispatchNodeAgentTaskUsesNodeAgentTask(t *testing.T) {
 	manager := nodes.NewManager()
 	manager.Upsert(nodes.NodeInfo{
 		ID:     "edge-dev",
@@ -44,16 +44,18 @@ func TestDispatchNodeSubagentTaskUsesNodeAgentTask(t *testing.T) {
 			Relay: &nodes.HTTPRelayTransport{Manager: manager},
 		},
 	}
-	out, err := loop.dispatchNodeSubagentTask(context.Background(), &tools.SubagentTask{
-		ID:            "subagent-1",
-		AgentID:       "node.edge-dev.coder",
-		Transport:     "node",
-		NodeID:        "edge-dev",
-		ParentAgentID: "main",
-		Task:          "Implement fix on remote node",
+	out, err := loop.dispatchNodeAgentTask(context.Background(), &tools.AgentTask{
+		ID:      "agent-1",
+		AgentID: "node.edge-dev.coder",
+		Target: &tools.TargetRef{
+			Transport:     "node",
+			NodeID:        "edge-dev",
+			ParentAgentID: "main",
+		},
+		Task: "Implement fix on remote node",
 	})
 	if err != nil {
-		t.Fatalf("dispatchNodeSubagentTask failed: %v", err)
+		t.Fatalf("dispatchNodeAgentTask failed: %v", err)
 	}
 	if out != "remote-main-done" {
 		t.Fatalf("unexpected node result: %q", out)

@@ -35,7 +35,7 @@ func (t *MemoryGetTool) Parameters() map[string]interface{} {
 			},
 			"namespace": map[string]interface{}{
 				"type":        "string",
-				"description": "Optional memory namespace. Use main for workspace memory, or subagent id for isolated memory.",
+				"description": "Optional memory namespace. Use main for workspace memory, or agent id for isolated memory.",
 				"default":     "main",
 			},
 			"from": map[string]interface{}{

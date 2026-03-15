@@ -14,26 +14,20 @@ func TestDefaultConfigGeneratesGatewayToken(t *testing.T) {
 	}
 }
 
-func TestValidateSubagentsAllowsKnownPeers(t *testing.T) {
+func TestValidateAgentsAllowsKnownPeers(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	cfg.Agents.Router.Enabled = true
-	cfg.Agents.Router.MainAgentID = "main"
-	cfg.Agents.Subagents["main"] = SubagentConfig{
-		Enabled:          true,
-		Type:             "router",
-		SystemPromptFile: "agents/main/AGENT.md",
-		AcceptFrom:       []string{"user", "coder"},
-		CanTalkTo:        []string{"coder"},
+	cfg.Agents.Agents["main"] = AgentConfig{
+		Enabled:    true,
+		Type:       "agent",
+		PromptFile: "agents/main/AGENT.md",
 	}
-	cfg.Agents.Subagents["coder"] = SubagentConfig{
-		Enabled:          true,
-		Type:             "worker",
-		SystemPromptFile: "agents/coder/AGENT.md",
-		AcceptFrom:       []string{"main"},
-		CanTalkTo:        []string{"main"},
-		Runtime: SubagentRuntimeConfig{
+	cfg.Agents.Agents["coder"] = AgentConfig{
+		Enabled:    true,
+		Type:       "agent",
+		PromptFile: "agents/coder/AGENT.md",
+		Runtime: AgentRuntimeConfig{
 			Provider: "openai",
 		},
 	}
@@ -43,29 +37,14 @@ func TestValidateSubagentsAllowsKnownPeers(t *testing.T) {
 	}
 }
 
-func TestValidateSubagentsRejectsUnknownPeer(t *testing.T) {
+func TestValidateAgentsRejectsAbsolutePromptFile(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	cfg.Agents.Subagents["coder"] = SubagentConfig{
-		Enabled:          true,
-		SystemPromptFile: "agents/coder/AGENT.md",
-		AcceptFrom:       []string{"main"},
-	}
-
-	if errs := Validate(cfg); len(errs) == 0 {
-		t.Fatalf("expected validation errors")
-	}
-}
-
-func TestValidateSubagentsRejectsAbsolutePromptFile(t *testing.T) {
-	t.Parallel()
-
-	cfg := DefaultConfig()
-	cfg.Agents.Subagents["coder"] = SubagentConfig{
-		Enabled:          true,
-		SystemPromptFile: "/tmp/AGENT.md",
-		Runtime: SubagentRuntimeConfig{
+	cfg.Agents.Agents["coder"] = AgentConfig{
+		Enabled:    true,
+		PromptFile: "/tmp/AGENT.md",
+		Runtime: AgentRuntimeConfig{
 			Provider: "openai",
 		},
 	}
@@ -75,13 +54,13 @@ func TestValidateSubagentsRejectsAbsolutePromptFile(t *testing.T) {
 	}
 }
 
-func TestValidateSubagentsRequiresPromptFileWhenEnabled(t *testing.T) {
+func TestValidateAgentsRequiresPromptFileWhenEnabled(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	cfg.Agents.Subagents["coder"] = SubagentConfig{
+	cfg.Agents.Agents["coder"] = AgentConfig{
 		Enabled: true,
-		Runtime: SubagentRuntimeConfig{
+		Runtime: AgentRuntimeConfig{
 			Provider: "openai",
 		},
 	}
@@ -91,44 +70,24 @@ func TestValidateSubagentsRequiresPromptFileWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestValidateNodeBackedSubagentAllowsMissingPromptFile(t *testing.T) {
+func TestValidateNodeBackedAgentAllowsMissingPromptFile(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
-	cfg.Agents.Router.Enabled = true
-	cfg.Agents.Router.MainAgentID = "main"
-	cfg.Agents.Subagents["main"] = SubagentConfig{
-		Enabled:          true,
-		Type:             "router",
-		SystemPromptFile: "agents/main/AGENT.md",
+	cfg.Agents.Agents["main"] = AgentConfig{
+		Enabled:    true,
+		Type:       "agent",
+		PromptFile: "agents/main/AGENT.md",
 	}
-	cfg.Agents.Subagents["node.edge.main"] = SubagentConfig{
+	cfg.Agents.Agents["node.edge.main"] = AgentConfig{
 		Enabled:   true,
-		Type:      "worker",
+		Type:      "agent",
 		Transport: "node",
 		NodeID:    "edge",
 	}
 
 	if errs := Validate(cfg); len(errs) != 0 {
 		t.Fatalf("expected node-backed config to be valid, got %v", errs)
-	}
-}
-
-func TestValidateSubagentsRejectsInvalidNotifyMainPolicy(t *testing.T) {
-	t.Parallel()
-
-	cfg := DefaultConfig()
-	cfg.Agents.Subagents["coder"] = SubagentConfig{
-		Enabled:          true,
-		SystemPromptFile: "agents/coder/AGENT.md",
-		NotifyMainPolicy: "loud",
-		Runtime: SubagentRuntimeConfig{
-			Provider: "openai",
-		},
-	}
-
-	if errs := Validate(cfg); len(errs) == 0 {
-		t.Fatalf("expected validation errors")
 	}
 }
 

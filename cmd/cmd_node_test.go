@@ -139,21 +139,21 @@ func TestNodeAgentsFromConfigCollectsEnabledAgents(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.DefaultConfig()
-	cfg.Agents.Subagents["main"] = config.SubagentConfig{
+	cfg.Agents.Agents["main"] = config.AgentConfig{
 		Enabled:     true,
-		Type:        "router",
+		Type:        "agent",
 		DisplayName: "Main Agent",
 		Role:        "orchestrator",
 	}
-	cfg.Agents.Subagents["coder"] = config.SubagentConfig{
+	cfg.Agents.Agents["coder"] = config.AgentConfig{
 		Enabled:     true,
-		Type:        "worker",
+		Type:        "agent",
 		DisplayName: "Code Agent",
 		Role:        "code",
 	}
-	cfg.Agents.Subagents["tester"] = config.SubagentConfig{
+	cfg.Agents.Agents["tester"] = config.AgentConfig{
 		Enabled:     false,
-		Type:        "worker",
+		Type:        "agent",
 		DisplayName: "Test Agent",
 		Role:        "test",
 	}
@@ -211,9 +211,9 @@ func TestExecuteNodeRequestRunsLocalMainAgentTask(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
-	cfg.Agents.Subagents["main"] = config.SubagentConfig{
+	cfg.Agents.Agents["main"] = config.AgentConfig{
 		Enabled: true,
-		Type:    "router",
+		Type:    "agent",
 		Role:    "orchestrator",
 	}
 	if err := config.SaveConfig(globalConfigPathOverride, cfg); err != nil {
@@ -236,7 +236,7 @@ func TestExecuteNodeRequestRunsLocalMainAgentTask(t *testing.T) {
 	}
 }
 
-func TestExecuteNodeRequestRunsLocalSubagentTask(t *testing.T) {
+func TestExecuteNodeRequestRunsLocalAgentTask(t *testing.T) {
 	prevCfg := globalConfigPathOverride
 	prevProviderFactory := nodeProviderFactory
 	prevLoopFactory := nodeAgentLoopFactory
@@ -256,14 +256,14 @@ func TestExecuteNodeRequestRunsLocalSubagentTask(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
-	cfg.Agents.Subagents["main"] = config.SubagentConfig{
+	cfg.Agents.Agents["main"] = config.AgentConfig{
 		Enabled: true,
-		Type:    "router",
+		Type:    "agent",
 		Role:    "orchestrator",
 	}
-	cfg.Agents.Subagents["coder"] = config.SubagentConfig{
+	cfg.Agents.Agents["coder"] = config.AgentConfig{
 		Enabled: true,
-		Type:    "worker",
+		Type:    "agent",
 		Role:    "code",
 	}
 	if err := os.MkdirAll(filepath.Join(cfg.Agents.Defaults.Workspace, "out"), 0755); err != nil {

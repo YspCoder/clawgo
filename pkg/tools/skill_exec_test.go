@@ -11,7 +11,7 @@ func TestSkillExecWriteAuditIncludesCallerIdentity(t *testing.T) {
 	workspace := t.TempDir()
 	tool := NewSkillExecTool(workspace)
 
-	tool.writeAudit("demo", "scripts/run.sh", "test", "coder", "subagent", true, "")
+	tool.writeAudit("demo", "scripts/run.sh", "test", "coder", "agent", true, "")
 
 	data, err := os.ReadFile(filepath.Join(workspace, "memory", "skill-audit.jsonl"))
 	if err != nil {
@@ -21,7 +21,7 @@ func TestSkillExecWriteAuditIncludesCallerIdentity(t *testing.T) {
 	if !strings.Contains(text, `"caller_agent":"coder"`) {
 		t.Fatalf("expected caller_agent in audit row, got: %s", text)
 	}
-	if !strings.Contains(text, `"caller_scope":"subagent"`) {
+	if !strings.Contains(text, `"caller_scope":"agent"`) {
 		t.Fatalf("expected caller_scope in audit row, got: %s", text)
 	}
 }

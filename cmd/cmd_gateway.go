@@ -223,8 +223,8 @@ func gatewayCmd() {
 			}
 			return out
 		})
-		registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
-			return loop.HandleSubagentRuntime(cctx, action, args)
+		registryServer.SetRuntimeAdminHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
+			return loop.HandleRuntimeAdmin(cctx, action, args)
 		})
 		registryServer.SetNodeDispatchHandler(func(cctx context.Context, req nodes.Request, mode string) (nodes.Response, error) {
 			return loop.DispatchNodeRequest(cctx, req, mode)

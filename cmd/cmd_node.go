@@ -26,7 +26,6 @@ import (
 	"github.com/YspCoder/clawgo/pkg/nodes"
 	"github.com/YspCoder/clawgo/pkg/providers"
 	"github.com/YspCoder/clawgo/pkg/runtimecfg"
-	"github.com/YspCoder/clawgo/pkg/tools"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
@@ -384,8 +383,8 @@ func nodeAgentsFromConfig(cfg *config.Config) []nodes.AgentInfo {
 	if cfg == nil {
 		return nil
 	}
-	items := make([]nodes.AgentInfo, 0, len(cfg.Agents.Subagents))
-	for agentID, subcfg := range cfg.Agents.Subagents {
+	items := make([]nodes.AgentInfo, 0, len(cfg.Agents.Agents))
+	for agentID, subcfg := range cfg.Agents.Agents {
 		id := strings.TrimSpace(agentID)
 		if id == "" || !subcfg.Enabled {
 			continue
@@ -394,7 +393,7 @@ func nodeAgentsFromConfig(cfg *config.Config) []nodes.AgentInfo {
 			ID:            id,
 			DisplayName:   strings.TrimSpace(subcfg.DisplayName),
 			Role:          strings.TrimSpace(subcfg.Role),
-			Type:          strings.TrimSpace(subcfg.Type),
+			Type:          firstNonEmptyString(strings.TrimSpace(subcfg.Kind), strings.TrimSpace(subcfg.Type), "agent"),
 			Transport:     strings.TrimSpace(subcfg.Transport),
 			ParentAgentID: strings.TrimSpace(subcfg.ParentAgentID),
 		})
@@ -833,22 +832,10 @@ func executeNodeAgentTask(ctx context.Context, info nodes.NodeInfo, req nodes.Re
 		}, nil
 	}
 
-	out, err := loop.HandleSubagentRuntime(ctx, "dispatch_and_wait", map[string]interface{}{
-		"task":             strings.TrimSpace(req.Task),
-		"agent_id":         remoteAgentID,
-		"channel":          "node",
-		"chat_id":          info.ID,
-		"wait_timeout_sec": float64(120),
-	})
+	sessionKey := fmt.Sprintf("node:%s:%s", info.ID, remoteAgentID)
+	result, err := loop.ProcessDirectWithOptions(ctx, strings.TrimSpace(req.Task), sessionKey, "node", info.ID, remoteAgentID, nil)
 	if err != nil {
 		return nodes.Response{}, err
-	}
-	payload, _ := out.(map[string]interface{})
-	result := strings.TrimSpace(fmt.Sprint(payload["merged"]))
-	if result == "" {
-		if reply, ok := payload["reply"].(*tools.RouterReply); ok {
-			result = strings.TrimSpace(reply.Result)
-		}
 	}
 	artifacts, err := collectNodeArtifacts(executor.workspace, req.Args)
 	if err != nil {
@@ -862,7 +849,7 @@ func executeNodeAgentTask(ctx context.Context, info nodes.NodeInfo, req nodes.Re
 		Payload: map[string]interface{}{
 			"transport": "clawgo-local",
 			"agent_id":  remoteAgentID,
-			"result":    result,
+			"result":    strings.TrimSpace(result),
 			"artifacts": artifacts,
 		},
 	}, nil

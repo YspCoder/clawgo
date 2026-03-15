@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	cfgpkg "github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/nodes"
 	"github.com/gorilla/websocket"
 )
@@ -192,7 +193,7 @@ func TestHandleWebUISessionsHidesInternalSessionsByDefault(t *testing.T) {
 		"internal:heartbeat.jsonl",
 		"heartbeat:default.jsonl",
 		"cron:nightly.jsonl",
-		"subagent:worker.jsonl",
+		"agent:coder.jsonl",
 	} {
 		if err := os.WriteFile(filepath.Join(sessionsDir, name), []byte("{}\n"), 0644); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -384,22 +385,16 @@ func TestHandleWebUINodesEnrichesLocalNodeMetadata(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
-	srv.SetSubagentHandler(func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
-		if action != "registry" {
-			return map[string]interface{}{"items": []map[string]interface{}{}}, nil
-		}
-		return map[string]interface{}{
-			"items": []map[string]interface{}{
-				{
-					"agent_id":     "coder",
-					"display_name": "Code Agent",
-					"role":         "coding",
-					"type":         "worker",
-					"transport":    "local",
-				},
-			},
-		}, nil
-	})
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Agents.Agents["coder"] = cfgpkg.AgentConfig{
+		Enabled: true,
+		Role:    "coding",
+	}
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	srv.SetConfigPath(cfgPath)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
 	rec := httptest.NewRecorder()
@@ -428,8 +423,82 @@ func TestHandleWebUINodesEnrichesLocalNodeMetadata(t *testing.T) {
 		t.Fatalf("expected local actions, got %+v", local)
 	}
 	agents, _ := local["agents"].([]interface{})
-	if len(agents) != 1 {
+	if len(agents) != 2 {
 		t.Fatalf("expected local agents from registry, got %+v", local)
+	}
+}
+
+func TestBuildWebUIRuntimeSnapshotIncludesWorldPayload(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
+	srv.SetRuntimeAdminHandler(func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
+		switch action {
+		case "snapshot":
+			return map[string]interface{}{
+				"snapshot": map[string]interface{}{
+					"world": map[string]interface{}{
+						"world_id":    "main-world",
+						"tick":        3,
+						"npc_count":   2,
+						"active_npcs": []string{"keeper", "merchant"},
+					},
+				},
+			}, nil
+		case "world_snapshot":
+			return map[string]interface{}{
+				"snapshot": map[string]interface{}{
+					"world_id":  "main-world",
+					"tick":      3,
+					"npc_count": 2,
+				},
+			}, nil
+		default:
+			return map[string]interface{}{}, nil
+		}
+	})
+
+	payload := srv.buildWebUIRuntimeSnapshot(context.Background())
+	worldPayload, _ := payload["world"].(map[string]interface{})
+	if strings.TrimSpace(fmt.Sprint(worldPayload["world_id"])) != "main-world" {
+		t.Fatalf("expected top-level world payload, got %+v", payload)
+	}
+}
+
+func TestHandleWebUIWorldReturnsWorldSnapshot(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
+	srv.SetRuntimeAdminHandler(func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
+		if action != "world_snapshot" {
+			return map[string]interface{}{}, nil
+		}
+		return map[string]interface{}{
+			"snapshot": map[string]interface{}{
+				"world_id":    "main-world",
+				"tick":        7,
+				"npc_count":   1,
+				"active_npcs": []string{"watcher"},
+			},
+		}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/world?limit=10", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUIWorld(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if found, _ := body["found"].(bool); !found {
+		t.Fatalf("expected found=true, got %+v", body)
+	}
+	worldPayload, _ := body["world"].(map[string]interface{})
+	if strings.TrimSpace(fmt.Sprint(worldPayload["tick"])) != "7" {
+		t.Fatalf("expected world tick 7, got %+v", body)
 	}
 }
 

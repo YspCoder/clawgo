@@ -42,13 +42,13 @@ func TestCheckAuthAllowsBearerAndCookieOnly(t *testing.T) {
 	}
 }
 
-func TestWithCORSRejectsForeignOrigin(t *testing.T) {
+func TestWithCORSRejectsInvalidOrigin(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer("127.0.0.1", 0, "", nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/config", nil)
 	req.Host = "example.com"
-	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Origin", "javascript:alert(1)")
 	rec := httptest.NewRecorder()
 
 	srv.withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +81,32 @@ func TestWithCORSAcceptsSameOrigin(t *testing.T) {
 	}
 }
 
-func TestHandleNodeConnectRejectsForeignOrigin(t *testing.T) {
+func TestWithCORSAcceptsCrossOrigin(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "", nil)
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/config", nil)
+	req.Host = "example.com"
+	req.Header.Set("Origin", "https://web.example")
+	rec := httptest.NewRecorder()
+
+	srv.withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://web.example" {
+		t.Fatalf("unexpected allow-origin header %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("expected allow credentials, got %q", got)
+	}
+}
+
+func TestHandleNodeConnectRejectsInvalidOrigin(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
@@ -92,7 +117,7 @@ func TestHandleNodeConnectRejectsForeignOrigin(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/nodes/connect"
 	dialer := websocket.Dialer{}
-	headers := http.Header{"Origin": []string{"https://evil.example"}}
+	headers := http.Header{"Origin": []string{"javascript:alert(1)"}}
 	conn, resp, err := dialer.Dial(wsURL, headers)
 	if err == nil {
 		conn.Close()
@@ -101,6 +126,25 @@ func TestHandleNodeConnectRejectsForeignOrigin(t *testing.T) {
 	if resp == nil || resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 response, got %#v", resp)
 	}
+}
+
+func TestHandleNodeConnectAcceptsCrossOrigin(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/nodes/connect", srv.handleNodeConnect)
+	httpSrv := httptest.NewServer(mux)
+	defer httpSrv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(httpSrv.URL, "http") + "/nodes/connect"
+	dialer := websocket.Dialer{}
+	headers := http.Header{"Origin": []string{"https://web.example"}}
+	conn, resp, err := dialer.Dial(wsURL, headers)
+	if err != nil {
+		t.Fatalf("expected websocket handshake to succeed, resp=%#v err=%v", resp, err)
+	}
+	_ = conn.Close()
 }
 
 func TestHandleWebUISetsCookieForBearerOnly(t *testing.T) {
@@ -122,6 +166,34 @@ func TestHandleWebUISetsCookieForBearerOnly(t *testing.T) {
 	srv.handleWebUI(cookieRec, cookieReq)
 	if len(cookieRec.Result().Cookies()) != 0 {
 		t.Fatalf("expected cookie-authenticated UI request not to reset cookie")
+	}
+}
+
+func TestHandleWebUIAuthSessionSetsCrossSiteCookieForAllowedOrigin(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "secret-token", nil)
+
+	req := httptest.NewRequest(http.MethodPost, "http://gateway.example/api/auth/session", nil)
+	req.Host = "gateway.example"
+	req.Header.Set("Origin", "https://web.example")
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+
+	srv.withCORS(http.HandlerFunc(srv.handleWebUIAuthSession)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one cookie, got %d", len(cookies))
+	}
+	if cookies[0].SameSite != http.SameSiteNoneMode {
+		t.Fatalf("expected SameSite=None for cross-site session, got %v", cookies[0].SameSite)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://web.example" {
+		t.Fatalf("unexpected allow-origin header %q", got)
 	}
 }
 

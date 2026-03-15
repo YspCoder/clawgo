@@ -41,7 +41,7 @@ func TestShouldPublishPlannedTaskProgress(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if shouldPublishPlannedTaskProgress(ctx, 12, 5, plannedTaskResult{Err: errors.New("worker exited after parent stop"), ErrText: "worker exited after parent stop"}, milestones, notified) {
+	if shouldPublishPlannedTaskProgress(ctx, 12, 5, plannedTaskResult{Err: errors.New("agent exited after parent stop"), ErrText: "agent exited after parent stop"}, milestones, notified) {
 		t.Fatalf("did not expect notification after parent cancellation")
 	}
 }
@@ -54,7 +54,7 @@ func TestIsPlannedTaskCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if !isPlannedTaskCancellation(ctx, plannedTaskResult{Err: errors.New("worker exited after parent stop"), ErrText: "worker exited after parent stop"}) {
+	if !isPlannedTaskCancellation(ctx, plannedTaskResult{Err: errors.New("agent exited after parent stop"), ErrText: "agent exited after parent stop"}) {
 		t.Fatalf("expected canceled parent context to suppress planned task result")
 	}
 	if isPlannedTaskCancellation(context.Background(), plannedTaskResult{Err: errors.New("boom"), ErrText: "boom"}) {

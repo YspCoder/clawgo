@@ -313,7 +313,7 @@ func isUserFacingSessionKey(key string) bool {
 		return false
 	}
 	switch {
-	case strings.HasPrefix(k, "subagent:"):
+	case strings.HasPrefix(k, "agent:"):
 		return false
 	case strings.HasPrefix(k, "internal:"):
 		return false

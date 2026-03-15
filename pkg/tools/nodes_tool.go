@@ -122,7 +122,7 @@ func (t *NodesTool) Execute(ctx context.Context, args map[string]interface{}) (s
 		return "", fmt.Errorf("node %s does not support action=%s", nodeID, action)
 	}
 	if t.router == nil {
-		return "", fmt.Errorf("nodes transport router not configured")
+		return "", fmt.Errorf("nodes transport not configured")
 	}
 	started := time.Now()
 	resp, err := t.router.Dispatch(ctx, req, mode)

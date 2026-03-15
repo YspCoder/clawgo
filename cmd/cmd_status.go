@@ -113,14 +113,14 @@ func statusCmd() {
 		sessionsDir := filepath.Join(filepath.Dir(configPath), "sessions")
 		if kinds, err := collectSessionKindCounts(sessionsDir); err == nil && len(kinds) > 0 {
 			fmt.Println("Session Kinds:")
-			for _, k := range []string{"main", "cron", "subagent", "hook", "node", "other"} {
+			for _, k := range []string{"main", "cron", "agent", "hook", "node", "other"} {
 				if v, ok := kinds[k]; ok {
 					fmt.Printf("  %s: %d\n", k, v)
 				}
 			}
 		}
-		if recent, err := collectRecentSubagentSessions(sessionsDir, 5); err == nil && len(recent) > 0 {
-			fmt.Println("Recent Subagent Sessions:")
+		if recent, err := collectRecentAgentSessions(sessionsDir, 5); err == nil && len(recent) > 0 {
+			fmt.Println("Recent Agent Sessions:")
 			for _, key := range recent {
 				fmt.Printf("  - %s\n", key)
 			}
@@ -389,7 +389,7 @@ func collectSkillExecStats(path string) (int, int, int, float64, string, error) 
 	return total, okCnt, failCnt, reasonCoverage, topSkill, nil
 }
 
-func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, error) {
+func collectRecentAgentSessions(sessionsDir string, limit int) ([]string, error) {
 	indexPath := filepath.Join(sessionsDir, "sessions.json")
 	data, err := os.ReadFile(indexPath)
 	if err != nil {
@@ -408,7 +408,7 @@ func collectRecentSubagentSessions(sessionsDir string, limit int) ([]string, err
 	}
 	items := make([]item, 0)
 	for key, row := range index {
-		if strings.ToLower(strings.TrimSpace(row.Kind)) != "subagent" {
+		if strings.ToLower(strings.TrimSpace(row.Kind)) != "agent" {
 			continue
 		}
 		items = append(items, item{key: key, updated: row.UpdatedAt})

@@ -12,39 +12,24 @@ import (
 	"sync"
 )
 
-type AgentThread struct {
-	ThreadID     string   `json:"thread_id"`
-	Owner        string   `json:"owner"`
-	Participants []string `json:"participants,omitempty"`
-	Status       string   `json:"status"`
-	Topic        string   `json:"topic,omitempty"`
-	CreatedAt    int64    `json:"created_at"`
-	UpdatedAt    int64    `json:"updated_at"`
-}
-
 type AgentMessage struct {
 	MessageID     string `json:"message_id"`
 	ThreadID      string `json:"thread_id"`
 	FromAgent     string `json:"from_agent"`
 	ToAgent       string `json:"to_agent"`
-	ReplyTo       string `json:"reply_to,omitempty"`
-	CorrelationID string `json:"correlation_id,omitempty"`
 	Type          string `json:"type"`
 	Content       string `json:"content"`
-	RequiresReply bool   `json:"requires_reply,omitempty"`
 	Status        string `json:"status"`
 	CreatedAt     int64  `json:"created_at"`
 }
 
 type AgentMailboxStore struct {
-	dir         string
-	threadsPath string
-	msgsPath    string
-	mu          sync.RWMutex
-	threads     map[string]*AgentThread
-	messages    map[string]*AgentMessage
-	msgSeq      int
-	threadSeq   int
+	dir       string
+	msgsPath  string
+	mu        sync.RWMutex
+	messages  map[string]*AgentMessage
+	msgSeq    int
+	threadSeq int
 }
 
 func NewAgentMailboxStore(workspace string) *AgentMailboxStore {
@@ -54,11 +39,9 @@ func NewAgentMailboxStore(workspace string) *AgentMailboxStore {
 	}
 	dir := filepath.Join(workspace, "agents", "runtime")
 	s := &AgentMailboxStore{
-		dir:         dir,
-		threadsPath: filepath.Join(dir, "threads.jsonl"),
-		msgsPath:    filepath.Join(dir, "agent_messages.jsonl"),
-		threads:     map[string]*AgentThread{},
-		messages:    map[string]*AgentMessage{},
+		dir:      dir,
+		msgsPath: filepath.Join(dir, "agent_messages.jsonl"),
+		messages: map[string]*AgentMessage{},
 	}
 	_ = os.MkdirAll(dir, 0755)
 	_ = s.load()
@@ -68,42 +51,8 @@ func NewAgentMailboxStore(workspace string) *AgentMailboxStore {
 func (s *AgentMailboxStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.threads = map[string]*AgentThread{}
 	s.messages = map[string]*AgentMessage{}
-	if err := s.loadThreadsLocked(); err != nil {
-		return err
-	}
 	return s.scanMessagesLocked()
-}
-
-func (s *AgentMailboxStore) loadThreadsLocked() error {
-	f, err := os.Open(s.threadsPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 2*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var thread AgentThread
-		if err := json.Unmarshal([]byte(line), &thread); err != nil {
-			continue
-		}
-		cp := thread
-		s.threads[thread.ThreadID] = &cp
-		if n := parseThreadSequence(thread.ThreadID); n > s.threadSeq {
-			s.threadSeq = n
-		}
-	}
-	return scanner.Err()
 }
 
 func (s *AgentMailboxStore) scanMessagesLocked() error {
@@ -130,56 +79,30 @@ func (s *AgentMailboxStore) scanMessagesLocked() error {
 		if n := parseMessageSequence(msg.MessageID); n > s.msgSeq {
 			s.msgSeq = n
 		}
+		if n := parseThreadSequence(msg.ThreadID); n > s.threadSeq {
+			s.threadSeq = n
+		}
 		cp := msg
 		s.messages[msg.MessageID] = &cp
-		if thread := s.threads[msg.ThreadID]; thread != nil && msg.CreatedAt > thread.UpdatedAt {
-			thread.UpdatedAt = msg.CreatedAt
-		}
 	}
 	return scanner.Err()
 }
 
-func (s *AgentMailboxStore) EnsureThread(thread AgentThread) (AgentThread, error) {
+func (s *AgentMailboxStore) EnsureThreadID(threadID string) string {
 	if s == nil {
-		return thread, nil
+		return strings.TrimSpace(threadID)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := os.MkdirAll(s.dir, 0755); err != nil {
-		return AgentThread{}, err
+	threadID = strings.TrimSpace(threadID)
+	if threadID != "" {
+		if n := parseThreadSequence(threadID); n > s.threadSeq {
+			s.threadSeq = n
+		}
+		return threadID
 	}
-	if strings.TrimSpace(thread.ThreadID) == "" {
-		s.threadSeq++
-		thread.ThreadID = fmt.Sprintf("thread-%04d", s.threadSeq)
-	}
-	thread.Participants = normalizeStringList(thread.Participants)
-	if strings.TrimSpace(thread.Status) == "" {
-		thread.Status = "open"
-	}
-	if thread.CreatedAt <= 0 {
-		thread.CreatedAt = thread.UpdatedAt
-	}
-	if thread.CreatedAt <= 0 {
-		thread.CreatedAt = 1
-	}
-	if thread.UpdatedAt <= 0 {
-		thread.UpdatedAt = thread.CreatedAt
-	}
-	data, err := json.Marshal(thread)
-	if err != nil {
-		return AgentThread{}, err
-	}
-	f, err := os.OpenFile(s.threadsPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return AgentThread{}, err
-	}
-	defer f.Close()
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		return AgentThread{}, err
-	}
-	cp := thread
-	s.threads[thread.ThreadID] = &cp
-	return thread, nil
+	s.threadSeq++
+	return fmt.Sprintf("thread-%04d", s.threadSeq)
 }
 
 func (s *AgentMailboxStore) AppendMessage(msg AgentMessage) (AgentMessage, error) {
@@ -210,39 +133,9 @@ func (s *AgentMailboxStore) AppendMessage(msg AgentMessage) (AgentMessage, error
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return AgentMessage{}, err
 	}
-	if thread := s.threads[msg.ThreadID]; thread != nil {
-		thread.UpdatedAt = msg.CreatedAt
-		participants := append([]string(nil), thread.Participants...)
-		participants = append(participants, msg.FromAgent, msg.ToAgent)
-		thread.Participants = normalizeStringList(participants)
-	}
 	cp := msg
 	s.messages[msg.MessageID] = &cp
 	return msg, nil
-}
-
-func (s *AgentMailboxStore) Thread(threadID string) (*AgentThread, bool) {
-	if s == nil {
-		return nil, false
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	thread, ok := s.threads[strings.TrimSpace(threadID)]
-	if !ok {
-		return nil, false
-	}
-	cp := *thread
-	cp.Participants = append([]string(nil), thread.Participants...)
-	return &cp, true
-}
-
-func (s *AgentMailboxStore) MessagesByThread(threadID string, limit int) ([]AgentMessage, error) {
-	if s == nil {
-		return nil, nil
-	}
-	return s.currentMessages(func(msg AgentMessage) bool {
-		return msg.ThreadID == strings.TrimSpace(threadID)
-	}, limit), nil
 }
 
 func (s *AgentMailboxStore) Inbox(agentID string, limit int) ([]AgentMessage, error) {
@@ -335,47 +228,6 @@ func parseThreadSequence(threadID string) int {
 	}
 	n, _ := strconv.Atoi(strings.TrimPrefix(threadID, "thread-"))
 	return n
-}
-
-func threadToThreadRecord(thread *AgentThread) ThreadRecord {
-	if thread == nil {
-		return ThreadRecord{}
-	}
-	return ThreadRecord{
-		ID:           thread.ThreadID,
-		OwnerAgentID: thread.Owner,
-		Participants: append([]string(nil), thread.Participants...),
-		Status:       thread.Status,
-		Topic:        thread.Topic,
-		CreatedAt:    thread.CreatedAt,
-		UpdatedAt:    thread.UpdatedAt,
-	}
-}
-
-func messageToArtifactRecord(msg AgentMessage) ArtifactRecord {
-	agentID := strings.TrimSpace(msg.FromAgent)
-	if agentID == "" {
-		agentID = strings.TrimSpace(msg.ToAgent)
-	}
-	return ArtifactRecord{
-		ID:            msg.MessageID,
-		RunID:         msg.CorrelationID,
-		TaskID:        msg.CorrelationID,
-		ThreadID:      msg.ThreadID,
-		Kind:          "message",
-		Name:          msg.Type,
-		Content:       msg.Content,
-		AgentID:       agentID,
-		FromAgent:     msg.FromAgent,
-		ToAgent:       msg.ToAgent,
-		ReplyTo:       msg.ReplyTo,
-		CorrelationID: msg.CorrelationID,
-		Status:        msg.Status,
-		RequiresReply: msg.RequiresReply,
-		CreatedAt:     msg.CreatedAt,
-		Visible:       true,
-		SourceType:    "agent_message",
-	}
 }
 
 func parseMessageSequence(messageID string) int {

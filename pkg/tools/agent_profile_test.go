@@ -11,9 +11,9 @@ import (
 	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 )
 
-func TestSubagentProfileStoreNormalization(t *testing.T) {
-	store := NewSubagentProfileStore(t.TempDir())
-	saved, err := store.Upsert(SubagentProfile{
+func TestAgentProfileStoreNormalization(t *testing.T) {
+	store := NewAgentProfileStore(t.TempDir())
+	saved, err := store.Upsert(AgentProfile{
 		AgentID:         "Coder Agent",
 		Name:            "  ",
 		Role:            "coding",
@@ -44,25 +44,25 @@ func TestSubagentProfileStoreNormalization(t *testing.T) {
 	}
 }
 
-func TestSubagentProfileToolCreateParsesStringNumericArgs(t *testing.T) {
-	store := NewSubagentProfileStore(t.TempDir())
-	tool := NewSubagentProfileTool(store)
+func TestAgentProfileToolCreateParsesStringNumericArgs(t *testing.T) {
+	store := NewAgentProfileStore(t.TempDir())
+	tool := NewAgentProfileTool(store)
 
 	out, err := tool.Execute(context.Background(), map[string]interface{}{
-		"action":             "create",
-		"agent_id":           "reviewer",
-		"role":               "testing",
-		"status":             "active",
-		"system_prompt_file": "agents/reviewer/AGENT.md",
-		"tool_allowlist":     "shell,sessions",
-		"max_retries":        "2",
-		"retry_backoff_ms":   "100",
-		"timeout_sec":        "5",
+		"action":           "create",
+		"agent_id":         "reviewer",
+		"role":             "testing",
+		"status":           "active",
+		"prompt_file":      "agents/reviewer/AGENT.md",
+		"tool_allowlist":   "shell,sessions",
+		"max_retries":      "2",
+		"retry_backoff_ms": "100",
+		"timeout_sec":      "5",
 	})
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
 	}
-	if !strings.Contains(out, "Created subagent profile") {
+	if !strings.Contains(out, "Created agent profile") {
 		t.Fatalf("unexpected output: %s", out)
 	}
 
@@ -78,42 +78,41 @@ func TestSubagentProfileToolCreateParsesStringNumericArgs(t *testing.T) {
 	}
 }
 
-func TestSubagentManagerSpawnRejectsDisabledProfile(t *testing.T) {
+func TestAgentManagerSpawnRejectsDisabledProfile(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil)
-	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+	manager := NewAgentManager(nil, workspace, nil)
+	manager.SetRunFunc(func(ctx context.Context, task *AgentTask) (string, error) {
 		return "ok", nil
 	})
 	store := manager.ProfileStore()
 	if store == nil {
 		t.Fatalf("expected profile store to be available")
 	}
-	if _, err := store.Upsert(SubagentProfile{
+	if _, err := store.Upsert(AgentProfile{
 		AgentID: "writer",
 		Status:  "disabled",
 	}); err != nil {
 		t.Fatalf("failed to seed profile: %v", err)
 	}
 
-	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+	_, err := manager.Spawn(context.Background(), AgentSpawnOptions{
 		Task:          "Write docs",
 		AgentID:       "writer",
-		OriginChannel: "cli",
-		OriginChatID:  "direct",
+		Origin:        &OriginRef{Channel: "cli", ChatID: "direct"},
 	})
 	if err == nil {
 		t.Fatalf("expected disabled profile to block spawn")
 	}
 }
 
-func TestSubagentManagerSpawnResolvesProfileByRole(t *testing.T) {
+func TestAgentManagerSpawnResolvesProfileByRole(t *testing.T) {
 	workspace := t.TempDir()
-	manager := NewSubagentManager(nil, workspace, nil)
+	manager := NewAgentManager(nil, workspace, nil)
 	store := manager.ProfileStore()
 	if store == nil {
 		t.Fatalf("expected profile store to be available")
 	}
-	if _, err := store.Upsert(SubagentProfile{
+	if _, err := store.Upsert(AgentProfile{
 		AgentID:       "coder",
 		Role:          "coding",
 		Status:        "active",
@@ -122,11 +121,10 @@ func TestSubagentManagerSpawnResolvesProfileByRole(t *testing.T) {
 		t.Fatalf("failed to seed profile: %v", err)
 	}
 
-	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
+	_, err := manager.Spawn(context.Background(), AgentSpawnOptions{
 		Task:          "Implement feature",
 		Role:          "coding",
-		OriginChannel: "cli",
-		OriginChatID:  "direct",
+		Origin:        &OriginRef{Channel: "cli", ChatID: "direct"},
 	})
 	if err != nil {
 		t.Fatalf("spawn failed: %v", err)
@@ -140,32 +138,30 @@ func TestSubagentManagerSpawnResolvesProfileByRole(t *testing.T) {
 	if task.AgentID != "coder" {
 		t.Fatalf("expected agent_id to resolve to profile agent_id 'coder', got: %s", task.AgentID)
 	}
-	if task.Role != "coding" {
-		t.Fatalf("expected task role to remain 'coding', got: %s", task.Role)
+	allowlist := ToolAllowlistFromPolicy(task.ExecutionPolicy)
+	if len(allowlist) != 1 || allowlist[0] != "read_file" {
+		t.Fatalf("expected allowlist from profile, got: %v", allowlist)
 	}
-	if len(task.ToolAllowlist) != 1 || task.ToolAllowlist[0] != "read_file" {
-		t.Fatalf("expected allowlist from profile, got: %v", task.ToolAllowlist)
-	}
-	_ = waitSubagentDone(t, manager, 4*time.Second)
+	_ = waitAgentDone(t, manager, 4*time.Second)
 }
 
-func TestSubagentProfileStoreReadsProfilesFromRuntimeConfig(t *testing.T) {
+func TestAgentProfileStoreReadsProfilesFromRuntimeConfig(t *testing.T) {
 	runtimecfg.Set(config.DefaultConfig())
 	t.Cleanup(func() {
 		runtimecfg.Set(config.DefaultConfig())
 	})
 
 	cfg := config.DefaultConfig()
-	cfg.Agents.Subagents["coder"] = config.SubagentConfig{
-		Enabled:          true,
-		DisplayName:      "Code Agent",
-		Role:             "coding",
-		SystemPromptFile: "agents/coder/AGENT.md",
-		MemoryNamespace:  "code-ns",
-		Tools: config.SubagentToolsConfig{
+	cfg.Agents.Agents["coder"] = config.AgentConfig{
+		Enabled:         true,
+		DisplayName:     "Code Agent",
+		Role:            "coding",
+		PromptFile:      "agents/coder/AGENT.md",
+		MemoryNamespace: "code-ns",
+		Tools: config.AgentToolsConfig{
 			Allowlist: []string{"read_file", "shell"},
 		},
-		Runtime: config.SubagentRuntimeConfig{
+		Runtime: config.AgentRuntimeConfig{
 			MaxRetries:     2,
 			RetryBackoffMs: 2000,
 			TimeoutSec:     120,
@@ -175,7 +171,7 @@ func TestSubagentProfileStoreReadsProfilesFromRuntimeConfig(t *testing.T) {
 	}
 	runtimecfg.Set(cfg)
 
-	store := NewSubagentProfileStore(t.TempDir())
+	store := NewAgentProfileStore(t.TempDir())
 	profile, ok, err := store.Get("coder")
 	if err != nil {
 		t.Fatalf("get failed: %v", err)
@@ -189,30 +185,30 @@ func TestSubagentProfileStoreReadsProfilesFromRuntimeConfig(t *testing.T) {
 	if profile.Name != "Code Agent" || profile.Role != "coding" {
 		t.Fatalf("unexpected profile fields: %+v", profile)
 	}
-	if profile.SystemPromptFile != "agents/coder/AGENT.md" {
-		t.Fatalf("expected system_prompt_file from config, got: %s", profile.SystemPromptFile)
+	if profile.PromptFile != "agents/coder/AGENT.md" {
+		t.Fatalf("expected prompt_file from config, got: %s", profile.PromptFile)
 	}
 	if len(profile.ToolAllowlist) != 2 {
 		t.Fatalf("expected merged allowlist, got: %v", profile.ToolAllowlist)
 	}
 }
 
-func TestSubagentProfileStoreRejectsWritesForConfigManagedProfiles(t *testing.T) {
+func TestAgentProfileStoreRejectsWritesForConfigManagedProfiles(t *testing.T) {
 	runtimecfg.Set(config.DefaultConfig())
 	t.Cleanup(func() {
 		runtimecfg.Set(config.DefaultConfig())
 	})
 
 	cfg := config.DefaultConfig()
-	cfg.Agents.Subagents["tester"] = config.SubagentConfig{
-		Enabled:          true,
-		Role:             "test",
-		SystemPromptFile: "agents/tester/AGENT.md",
+	cfg.Agents.Agents["tester"] = config.AgentConfig{
+		Enabled:    true,
+		Role:       "test",
+		PromptFile: "agents/tester/AGENT.md",
 	}
 	runtimecfg.Set(cfg)
 
-	store := NewSubagentProfileStore(t.TempDir())
-	if _, err := store.Upsert(SubagentProfile{AgentID: "tester"}); err == nil {
+	store := NewAgentProfileStore(t.TempDir())
+	if _, err := store.Upsert(AgentProfile{AgentID: "tester"}); err == nil {
 		t.Fatalf("expected config-managed upsert to fail")
 	}
 	if err := store.Delete("tester"); err == nil {
@@ -220,7 +216,7 @@ func TestSubagentProfileStoreRejectsWritesForConfigManagedProfiles(t *testing.T)
 	}
 }
 
-func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
+func TestAgentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
 	runtimecfg.Set(config.DefaultConfig())
 	t.Cleanup(func() {
 		runtimecfg.Set(config.DefaultConfig())
@@ -228,12 +224,10 @@ func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
 	})
 
 	cfg := config.DefaultConfig()
-	cfg.Agents.Router.Enabled = true
-	cfg.Agents.Router.MainAgentID = "main"
-	cfg.Agents.Subagents["main"] = config.SubagentConfig{
-		Enabled:          true,
-		Type:             "router",
-		SystemPromptFile: "agents/main/AGENT.md",
+	cfg.Agents.Agents["main"] = config.AgentConfig{
+		Enabled:    true,
+		Type:       "agent",
+		PromptFile: "agents/main/AGENT.md",
 	}
 	runtimecfg.Set(cfg)
 
@@ -242,15 +236,15 @@ func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
 		Name:   "Edge Dev",
 		Online: true,
 		Agents: []nodes.AgentInfo{
-			{ID: "main", DisplayName: "Main Agent", Role: "orchestrator", Type: "router"},
-			{ID: "coder", DisplayName: "Code Agent", Role: "code", Type: "worker"},
+			{ID: "main", DisplayName: "Main Agent", Role: "orchestrator", Type: "agent"},
+			{ID: "coder", DisplayName: "Code Agent", Role: "code", Type: "agent"},
 		},
 		Capabilities: nodes.Capabilities{
 			Model: true,
 		},
 	})
 
-	store := NewSubagentProfileStore(t.TempDir())
+	store := NewAgentProfileStore(t.TempDir())
 	profile, ok, err := store.Get(nodeBranchAgentID("edge-dev"))
 	if err != nil {
 		t.Fatalf("get failed: %v", err)
@@ -277,7 +271,7 @@ func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
 	if childProfile.ParentAgentID != "node.edge-dev.main" {
 		t.Fatalf("expected child profile to attach to remote main, got %+v", childProfile)
 	}
-	if _, err := store.Upsert(SubagentProfile{AgentID: profile.AgentID}); err == nil {
+	if _, err := store.Upsert(AgentProfile{AgentID: profile.AgentID}); err == nil {
 		t.Fatalf("expected node-managed upsert to fail")
 	}
 	if err := store.Delete(profile.AgentID); err == nil {
@@ -285,7 +279,7 @@ func TestSubagentProfileStoreIncludesNodeMainBranchProfiles(t *testing.T) {
 	}
 }
 
-func TestSubagentProfileStoreExcludesLocalNodeMainBranchProfile(t *testing.T) {
+func TestAgentProfileStoreExcludesLocalNodeMainBranchProfile(t *testing.T) {
 	runtimecfg.Set(config.DefaultConfig())
 	t.Cleanup(func() {
 		runtimecfg.Set(config.DefaultConfig())
@@ -293,12 +287,10 @@ func TestSubagentProfileStoreExcludesLocalNodeMainBranchProfile(t *testing.T) {
 	})
 
 	cfg := config.DefaultConfig()
-	cfg.Agents.Router.Enabled = true
-	cfg.Agents.Router.MainAgentID = "main"
-	cfg.Agents.Subagents["main"] = config.SubagentConfig{
-		Enabled:          true,
-		Type:             "router",
-		SystemPromptFile: "agents/main/AGENT.md",
+	cfg.Agents.Agents["main"] = config.AgentConfig{
+		Enabled:    true,
+		Type:       "agent",
+		PromptFile: "agents/main/AGENT.md",
 	}
 	runtimecfg.Set(cfg)
 
@@ -308,7 +300,7 @@ func TestSubagentProfileStoreExcludesLocalNodeMainBranchProfile(t *testing.T) {
 		Online: true,
 	})
 
-	store := NewSubagentProfileStore(t.TempDir())
+	store := NewAgentProfileStore(t.TempDir())
 	if profile, ok, err := store.Get(nodeBranchAgentID("local")); err != nil {
 		t.Fatalf("get failed: %v", err)
 	} else if ok {

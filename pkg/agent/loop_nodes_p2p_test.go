@@ -13,7 +13,7 @@ func TestNewAgentLoopDisablesNodeP2PByDefault(t *testing.T) {
 
 	loop := NewAgentLoop(cfg, bus.NewMessageBus(), stubLLMProvider{}, nil)
 	if loop.nodeRouter == nil {
-		t.Fatalf("expected node router to be configured")
+		t.Fatalf("expected node transport to be configured")
 	}
 	if loop.nodeRouter.P2P != nil {
 		t.Fatalf("expected node p2p transport to be disabled by default")

@@ -37,32 +37,26 @@ func (d DispatchDecision) Valid() bool {
 }
 
 type TaskRecord struct {
-	ID            string `json:"id"`
-	ThreadID      string `json:"thread_id,omitempty"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	OwnerAgentID  string `json:"owner_agent_id,omitempty"`
-	Status        string `json:"status"`
-	Input         string `json:"input,omitempty"`
-	OriginChannel string `json:"origin_channel,omitempty"`
-	OriginChatID  string `json:"origin_chat_id,omitempty"`
-	CreatedAt     int64  `json:"created_at"`
-	UpdatedAt     int64  `json:"updated_at"`
+	ID           string `json:"id"`
+	OwnerAgentID string `json:"owner_agent_id,omitempty"`
+	Status       string `json:"status"`
+	Input        string `json:"input,omitempty"`
+	Origin       string `json:"origin,omitempty"`
+	CreatedAt    int64  `json:"created_at"`
+	UpdatedAt    int64  `json:"updated_at"`
 }
 
 type RunRecord struct {
-	ID            string        `json:"id"`
-	TaskID        string        `json:"task_id,omitempty"`
-	ThreadID      string        `json:"thread_id,omitempty"`
-	CorrelationID string        `json:"correlation_id,omitempty"`
-	AgentID       string        `json:"agent_id,omitempty"`
-	ParentRunID   string        `json:"parent_run_id,omitempty"`
-	Kind          string        `json:"kind,omitempty"`
-	Status        string        `json:"status"`
-	Input         string        `json:"input,omitempty"`
-	Output        string        `json:"output,omitempty"`
-	Error         *RuntimeError `json:"error,omitempty"`
-	CreatedAt     int64         `json:"created_at"`
-	UpdatedAt     int64         `json:"updated_at"`
+	ID        string        `json:"id"`
+	TaskID    string        `json:"task_id,omitempty"`
+	AgentID   string        `json:"agent_id,omitempty"`
+	Kind      string        `json:"kind,omitempty"`
+	Status    string        `json:"status"`
+	Input     string        `json:"input,omitempty"`
+	Output    string        `json:"output,omitempty"`
+	Error     *RuntimeError `json:"error,omitempty"`
+	CreatedAt int64         `json:"created_at"`
+	UpdatedAt int64         `json:"updated_at"`
 }
 
 type EventRecord struct {
@@ -78,42 +72,11 @@ type EventRecord struct {
 	At         int64         `json:"ts"`
 }
 
-type ArtifactRecord struct {
-	ID            string `json:"id,omitempty"`
-	RunID         string `json:"run_id,omitempty"`
-	TaskID        string `json:"task_id,omitempty"`
-	ThreadID      string `json:"thread_id,omitempty"`
-	Kind          string `json:"kind,omitempty"`
-	Name          string `json:"name,omitempty"`
-	Content       string `json:"content,omitempty"`
-	AgentID       string `json:"agent_id,omitempty"`
-	FromAgent     string `json:"from_agent,omitempty"`
-	ToAgent       string `json:"to_agent,omitempty"`
-	ReplyTo       string `json:"reply_to,omitempty"`
-	CorrelationID string `json:"correlation_id,omitempty"`
-	Status        string `json:"status,omitempty"`
-	RequiresReply bool   `json:"requires_reply,omitempty"`
-	CreatedAt     int64  `json:"created_at"`
-	Visible       bool   `json:"visible"`
-	SourceType    string `json:"source_type,omitempty"`
-}
-
-type ThreadRecord struct {
-	ID           string   `json:"id"`
-	OwnerAgentID string   `json:"owner_agent_id,omitempty"`
-	Participants []string `json:"participants,omitempty"`
-	Status       string   `json:"status"`
-	Topic        string   `json:"topic,omitempty"`
-	CreatedAt    int64    `json:"created_at"`
-	UpdatedAt    int64    `json:"updated_at"`
-}
-
 type RuntimeSnapshot struct {
-	Tasks     []TaskRecord     `json:"tasks,omitempty"`
-	Runs      []RunRecord      `json:"runs,omitempty"`
-	Events    []EventRecord    `json:"events,omitempty"`
-	Threads   []ThreadRecord   `json:"threads,omitempty"`
-	Artifacts []ArtifactRecord `json:"artifacts,omitempty"`
+	Tasks  []TaskRecord  `json:"tasks,omitempty"`
+	Runs   []RunRecord   `json:"runs,omitempty"`
+	Events []EventRecord `json:"events,omitempty"`
+	World  interface{}   `json:"world,omitempty"`
 }
 
 type ExecutionRun struct {

@@ -7,12 +7,7 @@ import (
 	"strings"
 
 	rpcpkg "github.com/YspCoder/clawgo/pkg/rpc"
-	"github.com/YspCoder/clawgo/pkg/tools"
 )
-
-func (s *Server) handleSubagentRPC(w http.ResponseWriter, r *http.Request) {
-	s.handleRPC(w, r, s.subagentRPCRegistry())
-}
 
 func (s *Server) handleNodeRPC(w http.ResponseWriter, r *http.Request) {
 	s.handleRPC(w, r, s.nodeRPCRegistry())
@@ -62,43 +57,6 @@ func (s *Server) handleRPC(w http.ResponseWriter, r *http.Request, registry *rpc
 		Result:    result,
 		RequestID: strings.TrimSpace(req.RequestID),
 	})
-}
-
-func (s *Server) buildSubagentRegistry() *rpcpkg.Registry {
-	svc := s.subagentRPCService()
-	reg := rpcpkg.NewRegistry()
-	rpcpkg.RegisterJSON(reg, "subagent.list", func(ctx context.Context, req rpcpkg.ListSubagentsRequest) (interface{}, *rpcpkg.Error) {
-		return svc.List(ctx, req)
-	})
-	rpcpkg.RegisterJSON(reg, "subagent.snapshot", func(ctx context.Context, req rpcpkg.SnapshotRequest) (interface{}, *rpcpkg.Error) {
-		return svc.Snapshot(ctx, req)
-	})
-	rpcpkg.RegisterJSON(reg, "subagent.get", func(ctx context.Context, req rpcpkg.GetSubagentRequest) (interface{}, *rpcpkg.Error) {
-		return svc.Get(ctx, req)
-	})
-	rpcpkg.RegisterJSON(reg, "subagent.spawn", func(ctx context.Context, req rpcpkg.SpawnSubagentRequest) (interface{}, *rpcpkg.Error) {
-		return svc.Spawn(ctx, req)
-	})
-	rpcpkg.RegisterJSON(reg, "subagent.dispatch_and_wait", func(ctx context.Context, req rpcpkg.DispatchAndWaitRequest) (interface{}, *rpcpkg.Error) {
-		return svc.DispatchAndWait(ctx, req)
-	})
-	rpcpkg.RegisterJSON(reg, "subagent.registry", func(ctx context.Context, req rpcpkg.RegistryRequest) (interface{}, *rpcpkg.Error) {
-		return svc.Registry(ctx, req)
-	})
-	return reg
-}
-
-func (s *Server) subagentRPCRegistry() *rpcpkg.Registry {
-	if s == nil {
-		return rpcpkg.NewRegistry()
-	}
-	s.subagentRPCOnce.Do(func() {
-		s.subagentRPCReg = s.buildSubagentRegistry()
-	})
-	if s.subagentRPCReg == nil {
-		return rpcpkg.NewRegistry()
-	}
-	return s.subagentRPCReg
 }
 
 func (s *Server) buildNodeRegistry() *rpcpkg.Registry {
@@ -298,104 +256,6 @@ func writeRPCError(w http.ResponseWriter, status int, requestID string, rpcErr *
 	})
 }
 
-func (s *Server) handleSubagentLegacyAction(ctx context.Context, action string, args map[string]interface{}) (interface{}, *rpcpkg.Error) {
-	registry := s.subagentRPCRegistry()
-	req := rpcpkg.Request{
-		Method: legacySubagentActionMethod(action),
-		Params: mustJSONMarshal(mapSubagentLegacyArgs(action, args)),
-	}
-	result, rpcErr := registry.Handle(ctx, req)
-	if rpcErr != nil && !strings.HasPrefix(strings.TrimSpace(req.Method), "subagent.") {
-		if s.onSubagents == nil {
-			return nil, rpcError("unavailable", "subagent runtime handler not configured", nil, false)
-		}
-		fallback, err := s.onSubagents(ctx, action, args)
-		if err != nil {
-			return nil, rpcErrorFrom(err)
-		}
-		return fallback, nil
-	}
-	return result, rpcErr
-}
-
-var legacySubagentActionMethods = map[string]string{
-	"":                  "subagent.list",
-	"list":              "subagent.list",
-	"snapshot":          "subagent.snapshot",
-	"get":               "subagent.get",
-	"info":              "subagent.get",
-	"spawn":             "subagent.spawn",
-	"create":            "subagent.spawn",
-	"dispatch_and_wait": "subagent.dispatch_and_wait",
-	"registry":          "subagent.registry",
-}
-
-func legacySubagentActionMethod(action string) string {
-	normalized := strings.ToLower(strings.TrimSpace(action))
-	if method, ok := legacySubagentActionMethods[normalized]; ok {
-		return method
-	}
-	return strings.TrimSpace(action)
-}
-
-var legacySubagentArgMappers = map[string]func(map[string]interface{}) interface{}{
-	"snapshot": func(args map[string]interface{}) interface{} {
-		return rpcpkg.SnapshotRequest{Limit: tools.MapIntArg(args, "limit", 0)}
-	},
-	"get": func(args map[string]interface{}) interface{} {
-		return rpcpkg.GetSubagentRequest{ID: tools.MapStringArg(args, "id")}
-	},
-	"info": func(args map[string]interface{}) interface{} {
-		return rpcpkg.GetSubagentRequest{ID: tools.MapStringArg(args, "id")}
-	},
-	"spawn": buildLegacySpawnSubagentRequest,
-	"create": func(args map[string]interface{}) interface{} {
-		return buildLegacySpawnSubagentRequest(args)
-	},
-	"dispatch_and_wait": func(args map[string]interface{}) interface{} {
-		return rpcpkg.DispatchAndWaitRequest{
-			Task:           tools.MapStringArg(args, "task"),
-			Label:          tools.MapStringArg(args, "label"),
-			Role:           tools.MapStringArg(args, "role"),
-			AgentID:        tools.MapStringArg(args, "agent_id"),
-			ThreadID:       tools.MapStringArg(args, "thread_id"),
-			CorrelationID:  tools.MapStringArg(args, "correlation_id"),
-			ParentRunID:    tools.MapStringArg(args, "parent_run_id"),
-			MaxRetries:     tools.MapIntArg(args, "max_retries", 0),
-			RetryBackoffMS: tools.MapIntArg(args, "retry_backoff_ms", 0),
-			TimeoutSec:     tools.MapIntArg(args, "timeout_sec", 0),
-			MaxTaskChars:   tools.MapIntArg(args, "max_task_chars", 0),
-			MaxResultChars: tools.MapIntArg(args, "max_result_chars", 0),
-			WaitTimeoutSec: tools.MapIntArg(args, "wait_timeout_sec", 0),
-			Channel:        firstNonEmptyString(tools.MapStringArg(args, "channel"), tools.MapStringArg(args, "origin_channel")),
-			ChatID:         firstNonEmptyString(tools.MapStringArg(args, "chat_id"), tools.MapStringArg(args, "origin_chat_id")),
-		}
-	},
-}
-
-func mapSubagentLegacyArgs(action string, args map[string]interface{}) interface{} {
-	normalized := strings.ToLower(strings.TrimSpace(action))
-	if mapper, ok := legacySubagentArgMappers[normalized]; ok && mapper != nil {
-		return mapper(args)
-	}
-	return args
-}
-
-func buildLegacySpawnSubagentRequest(args map[string]interface{}) interface{} {
-	return rpcpkg.SpawnSubagentRequest{
-		Task:           tools.MapStringArg(args, "task"),
-		Label:          tools.MapStringArg(args, "label"),
-		Role:           tools.MapStringArg(args, "role"),
-		AgentID:        tools.MapStringArg(args, "agent_id"),
-		MaxRetries:     tools.MapIntArg(args, "max_retries", 0),
-		RetryBackoffMS: tools.MapIntArg(args, "retry_backoff_ms", 0),
-		TimeoutSec:     tools.MapIntArg(args, "timeout_sec", 0),
-		MaxTaskChars:   tools.MapIntArg(args, "max_task_chars", 0),
-		MaxResultChars: tools.MapIntArg(args, "max_result_chars", 0),
-		Channel:        firstNonEmptyString(tools.MapStringArg(args, "channel"), tools.MapStringArg(args, "origin_channel")),
-		ChatID:         firstNonEmptyString(tools.MapStringArg(args, "chat_id"), tools.MapStringArg(args, "origin_chat_id")),
-	}
-}
 
 func mustJSONMarshal(value interface{}) json.RawMessage {
 	if value == nil {

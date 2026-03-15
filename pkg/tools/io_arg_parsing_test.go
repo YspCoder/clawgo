@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/YspCoder/clawgo/pkg/config"
 )
@@ -66,29 +65,6 @@ func TestFilesystemToolsParseStringArgs(t *testing.T) {
 	if !strings.Contains(emptyWrite, "empty.txt") {
 		t.Fatalf("unexpected empty write output: %s", emptyWrite)
 	}
-}
-
-func TestSpawnToolParsesStringNumbers(t *testing.T) {
-	manager := NewSubagentManager(nil, t.TempDir(), nil)
-	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
-		return "ok", nil
-	})
-	tool := NewSpawnTool(manager)
-
-	out, err := tool.Execute(context.Background(), map[string]interface{}{
-		"task":             "implement check",
-		"agent_id":         "coder",
-		"max_retries":      "2",
-		"retry_backoff_ms": "100",
-		"timeout_sec":      "5",
-	})
-	if err != nil {
-		t.Fatalf("spawn failed: %v", err)
-	}
-	if !strings.Contains(out, "spawned") && !strings.Contains(strings.ToLower(out), "subagent") {
-		t.Fatalf("unexpected spawn output: %s", out)
-	}
-	time.Sleep(50 * time.Millisecond)
 }
 
 func TestExecBrowserWebToolsParseStringArgs(t *testing.T) {

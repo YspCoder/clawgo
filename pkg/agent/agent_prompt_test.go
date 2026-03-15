@@ -9,7 +9,7 @@ import (
 	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
-func TestBuildSubagentTaskInputPrefersPromptFile(t *testing.T) {
+func TestBuildAgentTaskInputPrefersPromptFile(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(workspace, "agents", "coder"), 0755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
@@ -18,9 +18,11 @@ func TestBuildSubagentTaskInputPrefersPromptFile(t *testing.T) {
 		t.Fatalf("write AGENT failed: %v", err)
 	}
 	loop := &AgentLoop{workspace: workspace}
-	input := loop.buildSubagentTaskInput(&tools.SubagentTask{
-		Task:             "implement login flow",
-		SystemPromptFile: "agents/coder/AGENT.md",
+	input := loop.buildAgentTaskInput(&tools.AgentTask{
+		Task: "implement login flow",
+		ExecutionPolicy: &tools.ExecutionPolicy{
+			PromptFile: "agents/coder/AGENT.md",
+		},
 	})
 	if !strings.Contains(input, "coder-file-policy") {
 		t.Fatalf("expected prompt file content, got: %s", input)
@@ -30,9 +32,9 @@ func TestBuildSubagentTaskInputPrefersPromptFile(t *testing.T) {
 	}
 }
 
-func TestBuildSubagentTaskInputWithoutPromptFileUsesTaskOnly(t *testing.T) {
+func TestBuildAgentTaskInputWithoutPromptFileUsesTaskOnly(t *testing.T) {
 	loop := &AgentLoop{workspace: t.TempDir()}
-	input := loop.buildSubagentTaskInput(&tools.SubagentTask{
+	input := loop.buildAgentTaskInput(&tools.AgentTask{
 		Task: "run regression",
 	})
 	if strings.Contains(input, "test inline prompt") {

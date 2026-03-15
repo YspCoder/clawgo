@@ -367,13 +367,13 @@ func (s *Server) handleWebUICron(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleWebUISubagentsRuntime(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleWebUIRuntimeAdmin(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if s.onSubagents == nil {
-		http.Error(w, "subagent runtime handler not configured", http.StatusServiceUnavailable)
+	if s.onRuntimeAdmin == nil {
+		http.Error(w, "runtime admin handler not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -411,9 +411,9 @@ func (s *Server) handleWebUISubagentsRuntime(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	result, rpcErr := s.handleSubagentLegacyAction(r.Context(), action, args)
-	if rpcErr != nil {
-		http.Error(w, rpcErr.Message, rpcHTTPStatus(rpcErr))
+	result, err := s.onRuntimeAdmin(r.Context(), action, args)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, map[string]interface{}{"ok": true, "result": result})

@@ -111,9 +111,7 @@ func Validate(cfg *Config) []error {
 			errs = append(errs, fmt.Errorf("context_compaction.mode=responses_compact requires active provider %q with supports_responses_compact=true", active))
 		}
 	}
-	errs = append(errs, validateAgentRouter(cfg)...)
-	errs = append(errs, validateAgentCommunication(cfg)...)
-	errs = append(errs, validateSubagents(cfg)...)
+	errs = append(errs, validateAgents(cfg)...)
 
 	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
 		errs = append(errs, fmt.Errorf("gateway.port must be in 1..65535"))
@@ -333,93 +331,22 @@ func validateMCPTools(cfg *Config) []error {
 	return errs
 }
 
-func validateAgentRouter(cfg *Config) []error {
-	router := cfg.Agents.Router
+func validateAgents(cfg *Config) []error {
 	var errs []error
-	if router.Policy.IntentMaxInputChars < 200 {
-		errs = append(errs, fmt.Errorf("agents.router.policy.intent_max_input_chars must be >= 200"))
-	}
-	if router.Policy.MaxRoundsWithoutUser <= 0 {
-		errs = append(errs, fmt.Errorf("agents.router.policy.max_rounds_without_user must be > 0"))
-	}
-	if strings.TrimSpace(router.Strategy) != "" {
-		switch strings.TrimSpace(router.Strategy) {
-		case "rules_first", "round_robin", "manual":
-		default:
-			errs = append(errs, fmt.Errorf("agents.router.strategy must be one of: rules_first, round_robin, manual"))
-		}
-	}
-	if router.MaxHops < 0 {
-		errs = append(errs, fmt.Errorf("agents.router.max_hops must be >= 0"))
-	}
-	if router.DefaultTimeoutSec < 0 {
-		errs = append(errs, fmt.Errorf("agents.router.default_timeout_sec must be >= 0"))
-	}
-	if router.Enabled && strings.TrimSpace(router.MainAgentID) == "" {
-		errs = append(errs, fmt.Errorf("agents.router.main_agent_id is required when agents.router.enabled=true"))
-	}
-	for i, rule := range router.Rules {
-		agentID := strings.TrimSpace(rule.AgentID)
-		if agentID == "" {
-			errs = append(errs, fmt.Errorf("agents.router.rules[%d].agent_id is required", i))
-			continue
-		}
-		if _, ok := cfg.Agents.Subagents[agentID]; !ok {
-			errs = append(errs, fmt.Errorf("agents.router.rules[%d].agent_id %q not found in agents.subagents", i, agentID))
-		}
-		if len(rule.Keywords) == 0 {
-			errs = append(errs, fmt.Errorf("agents.router.rules[%d].keywords must not be empty", i))
-		}
-		for _, kw := range rule.Keywords {
-			if strings.TrimSpace(kw) == "" {
-				errs = append(errs, fmt.Errorf("agents.router.rules[%d].keywords must not contain empty values", i))
-			}
-		}
-	}
-	return errs
-}
-
-func validateAgentCommunication(cfg *Config) []error {
-	comm := cfg.Agents.Communication
-	var errs []error
-	if strings.TrimSpace(comm.Mode) != "" {
-		switch strings.TrimSpace(comm.Mode) {
-		case "mediated", "direct":
-		default:
-			errs = append(errs, fmt.Errorf("agents.communication.mode must be one of: mediated, direct"))
-		}
-	}
-	if comm.MaxMessagesPerThread < 0 {
-		errs = append(errs, fmt.Errorf("agents.communication.max_messages_per_thread must be >= 0"))
-	}
-	if comm.DefaultMessageTTLSec < 0 {
-		errs = append(errs, fmt.Errorf("agents.communication.default_message_ttl_sec must be >= 0"))
-	}
-	return errs
-}
-
-func validateSubagents(cfg *Config) []error {
-	var errs []error
-	if len(cfg.Agents.Subagents) == 0 {
+	if len(cfg.Agents.Agents) == 0 {
 		return errs
 	}
-	mainID := strings.TrimSpace(cfg.Agents.Router.MainAgentID)
-	if cfg.Agents.Router.Enabled && mainID != "" {
-		if _, ok := cfg.Agents.Subagents[mainID]; !ok {
-			errs = append(errs, fmt.Errorf("agents.router.main_agent_id %q not found in agents.subagents", mainID))
-		}
-	}
-	for agentID, raw := range cfg.Agents.Subagents {
+	for agentID, raw := range cfg.Agents.Agents {
 		id := strings.TrimSpace(agentID)
 		if id == "" {
-			errs = append(errs, fmt.Errorf("agents.subagents contains an empty agent id"))
+			errs = append(errs, fmt.Errorf("agents.agents contains an empty agent id"))
 			continue
 		}
 		if strings.TrimSpace(raw.Type) != "" {
 			switch strings.TrimSpace(raw.Type) {
-			case "router", "worker", "reviewer", "observer":
+			case "agent", "npc", "tool":
 			default:
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.type must be one of: router, worker, reviewer, observer", id))
+				errs = append(errs, fmt.Errorf("agents.agents.%s.type must be one of: agent, npc, tool", id))
 			}
 		}
 		transport := strings.TrimSpace(raw.Transport)
@@ -427,109 +354,49 @@ func validateSubagents(cfg *Config) []error {
 			switch transport {
 			case "local", "node":
 			default:
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.transport must be one of: local, node", id))
-			}
-		}
-		if policy := strings.TrimSpace(raw.NotifyMainPolicy); policy != "" {
-			switch policy {
-			case "final_only", "milestone", "on_blocked", "always", "internal_only":
-			default:
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.notify_main_policy must be one of: final_only, milestone, on_blocked, always, internal_only", id))
+				errs = append(errs, fmt.Errorf("agents.agents.%s.transport must be one of: local, node", id))
 			}
 		}
 		if transport == "node" && strings.TrimSpace(raw.NodeID) == "" {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.node_id is required when transport=node", id))
+			errs = append(errs, fmt.Errorf("agents.agents.%s.node_id is required when transport=node", id))
 		}
 		if raw.Runtime.TimeoutSec < 0 {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.timeout_sec must be >= 0", id))
+			errs = append(errs, fmt.Errorf("agents.agents.%s.runtime.timeout_sec must be >= 0", id))
 		}
 		if raw.Runtime.MaxRetries < 0 {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.max_retries must be >= 0", id))
+			errs = append(errs, fmt.Errorf("agents.agents.%s.runtime.max_retries must be >= 0", id))
 		}
 		if raw.Runtime.RetryBackoffMs < 0 {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.retry_backoff_ms must be >= 0", id))
+			errs = append(errs, fmt.Errorf("agents.agents.%s.runtime.retry_backoff_ms must be >= 0", id))
 		}
 		if raw.Runtime.MaxTaskChars < 0 {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.max_task_chars must be >= 0", id))
+			errs = append(errs, fmt.Errorf("agents.agents.%s.runtime.max_task_chars must be >= 0", id))
 		}
 		if raw.Runtime.MaxResultChars < 0 {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.max_result_chars must be >= 0", id))
+			errs = append(errs, fmt.Errorf("agents.agents.%s.runtime.max_result_chars must be >= 0", id))
 		}
 		if raw.Runtime.MaxParallelRuns < 0 {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.max_parallel_runs must be >= 0", id))
+			errs = append(errs, fmt.Errorf("agents.agents.%s.runtime.max_parallel_runs must be >= 0", id))
 		}
 		if raw.Tools.MaxParallelCalls < 0 {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.tools.max_parallel_calls must be >= 0", id))
+			errs = append(errs, fmt.Errorf("agents.agents.%s.tools.max_parallel_calls must be >= 0", id))
 		}
-		if raw.Enabled && transport != "node" && strings.TrimSpace(raw.SystemPromptFile) == "" {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file is required when enabled=true", id))
+		if raw.Enabled && transport != "node" && strings.TrimSpace(raw.PromptFile) == "" {
+			errs = append(errs, fmt.Errorf("agents.agents.%s.prompt_file is required when enabled=true", id))
 		}
-		if promptFile := strings.TrimSpace(raw.SystemPromptFile); promptFile != "" {
+		if promptFile := strings.TrimSpace(raw.PromptFile); promptFile != "" {
 			if filepath.IsAbs(promptFile) {
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file must be relative", id))
+				errs = append(errs, fmt.Errorf("agents.agents.%s.prompt_file must be relative", id))
 			}
 			if cleaned := filepath.Clean(promptFile); strings.HasPrefix(cleaned, "..") {
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file must stay within workspace", id))
+				errs = append(errs, fmt.Errorf("agents.agents.%s.prompt_file must stay within workspace", id))
 			}
 		}
 		if provider := strings.TrimSpace(raw.Runtime.Provider); provider != "" && !ProviderExists(cfg, provider) {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.provider %q not found in providers", id, provider))
-		}
-		for _, sender := range raw.AcceptFrom {
-			sender = strings.TrimSpace(sender)
-			if sender == "" {
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.accept_from must not contain empty values", id))
-				continue
-			}
-			if sender != "user" && sender != id {
-				if _, ok := cfg.Agents.Subagents[sender]; !ok {
-					errs = append(errs, fmt.Errorf("agents.subagents.%s.accept_from references unknown agent %q", id, sender))
-				}
-			}
-		}
-		for _, target := range raw.CanTalkTo {
-			target = strings.TrimSpace(target)
-			if target == "" {
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.can_talk_to must not contain empty values", id))
-				continue
-			}
-			if target != "user" {
-				if _, ok := cfg.Agents.Subagents[target]; !ok {
-					errs = append(errs, fmt.Errorf("agents.subagents.%s.can_talk_to references unknown agent %q", id, target))
-				}
-			}
-		}
-		if raw.RequiresMainMediation && mainID != "" && id == mainID {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.requires_main_mediation must be false for main agent", id))
-		}
-	}
-	for agentID, raw := range cfg.Agents.Subagents {
-		id := strings.TrimSpace(agentID)
-		for _, target := range raw.CanTalkTo {
-			target = strings.TrimSpace(target)
-			if target == "" || target == "user" {
-				continue
-			}
-			peer, ok := cfg.Agents.Subagents[target]
-			if !ok {
-				continue
-			}
-			if !containsString(raw.AcceptFrom, target) && !containsString(peer.AcceptFrom, id) {
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.can_talk_to %q is not reciprocated by accept_from", id, target))
-			}
+			errs = append(errs, fmt.Errorf("agents.agents.%s.runtime.provider %q not found in providers", id, provider))
 		}
 	}
 	return errs
-}
-
-func containsString(items []string, target string) bool {
-	target = strings.TrimSpace(target)
-	for _, item := range items {
-		if strings.TrimSpace(item) == target {
-			return true
-		}
-	}
-	return false
 }
 
 func validateProviderConfig(path string, p ProviderConfig) []error {

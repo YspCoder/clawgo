@@ -26,157 +26,6 @@ func mustPrettyJSON(v interface{}) []byte {
 	return out
 }
 
-type subagentRPCAdapter struct {
-	server *Server
-}
-
-func (a *subagentRPCAdapter) call(ctx context.Context, action string, args map[string]interface{}) (interface{}, *rpcpkg.Error) {
-	if a == nil || a.server == nil || a.server.onSubagents == nil {
-		return nil, rpcError("unavailable", "subagent runtime handler not configured", nil, false)
-	}
-	result, err := a.server.onSubagents(ctx, action, args)
-	if err != nil {
-		return nil, rpcErrorFrom(err)
-	}
-	return result, nil
-}
-
-func (a *subagentRPCAdapter) List(ctx context.Context, _ rpcpkg.ListSubagentsRequest) (*rpcpkg.ListSubagentsResponse, *rpcpkg.Error) {
-	result, rpcErr := a.call(ctx, "list", nil)
-	if rpcErr != nil {
-		return nil, rpcErr
-	}
-	var payload struct {
-		Items []*map[string]interface{} `json:"items"`
-	}
-	items, err := decodeResultSliceField[resultWrapperSubagentTask](result, "items")
-	if err != nil {
-		return nil, rpcError("internal", err.Error(), nil, false)
-	}
-	_ = payload
-	out := make([]*resultWrapperSubagentTask, 0, len(items))
-	for _, item := range items {
-		if item != nil {
-			out = append(out, item)
-		}
-	}
-	return &rpcpkg.ListSubagentsResponse{Items: unwrapSubagentTasks(out)}, nil
-}
-
-func (a *subagentRPCAdapter) Snapshot(ctx context.Context, req rpcpkg.SnapshotRequest) (*rpcpkg.SnapshotResponse, *rpcpkg.Error) {
-	result, rpcErr := a.call(ctx, "snapshot", map[string]interface{}{"limit": req.Limit})
-	if rpcErr != nil {
-		return nil, rpcErr
-	}
-	var snapshot struct {
-		Snapshot json.RawMessage `json:"snapshot"`
-	}
-	if err := decodeResultObject(result, &snapshot); err != nil {
-		return nil, rpcError("internal", err.Error(), nil, false)
-	}
-	var out rpcpkg.SnapshotResponse
-	if len(snapshot.Snapshot) > 0 {
-		if err := json.Unmarshal(snapshot.Snapshot, &out.Snapshot); err != nil {
-			return nil, rpcError("internal", err.Error(), nil, false)
-		}
-	}
-	return &out, nil
-}
-
-func (a *subagentRPCAdapter) Get(ctx context.Context, req rpcpkg.GetSubagentRequest) (*rpcpkg.GetSubagentResponse, *rpcpkg.Error) {
-	result, rpcErr := a.call(ctx, "get", map[string]interface{}{"id": req.ID})
-	if rpcErr != nil {
-		return nil, rpcErr
-	}
-	var payload struct {
-		Found bool                       `json:"found"`
-		Task  *resultWrapperSubagentTask `json:"task"`
-	}
-	if err := decodeResultObject(result, &payload); err != nil {
-		return nil, rpcError("internal", err.Error(), nil, false)
-	}
-	return &rpcpkg.GetSubagentResponse{Found: payload.Found, Task: unwrapSubagentTask(payload.Task)}, nil
-}
-
-func (a *subagentRPCAdapter) Spawn(ctx context.Context, req rpcpkg.SpawnSubagentRequest) (*rpcpkg.SpawnSubagentResponse, *rpcpkg.Error) {
-	result, rpcErr := a.call(ctx, "spawn", map[string]interface{}{
-		"task":             req.Task,
-		"label":            req.Label,
-		"role":             req.Role,
-		"agent_id":         req.AgentID,
-		"max_retries":      req.MaxRetries,
-		"retry_backoff_ms": req.RetryBackoffMS,
-		"timeout_sec":      req.TimeoutSec,
-		"max_task_chars":   req.MaxTaskChars,
-		"max_result_chars": req.MaxResultChars,
-		"channel":          req.Channel,
-		"chat_id":          req.ChatID,
-	})
-	if rpcErr != nil {
-		return nil, rpcErr
-	}
-	var payload rpcpkg.SpawnSubagentResponse
-	if err := decodeResultObject(result, &payload); err != nil {
-		return nil, rpcError("internal", err.Error(), nil, false)
-	}
-	return &payload, nil
-}
-
-func (a *subagentRPCAdapter) DispatchAndWait(ctx context.Context, req rpcpkg.DispatchAndWaitRequest) (*rpcpkg.DispatchAndWaitResponse, *rpcpkg.Error) {
-	result, rpcErr := a.call(ctx, "dispatch_and_wait", map[string]interface{}{
-		"task":             req.Task,
-		"label":            req.Label,
-		"role":             req.Role,
-		"agent_id":         req.AgentID,
-		"thread_id":        req.ThreadID,
-		"correlation_id":   req.CorrelationID,
-		"parent_run_id":    req.ParentRunID,
-		"channel":          req.Channel,
-		"chat_id":          req.ChatID,
-		"max_retries":      req.MaxRetries,
-		"retry_backoff_ms": req.RetryBackoffMS,
-		"timeout_sec":      req.TimeoutSec,
-		"max_task_chars":   req.MaxTaskChars,
-		"max_result_chars": req.MaxResultChars,
-		"wait_timeout_sec": req.WaitTimeoutSec,
-	})
-	if rpcErr != nil {
-		return nil, rpcErr
-	}
-	var payload struct {
-		Task   *resultWrapperSubagentTask `json:"task"`
-		Reply  json.RawMessage            `json:"reply"`
-		Merged string                     `json:"merged"`
-	}
-	if err := decodeResultObject(result, &payload); err != nil {
-		return nil, rpcError("internal", err.Error(), nil, false)
-	}
-	out := &rpcpkg.DispatchAndWaitResponse{
-		Task:   unwrapSubagentTask(payload.Task),
-		Merged: payload.Merged,
-	}
-	if len(payload.Reply) > 0 {
-		var reply resultWrapperRouterReply
-		if err := json.Unmarshal(payload.Reply, &reply); err != nil {
-			return nil, rpcError("internal", err.Error(), nil, false)
-		}
-		out.Reply = unwrapRouterReply(&reply)
-	}
-	return out, nil
-}
-
-func (a *subagentRPCAdapter) Registry(ctx context.Context, _ rpcpkg.RegistryRequest) (*rpcpkg.RegistryResponse, *rpcpkg.Error) {
-	result, rpcErr := a.call(ctx, "registry", nil)
-	if rpcErr != nil {
-		return nil, rpcErr
-	}
-	var payload rpcpkg.RegistryResponse
-	if err := decodeResultObject(result, &payload); err != nil {
-		return nil, rpcError("internal", err.Error(), nil, false)
-	}
-	return &payload, nil
-}
-
 type nodeRPCAdapter struct {
 	server *Server
 }
@@ -395,10 +244,6 @@ func (a *nodeRPCAdapter) PruneArtifacts(_ context.Context, req rpcpkg.PruneNodeA
 	return &rpcpkg.PruneNodeArtifactsResponse{ArtifactPruneResult: rpcpkg.ArtifactPruneResult{
 		Pruned: pruned, DeletedFiles: deletedFiles, Kept: keepLatest,
 	}}, nil
-}
-
-func (s *Server) subagentRPCService() rpcpkg.SubagentService {
-	return &subagentRPCAdapter{server: s}
 }
 
 func (s *Server) nodeRPCService() rpcpkg.NodeService {
@@ -1238,91 +1083,6 @@ func decodeResultSliceField[T any](result interface{}, field string) ([]*T, erro
 	return items, nil
 }
 
-type resultWrapperSubagentTask struct {
-	ID               string                 `json:"id"`
-	Task             string                 `json:"task"`
-	Label            string                 `json:"label"`
-	Role             string                 `json:"role"`
-	AgentID          string                 `json:"agent_id"`
-	Transport        string                 `json:"transport,omitempty"`
-	NodeID           string                 `json:"node_id,omitempty"`
-	ParentAgentID    string                 `json:"parent_agent_id,omitempty"`
-	NotifyMainPolicy string                 `json:"notify_main_policy,omitempty"`
-	SessionKey       string                 `json:"session_key"`
-	MemoryNS         string                 `json:"memory_ns"`
-	SystemPromptFile string                 `json:"system_prompt_file,omitempty"`
-	ToolAllowlist    []string               `json:"tool_allowlist,omitempty"`
-	MaxRetries       int                    `json:"max_retries,omitempty"`
-	RetryBackoff     int                    `json:"retry_backoff,omitempty"`
-	TimeoutSec       int                    `json:"timeout_sec,omitempty"`
-	MaxTaskChars     int                    `json:"max_task_chars,omitempty"`
-	MaxResultChars   int                    `json:"max_result_chars,omitempty"`
-	RetryCount       int                    `json:"retry_count,omitempty"`
-	ThreadID         string                 `json:"thread_id,omitempty"`
-	CorrelationID    string                 `json:"correlation_id,omitempty"`
-	ParentRunID      string                 `json:"parent_run_id,omitempty"`
-	LastMessageID    string                 `json:"last_message_id,omitempty"`
-	WaitingReply     bool                   `json:"waiting_for_reply,omitempty"`
-	SharedState      map[string]interface{} `json:"shared_state,omitempty"`
-	OriginChannel    string                 `json:"origin_channel,omitempty"`
-	OriginChatID     string                 `json:"origin_chat_id,omitempty"`
-	Status           string                 `json:"status"`
-	Result           string                 `json:"result,omitempty"`
-	Steering         []string               `json:"steering,omitempty"`
-	Created          int64                  `json:"created"`
-	Updated          int64                  `json:"updated"`
-}
-
-func unwrapSubagentTask(in *resultWrapperSubagentTask) *tools.SubagentTask {
-	if in == nil {
-		return nil
-	}
-	return &tools.SubagentTask{
-		ID:               in.ID,
-		Task:             in.Task,
-		Label:            in.Label,
-		Role:             in.Role,
-		AgentID:          in.AgentID,
-		Transport:        in.Transport,
-		NodeID:           in.NodeID,
-		ParentAgentID:    in.ParentAgentID,
-		NotifyMainPolicy: in.NotifyMainPolicy,
-		SessionKey:       in.SessionKey,
-		MemoryNS:         in.MemoryNS,
-		SystemPromptFile: in.SystemPromptFile,
-		ToolAllowlist:    append([]string(nil), in.ToolAllowlist...),
-		MaxRetries:       in.MaxRetries,
-		RetryBackoff:     in.RetryBackoff,
-		TimeoutSec:       in.TimeoutSec,
-		MaxTaskChars:     in.MaxTaskChars,
-		MaxResultChars:   in.MaxResultChars,
-		RetryCount:       in.RetryCount,
-		ThreadID:         in.ThreadID,
-		CorrelationID:    in.CorrelationID,
-		ParentRunID:      in.ParentRunID,
-		LastMessageID:    in.LastMessageID,
-		WaitingReply:     in.WaitingReply,
-		SharedState:      in.SharedState,
-		OriginChannel:    in.OriginChannel,
-		OriginChatID:     in.OriginChatID,
-		Status:           in.Status,
-		Result:           in.Result,
-		Steering:         append([]string(nil), in.Steering...),
-		Created:          in.Created,
-		Updated:          in.Updated,
-	}
-}
-
-func unwrapSubagentTasks(in []*resultWrapperSubagentTask) []*tools.SubagentTask {
-	out := make([]*tools.SubagentTask, 0, len(in))
-	for _, item := range in {
-		if task := unwrapSubagentTask(item); task != nil {
-			out = append(out, task)
-		}
-	}
-	return out
-}
-
 type resultWrapperRuntimeError struct {
 	Code      string `json:"code,omitempty"`
 	Message   string `json:"message,omitempty"`
@@ -1332,30 +1092,16 @@ type resultWrapperRuntimeError struct {
 }
 
 type resultWrapperRunRecord struct {
-	ID            string                     `json:"id"`
-	TaskID        string                     `json:"task_id,omitempty"`
-	ThreadID      string                     `json:"thread_id,omitempty"`
-	CorrelationID string                     `json:"correlation_id,omitempty"`
-	AgentID       string                     `json:"agent_id,omitempty"`
-	ParentRunID   string                     `json:"parent_run_id,omitempty"`
-	Kind          string                     `json:"kind,omitempty"`
-	Status        string                     `json:"status"`
-	Input         string                     `json:"input,omitempty"`
-	Output        string                     `json:"output,omitempty"`
-	Error         *resultWrapperRuntimeError `json:"error,omitempty"`
-	CreatedAt     int64                      `json:"created_at"`
-	UpdatedAt     int64                      `json:"updated_at"`
-}
-
-type resultWrapperRouterReply struct {
-	TaskID        string                     `json:"task_id"`
-	ThreadID      string                     `json:"thread_id,omitempty"`
-	CorrelationID string                     `json:"correlation_id,omitempty"`
-	AgentID       string                     `json:"agent_id,omitempty"`
-	Status        string                     `json:"status"`
-	Result        string                     `json:"result,omitempty"`
-	Run           resultWrapperRunRecord     `json:"run"`
-	Error         *resultWrapperRuntimeError `json:"error,omitempty"`
+	ID        string                     `json:"id"`
+	TaskID    string                     `json:"task_id,omitempty"`
+	AgentID   string                     `json:"agent_id,omitempty"`
+	Kind      string                     `json:"kind,omitempty"`
+	Status    string                     `json:"status"`
+	Input     string                     `json:"input,omitempty"`
+	Output    string                     `json:"output,omitempty"`
+	Error     *resultWrapperRuntimeError `json:"error,omitempty"`
+	CreatedAt int64                      `json:"created_at"`
+	UpdatedAt int64                      `json:"updated_at"`
 }
 
 func unwrapRuntimeError(in *resultWrapperRuntimeError) *tools.RuntimeError {
@@ -1373,35 +1119,16 @@ func unwrapRuntimeError(in *resultWrapperRuntimeError) *tools.RuntimeError {
 
 func unwrapRunRecord(in resultWrapperRunRecord) tools.RunRecord {
 	return tools.RunRecord{
-		ID:            in.ID,
-		TaskID:        in.TaskID,
-		ThreadID:      in.ThreadID,
-		CorrelationID: in.CorrelationID,
-		AgentID:       in.AgentID,
-		ParentRunID:   in.ParentRunID,
-		Kind:          in.Kind,
-		Status:        in.Status,
-		Input:         in.Input,
-		Output:        in.Output,
-		Error:         unwrapRuntimeError(in.Error),
-		CreatedAt:     in.CreatedAt,
-		UpdatedAt:     in.UpdatedAt,
-	}
-}
-
-func unwrapRouterReply(in *resultWrapperRouterReply) *tools.RouterReply {
-	if in == nil {
-		return nil
-	}
-	return &tools.RouterReply{
-		TaskID:        in.TaskID,
-		ThreadID:      in.ThreadID,
-		CorrelationID: in.CorrelationID,
-		AgentID:       in.AgentID,
-		Status:        in.Status,
-		Result:        in.Result,
-		Run:           unwrapRunRecord(in.Run),
-		Error:         unwrapRuntimeError(in.Error),
+		ID:        in.ID,
+		TaskID:    in.TaskID,
+		AgentID:   in.AgentID,
+		Kind:      in.Kind,
+		Status:    in.Status,
+		Input:     in.Input,
+		Output:    in.Output,
+		Error:     unwrapRuntimeError(in.Error),
+		CreatedAt: in.CreatedAt,
+		UpdatedAt: in.UpdatedAt,
 	}
 }
 

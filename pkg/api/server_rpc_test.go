@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,34 +12,6 @@ import (
 	cfgpkg "github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/nodes"
 )
-
-func TestHandleSubagentRPCSpawn(t *testing.T) {
-	t.Parallel()
-
-	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
-	srv.SetSubagentHandler(func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
-		if action != "spawn" {
-			t.Fatalf("unexpected action: %s", action)
-		}
-		if fmt.Sprint(args["agent_id"]) != "coder" || fmt.Sprint(args["task"]) != "ship it" {
-			t.Fatalf("unexpected args: %+v", args)
-		}
-		return map[string]interface{}{"message": "spawned"}, nil
-	})
-
-	body := `{"method":"subagent.spawn","request_id":"req-1","params":{"agent_id":"coder","task":"ship it","channel":"webui","chat_id":"group"}}`
-	req := httptest.NewRequest(http.MethodPost, "/api/rpc/subagent", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	srv.handleSubagentRPC(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `"request_id":"req-1"`) || !strings.Contains(rec.Body.String(), `"message":"spawned"`) {
-		t.Fatalf("unexpected rpc body: %s", rec.Body.String())
-	}
-}
 
 func TestHandleNodeRPCDispatch(t *testing.T) {
 	t.Parallel()

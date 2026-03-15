@@ -40,7 +40,7 @@ type Server struct {
 	onChatHistory    func(sessionKey string) []map[string]interface{}
 	onConfigAfter    func() error
 	onCron           func(action string, args map[string]interface{}) (interface{}, error)
-	onSubagents      func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
+	onRuntimeAdmin   func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
 	onNodeDispatch   func(ctx context.Context, req nodes.Request, mode string) (nodes.Response, error)
 	onToolsCatalog   func() interface{}
 	webUIDir         string
@@ -58,8 +58,6 @@ type Server struct {
 	oauthFlows       map[string]*providers.OAuthPendingFlow
 	extraRoutesMu    sync.RWMutex
 	extraRoutes      map[string]http.Handler
-	subagentRPCOnce  sync.Once
-	subagentRPCReg   *rpcpkg.Registry
 	nodeRPCOnce      sync.Once
 	nodeRPCReg       *rpcpkg.Registry
 	providerRPCOnce  sync.Once
@@ -109,8 +107,8 @@ func (s *Server) SetConfigAfterHook(fn func() error) { s.onConfigAfter = fn }
 func (s *Server) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
 }
-func (s *Server) SetSubagentHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
-	s.onSubagents = fn
+func (s *Server) SetRuntimeAdminHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
+	s.onRuntimeAdmin = fn
 }
 func (s *Server) SetNodeDispatchHandler(fn func(ctx context.Context, req nodes.Request, mode string) (nodes.Response, error)) {
 	s.onNodeDispatch = fn
@@ -211,11 +209,13 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/nodes/heartbeat", s.handleHeartbeat)
 	mux.HandleFunc("/nodes/connect", s.handleNodeConnect)
 	mux.HandleFunc("/", s.handleWebUIAsset)
+	mux.HandleFunc("/api/auth/session", s.handleWebUIAuthSession)
 	mux.HandleFunc("/api/config", s.handleWebUIConfig)
 	mux.HandleFunc("/api/chat", s.handleWebUIChat)
 	mux.HandleFunc("/api/chat/history", s.handleWebUIChatHistory)
 	mux.HandleFunc("/api/chat/live", s.handleWebUIChatLive)
 	mux.HandleFunc("/api/runtime", s.handleWebUIRuntime)
+	mux.HandleFunc("/api/world", s.handleWebUIWorld)
 	mux.HandleFunc("/api/version", s.handleWebUIVersion)
 	mux.HandleFunc("/api/provider/oauth/start", s.handleWebUIProviderOAuthStart)
 	mux.HandleFunc("/api/provider/oauth/complete", s.handleWebUIProviderOAuthComplete)
@@ -240,14 +240,13 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/sessions", s.handleWebUISessions)
 	mux.HandleFunc("/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/api/workspace_file", s.handleWebUIWorkspaceFile)
-	mux.HandleFunc("/api/rpc/subagent", s.handleSubagentRPC)
 	mux.HandleFunc("/api/rpc/node", s.handleNodeRPC)
 	mux.HandleFunc("/api/rpc/provider", s.handleProviderRPC)
 	mux.HandleFunc("/api/rpc/workspace", s.handleWorkspaceRPC)
 	mux.HandleFunc("/api/rpc/config", s.handleConfigRPC)
 	mux.HandleFunc("/api/rpc/cron", s.handleCronRPC)
 	mux.HandleFunc("/api/rpc/skills", s.handleSkillsRPC)
-	mux.HandleFunc("/api/subagents_runtime", s.handleWebUISubagentsRuntime)
+	mux.HandleFunc("/api/runtime_admin", s.handleWebUIRuntimeAdmin)
 	mux.HandleFunc("/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
 	mux.HandleFunc("/api/tools", s.handleWebUITools)
 	mux.HandleFunc("/api/mcp/install", s.handleWebUIMCPInstall)
@@ -312,6 +311,38 @@ func canonicalOriginHost(host string, https bool) string {
 	return strings.ToLower(net.JoinHostPort(host, port))
 }
 
+func normalizeOrigin(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
+	switch scheme {
+	case "http", "https":
+	default:
+		return ""
+	}
+	if strings.TrimSpace(u.Host) == "" {
+		return ""
+	}
+	return scheme + "://" + canonicalOriginHost(u.Host, scheme == "https")
+}
+
+func requestOrigin(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	scheme := "http"
+	if requestUsesTLS(r) {
+		scheme = "https"
+	}
+	return scheme + "://" + canonicalOriginHost(r.Host, scheme == "https")
+}
+
 func (s *Server) isTrustedOrigin(r *http.Request) bool {
 	if r == nil {
 		return false
@@ -320,16 +351,16 @@ func (s *Server) isTrustedOrigin(r *http.Request) bool {
 	if origin == "" {
 		return true
 	}
-	u, err := url.Parse(origin)
-	if err != nil {
+	normalizedOrigin := normalizeOrigin(origin)
+	if normalizedOrigin == "" {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
-	case "http", "https":
-	default:
-		return false
-	}
-	return canonicalOriginHost(u.Host, strings.EqualFold(u.Scheme, "https")) == canonicalOriginHost(r.Host, requestUsesTLS(r))
+	return true
+}
+
+func (s *Server) shouldUseCrossSiteCookie(r *http.Request) bool {
+	origin := normalizeOrigin(r.Header.Get("Origin"))
+	return origin != "" && origin != requestOrigin(r) && s.isTrustedOrigin(r)
 }
 
 func (s *Server) websocketUpgrader() *websocket.Upgrader {

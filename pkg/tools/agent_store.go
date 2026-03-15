@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-type SubagentRunEvent struct {
+type AgentRunEvent struct {
 	RunID      string `json:"run_id"`
 	AgentID    string `json:"agent_id,omitempty"`
 	Type       string `json:"type"`
@@ -22,36 +22,36 @@ type SubagentRunEvent struct {
 	At         int64  `json:"ts"`
 }
 
-type SubagentRunStore struct {
+type AgentRunStore struct {
 	dir        string
 	runsPath   string
 	eventsPath string
 	mu         sync.RWMutex
-	runs       map[string]*SubagentTask
+	runs       map[string]*AgentTask
 }
 
-func NewSubagentRunStore(workspace string) *SubagentRunStore {
+func NewAgentRunStore(workspace string) *AgentRunStore {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
 		return nil
 	}
 	dir := filepath.Join(workspace, "agents", "runtime")
-	store := &SubagentRunStore{
+	store := &AgentRunStore{
 		dir:        dir,
-		runsPath:   filepath.Join(dir, "subagent_runs.jsonl"),
-		eventsPath: filepath.Join(dir, "subagent_events.jsonl"),
-		runs:       map[string]*SubagentTask{},
+		runsPath:   filepath.Join(dir, "agent_runs.jsonl"),
+		eventsPath: filepath.Join(dir, "agent_events.jsonl"),
+		runs:       map[string]*AgentTask{},
 	}
 	_ = os.MkdirAll(dir, 0755)
 	_ = store.load()
 	return store
 }
 
-func (s *SubagentRunStore) load() error {
+func (s *AgentRunStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.runs = map[string]*SubagentTask{}
+	s.runs = map[string]*AgentTask{}
 	f, err := os.Open(s.runsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -71,13 +71,10 @@ func (s *SubagentRunStore) load() error {
 		}
 		var record RunRecord
 		if err := json.Unmarshal([]byte(line), &record); err == nil && strings.TrimSpace(record.ID) != "" {
-			task := &SubagentTask{
+			task := &AgentTask{
 				ID:            record.ID,
 				Task:          record.Input,
 				AgentID:       record.AgentID,
-				ThreadID:      record.ThreadID,
-				CorrelationID: record.CorrelationID,
-				ParentRunID:   record.ParentRunID,
 				Status:        record.Status,
 				Result:        record.Output,
 				Created:       record.CreatedAt,
@@ -86,21 +83,21 @@ func (s *SubagentRunStore) load() error {
 			s.runs[task.ID] = task
 			continue
 		}
-		var task SubagentTask
+		var task AgentTask
 		if err := json.Unmarshal([]byte(line), &task); err != nil {
 			continue
 		}
-		cp := cloneSubagentTask(&task)
+		cp := cloneAgentTask(&task)
 		s.runs[task.ID] = cp
 	}
 	return scanner.Err()
 }
 
-func (s *SubagentRunStore) AppendRun(task *SubagentTask) error {
+func (s *AgentRunStore) AppendRun(task *AgentTask) error {
 	if s == nil || task == nil {
 		return nil
 	}
-	cp := cloneSubagentTask(task)
+	cp := cloneAgentTask(task)
 	data, err := json.Marshal(taskToRunRecord(cp))
 	if err != nil {
 		return err
@@ -123,7 +120,7 @@ func (s *SubagentRunStore) AppendRun(task *SubagentTask) error {
 	return nil
 }
 
-func (s *SubagentRunStore) AppendEvent(evt SubagentRunEvent) error {
+func (s *AgentRunStore) AppendEvent(evt AgentRunEvent) error {
 	if s == nil {
 		return nil
 	}
@@ -156,7 +153,7 @@ func (s *SubagentRunStore) AppendEvent(evt SubagentRunEvent) error {
 	return err
 }
 
-func (s *SubagentRunStore) Get(runID string) (*SubagentTask, bool) {
+func (s *AgentRunStore) Get(runID string) (*AgentTask, bool) {
 	if s == nil {
 		return nil, false
 	}
@@ -166,18 +163,18 @@ func (s *SubagentRunStore) Get(runID string) (*SubagentTask, bool) {
 	if !ok {
 		return nil, false
 	}
-	return cloneSubagentTask(task), true
+	return cloneAgentTask(task), true
 }
 
-func (s *SubagentRunStore) List() []*SubagentTask {
+func (s *AgentRunStore) List() []*AgentTask {
 	if s == nil {
 		return nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*SubagentTask, 0, len(s.runs))
+	out := make([]*AgentTask, 0, len(s.runs))
 	for _, task := range s.runs {
-		out = append(out, cloneSubagentTask(task))
+		out = append(out, cloneAgentTask(task))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Created != out[j].Created {
@@ -188,7 +185,7 @@ func (s *SubagentRunStore) List() []*SubagentTask {
 	return out
 }
 
-func (s *SubagentRunStore) Events(runID string, limit int) ([]SubagentRunEvent, error) {
+func (s *AgentRunStore) Events(runID string, limit int) ([]AgentRunEvent, error) {
 	if s == nil {
 		return nil, nil
 	}
@@ -202,7 +199,7 @@ func (s *SubagentRunStore) Events(runID string, limit int) ([]SubagentRunEvent, 
 	defer f.Close()
 
 	runID = strings.TrimSpace(runID)
-	events := make([]SubagentRunEvent, 0)
+	events := make([]AgentRunEvent, 0)
 	scanner := bufio.NewScanner(f)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 2*1024*1024)
@@ -211,13 +208,13 @@ func (s *SubagentRunStore) Events(runID string, limit int) ([]SubagentRunEvent, 
 		if line == "" {
 			continue
 		}
-		var evt SubagentRunEvent
+		var evt AgentRunEvent
 		if err := json.Unmarshal([]byte(line), &evt); err != nil {
 			var record EventRecord
 			if err := json.Unmarshal([]byte(line), &record); err != nil {
 				continue
 			}
-			evt = SubagentRunEvent{
+			evt = AgentRunEvent{
 				RunID:      record.RunID,
 				AgentID:    record.AgentID,
 				Type:       record.Type,
@@ -242,7 +239,7 @@ func (s *SubagentRunStore) Events(runID string, limit int) ([]SubagentRunEvent, 
 	return events, nil
 }
 
-func (s *SubagentRunStore) NextIDSeed() int {
+func (s *AgentRunStore) NextIDSeed() int {
 	if s == nil {
 		return 1
 	}
@@ -250,7 +247,7 @@ func (s *SubagentRunStore) NextIDSeed() int {
 	defer s.mu.RUnlock()
 	maxSeq := 0
 	for runID := range s.runs {
-		if n := parseSubagentSequence(runID); n > maxSeq {
+		if n := parseAgentSequence(runID); n > maxSeq {
 			maxSeq = n
 		}
 	}
@@ -260,85 +257,131 @@ func (s *SubagentRunStore) NextIDSeed() int {
 	return maxSeq + 1
 }
 
-func parseSubagentSequence(runID string) int {
+func parseAgentSequence(runID string) int {
 	runID = strings.TrimSpace(runID)
-	if !strings.HasPrefix(runID, "subagent-") {
+	if !strings.HasPrefix(runID, "agent-") {
 		return 0
 	}
-	n, _ := strconv.Atoi(strings.TrimPrefix(runID, "subagent-"))
+	n, _ := strconv.Atoi(strings.TrimPrefix(runID, "agent-"))
 	return n
 }
 
-func cloneSubagentTask(task *SubagentTask) *SubagentTask {
+func cloneAgentTask(task *AgentTask) *AgentTask {
 	if task == nil {
 		return nil
 	}
 	cp := *task
-	if len(task.ToolAllowlist) > 0 {
-		cp.ToolAllowlist = append([]string(nil), task.ToolAllowlist...)
-	}
-	if len(task.Steering) > 0 {
-		cp.Steering = append([]string(nil), task.Steering...)
-	}
-	if task.SharedState != nil {
-		cp.SharedState = make(map[string]interface{}, len(task.SharedState))
-		for k, v := range task.SharedState {
-			cp.SharedState[k] = v
-		}
-	}
+	cp.Target = cloneTargetRef(task.Target)
+	cp.ExecutionPolicy = cloneExecutionPolicy(task.ExecutionPolicy)
+	cp.WorldDecision = cloneWorldDecisionContext(task.WorldDecision)
+	cp.Origin = cloneOriginRef(task.Origin)
 	return &cp
 }
 
-func taskToTaskRecord(task *SubagentTask) TaskRecord {
+func taskToTaskRecord(task *AgentTask) TaskRecord {
 	if task == nil {
 		return TaskRecord{}
 	}
 	return TaskRecord{
-		ID:            task.ID,
-		ThreadID:      task.ThreadID,
-		CorrelationID: task.CorrelationID,
-		OwnerAgentID:  task.AgentID,
-		Status:        strings.TrimSpace(task.Status),
-		Input:         task.Task,
-		OriginChannel: task.OriginChannel,
-		OriginChatID:  task.OriginChatID,
-		CreatedAt:     task.Created,
-		UpdatedAt:     task.Updated,
+		ID:           task.ID,
+		OwnerAgentID: task.AgentID,
+		Status:       strings.TrimSpace(task.Status),
+		Input:        task.Task,
+		Origin:       formatTaskOrigin(task.Origin),
+		CreatedAt:    task.Created,
+		UpdatedAt:    task.Updated,
 	}
 }
 
-func taskRuntimeError(task *SubagentTask) *RuntimeError {
+func taskRuntimeError(task *AgentTask) *RuntimeError {
 	if task == nil || !strings.EqualFold(strings.TrimSpace(task.Status), RuntimeStatusFailed) {
 		return nil
 	}
 	msg := strings.TrimSpace(task.Result)
 	msg = strings.TrimPrefix(msg, "Error:")
 	msg = strings.TrimSpace(msg)
-	return NewRuntimeError("subagent_failed", msg, "subagent", false, "subagent")
+	return NewRuntimeError("agent_failed", msg, "agent", false, "agent")
 }
 
-func taskToRunRecord(task *SubagentTask) RunRecord {
+func taskToRunRecord(task *AgentTask) RunRecord {
 	if task == nil {
 		return RunRecord{}
 	}
 	return RunRecord{
-		ID:            task.ID,
-		TaskID:        task.ID,
-		ThreadID:      task.ThreadID,
-		CorrelationID: task.CorrelationID,
-		AgentID:       task.AgentID,
-		ParentRunID:   task.ParentRunID,
-		Kind:          "subagent",
-		Status:        strings.TrimSpace(task.Status),
-		Input:         task.Task,
-		Output:        strings.TrimSpace(task.Result),
-		Error:         taskRuntimeError(task),
-		CreatedAt:     task.Created,
-		UpdatedAt:     task.Updated,
+		ID:        task.ID,
+		TaskID:    task.ID,
+		AgentID:   task.AgentID,
+		Kind:      agentRunKind(task),
+		Status:    strings.TrimSpace(task.Status),
+		Input:     task.Task,
+		Output:    strings.TrimSpace(task.Result),
+		Error:     taskRuntimeError(task),
+		CreatedAt: task.Created,
+		UpdatedAt: task.Updated,
 	}
 }
 
-func formatSubagentEventLog(evt SubagentRunEvent) string {
+func agentRunKind(task *AgentTask) string {
+	if task == nil {
+		return "agent"
+	}
+	if IsWorldDecisionTask(task) {
+		return "world_npc"
+	}
+	return normalizeAgentRunKind(task.RunKind, task.WorldDecision)
+}
+
+func formatTaskOrigin(origin *OriginRef) string {
+	channel, chatID := OriginValues(origin)
+	return channel + ":" + chatID
+}
+
+func cloneMap(in map[string]interface{}) map[string]interface{} {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneMapSlice(in []map[string]interface{}) []map[string]interface{} {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]map[string]interface{}, 0, len(in))
+	for _, item := range in {
+		out = append(out, cloneMap(item))
+	}
+	return out
+}
+
+func cloneWorldDecisionContext(in *WorldDecisionContext) *WorldDecisionContext {
+	if in == nil {
+		return nil
+	}
+	return &WorldDecisionContext{
+		WorldTick:           in.WorldTick,
+		WorldSnapshot:       cloneMap(in.WorldSnapshot),
+		NPCSnapshot:         cloneMap(in.NPCSnapshot),
+		VisibleEvents:       cloneMapSlice(in.VisibleEvents),
+		IntentSchemaVersion: strings.TrimSpace(in.IntentSchemaVersion),
+	}
+}
+
+func IsWorldDecisionTask(task *AgentTask) bool {
+	if task == nil {
+		return false
+	}
+	if task.WorldDecision != nil {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(task.RunKind), "world_npc")
+}
+
+func formatAgentEventLog(evt AgentRunEvent) string {
 	base := fmt.Sprintf("- %d %s", evt.At, evt.Type)
 	if strings.TrimSpace(evt.Status) != "" {
 		base += fmt.Sprintf(" status=%s", evt.Status)

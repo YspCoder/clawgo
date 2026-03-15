@@ -263,10 +263,10 @@ func TestHandleWebUIConfigNormalizedGet(t *testing.T) {
 	cfgPath := filepath.Join(tmp, "config.json")
 	cfg := cfgpkg.DefaultConfig()
 	cfg.Logging.Enabled = false
-	cfg.Agents.Subagents["coder"] = cfgpkg.SubagentConfig{
-		Enabled:          true,
-		Role:             "coding",
-		SystemPromptFile: "agents/coder/AGENT.md",
+	cfg.Agents.Agents["coder"] = cfgpkg.AgentConfig{
+		Enabled:    true,
+		Role:       "coding",
+		PromptFile: "agents/coder/AGENT.md",
 	}
 	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("save config: %v", err)
@@ -313,7 +313,7 @@ func TestHandleWebUIConfigNormalizedPost(t *testing.T) {
 			"default_provider": "openai",
 			"default_model":    "gpt-5.4",
 			"main_agent_id":    "main",
-			"subagents": map[string]interface{}{
+			"agents": map[string]interface{}{
 				"reviewer": map[string]interface{}{
 					"enabled":        true,
 					"role":           "testing",
@@ -327,18 +327,6 @@ func TestHandleWebUIConfigNormalizedPost(t *testing.T) {
 			"gateway": map[string]interface{}{"host": "127.0.0.1", "port": float64(18790)},
 		},
 		"runtime": map[string]interface{}{
-			"router": map[string]interface{}{
-				"enabled":                 true,
-				"strategy":                "rules_first",
-				"allow_direct_agent_chat": false,
-				"max_hops":                float64(6),
-				"default_timeout_sec":     float64(600),
-				"default_wait_reply":      true,
-				"sticky_thread_owner":     true,
-				"rules": []interface{}{
-					map[string]interface{}{"agent_id": "reviewer", "keywords": []interface{}{"review"}},
-				},
-			},
 			"providers": map[string]interface{}{
 				"openai": map[string]interface{}{
 					"auth":        "bearer",
@@ -369,10 +357,7 @@ func TestHandleWebUIConfigNormalizedPost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload config: %v", err)
 	}
-	if !loaded.Agents.Router.Enabled {
-		t.Fatalf("expected router to be enabled")
-	}
-	if _, ok := loaded.Agents.Subagents["reviewer"]; !ok {
-		t.Fatalf("expected reviewer subagent, got %+v", loaded.Agents.Subagents)
+	if _, ok := loaded.Agents.Agents["reviewer"]; !ok {
+		t.Fatalf("expected reviewer agent, got %+v", loaded.Agents.Agents)
 	}
 }

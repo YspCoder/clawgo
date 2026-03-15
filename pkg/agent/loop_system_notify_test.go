@@ -9,21 +9,21 @@ import (
 	"github.com/YspCoder/clawgo/pkg/bus"
 )
 
-func TestPrepareOutboundSubagentNoReplyFallback(t *testing.T) {
+func TestPrepareOutboundAgentNoReplyFallback(t *testing.T) {
 	al := &AgentLoop{}
 	msg := bus.InboundMessage{
 		Channel:  "system",
-		SenderID: "subagent:subagent-1",
+		SenderID: "agent:agent-1",
 		ChatID:   "telegram:9527",
 		Content:  "Task 'coder' completed.\n\nResult:\nOK",
 		Metadata: map[string]string{
-			"trigger": "subagent",
+			"trigger": "agent",
 		},
 	}
 
 	outbound, ok := al.prepareOutbound(msg, "NO_REPLY")
 	if !ok {
-		t.Fatalf("expected outbound notification for subagent NO_REPLY fallback")
+		t.Fatalf("expected outbound notification for agent NO_REPLY fallback")
 	}
 	if outbound.Channel != "telegram" || outbound.ChatID != "9527" {
 		t.Fatalf("unexpected outbound target: %s:%s", outbound.Channel, outbound.ChatID)
@@ -33,7 +33,7 @@ func TestPrepareOutboundSubagentNoReplyFallback(t *testing.T) {
 	}
 }
 
-func TestPrepareOutboundNoReplySuppressedForNonSubagent(t *testing.T) {
+func TestPrepareOutboundNoReplySuppressedForNonAgent(t *testing.T) {
 	al := &AgentLoop{}
 	msg := bus.InboundMessage{
 		Channel: "cli",
@@ -42,18 +42,18 @@ func TestPrepareOutboundNoReplySuppressedForNonSubagent(t *testing.T) {
 	}
 
 	if _, ok := al.prepareOutbound(msg, "NO_REPLY"); ok {
-		t.Fatalf("expected NO_REPLY to be suppressed for non-subagent messages")
+		t.Fatalf("expected NO_REPLY to be suppressed for non-agent messages")
 	}
 }
 
-func TestPrepareOutboundSubagentNoReplyFallbackWithMissingOrigin(t *testing.T) {
+func TestPrepareOutboundAgentNoReplyFallbackWithMissingOrigin(t *testing.T) {
 	al := &AgentLoop{}
 	msg := bus.InboundMessage{
 		Channel:  "system",
-		SenderID: "subagent:subagent-9",
+		SenderID: "agent:agent-9",
 		ChatID:   ":",
 		Metadata: map[string]string{
-			"trigger": "subagent",
+			"trigger": "agent",
 		},
 	}
 
@@ -64,25 +64,25 @@ func TestPrepareOutboundSubagentNoReplyFallbackWithMissingOrigin(t *testing.T) {
 	if outbound.Channel != "cli" || outbound.ChatID != "direct" {
 		t.Fatalf("expected fallback origin cli:direct, got %s:%s", outbound.Channel, outbound.ChatID)
 	}
-	if outbound.Content != "Subagent subagent-9 completed." {
+	if outbound.Content != "Agent agent-9 completed." {
 		t.Fatalf("unexpected fallback content: %q", outbound.Content)
 	}
 }
 
-func TestProcessSystemMessageSubagentBlockedQueuedIntoDigest(t *testing.T) {
+func TestProcessSystemMessageAgentBlockedQueuedIntoDigest(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	al := &AgentLoop{
 		bus:                 msgBus,
-		subagentDigestDelay: 10 * time.Millisecond,
-		subagentDigests:     map[string]*subagentDigestState{},
+		agentDigestDelay: 10 * time.Millisecond,
+		agentDigests:     map[string]*agentDigestState{},
 	}
 	out, err := al.processSystemMessage(context.Background(), bus.InboundMessage{
 		Channel:  "system",
-		SenderID: "subagent:subagent-3",
+		SenderID: "agent:agent-3",
 		ChatID:   "telegram:9527",
-		Content:  "Subagent update\nagent: coder\nrun: subagent-3\nstatus: blocked\nreason: blocked\ntask: 修复登录\nsummary: rate limit",
+		Content:  "Agent update\nagent: coder\nrun: agent-3\nstatus: blocked\nreason: blocked\ntask: 修复登录\nsummary: rate limit",
 		Metadata: map[string]string{
-			"trigger":       "subagent",
+			"trigger":       "agent",
 			"agent_id":      "coder",
 			"status":        "failed",
 			"notify_reason": "blocked",
@@ -94,7 +94,7 @@ func TestProcessSystemMessageSubagentBlockedQueuedIntoDigest(t *testing.T) {
 	if out != "" {
 		t.Fatalf("expected queued digest with no immediate output, got %q", out)
 	}
-	al.flushDueSubagentDigests(time.Now().Add(20 * time.Millisecond))
+	al.flushDueAgentDigests(time.Now().Add(20 * time.Millisecond))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	outbound, ok := msgBus.SubscribeOutbound(ctx)
@@ -106,20 +106,20 @@ func TestProcessSystemMessageSubagentBlockedQueuedIntoDigest(t *testing.T) {
 	}
 }
 
-func TestProcessSystemMessageSubagentDigestMergesMultipleUpdates(t *testing.T) {
+func TestProcessSystemMessageAgentDigestMergesMultipleUpdates(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	al := &AgentLoop{
 		bus:                 msgBus,
-		subagentDigestDelay: 10 * time.Millisecond,
-		subagentDigests:     map[string]*subagentDigestState{},
+		agentDigestDelay: 10 * time.Millisecond,
+		agentDigests:     map[string]*agentDigestState{},
 	}
 	first := bus.InboundMessage{
 		Channel:  "system",
-		SenderID: "subagent:subagent-7",
+		SenderID: "agent:agent-7",
 		ChatID:   "telegram:9527",
-		Content:  "Subagent update\nagent: tester\nrun: subagent-7\nstatus: completed\nreason: final\ntask: 回归测试\nsummary: 所有测试通过",
+		Content:  "Agent update\nagent: tester\nrun: agent-7\nstatus: completed\nreason: final\ntask: 回归测试\nsummary: 所有测试通过",
 		Metadata: map[string]string{
-			"trigger":       "subagent",
+			"trigger":       "agent",
 			"agent_id":      "tester",
 			"status":        "completed",
 			"notify_reason": "final",
@@ -127,11 +127,11 @@ func TestProcessSystemMessageSubagentDigestMergesMultipleUpdates(t *testing.T) {
 	}
 	second := bus.InboundMessage{
 		Channel:  "system",
-		SenderID: "subagent:subagent-8",
+		SenderID: "agent:agent-8",
 		ChatID:   "telegram:9527",
-		Content:  "Subagent update\nagent: coder\nrun: subagent-8\nstatus: completed\nreason: final\ntask: 修复登录\nsummary: 接口已联调",
+		Content:  "Agent update\nagent: coder\nrun: agent-8\nstatus: completed\nreason: final\ntask: 修复登录\nsummary: 接口已联调",
 		Metadata: map[string]string{
-			"trigger":       "subagent",
+			"trigger":       "agent",
 			"agent_id":      "coder",
 			"status":        "completed",
 			"notify_reason": "final",
@@ -143,7 +143,7 @@ func TestProcessSystemMessageSubagentDigestMergesMultipleUpdates(t *testing.T) {
 	if out, err := al.processSystemMessage(context.Background(), second); err != nil || out != "" {
 		t.Fatalf("unexpected second result out=%q err=%v", out, err)
 	}
-	al.flushDueSubagentDigests(time.Now().Add(20 * time.Millisecond))
+	al.flushDueAgentDigests(time.Now().Add(20 * time.Millisecond))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	outbound, ok := msgBus.SubscribeOutbound(ctx)

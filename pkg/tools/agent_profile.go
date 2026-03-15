@@ -16,15 +16,23 @@ import (
 	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 )
 
-type SubagentProfile struct {
+type AgentProfile struct {
 	AgentID          string   `json:"agent_id"`
 	Name             string   `json:"name"`
+	Kind             string   `json:"kind,omitempty"`
 	Transport        string   `json:"transport,omitempty"`
 	NodeID           string   `json:"node_id,omitempty"`
 	ParentAgentID    string   `json:"parent_agent_id,omitempty"`
-	NotifyMainPolicy string   `json:"notify_main_policy,omitempty"`
 	Role             string   `json:"role,omitempty"`
-	SystemPromptFile string   `json:"system_prompt_file,omitempty"`
+	Persona          string   `json:"persona,omitempty"`
+	Traits           []string `json:"traits,omitempty"`
+	Faction          string   `json:"faction,omitempty"`
+	HomeLocation     string   `json:"home_location,omitempty"`
+	DefaultGoals     []string `json:"default_goals,omitempty"`
+	PerceptionScope  int      `json:"perception_scope,omitempty"`
+	ScheduleHint     string   `json:"schedule_hint,omitempty"`
+	WorldTags        []string `json:"world_tags,omitempty"`
+	PromptFile       string   `json:"prompt_file,omitempty"`
 	ToolAllowlist    []string `json:"tool_allowlist,omitempty"`
 	MemoryNamespace  string   `json:"memory_namespace,omitempty"`
 	MaxRetries       int      `json:"max_retries,omitempty"`
@@ -38,25 +46,25 @@ type SubagentProfile struct {
 	ManagedBy        string   `json:"managed_by,omitempty"`
 }
 
-type SubagentProfileStore struct {
+type AgentProfileStore struct {
 	workspace string
 	mu        sync.RWMutex
 }
 
-func NewSubagentProfileStore(workspace string) *SubagentProfileStore {
-	return &SubagentProfileStore{workspace: strings.TrimSpace(workspace)}
+func NewAgentProfileStore(workspace string) *AgentProfileStore {
+	return &AgentProfileStore{workspace: strings.TrimSpace(workspace)}
 }
 
-func (s *SubagentProfileStore) profilesDir() string {
+func (s *AgentProfileStore) profilesDir() string {
 	return filepath.Join(s.workspace, "agents", "profiles")
 }
 
-func (s *SubagentProfileStore) profilePath(agentID string) string {
-	id := normalizeSubagentIdentifier(agentID)
+func (s *AgentProfileStore) profilePath(agentID string) string {
+	id := normalizeAgentIdentifier(agentID)
 	return filepath.Join(s.profilesDir(), id+".json")
 }
 
-func (s *SubagentProfileStore) List() ([]SubagentProfile, error) {
+func (s *AgentProfileStore) List() ([]AgentProfile, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -64,7 +72,7 @@ func (s *SubagentProfileStore) List() ([]SubagentProfile, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]SubagentProfile, 0, len(merged))
+	out := make([]AgentProfile, 0, len(merged))
 	for _, p := range merged {
 		out = append(out, p)
 	}
@@ -77,8 +85,8 @@ func (s *SubagentProfileStore) List() ([]SubagentProfile, error) {
 	return out, nil
 }
 
-func (s *SubagentProfileStore) Get(agentID string) (*SubagentProfile, bool, error) {
-	id := normalizeSubagentIdentifier(agentID)
+func (s *AgentProfileStore) Get(agentID string) (*AgentProfile, bool, error) {
+	id := normalizeAgentIdentifier(agentID)
 	if id == "" {
 		return nil, false, nil
 	}
@@ -97,7 +105,7 @@ func (s *SubagentProfileStore) Get(agentID string) (*SubagentProfile, bool, erro
 	return &cp, true, nil
 }
 
-func (s *SubagentProfileStore) FindByRole(role string) (*SubagentProfile, bool, error) {
+func (s *AgentProfileStore) FindByRole(role string) (*AgentProfile, bool, error) {
 	target := strings.ToLower(strings.TrimSpace(role))
 	if target == "" {
 		return nil, false, nil
@@ -115,8 +123,8 @@ func (s *SubagentProfileStore) FindByRole(role string) (*SubagentProfile, bool, 
 	return nil, false, nil
 }
 
-func (s *SubagentProfileStore) Upsert(profile SubagentProfile) (*SubagentProfile, error) {
-	p := normalizeSubagentProfile(profile)
+func (s *AgentProfileStore) Upsert(profile AgentProfile) (*AgentProfile, error) {
+	p := normalizeAgentProfile(profile)
 	if p.AgentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
 	}
@@ -124,19 +132,19 @@ func (s *SubagentProfileStore) Upsert(profile SubagentProfile) (*SubagentProfile
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if managed, ok := s.configProfileLocked(p.AgentID); ok {
-		return nil, fmt.Errorf("subagent profile %q is managed by %s", p.AgentID, managed.ManagedBy)
+		return nil, fmt.Errorf("agent profile %q is managed by %s", p.AgentID, managed.ManagedBy)
 	}
 	if managed, ok := s.nodeProfileLocked(p.AgentID); ok {
-		return nil, fmt.Errorf("subagent profile %q is managed by %s", p.AgentID, managed.ManagedBy)
+		return nil, fmt.Errorf("agent profile %q is managed by %s", p.AgentID, managed.ManagedBy)
 	}
 
 	now := time.Now().UnixMilli()
 	path := s.profilePath(p.AgentID)
-	existing := SubagentProfile{}
+	existing := AgentProfile{}
 	if b, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(b, &existing)
 	}
-	existing = normalizeSubagentProfile(existing)
+	existing = normalizeAgentProfile(existing)
 	if existing.CreatedAt > 0 {
 		p.CreatedAt = existing.CreatedAt
 	} else if p.CreatedAt <= 0 {
@@ -157,18 +165,18 @@ func (s *SubagentProfileStore) Upsert(profile SubagentProfile) (*SubagentProfile
 	return &p, nil
 }
 
-func (s *SubagentProfileStore) Delete(agentID string) error {
-	id := normalizeSubagentIdentifier(agentID)
+func (s *AgentProfileStore) Delete(agentID string) error {
+	id := normalizeAgentIdentifier(agentID)
 	if id == "" {
 		return fmt.Errorf("agent_id is required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if managed, ok := s.configProfileLocked(id); ok {
-		return fmt.Errorf("subagent profile %q is managed by %s", id, managed.ManagedBy)
+		return fmt.Errorf("agent profile %q is managed by %s", id, managed.ManagedBy)
 	}
 	if managed, ok := s.nodeProfileLocked(id); ok {
-		return fmt.Errorf("subagent profile %q is managed by %s", id, managed.ManagedBy)
+		return fmt.Errorf("agent profile %q is managed by %s", id, managed.ManagedBy)
 	}
 
 	err := os.Remove(s.profilePath(id))
@@ -178,20 +186,28 @@ func (s *SubagentProfileStore) Delete(agentID string) error {
 	return nil
 }
 
-func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
+func normalizeAgentProfile(in AgentProfile) AgentProfile {
 	p := in
-	p.AgentID = normalizeSubagentIdentifier(p.AgentID)
+	p.AgentID = normalizeAgentIdentifier(p.AgentID)
 	p.Name = strings.TrimSpace(p.Name)
 	if p.Name == "" {
 		p.Name = p.AgentID
 	}
+	p.Kind = normalizeProfileKind(p.Kind)
 	p.Transport = normalizeProfileTransport(p.Transport)
 	p.NodeID = strings.TrimSpace(p.NodeID)
-	p.ParentAgentID = normalizeSubagentIdentifier(p.ParentAgentID)
-	p.NotifyMainPolicy = normalizeNotifyMainPolicy(p.NotifyMainPolicy)
+	p.ParentAgentID = normalizeAgentIdentifier(p.ParentAgentID)
 	p.Role = strings.TrimSpace(p.Role)
-	p.SystemPromptFile = strings.TrimSpace(p.SystemPromptFile)
-	p.MemoryNamespace = normalizeSubagentIdentifier(p.MemoryNamespace)
+	p.Persona = strings.TrimSpace(p.Persona)
+	p.Traits = normalizeStringList(p.Traits)
+	p.Faction = strings.TrimSpace(p.Faction)
+	p.HomeLocation = normalizeAgentIdentifier(p.HomeLocation)
+	p.DefaultGoals = normalizeStringList(p.DefaultGoals)
+	p.PerceptionScope = clampInt(p.PerceptionScope, 0, 10)
+	p.ScheduleHint = strings.TrimSpace(p.ScheduleHint)
+	p.WorldTags = normalizeStringList(p.WorldTags)
+	p.PromptFile = strings.TrimSpace(p.PromptFile)
+	p.MemoryNamespace = normalizeAgentIdentifier(p.MemoryNamespace)
 	if p.MemoryNamespace == "" {
 		p.MemoryNamespace = p.AgentID
 	}
@@ -224,6 +240,17 @@ func normalizeProfileTransport(s string) string {
 		return "node"
 	default:
 		return "local"
+	}
+}
+
+func normalizeProfileKind(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "npc":
+		return "npc"
+	case "agent", "tool":
+		return strings.ToLower(strings.TrimSpace(s))
+	default:
+		return "npc"
 	}
 }
 
@@ -272,8 +299,8 @@ func parseStringList(raw interface{}) []string {
 	return normalizeStringList(MapStringListArg(map[string]interface{}{"items": raw}, "items"))
 }
 
-func (s *SubagentProfileStore) mergedProfilesLocked() (map[string]SubagentProfile, error) {
-	merged := make(map[string]SubagentProfile)
+func (s *AgentProfileStore) mergedProfilesLocked() (map[string]AgentProfile, error) {
+	merged := make(map[string]AgentProfile)
 	for _, p := range s.configProfilesLocked() {
 		merged[p.AgentID] = p
 	}
@@ -296,16 +323,16 @@ func (s *SubagentProfileStore) mergedProfilesLocked() (map[string]SubagentProfil
 	return merged, nil
 }
 
-func (s *SubagentProfileStore) fileProfilesLocked() ([]SubagentProfile, error) {
+func (s *AgentProfileStore) fileProfilesLocked() ([]AgentProfile, error) {
 	dir := s.profilesDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []SubagentProfile{}, nil
+			return []AgentProfile{}, nil
 		}
 		return nil, err
 	}
-	out := make([]SubagentProfile, 0, len(entries))
+	out := make([]AgentProfile, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".json") {
 			continue
@@ -315,22 +342,22 @@ func (s *SubagentProfileStore) fileProfilesLocked() ([]SubagentProfile, error) {
 		if err != nil {
 			continue
 		}
-		var p SubagentProfile
+		var p AgentProfile
 		if err := json.Unmarshal(b, &p); err != nil {
 			continue
 		}
-		out = append(out, normalizeSubagentProfile(p))
+		out = append(out, normalizeAgentProfile(p))
 	}
 	return out, nil
 }
 
-func (s *SubagentProfileStore) configProfilesLocked() []SubagentProfile {
+func (s *AgentProfileStore) configProfilesLocked() []AgentProfile {
 	cfg := runtimecfg.Get()
-	if cfg == nil || len(cfg.Agents.Subagents) == 0 {
+	if cfg == nil || len(cfg.Agents.Agents) == 0 {
 		return nil
 	}
-	out := make([]SubagentProfile, 0, len(cfg.Agents.Subagents))
-	for agentID, subcfg := range cfg.Agents.Subagents {
+	out := make([]AgentProfile, 0, len(cfg.Agents.Agents))
+	for agentID, subcfg := range cfg.Agents.Agents {
 		profile := profileFromConfig(agentID, subcfg)
 		if profile.AgentID == "" {
 			continue
@@ -340,34 +367,30 @@ func (s *SubagentProfileStore) configProfilesLocked() []SubagentProfile {
 	return out
 }
 
-func (s *SubagentProfileStore) configProfileLocked(agentID string) (SubagentProfile, bool) {
-	id := normalizeSubagentIdentifier(agentID)
+func (s *AgentProfileStore) configProfileLocked(agentID string) (AgentProfile, bool) {
+	id := normalizeAgentIdentifier(agentID)
 	if id == "" {
-		return SubagentProfile{}, false
+		return AgentProfile{}, false
 	}
 	cfg := runtimecfg.Get()
 	if cfg == nil {
-		return SubagentProfile{}, false
+		return AgentProfile{}, false
 	}
-	subcfg, ok := cfg.Agents.Subagents[id]
+	subcfg, ok := cfg.Agents.Agents[id]
 	if !ok {
-		return SubagentProfile{}, false
+		return AgentProfile{}, false
 	}
 	return profileFromConfig(id, subcfg), true
 }
 
-func (s *SubagentProfileStore) nodeProfileLocked(agentID string) (SubagentProfile, bool) {
-	id := normalizeSubagentIdentifier(agentID)
+func (s *AgentProfileStore) nodeProfileLocked(agentID string) (AgentProfile, bool) {
+	id := normalizeAgentIdentifier(agentID)
 	if id == "" {
-		return SubagentProfile{}, false
+		return AgentProfile{}, false
 	}
 	cfg := runtimecfg.Get()
 	parentAgentID := "main"
-	if cfg != nil {
-		if mainID := normalizeSubagentIdentifier(cfg.Agents.Router.MainAgentID); mainID != "" {
-			parentAgentID = mainID
-		}
-	}
+	_ = cfg
 	for _, node := range nodes.DefaultManager().List() {
 		if isLocalNode(node.ID) {
 			continue
@@ -378,23 +401,31 @@ func (s *SubagentProfileStore) nodeProfileLocked(agentID string) (SubagentProfil
 			}
 		}
 	}
-	return SubagentProfile{}, false
+	return AgentProfile{}, false
 }
 
-func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentProfile {
+func profileFromConfig(agentID string, subcfg config.AgentConfig) AgentProfile {
 	status := "active"
 	if !subcfg.Enabled {
 		status = "disabled"
 	}
-	return normalizeSubagentProfile(SubagentProfile{
+	return normalizeAgentProfile(AgentProfile{
 		AgentID:          agentID,
 		Name:             strings.TrimSpace(subcfg.DisplayName),
+		Kind:             strings.TrimSpace(subcfg.Kind),
 		Transport:        strings.TrimSpace(subcfg.Transport),
 		NodeID:           strings.TrimSpace(subcfg.NodeID),
 		ParentAgentID:    strings.TrimSpace(subcfg.ParentAgentID),
-		NotifyMainPolicy: strings.TrimSpace(subcfg.NotifyMainPolicy),
 		Role:             strings.TrimSpace(subcfg.Role),
-		SystemPromptFile: strings.TrimSpace(subcfg.SystemPromptFile),
+		Persona:          strings.TrimSpace(subcfg.Persona),
+		Traits:           append([]string(nil), subcfg.Traits...),
+		Faction:          strings.TrimSpace(subcfg.Faction),
+		HomeLocation:     strings.TrimSpace(subcfg.HomeLocation),
+		DefaultGoals:     append([]string(nil), subcfg.DefaultGoals...),
+		PerceptionScope:  subcfg.PerceptionScope,
+		ScheduleHint:     strings.TrimSpace(subcfg.ScheduleHint),
+		WorldTags:        append([]string(nil), subcfg.WorldTags...),
+		PromptFile:       strings.TrimSpace(subcfg.PromptFile),
 		ToolAllowlist:    append([]string(nil), subcfg.Tools.Allowlist...),
 		MemoryNamespace:  strings.TrimSpace(subcfg.MemoryNamespace),
 		MaxRetries:       subcfg.Runtime.MaxRetries,
@@ -407,19 +438,15 @@ func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentPro
 	})
 }
 
-func (s *SubagentProfileStore) nodeProfilesLocked() []SubagentProfile {
+func (s *AgentProfileStore) nodeProfilesLocked() []AgentProfile {
 	nodeItems := nodes.DefaultManager().List()
 	if len(nodeItems) == 0 {
 		return nil
 	}
 	cfg := runtimecfg.Get()
 	parentAgentID := "main"
-	if cfg != nil {
-		if mainID := normalizeSubagentIdentifier(cfg.Agents.Router.MainAgentID); mainID != "" {
-			parentAgentID = mainID
-		}
-	}
-	out := make([]SubagentProfile, 0, len(nodeItems))
+	_ = cfg
+	out := make([]AgentProfile, 0, len(nodeItems))
 	for _, node := range nodeItems {
 		if isLocalNode(node.ID) {
 			continue
@@ -435,7 +462,7 @@ func (s *SubagentProfileStore) nodeProfilesLocked() []SubagentProfile {
 	return out
 }
 
-func profilesFromNode(node nodes.NodeInfo, parentAgentID string) []SubagentProfile {
+func profilesFromNode(node nodes.NodeInfo, parentAgentID string) []AgentProfile {
 	name := strings.TrimSpace(node.Name)
 	if name == "" {
 		name = strings.TrimSpace(node.ID)
@@ -448,7 +475,7 @@ func profilesFromNode(node nodes.NodeInfo, parentAgentID string) []SubagentProfi
 	if rootAgentID == "" {
 		return nil
 	}
-	out := []SubagentProfile{normalizeSubagentProfile(SubagentProfile{
+	out := []AgentProfile{normalizeAgentProfile(AgentProfile{
 		AgentID:         rootAgentID,
 		Name:            name + " Main Agent",
 		Transport:       "node",
@@ -460,11 +487,11 @@ func profilesFromNode(node nodes.NodeInfo, parentAgentID string) []SubagentProfi
 		ManagedBy:       "node_registry",
 	})}
 	for _, agent := range node.Agents {
-		agentID := normalizeSubagentIdentifier(agent.ID)
+		agentID := normalizeAgentIdentifier(agent.ID)
 		if agentID == "" || agentID == "main" {
 			continue
 		}
-		out = append(out, normalizeSubagentProfile(SubagentProfile{
+		out = append(out, normalizeAgentProfile(AgentProfile{
 			AgentID:         nodeChildAgentID(node.ID, agentID),
 			Name:            nodeChildAgentDisplayName(name, agent),
 			Transport:       "node",
@@ -480,7 +507,7 @@ func profilesFromNode(node nodes.NodeInfo, parentAgentID string) []SubagentProfi
 }
 
 func nodeBranchAgentID(nodeID string) string {
-	id := normalizeSubagentIdentifier(nodeID)
+	id := normalizeAgentIdentifier(nodeID)
 	if id == "" {
 		return ""
 	}
@@ -488,8 +515,8 @@ func nodeBranchAgentID(nodeID string) string {
 }
 
 func nodeChildAgentID(nodeID, agentID string) string {
-	nodeID = normalizeSubagentIdentifier(nodeID)
-	agentID = normalizeSubagentIdentifier(agentID)
+	nodeID = normalizeAgentIdentifier(nodeID)
+	agentID = normalizeAgentIdentifier(agentID)
 	if nodeID == "" || agentID == "" {
 		return ""
 	}
@@ -509,36 +536,44 @@ func nodeChildAgentDisplayName(nodeName string, agent nodes.AgentInfo) string {
 }
 
 func isLocalNode(nodeID string) bool {
-	return normalizeSubagentIdentifier(nodeID) == "local"
+	return normalizeAgentIdentifier(nodeID) == "local"
 }
 
-type SubagentProfileTool struct {
-	store *SubagentProfileStore
+type AgentProfileTool struct {
+	store *AgentProfileStore
 }
 
-func NewSubagentProfileTool(store *SubagentProfileStore) *SubagentProfileTool {
-	return &SubagentProfileTool{store: store}
+func NewAgentProfileTool(store *AgentProfileStore) *AgentProfileTool {
+	return &AgentProfileTool{store: store}
 }
 
-func (t *SubagentProfileTool) Name() string { return "subagent_profile" }
+func (t *AgentProfileTool) Name() string { return "agent_profile" }
 
-func (t *SubagentProfileTool) Description() string {
-	return "Manage subagent profiles: create/list/get/update/enable/disable/delete."
+func (t *AgentProfileTool) Description() string {
+	return "Manage agent profiles: create/list/get/update/enable/disable/delete."
 }
 
-func (t *SubagentProfileTool) Parameters() map[string]interface{} {
+func (t *AgentProfileTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"action": map[string]interface{}{"type": "string", "description": "create|list|get|update|enable|disable|delete"},
 			"agent_id": map[string]interface{}{
 				"type":        "string",
-				"description": "Unique subagent id, e.g. coder/writer/tester",
+				"description": "Unique agent id, e.g. coder/writer/tester",
 			},
 			"name":               map[string]interface{}{"type": "string"},
-			"notify_main_policy": map[string]interface{}{"type": "string", "description": "final_only|internal_only|milestone|on_blocked|always"},
+			"kind":               map[string]interface{}{"type": "string", "description": "agent|npc|tool"},
 			"role":               map[string]interface{}{"type": "string"},
-			"system_prompt_file": map[string]interface{}{"type": "string"},
+			"persona":            map[string]interface{}{"type": "string"},
+			"traits":             map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+			"faction":            map[string]interface{}{"type": "string"},
+			"home_location":      map[string]interface{}{"type": "string"},
+			"default_goals":      map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+			"perception_scope":   map[string]interface{}{"type": "integer"},
+			"schedule_hint":      map[string]interface{}{"type": "string"},
+			"world_tags":         map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
+			"prompt_file":        map[string]interface{}{"type": "string"},
 			"memory_namespace":   map[string]interface{}{"type": "string"},
 			"status":             map[string]interface{}{"type": "string", "description": "active|disabled"},
 			"tool_allowlist": map[string]interface{}{
@@ -546,7 +581,7 @@ func (t *SubagentProfileTool) Parameters() map[string]interface{} {
 				"description": "Tool allowlist entries. Supports tool names, '*'/'all', and grouped tokens like 'group:files_read'.",
 				"items":       map[string]interface{}{"type": "string"},
 			},
-			"max_retries":      map[string]interface{}{"type": "integer", "description": "Retry limit for subagent task execution."},
+			"max_retries":      map[string]interface{}{"type": "integer", "description": "Retry limit for agent task execution."},
 			"retry_backoff_ms": map[string]interface{}{"type": "integer", "description": "Backoff between retries in milliseconds."},
 			"timeout_sec":      map[string]interface{}{"type": "integer", "description": "Per-attempt timeout in seconds."},
 			"max_task_chars":   map[string]interface{}{"type": "integer", "description": "Task input size quota (characters)."},
@@ -556,25 +591,25 @@ func (t *SubagentProfileTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
+func (t *AgentProfileTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
 	_ = ctx
 	if t.store == nil {
-		return "subagent profile store not available", nil
+		return "agent profile store not available", nil
 	}
 	action := strings.ToLower(MapStringArg(args, "action"))
-	agentID := normalizeSubagentIdentifier(MapStringArg(args, "agent_id"))
-	type subagentProfileActionHandler func() (string, error)
-	handlers := map[string]subagentProfileActionHandler{
+	agentID := normalizeAgentIdentifier(MapStringArg(args, "agent_id"))
+	type agentProfileActionHandler func() (string, error)
+	handlers := map[string]agentProfileActionHandler{
 		"list": func() (string, error) {
 			items, err := t.store.List()
 			if err != nil {
 				return "", err
 			}
 			if len(items) == 0 {
-				return "No subagent profiles.", nil
+				return "No agent profiles.", nil
 			}
 			var sb strings.Builder
-			sb.WriteString("Subagent Profiles:\n")
+			sb.WriteString("Agent Profiles:\n")
 			for i, p := range items {
 				sb.WriteString(fmt.Sprintf("- #%d %s [%s] role=%s memory_ns=%s\n", i+1, p.AgentID, p.Status, p.Role, p.MemoryNamespace))
 			}
@@ -589,7 +624,7 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 				return "", err
 			}
 			if !ok {
-				return "subagent profile not found", nil
+				return "agent profile not found", nil
 			}
 			b, _ := json.MarshalIndent(p, "", "  ")
 			return string(b), nil
@@ -601,14 +636,22 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 			if _, ok, err := t.store.Get(agentID); err != nil {
 				return "", err
 			} else if ok {
-				return "subagent profile already exists", nil
+				return "agent profile already exists", nil
 			}
-			p := SubagentProfile{
+			p := AgentProfile{
 				AgentID:          agentID,
 				Name:             stringArg(args, "name"),
-				NotifyMainPolicy: stringArg(args, "notify_main_policy"),
+				Kind:             stringArg(args, "kind"),
 				Role:             stringArg(args, "role"),
-				SystemPromptFile: stringArg(args, "system_prompt_file"),
+				Persona:          stringArg(args, "persona"),
+				Traits:           parseStringList(args["traits"]),
+				Faction:          stringArg(args, "faction"),
+				HomeLocation:     stringArg(args, "home_location"),
+				DefaultGoals:     parseStringList(args["default_goals"]),
+				PerceptionScope:  profileIntArg(args, "perception_scope"),
+				ScheduleHint:     stringArg(args, "schedule_hint"),
+				WorldTags:        parseStringList(args["world_tags"]),
+				PromptFile:       stringArg(args, "prompt_file"),
 				MemoryNamespace:  stringArg(args, "memory_namespace"),
 				Status:           stringArg(args, "status"),
 				ToolAllowlist:    parseStringList(args["tool_allowlist"]),
@@ -622,7 +665,7 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("Created subagent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
+			return fmt.Sprintf("Created agent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
 		},
 		"update": func() (string, error) {
 			if agentID == "" {
@@ -633,7 +676,7 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 				return "", err
 			}
 			if !ok {
-				return "subagent profile not found", nil
+				return "agent profile not found", nil
 			}
 			next := *existing
 			if _, ok := args["name"]; ok {
@@ -642,11 +685,35 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 			if _, ok := args["role"]; ok {
 				next.Role = stringArg(args, "role")
 			}
-			if _, ok := args["notify_main_policy"]; ok {
-				next.NotifyMainPolicy = stringArg(args, "notify_main_policy")
+			if _, ok := args["kind"]; ok {
+				next.Kind = stringArg(args, "kind")
 			}
-			if _, ok := args["system_prompt_file"]; ok {
-				next.SystemPromptFile = stringArg(args, "system_prompt_file")
+			if _, ok := args["persona"]; ok {
+				next.Persona = stringArg(args, "persona")
+			}
+			if _, ok := args["traits"]; ok {
+				next.Traits = parseStringList(args["traits"])
+			}
+			if _, ok := args["faction"]; ok {
+				next.Faction = stringArg(args, "faction")
+			}
+			if _, ok := args["home_location"]; ok {
+				next.HomeLocation = stringArg(args, "home_location")
+			}
+			if _, ok := args["default_goals"]; ok {
+				next.DefaultGoals = parseStringList(args["default_goals"])
+			}
+			if _, ok := args["perception_scope"]; ok {
+				next.PerceptionScope = profileIntArg(args, "perception_scope")
+			}
+			if _, ok := args["schedule_hint"]; ok {
+				next.ScheduleHint = stringArg(args, "schedule_hint")
+			}
+			if _, ok := args["world_tags"]; ok {
+				next.WorldTags = parseStringList(args["world_tags"])
+			}
+			if _, ok := args["prompt_file"]; ok {
+				next.PromptFile = stringArg(args, "prompt_file")
 			}
 			if _, ok := args["memory_namespace"]; ok {
 				next.MemoryNamespace = stringArg(args, "memory_namespace")
@@ -676,7 +743,7 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("Updated subagent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
+			return fmt.Sprintf("Updated agent profile: %s (role=%s status=%s)", saved.AgentID, saved.Role, saved.Status), nil
 		},
 		"enable": func() (string, error) {
 			if agentID == "" {
@@ -687,14 +754,14 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 				return "", err
 			}
 			if !ok {
-				return "subagent profile not found", nil
+				return "agent profile not found", nil
 			}
 			existing.Status = "active"
 			saved, err := t.store.Upsert(*existing)
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("Subagent profile %s set to %s", saved.AgentID, saved.Status), nil
+			return fmt.Sprintf("Agent profile %s set to %s", saved.AgentID, saved.Status), nil
 		},
 		"disable": func() (string, error) {
 			if agentID == "" {
@@ -705,14 +772,14 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 				return "", err
 			}
 			if !ok {
-				return "subagent profile not found", nil
+				return "agent profile not found", nil
 			}
 			existing.Status = "disabled"
 			saved, err := t.store.Upsert(*existing)
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("Subagent profile %s set to %s", saved.AgentID, saved.Status), nil
+			return fmt.Sprintf("Agent profile %s set to %s", saved.AgentID, saved.Status), nil
 		},
 		"delete": func() (string, error) {
 			if agentID == "" {
@@ -721,7 +788,7 @@ func (t *SubagentProfileTool) Execute(ctx context.Context, args map[string]inter
 			if err := t.store.Delete(agentID); err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("Deleted subagent profile: %s", agentID), nil
+			return fmt.Sprintf("Deleted agent profile: %s", agentID), nil
 		},
 	}
 	if handler := handlers[action]; handler != nil {

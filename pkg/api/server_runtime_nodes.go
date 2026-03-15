@@ -69,10 +69,12 @@ func (s *Server) buildWebUIRuntimeSnapshot(ctx context.Context) map[string]inter
 		providerPayload = map[string]interface{}{"items": []interface{}{}}
 	}
 	runtimePayload := map[string]interface{}{}
-	if s.onSubagents != nil {
-		if res, err := s.onSubagents(ctx, "snapshot", map[string]interface{}{"limit": 200}); err == nil {
+	worldPayload := map[string]interface{}{}
+	if s.onRuntimeAdmin != nil {
+		if res, err := s.onRuntimeAdmin(ctx, "snapshot", map[string]interface{}{"limit": 200}); err == nil {
 			if m, ok := res.(map[string]interface{}); ok {
 				runtimePayload = m
+				worldPayload = extractWorldPayloadFromRuntime(m)
 			}
 		}
 	}
@@ -80,11 +82,86 @@ func (s *Server) buildWebUIRuntimeSnapshot(ctx context.Context) map[string]inter
 		"version":    s.webUIVersionPayload(),
 		"config":     normalizedConfig,
 		"runtime":    runtimePayload,
+		"world":      worldPayload,
 		"nodes":      s.webUINodesPayload(ctx),
 		"sessions":   s.webUISessionsPayload(),
 		"task_queue": s.webUITaskQueuePayload(false),
 		"ekg":        s.webUIEKGSummaryPayload("24h"),
 		"providers":  providerPayload,
+	}
+}
+
+func (s *Server) handleWebUIWorld(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	payload := s.webUIWorldPayload(r.Context(), queryBoundedPositiveInt(r, "limit", 50, 500))
+	writeJSON(w, payload)
+}
+
+func (s *Server) webUIWorldPayload(ctx context.Context, limit int) map[string]interface{} {
+	if s == nil || s.onRuntimeAdmin == nil {
+		return map[string]interface{}{"found": false, "world": map[string]interface{}{}}
+	}
+	res, err := s.onRuntimeAdmin(ctx, "world_snapshot", map[string]interface{}{"limit": limit})
+	if err == nil {
+		if m, ok := res.(map[string]interface{}); ok {
+			if snapshot, ok := m["snapshot"]; ok {
+				return map[string]interface{}{"found": true, "world": snapshot}
+			}
+		}
+	}
+	if res, err := s.onRuntimeAdmin(ctx, "snapshot", map[string]interface{}{"limit": limit}); err == nil {
+		if m, ok := res.(map[string]interface{}); ok {
+			world := extractWorldPayloadFromRuntime(m)
+			if len(world) > 0 {
+				return map[string]interface{}{"found": true, "world": world}
+			}
+		}
+	}
+	return map[string]interface{}{"found": false, "world": map[string]interface{}{}}
+}
+
+func extractWorldPayloadFromRuntime(runtimePayload map[string]interface{}) map[string]interface{} {
+	if len(runtimePayload) == 0 {
+		return map[string]interface{}{}
+	}
+	raw, ok := runtimePayload["snapshot"]
+	if !ok || raw == nil {
+		return map[string]interface{}{}
+	}
+	switch snapshot := raw.(type) {
+	case tools.RuntimeSnapshot:
+		return worldPayloadAsMap(snapshot.World)
+	case *tools.RuntimeSnapshot:
+		if snapshot != nil {
+			return worldPayloadAsMap(snapshot.World)
+		}
+	case map[string]interface{}:
+		if worldRaw, ok := snapshot["world"]; ok {
+			return worldPayloadAsMap(worldRaw)
+		}
+	}
+	return map[string]interface{}{}
+}
+
+func worldPayloadAsMap(raw interface{}) map[string]interface{} {
+	switch v := raw.(type) {
+	case nil:
+		return map[string]interface{}{}
+	case map[string]interface{}:
+		return v
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return map[string]interface{}{}
+		}
+		out := map[string]interface{}{}
+		if err := json.Unmarshal(data, &out); err != nil {
+			return map[string]interface{}{}
+		}
+		return out
 	}
 }
 
@@ -339,31 +416,18 @@ func (s *Server) buildNodeAgentTrees(ctx context.Context, nodeList []nodes.NodeI
 }
 
 func (s *Server) fetchRegistryItems(ctx context.Context) []map[string]interface{} {
-	if s == nil || s.onSubagents == nil {
+	if s == nil {
 		return nil
 	}
-	result, err := s.onSubagents(ctx, "registry", nil)
-	if err != nil {
+	_ = ctx
+	if strings.TrimSpace(s.configPath) == "" {
 		return nil
 	}
-	payload, ok := result.(map[string]interface{})
-	if !ok {
+	cfg, err := cfgpkg.LoadConfig(strings.TrimSpace(s.configPath))
+	if err != nil || cfg == nil {
 		return nil
 	}
-	if rawItems, ok := payload["items"].([]map[string]interface{}); ok {
-		return rawItems
-	}
-	list, ok := payload["items"].([]interface{})
-	if !ok {
-		return nil
-	}
-	items := make([]map[string]interface{}, 0, len(list))
-	for _, item := range list {
-		if row, ok := item.(map[string]interface{}); ok {
-			items = append(items, row)
-		}
-	}
-	return items
+	return buildRegistryItemsFromNormalizedConfig(cfg.NormalizedView())
 }
 
 func (s *Server) fetchRemoteNodeRegistry(ctx context.Context, node nodes.NodeInfo) ([]map[string]interface{}, error) {
@@ -408,7 +472,7 @@ func (s *Server) fetchRemoteNodeRegistryLegacy(ctx context.Context, node nodes.N
 	if baseURL == "" {
 		return nil, fmt.Errorf("node %s endpoint missing", strings.TrimSpace(node.ID))
 	}
-	reqURL := baseURL + "/api/subagents_runtime?action=registry"
+	reqURL := baseURL + "/api/runtime_admin?action=registry"
 	if tok := strings.TrimSpace(node.Token); tok != "" {
 		reqURL += "&token=" + url.QueryEscape(tok)
 	}
@@ -438,30 +502,29 @@ func (s *Server) fetchRemoteNodeRegistryLegacy(ctx context.Context, node nodes.N
 }
 
 func buildRegistryItemsFromNormalizedConfig(view cfgpkg.NormalizedConfig) []map[string]interface{} {
-	items := make([]map[string]interface{}, 0, len(view.Core.Subagents))
-	for agentID, subcfg := range view.Core.Subagents {
+	items := make([]map[string]interface{}, 0, len(view.Core.Agents))
+	for agentID, subcfg := range view.Core.Agents {
 		if strings.TrimSpace(agentID) == "" {
 			continue
 		}
 		items = append(items, map[string]interface{}{
 			"agent_id":           agentID,
 			"enabled":            subcfg.Enabled,
-			"type":               "subagent",
+			"type":               "agent",
 			"transport":          fallbackString(strings.TrimSpace(subcfg.RuntimeClass), "local"),
 			"node_id":            "",
 			"parent_agent_id":    "",
-			"notify_main_policy": "final_only",
 			"display_name":       "",
 			"role":               strings.TrimSpace(subcfg.Role),
 			"description":        "",
-			"system_prompt_file": strings.TrimSpace(subcfg.Prompt),
+			"prompt_file":        strings.TrimSpace(subcfg.Prompt),
 			"prompt_file_found":  false,
 			"memory_namespace":   "",
 			"tool_allowlist":     append([]string(nil), subcfg.ToolAllowlist...),
 			"tool_visibility":    map[string]interface{}{},
 			"effective_tools":    []string{},
 			"inherited_tools":    []string{},
-			"routing_keywords":   routeKeywordsForRegistry(view.Runtime.Router.Rules, agentID),
+			"routing_keywords":   []string{},
 			"managed_by":         "config.json",
 		})
 	}
@@ -469,16 +532,6 @@ func buildRegistryItemsFromNormalizedConfig(view cfgpkg.NormalizedConfig) []map[
 		return stringFromMap(items[i], "agent_id") < stringFromMap(items[j], "agent_id")
 	})
 	return items
-}
-
-func routeKeywordsForRegistry(rules []cfgpkg.AgentRouteRule, agentID string) []string {
-	agentID = strings.TrimSpace(agentID)
-	for _, rule := range rules {
-		if strings.TrimSpace(rule.AgentID) == agentID {
-			return append([]string(nil), rule.Keywords...)
-		}
-	}
-	return nil
 }
 
 func nodeWebUIBaseURL(node nodes.NodeInfo) string {
