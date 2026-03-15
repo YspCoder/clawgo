@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -619,11 +620,19 @@ func (s *Server) cronRPCService() rpcpkg.CronService {
 	return &cronRPCAdapter{server: s}
 }
 
+func (s *Server) skillsRPCService() rpcpkg.SkillsService {
+	return &skillsRPCAdapter{server: s}
+}
+
 type configRPCAdapter struct {
 	server *Server
 }
 
 type cronRPCAdapter struct {
+	server *Server
+}
+
+type skillsRPCAdapter struct {
 	server *Server
 }
 
@@ -814,6 +823,288 @@ func (a *cronRPCAdapter) Mutate(ctx context.Context, req rpcpkg.MutateCronJobReq
 		return nil, rpcErrorFrom(err)
 	}
 	return &rpcpkg.MutateCronJobResponse{Result: normalizeCronJob(res)}, nil
+}
+
+func (a *skillsRPCAdapter) skillsDir() (string, *rpcpkg.Error) {
+	if a == nil || a.server == nil {
+		return "", rpcError("unavailable", "server unavailable", nil, false)
+	}
+	skillsDir := filepath.Join(a.server.workspacePath, "skills")
+	if strings.TrimSpace(skillsDir) == "" {
+		return "", rpcError("unavailable", "workspace not configured", nil, false)
+	}
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		return "", rpcErrorFrom(err)
+	}
+	return skillsDir, nil
+}
+
+func (a *skillsRPCAdapter) resolveSkillPath(skillsDir, name string) (string, *rpcpkg.Error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", rpcError("invalid_argument", "name required", nil, false)
+	}
+	cands := []string{
+		filepath.Join(skillsDir, name),
+		filepath.Join(skillsDir, name+".disabled"),
+		filepath.Join("/root/clawgo/workspace/skills", name),
+		filepath.Join("/root/clawgo/workspace/skills", name+".disabled"),
+	}
+	for _, p := range cands {
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
+			return p, nil
+		}
+	}
+	return "", rpcError("not_found", "skill not found: "+name, nil, false)
+}
+
+func (a *skillsRPCAdapter) View(ctx context.Context, req rpcpkg.SkillsViewRequest) (*rpcpkg.SkillsViewResponse, *rpcpkg.Error) {
+	skillsDir, rpcErr := a.skillsDir()
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+	clawhubPath := strings.TrimSpace(resolveClawHubBinary(ctx))
+	clawhubInstalled := clawhubPath != ""
+	if id := strings.TrimSpace(req.ID); id != "" {
+		skillPath, rpcErr := a.resolveSkillPath(skillsDir, id)
+		if rpcErr != nil {
+			return nil, rpcErr
+		}
+		if req.Files {
+			var files []string
+			_ = filepath.WalkDir(skillPath, func(path string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil
+				}
+				rel, _ := filepath.Rel(skillPath, path)
+				if strings.HasPrefix(rel, "..") {
+					return nil
+				}
+				files = append(files, filepath.ToSlash(rel))
+				return nil
+			})
+			return &rpcpkg.SkillsViewResponse{ID: id, FilesList: files}, nil
+		}
+		if f := strings.TrimSpace(req.File); f != "" {
+			clean, content, found, err := readRelativeTextFile(skillPath, f)
+			if err != nil {
+				return nil, rpcError("invalid_argument", err.Error(), nil, false)
+			}
+			if !found {
+				return nil, rpcError("not_found", os.ErrNotExist.Error(), nil, false)
+			}
+			return &rpcpkg.SkillsViewResponse{ID: id, File: filepath.ToSlash(clean), Content: content}, nil
+		}
+	}
+	type skillItem struct {
+		ID            string
+		Name          string
+		Description   string
+		Tools         []string
+		SystemPrompt  string
+		Enabled       bool
+		UpdateChecked bool
+		RemoteFound   bool
+		RemoteVersion string
+		CheckError    string
+		Source        string
+	}
+	candDirs := []string{skillsDir, filepath.Join("/root/clawgo/workspace", "skills")}
+	seenDirs := map[string]struct{}{}
+	seenSkills := map[string]struct{}{}
+	items := make([]rpcpkg.SkillsViewItem, 0)
+	for _, dir := range candDirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if _, ok := seenDirs[dir]; ok {
+			continue
+		}
+		seenDirs[dir] = struct{}{}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, rpcErrorFrom(err)
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			enabled := !strings.HasSuffix(name, ".disabled")
+			baseName := strings.TrimSuffix(name, ".disabled")
+			if _, ok := seenSkills[baseName]; ok {
+				continue
+			}
+			seenSkills[baseName] = struct{}{}
+			desc, skillTools, sys := readSkillMeta(filepath.Join(dir, name, "SKILL.md"))
+			if desc == "" || len(skillTools) == 0 || sys == "" {
+				d2, t2, s2 := readSkillMeta(filepath.Join(dir, baseName, "SKILL.md"))
+				if desc == "" {
+					desc = d2
+				}
+				if len(skillTools) == 0 {
+					skillTools = t2
+				}
+				if sys == "" {
+					sys = s2
+				}
+			}
+			if skillTools == nil {
+				skillTools = []string{}
+			}
+			it := rpcpkg.SkillsViewItem{
+				ID:            baseName,
+				Name:          baseName,
+				Description:   desc,
+				Tools:         skillTools,
+				SystemPrompt:  sys,
+				Enabled:       enabled,
+				UpdateChecked: req.CheckUpdates && clawhubInstalled,
+				Source:        dir,
+			}
+			if req.CheckUpdates && clawhubInstalled {
+				found, version, checkErr := queryClawHubSkillVersion(ctx, baseName)
+				it.RemoteFound = found
+				it.RemoteVersion = version
+				if checkErr != nil {
+					it.CheckError = checkErr.Error()
+				}
+			}
+			items = append(items, it)
+		}
+	}
+	return &rpcpkg.SkillsViewResponse{
+		Skills:           items,
+		Source:           "clawhub",
+		ClawhubInstalled: clawhubInstalled,
+		ClawhubPath:      clawhubPath,
+	}, nil
+}
+
+func createOrUpdateSkillAtPath(enabledPath, name, desc, sys string, toolsList []string, checkExists bool) error {
+	if checkExists {
+		if _, err := os.Stat(enabledPath); err == nil {
+			return fmt.Errorf("skill already exists")
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(enabledPath, "scripts"), 0755); err != nil {
+		return err
+	}
+	skillMD := buildSkillMarkdown(name, desc, toolsList, sys)
+	return os.WriteFile(filepath.Join(enabledPath, "SKILL.md"), []byte(skillMD), 0644)
+}
+
+func (a *skillsRPCAdapter) Mutate(ctx context.Context, req rpcpkg.SkillsMutateRequest) (*rpcpkg.SkillsMutateResponse, *rpcpkg.Error) {
+	skillsDir, rpcErr := a.skillsDir()
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action == "" {
+		return nil, rpcError("invalid_argument", "action required", nil, false)
+	}
+	name := strings.TrimSpace(firstNonEmptyString(req.Name, req.ID))
+	enabledPath := filepath.Join(skillsDir, name)
+	disabledPath := enabledPath + ".disabled"
+	switch action {
+	case "install_clawhub":
+		output, err := ensureClawHubReady(ctx)
+		if err != nil {
+			return nil, rpcErrorFrom(err)
+		}
+		return &rpcpkg.SkillsMutateResponse{InstalledOK: true, Output: output, ClawhubPath: resolveClawHubBinary(ctx)}, nil
+	case "install":
+		if name == "" {
+			return nil, rpcError("invalid_argument", "name required", nil, false)
+		}
+		clawhubPath := strings.TrimSpace(resolveClawHubBinary(ctx))
+		if clawhubPath == "" {
+			return nil, rpcError("invalid_argument", "clawhub is not installed. please install clawhub first.", nil, false)
+		}
+		args := []string{"install", name}
+		if req.IgnoreSuspicious {
+			args = append(args, "--force")
+		}
+		cmd := exec.CommandContext(ctx, clawhubPath, args...)
+		cmd.Dir = strings.TrimSpace(a.server.workspacePath)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			outText := string(out)
+			lower := strings.ToLower(outText)
+			if strings.Contains(lower, "rate limit exceeded") || strings.Contains(lower, "too many requests") {
+				return nil, rpcError("unavailable", fmt.Sprintf("clawhub rate limit exceeded. please retry later or configure auth token.\n%s", outText), nil, true)
+			}
+			return nil, rpcError("internal", fmt.Sprintf("install failed: %v\n%s", err, outText), nil, false)
+		}
+		return &rpcpkg.SkillsMutateResponse{Installed: name, Output: string(out)}, nil
+	case "enable":
+		if name == "" {
+			return nil, rpcError("invalid_argument", "name required", nil, false)
+		}
+		if _, err := os.Stat(disabledPath); err == nil {
+			if err := os.Rename(disabledPath, enabledPath); err != nil {
+				return nil, rpcErrorFrom(err)
+			}
+		}
+		return &rpcpkg.SkillsMutateResponse{Name: name}, nil
+	case "disable":
+		if name == "" {
+			return nil, rpcError("invalid_argument", "name required", nil, false)
+		}
+		if _, err := os.Stat(enabledPath); err == nil {
+			if err := os.Rename(enabledPath, disabledPath); err != nil {
+				return nil, rpcErrorFrom(err)
+			}
+		}
+		return &rpcpkg.SkillsMutateResponse{Name: name}, nil
+	case "write_file":
+		if name == "" {
+			return nil, rpcError("invalid_argument", "name required", nil, false)
+		}
+		skillPath, rpcErr := a.resolveSkillPath(skillsDir, name)
+		if rpcErr != nil {
+			return nil, rpcErr
+		}
+		clean, err := writeRelativeTextFile(skillPath, req.File, req.Content, true)
+		if err != nil {
+			return nil, rpcError("invalid_argument", err.Error(), nil, false)
+		}
+		return &rpcpkg.SkillsMutateResponse{Name: name, File: filepath.ToSlash(clean)}, nil
+	case "create":
+		if name == "" {
+			return nil, rpcError("invalid_argument", "name required", nil, false)
+		}
+		if err := createOrUpdateSkillAtPath(enabledPath, name, req.Description, req.SystemPrompt, req.Tools, true); err != nil {
+			return nil, rpcError("invalid_argument", err.Error(), nil, false)
+		}
+		return &rpcpkg.SkillsMutateResponse{Name: name}, nil
+	case "update":
+		if name == "" {
+			return nil, rpcError("invalid_argument", "name required", nil, false)
+		}
+		if err := createOrUpdateSkillAtPath(enabledPath, name, req.Description, req.SystemPrompt, req.Tools, false); err != nil {
+			return nil, rpcErrorFrom(err)
+		}
+		return &rpcpkg.SkillsMutateResponse{Name: name}, nil
+	case "delete":
+		if name == "" {
+			return nil, rpcError("invalid_argument", "id required", nil, false)
+		}
+		deleted := false
+		if err := os.RemoveAll(enabledPath); err == nil {
+			deleted = true
+		}
+		if err := os.RemoveAll(disabledPath); err == nil {
+			deleted = true
+		}
+		return &rpcpkg.SkillsMutateResponse{Deleted: deleted, ID: name}, nil
+	default:
+		return nil, rpcError("invalid_argument", "unsupported action", nil, false)
+	}
 }
 
 func rpcError(code, message string, details interface{}, retryable bool) *rpcpkg.Error {

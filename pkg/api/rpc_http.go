@@ -34,6 +34,10 @@ func (s *Server) handleCronRPC(w http.ResponseWriter, r *http.Request) {
 	s.handleRPC(w, r, s.cronRPCRegistry())
 }
 
+func (s *Server) handleSkillsRPC(w http.ResponseWriter, r *http.Request) {
+	s.handleRPC(w, r, s.skillsRPCRegistry())
+}
+
 func (s *Server) handleRPC(w http.ResponseWriter, r *http.Request, registry *rpcpkg.Registry) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -256,6 +260,31 @@ func (s *Server) cronRPCRegistry() *rpcpkg.Registry {
 		return rpcpkg.NewRegistry()
 	}
 	return s.cronRPCReg
+}
+
+func (s *Server) buildSkillsRegistry() *rpcpkg.Registry {
+	svc := s.skillsRPCService()
+	reg := rpcpkg.NewRegistry()
+	rpcpkg.RegisterJSON(reg, "skills.view", func(ctx context.Context, req rpcpkg.SkillsViewRequest) (interface{}, *rpcpkg.Error) {
+		return svc.View(ctx, req)
+	})
+	rpcpkg.RegisterJSON(reg, "skills.mutate", func(ctx context.Context, req rpcpkg.SkillsMutateRequest) (interface{}, *rpcpkg.Error) {
+		return svc.Mutate(ctx, req)
+	})
+	return reg
+}
+
+func (s *Server) skillsRPCRegistry() *rpcpkg.Registry {
+	if s == nil {
+		return rpcpkg.NewRegistry()
+	}
+	s.skillsRPCOnce.Do(func() {
+		s.skillsRPCReg = s.buildSkillsRegistry()
+	})
+	if s.skillsRPCReg == nil {
+		return rpcpkg.NewRegistry()
+	}
+	return s.skillsRPCReg
 }
 
 func writeRPCError(w http.ResponseWriter, status int, requestID string, rpcErr *rpcpkg.Error) {

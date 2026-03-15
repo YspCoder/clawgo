@@ -18,14 +18,31 @@ import (
 	"strings"
 	"time"
 
+	rpcpkg "github.com/YspCoder/clawgo/pkg/rpc"
 	"github.com/YspCoder/clawgo/pkg/tools"
 )
+
+func mustMap(v interface{}) map[string]interface{} {
+	if v == nil {
+		return map[string]interface{}{}
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return map[string]interface{}{}
+	}
+	out := map[string]interface{}{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return map[string]interface{}{}
+	}
+	return out
+}
 
 func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	svc := s.skillsRPCService()
 	skillsDir := filepath.Join(s.workspacePath, "skills")
 	if strings.TrimSpace(skillsDir) == "" {
 		http.Error(w, "workspace not configured", http.StatusInternalServerError)
@@ -33,151 +50,19 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = os.MkdirAll(skillsDir, 0755)
 
-	resolveSkillPath := func(name string) (string, error) {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return "", fmt.Errorf("name required")
-		}
-		cands := []string{
-			filepath.Join(skillsDir, name),
-			filepath.Join(skillsDir, name+".disabled"),
-			filepath.Join("/root/clawgo/workspace/skills", name),
-			filepath.Join("/root/clawgo/workspace/skills", name+".disabled"),
-		}
-		for _, p := range cands {
-			if st, err := os.Stat(p); err == nil && st.IsDir() {
-				return p, nil
-			}
-		}
-		return "", fmt.Errorf("skill not found: %s", name)
-	}
-
 	switch r.Method {
 	case http.MethodGet:
-		clawhubPath := strings.TrimSpace(resolveClawHubBinary(r.Context()))
-		clawhubInstalled := clawhubPath != ""
-		if id := strings.TrimSpace(r.URL.Query().Get("id")); id != "" {
-			skillPath, err := resolveSkillPath(id)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			}
-			if strings.TrimSpace(r.URL.Query().Get("files")) == "1" {
-				var files []string
-				_ = filepath.WalkDir(skillPath, func(path string, d os.DirEntry, err error) error {
-					if err != nil {
-						return nil
-					}
-					if d.IsDir() {
-						return nil
-					}
-					rel, _ := filepath.Rel(skillPath, path)
-					if strings.HasPrefix(rel, "..") {
-						return nil
-					}
-					files = append(files, filepath.ToSlash(rel))
-					return nil
-				})
-				writeJSON(w, map[string]interface{}{"ok": true, "id": id, "files": files})
-				return
-			}
-			if f := strings.TrimSpace(r.URL.Query().Get("file")); f != "" {
-				clean, content, found, err := readRelativeTextFile(skillPath, f)
-				if err != nil {
-					http.Error(w, err.Error(), relativeFilePathStatus(err))
-					return
-				}
-				if !found {
-					http.Error(w, os.ErrNotExist.Error(), http.StatusInternalServerError)
-					return
-				}
-				writeJSON(w, map[string]interface{}{"ok": true, "id": id, "file": filepath.ToSlash(clean), "content": content})
-				return
-			}
-		}
-
-		type skillItem struct {
-			ID            string   `json:"id"`
-			Name          string   `json:"name"`
-			Description   string   `json:"description"`
-			Tools         []string `json:"tools"`
-			SystemPrompt  string   `json:"system_prompt,omitempty"`
-			Enabled       bool     `json:"enabled"`
-			UpdateChecked bool     `json:"update_checked"`
-			RemoteFound   bool     `json:"remote_found,omitempty"`
-			RemoteVersion string   `json:"remote_version,omitempty"`
-			CheckError    string   `json:"check_error,omitempty"`
-			Source        string   `json:"source,omitempty"`
-		}
-		candDirs := []string{skillsDir, filepath.Join("/root/clawgo/workspace", "skills")}
-		seenDirs := map[string]struct{}{}
-		seenSkills := map[string]struct{}{}
-		items := make([]skillItem, 0)
-		checkUpdates := strings.TrimSpace(r.URL.Query().Get("check_updates")) == "1"
-
-		for _, dir := range candDirs {
-			dir = strings.TrimSpace(dir)
-			if dir == "" {
-				continue
-			}
-			if _, ok := seenDirs[dir]; ok {
-				continue
-			}
-			seenDirs[dir] = struct{}{}
-			entries, err := os.ReadDir(dir)
-			if err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			for _, e := range entries {
-				if !e.IsDir() {
-					continue
-				}
-				name := e.Name()
-				enabled := !strings.HasSuffix(name, ".disabled")
-				baseName := strings.TrimSuffix(name, ".disabled")
-				if _, ok := seenSkills[baseName]; ok {
-					continue
-				}
-				seenSkills[baseName] = struct{}{}
-				desc, skillTools, sys := readSkillMeta(filepath.Join(dir, name, "SKILL.md"))
-				if desc == "" || len(skillTools) == 0 || sys == "" {
-					d2, t2, s2 := readSkillMeta(filepath.Join(dir, baseName, "SKILL.md"))
-					if desc == "" {
-						desc = d2
-					}
-					if len(skillTools) == 0 {
-						skillTools = t2
-					}
-					if sys == "" {
-						sys = s2
-					}
-				}
-				if skillTools == nil {
-					skillTools = []string{}
-				}
-				it := skillItem{ID: baseName, Name: baseName, Description: desc, Tools: skillTools, SystemPrompt: sys, Enabled: enabled, UpdateChecked: checkUpdates && clawhubInstalled, Source: dir}
-				if checkUpdates && clawhubInstalled {
-					found, version, checkErr := queryClawHubSkillVersion(r.Context(), baseName)
-					it.RemoteFound = found
-					it.RemoteVersion = version
-					if checkErr != nil {
-						it.CheckError = checkErr.Error()
-					}
-				}
-				items = append(items, it)
-			}
-		}
-		writeJSON(w, map[string]interface{}{
-			"ok":                true,
-			"skills":            items,
-			"source":            "clawhub",
-			"clawhub_installed": clawhubInstalled,
-			"clawhub_path":      clawhubPath,
+		resp, rpcErr := svc.View(r.Context(), rpcpkg.SkillsViewRequest{
+			ID:           strings.TrimSpace(r.URL.Query().Get("id")),
+			File:         strings.TrimSpace(r.URL.Query().Get("file")),
+			Files:        strings.TrimSpace(r.URL.Query().Get("files")) == "1",
+			CheckUpdates: strings.TrimSpace(r.URL.Query().Get("check_updates")) == "1",
 		})
+		if rpcErr != nil {
+			http.Error(w, rpcErr.Message, rpcHTTPStatus(rpcErr))
+			return
+		}
+		writeJSON(w, mergeJSONMap(map[string]interface{}{"ok": true}, mustMap(resp)))
 
 	case http.MethodPost:
 		ct := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
@@ -196,123 +81,34 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
-		action := strings.ToLower(stringFromMap(body, "action"))
-		if action == "install_clawhub" {
-			output, err := ensureClawHubReady(r.Context())
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, map[string]interface{}{
-				"ok":           true,
-				"output":       output,
-				"installed":    true,
-				"clawhub_path": resolveClawHubBinary(r.Context()),
-			})
+		ignoreSuspicious, _ := tools.MapBoolArg(body, "ignore_suspicious")
+		resp, rpcErr := svc.Mutate(r.Context(), rpcpkg.SkillsMutateRequest{
+			Action:           stringFromMap(body, "action"),
+			ID:               stringFromMap(body, "id"),
+			Name:             stringFromMap(body, "name"),
+			Description:      rawStringFromMap(body, "description"),
+			SystemPrompt:     rawStringFromMap(body, "system_prompt"),
+			Tools:            stringListFromMap(body, "tools"),
+			IgnoreSuspicious: ignoreSuspicious,
+			File:             stringFromMap(body, "file"),
+			Content:          rawStringFromMap(body, "content"),
+		})
+		if rpcErr != nil {
+			http.Error(w, rpcErr.Message, rpcHTTPStatus(rpcErr))
 			return
 		}
-		id := stringFromMap(body, "id")
-		name := strings.TrimSpace(firstNonEmptyString(stringFromMap(body, "name"), id))
-		if name == "" {
-			http.Error(w, "name required", http.StatusBadRequest)
-			return
-		}
-		enabledPath := filepath.Join(skillsDir, name)
-		disabledPath := enabledPath + ".disabled"
-		type skillActionHandler func() bool
-		handlers := map[string]skillActionHandler{
-			"install": func() bool {
-				clawhubPath := strings.TrimSpace(resolveClawHubBinary(r.Context()))
-				if clawhubPath == "" {
-					http.Error(w, "clawhub is not installed. please install clawhub first.", http.StatusPreconditionFailed)
-					return false
-				}
-				ignoreSuspicious, _ := tools.MapBoolArg(body, "ignore_suspicious")
-				args := []string{"install", name}
-				if ignoreSuspicious {
-					args = append(args, "--force")
-				}
-				cmd := exec.CommandContext(r.Context(), clawhubPath, args...)
-				cmd.Dir = strings.TrimSpace(s.workspacePath)
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					outText := string(out)
-					lower := strings.ToLower(outText)
-					if strings.Contains(lower, "rate limit exceeded") || strings.Contains(lower, "too many requests") {
-						http.Error(w, fmt.Sprintf("clawhub rate limit exceeded. please retry later or configure auth token.\n%s", outText), http.StatusTooManyRequests)
-						return false
-					}
-					http.Error(w, fmt.Sprintf("install failed: %v\n%s", err, outText), http.StatusInternalServerError)
-					return false
-				}
-				writeJSON(w, map[string]interface{}{"ok": true, "installed": name, "output": string(out)})
-				return true
-			},
-			"enable": func() bool {
-				if _, err := os.Stat(disabledPath); err == nil {
-					if err := os.Rename(disabledPath, enabledPath); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return false
-					}
-				}
-				writeJSON(w, map[string]interface{}{"ok": true})
-				return true
-			},
-			"disable": func() bool {
-				if _, err := os.Stat(enabledPath); err == nil {
-					if err := os.Rename(enabledPath, disabledPath); err != nil {
-						http.Error(w, err.Error(), http.StatusInternalServerError)
-						return false
-					}
-				}
-				writeJSON(w, map[string]interface{}{"ok": true})
-				return true
-			},
-			"write_file": func() bool {
-				skillPath, err := resolveSkillPath(name)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusNotFound)
-					return false
-				}
-				content := rawStringFromMap(body, "content")
-				filePath := stringFromMap(body, "file")
-				clean, err := writeRelativeTextFile(skillPath, filePath, content, true)
-				if err != nil {
-					http.Error(w, err.Error(), relativeFilePathStatus(err))
-					return false
-				}
-				writeJSON(w, map[string]interface{}{"ok": true, "name": name, "file": filepath.ToSlash(clean)})
-				return true
-			},
-			"create": func() bool {
-				return createOrUpdateSkill(w, enabledPath, name, body, true)
-			},
-			"update": func() bool {
-				return createOrUpdateSkill(w, enabledPath, name, body, false)
-			},
-		}
-		if handler := handlers[action]; handler != nil {
-			handler()
-			return
-		}
-		http.Error(w, "unsupported action", http.StatusBadRequest)
+		writeJSON(w, mergeJSONMap(map[string]interface{}{"ok": true}, mustMap(resp)))
 
 	case http.MethodDelete:
-		id := strings.TrimSpace(r.URL.Query().Get("id"))
-		if id == "" {
-			http.Error(w, "id required", http.StatusBadRequest)
+		resp, rpcErr := svc.Mutate(r.Context(), rpcpkg.SkillsMutateRequest{
+			Action: "delete",
+			ID:     strings.TrimSpace(r.URL.Query().Get("id")),
+		})
+		if rpcErr != nil {
+			http.Error(w, rpcErr.Message, rpcHTTPStatus(rpcErr))
 			return
 		}
-		pathA := filepath.Join(skillsDir, id)
-		pathB := pathA + ".disabled"
-		deleted := false
-		if err := os.RemoveAll(pathA); err == nil {
-			deleted = true
-		}
-		if err := os.RemoveAll(pathB); err == nil {
-			deleted = true
-		}
-		writeJSON(w, map[string]interface{}{"ok": true, "deleted": deleted, "id": id})
+		writeJSON(w, mergeJSONMap(map[string]interface{}{"ok": true}, mustMap(resp)))
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -351,29 +147,6 @@ description: %s
 ## System Prompt
 %s
 `, name, desc, name, desc, strings.Join(toolLines, "\n"), systemPrompt)
-}
-
-func createOrUpdateSkill(w http.ResponseWriter, enabledPath, name string, body map[string]interface{}, checkExists bool) bool {
-	desc := rawStringFromMap(body, "description")
-	sys := rawStringFromMap(body, "system_prompt")
-	toolsList := stringListFromMap(body, "tools")
-	if checkExists {
-		if _, err := os.Stat(enabledPath); err == nil {
-			http.Error(w, "skill already exists", http.StatusBadRequest)
-			return false
-		}
-	}
-	if err := os.MkdirAll(filepath.Join(enabledPath, "scripts"), 0755); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return false
-	}
-	skillMD := buildSkillMarkdown(name, desc, toolsList, sys)
-	if err := os.WriteFile(filepath.Join(enabledPath, "SKILL.md"), []byte(skillMD), 0644); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return false
-	}
-	writeJSON(w, map[string]interface{}{"ok": true})
-	return true
 }
 
 func readSkillMeta(path string) (desc string, toolsList []string, systemPrompt string) {

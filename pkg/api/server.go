@@ -69,6 +69,8 @@ type Server struct {
 	configRPCReg     *rpcpkg.Registry
 	cronRPCOnce      sync.Once
 	cronRPCReg       *rpcpkg.Registry
+	skillsRPCOnce    sync.Once
+	skillsRPCReg     *rpcpkg.Registry
 }
 
 var nodesWebsocketUpgrader = websocket.Upgrader{
@@ -247,6 +249,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/rpc/workspace", s.handleWorkspaceRPC)
 	mux.HandleFunc("/api/rpc/config", s.handleConfigRPC)
 	mux.HandleFunc("/api/rpc/cron", s.handleCronRPC)
+	mux.HandleFunc("/api/rpc/skills", s.handleSkillsRPC)
 	mux.HandleFunc("/api/subagents_runtime", s.handleWebUISubagentsRuntime)
 	mux.HandleFunc("/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
 	mux.HandleFunc("/api/tools", s.handleWebUITools)
