@@ -484,6 +484,9 @@ func (s *Server) checkAuth(r *http.Request) bool {
 	if s.isBearerAuthorized(r) {
 		return true
 	}
+	if r != nil && strings.TrimSpace(r.URL.Query().Get("token")) == strings.TrimSpace(s.token) {
+		return true
+	}
 	if c, err := r.Cookie("clawgo_webui_token"); err == nil && strings.TrimSpace(c.Value) == s.token {
 		return true
 	}

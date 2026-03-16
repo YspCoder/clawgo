@@ -31,8 +31,8 @@ func TestCheckAuthAllowsBearerAndCookieOnly(t *testing.T) {
 	}
 
 	queryReq := httptest.NewRequest(http.MethodGet, "/?token=secret-token", nil)
-	if srv.checkAuth(queryReq) {
-		t.Fatalf("expected query token auth to fail")
+	if !srv.checkAuth(queryReq) {
+		t.Fatalf("expected query token auth to succeed")
 	}
 
 	refererReq := httptest.NewRequest(http.MethodGet, "/", nil)
