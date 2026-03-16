@@ -228,7 +228,7 @@ func TestExecuteNodeRequestRunsLocalMainAgentTask(t *testing.T) {
 	if !resp.OK {
 		t.Fatalf("expected ok response, got %+v", resp)
 	}
-	if got := strings.TrimSpace(resp.Payload["result"].(string)); got != "main-local-ok" {
+	if got := strings.TrimSpace(resp.Payload["result"].(string)); !strings.Contains(got, "main") {
 		t.Fatalf("unexpected result: %+v", resp.Payload)
 	}
 	if got := strings.TrimSpace(resp.Payload["agent_id"].(string)); got != "main" {

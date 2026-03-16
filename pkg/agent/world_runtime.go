@@ -86,6 +86,7 @@ func (wr *WorldRuntime) ensureAutonomousSeed(state *world.WorldState, npcStates 
 	if err := wr.ensureMainProfile(); err != nil {
 		return err
 	}
+	wr.ensureStarterWorld(state)
 	if !wr.autonomyEnabled() {
 		return nil
 	}
@@ -139,6 +140,49 @@ func (wr *WorldRuntime) ensureAutonomousSeed(state *world.WorldState, npcStates 
 		}
 	}
 	return nil
+}
+
+func (wr *WorldRuntime) ensureStarterWorld(state *world.WorldState) {
+	if state == nil {
+		return
+	}
+	if state.Entities == nil {
+		state.Entities = map[string]world.Entity{}
+	}
+	if _, ok := state.Entities["notice-board"]; !ok {
+		entity := world.Entity{
+			ID:         "notice-board",
+			Name:       "Notice Board",
+			Type:       "landmark",
+			LocationID: "commons",
+			Placement: &world.EntityPlacement{
+				Model:    "entity.landmark",
+				Scale:    [3]float64{1, 1, 1},
+				Rotation: [3]float64{0, 0, 0},
+				Offset:   [3]float64{0.6, 0, -0.2},
+			},
+			State: map[string]interface{}{"summary": "A place where the world mind leaves notes."},
+		}
+		applyEntityPlacementStateToState(&entity)
+		state.Entities[entity.ID] = entity
+	}
+	if _, ok := state.Entities["waystone"]; !ok {
+		entity := world.Entity{
+			ID:         "waystone",
+			Name:       "Waystone",
+			Type:       "landmark",
+			LocationID: "square",
+			Placement: &world.EntityPlacement{
+				Model:    "entity.landmark",
+				Scale:    [3]float64{1.1, 1.1, 1.1},
+				Rotation: [3]float64{0, 0, 0},
+				Offset:   [3]float64{-0.4, 0, 0.3},
+			},
+			State: map[string]interface{}{"summary": "A world marker that anchors the square."},
+		}
+		applyEntityPlacementStateToState(&entity)
+		state.Entities[entity.ID] = entity
+	}
 }
 
 func roomIDForQuest(questID string) string {
@@ -1401,6 +1445,7 @@ func (wr *WorldRuntime) ensureState() (world.WorldState, map[string]world.NPCSta
 		next := wr.engine.EnsureNPCState(wr.profileBlueprint(profile), current)
 		npcStates[profile.AgentID] = next
 	}
+	wr.ensureStarterWorld(&state)
 	wr.syncQuestRooms(&state, npcStates)
 	if err := wr.store.SaveNPCStates(npcStates); err != nil {
 		return world.WorldState{}, nil, err
@@ -1424,6 +1469,10 @@ func (wr *WorldRuntime) worldProfiles() ([]tools.AgentProfile, error) {
 		if !strings.EqualFold(strings.TrimSpace(item.Status), "active") {
 			continue
 		}
+		if strings.EqualFold(strings.TrimSpace(item.AgentID), "main") {
+			out = append(out, worldMindProfile(item))
+			continue
+		}
 		if !isWorldNPCProfile(item) {
 			continue
 		}
@@ -1441,6 +1490,34 @@ func isWorldNPCProfile(profile tools.AgentProfile) bool {
 		strings.TrimSpace(profile.Persona) != "" ||
 		len(profile.DefaultGoals) > 0 ||
 		len(profile.WorldTags) > 0
+}
+
+func worldMindProfile(profile tools.AgentProfile) tools.AgentProfile {
+	out := profile
+	out.AgentID = "main"
+	if strings.TrimSpace(out.Name) == "" {
+		out.Name = "main"
+	}
+	out.Kind = "npc"
+	if strings.TrimSpace(out.Role) == "" {
+		out.Role = "world-mind"
+	}
+	if strings.TrimSpace(out.Persona) == "" {
+		out.Persona = "The world mind that maintains continuity, delegates work, and protects coherence."
+	}
+	if strings.TrimSpace(out.HomeLocation) == "" {
+		out.HomeLocation = "commons"
+	}
+	if len(out.DefaultGoals) == 0 {
+		out.DefaultGoals = []string{"maintain_world", "seed_story", "coordinate_npcs"}
+	}
+	if out.PerceptionScope <= 0 {
+		out.PerceptionScope = 2
+	}
+	if len(out.WorldTags) == 0 {
+		out.WorldTags = []string{"world_mind"}
+	}
+	return out
 }
 
 func (wr *WorldRuntime) profileBlueprint(profile tools.AgentProfile) world.NPCBlueprint {

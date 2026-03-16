@@ -61,8 +61,8 @@ func TestWorldRuntimeHandleUserInputInitializesState(t *testing.T) {
 		t.Fatalf("snapshot failed: %v", err)
 	}
 	data, _ := json.Marshal(snapshot)
-	if !strings.Contains(string(data), "\"npc_count\":1") {
-		t.Fatalf("expected snapshot npc_count=1, got %s", string(data))
+	if !strings.Contains(string(data), "\"npc_count\":2") {
+		t.Fatalf("expected snapshot npc_count=2 with main included, got %s", string(data))
 	}
 }
 
@@ -169,6 +169,45 @@ func TestWorldRuntimeCreateEntityAndGet(t *testing.T) {
 	}
 	if got := strings.TrimSpace(fmt.Sprint(entity["location_id"])); got != "square" {
 		t.Fatalf("expected entity in square, got %q", got)
+	}
+}
+
+func TestWorldRuntimeIncludesMainWorldMindFromConfigProfile(t *testing.T) {
+	workspace := t.TempDir()
+	manager := tools.NewAgentManager(nil, workspace, nil)
+	runtime := NewWorldRuntime(workspace, manager.ProfileStore(), tools.NewAgentDispatcher(manager), manager)
+
+	items, err := runtime.NPCList()
+	if err != nil {
+		t.Fatalf("npc list failed: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatalf("expected main world mind to appear in npc list")
+	}
+	data, _ := json.Marshal(items)
+	if !strings.Contains(string(data), `"npc_id":"main"`) {
+		t.Fatalf("expected main in npc list, got %s", string(data))
+	}
+}
+
+func TestWorldRuntimeSeedsStarterEntities(t *testing.T) {
+	workspace := t.TempDir()
+	manager := tools.NewAgentManager(nil, workspace, nil)
+	runtime := NewWorldRuntime(workspace, manager.ProfileStore(), tools.NewAgentDispatcher(manager), manager)
+
+	worldOut, err := runtime.WorldGet()
+	if err != nil {
+		t.Fatalf("world get failed: %v", err)
+	}
+	worldState, ok := worldOut["world_state"].(world.WorldState)
+	if !ok {
+		t.Fatalf("unexpected world_state payload: %T", worldOut["world_state"])
+	}
+	if _, ok := worldState.Entities["notice-board"]; !ok {
+		t.Fatalf("expected notice-board starter entity")
+	}
+	if _, ok := worldState.Entities["waystone"]; !ok {
+		t.Fatalf("expected waystone starter entity")
 	}
 }
 
@@ -303,7 +342,7 @@ func TestWorldRuntimeSnapshotIncludesEntityOccupancyAfterInteract(t *testing.T) 
 		t.Fatalf("snapshot failed: %v", err)
 	}
 	data, _ := json.Marshal(snap)
-	if !strings.Contains(string(data), `"entity_occupancy":{"square":["statue"]}`) {
+	if !strings.Contains(string(data), `"square":["statue","waystone"]`) {
 		t.Fatalf("expected entity occupancy for statue, got %s", string(data))
 	}
 }
