@@ -16,11 +16,11 @@ import (
 	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
-//go:embed workspace
-var embeddedFiles embed.FS
-
 var version = "0.0.2"
 var buildTime = "unknown"
+
+//go:embed workspace
+var embeddedFiles embed.FS
 
 const logo = ">"
 const gatewayServiceName = "clawgo-gateway.service"
