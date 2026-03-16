@@ -64,6 +64,7 @@ func DefaultWorldState() WorldState {
 		},
 		GlobalFacts:  map[string]interface{}{},
 		Entities:     map[string]Entity{},
+		Rooms:        map[string]RoomState{},
 		ActiveQuests: map[string]QuestState{},
 		RecentEvents: []WorldEvent{},
 	}
@@ -106,6 +107,9 @@ func (s *Store) LoadWorldState() (WorldState, error) {
 	}
 	if state.Entities == nil {
 		state.Entities = map[string]Entity{}
+	}
+	if state.Rooms == nil {
+		state.Rooms = map[string]RoomState{}
 	}
 	if state.ActiveQuests == nil {
 		state.ActiveQuests = map[string]QuestState{}

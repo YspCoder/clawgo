@@ -120,6 +120,10 @@ func NewAgentManager(provider providers.LLMProvider, workspace string, bus *bus.
 	return mgr
 }
 
+func (sm *AgentManager) HasProvider() bool {
+	return sm != nil && sm.provider != nil
+}
+
 func (sm *AgentManager) Spawn(ctx context.Context, opts AgentSpawnOptions) (string, error) {
 	task, err := sm.spawnTask(ctx, opts)
 	if err != nil {

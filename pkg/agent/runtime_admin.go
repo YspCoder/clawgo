@@ -126,6 +126,38 @@ func (al *AgentLoop) runtimeAdminHandlers() map[string]runtimeAdminHandler {
 			}
 			return item, nil
 		},
+		"world_room_list": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+			if al.worldRuntime == nil {
+				return nil, fmt.Errorf("world runtime is not configured")
+			}
+			items, err := al.worldRuntime.RoomList()
+			if err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"items": items}, nil
+		},
+		"world_room_get": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+			if al.worldRuntime == nil {
+				return nil, fmt.Errorf("world runtime is not configured")
+			}
+			item, found, err := al.worldRuntime.RoomGet(runtimeStringArg(args, "id"))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"found": found, "item": item}, nil
+		},
+		"world_location_update": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+			if al.worldRuntime == nil {
+				return nil, fmt.Errorf("world runtime is not configured")
+			}
+			return al.worldRuntime.UpdateLocation(ctx, args)
+		},
+		"world_room_update": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+			if al.worldRuntime == nil {
+				return nil, fmt.Errorf("world runtime is not configured")
+			}
+			return al.worldRuntime.UpdateRoom(ctx, args)
+		},
 		"world_event_log": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
 			if al.worldRuntime == nil {
 				return nil, fmt.Errorf("world runtime is not configured")
@@ -147,6 +179,12 @@ func (al *AgentLoop) runtimeAdminHandlers() map[string]runtimeAdminHandler {
 				return nil, fmt.Errorf("world runtime is not configured")
 			}
 			return al.worldRuntime.CreateEntity(ctx, args)
+		},
+		"world_entity_update": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+			if al.worldRuntime == nil {
+				return nil, fmt.Errorf("world runtime is not configured")
+			}
+			return al.worldRuntime.UpdateEntity(ctx, args)
 		},
 		"world_quest_list": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
 			if al.worldRuntime == nil {

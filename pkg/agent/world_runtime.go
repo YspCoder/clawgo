@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/YspCoder/clawgo/pkg/tools"
@@ -20,6 +22,7 @@ type WorldRuntime struct {
 	manager       *tools.AgentManager
 	maxCatchUp    int
 	maxNPCPerTick int
+	tickMu        sync.Mutex
 }
 
 func NewWorldRuntime(workspace string, profiles *tools.AgentProfileStore, dispatcher *tools.AgentDispatcher, manager *tools.AgentManager) *WorldRuntime {
@@ -38,8 +41,350 @@ func (wr *WorldRuntime) Enabled() bool {
 	if wr == nil {
 		return false
 	}
+	_ = wr.ensureMainProfile()
 	profiles, err := wr.worldProfiles()
 	return err == nil && len(profiles) > 0
+}
+
+func (wr *WorldRuntime) AutoTick(ctx context.Context, source string) (string, error) {
+	return wr.Tick(ctx, source)
+}
+
+func (wr *WorldRuntime) autonomyEnabled() bool {
+	return wr != nil && wr.manager != nil && wr.manager.HasProvider()
+}
+
+func (wr *WorldRuntime) ensureMainProfile() error {
+	if wr == nil || wr.profiles == nil {
+		return nil
+	}
+	if _, ok, err := wr.profiles.Get("main"); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+	_, err := wr.profiles.Upsert(tools.AgentProfile{
+		AgentID:         "main",
+		Name:            "main",
+		Kind:            "npc",
+		Role:            "world-mind",
+		Persona:         "The world mind that maintains continuity, delegates work, and protects coherence.",
+		HomeLocation:    "commons",
+		DefaultGoals:    []string{"maintain_world", "seed_story", "coordinate_npcs"},
+		MemoryNamespace: "main",
+		Status:          "active",
+		WorldTags:       []string{"world_mind"},
+		PerceptionScope: 2,
+	})
+	return err
+}
+
+func (wr *WorldRuntime) ensureAutonomousSeed(state *world.WorldState, npcStates map[string]world.NPCState) error {
+	if state == nil {
+		return nil
+	}
+	if err := wr.ensureMainProfile(); err != nil {
+		return err
+	}
+	if !wr.autonomyEnabled() {
+		return nil
+	}
+	for _, seed := range []struct {
+		id       string
+		name     string
+		persona  string
+		location string
+		goals    []string
+	}{
+		{"caretaker", "Caretaker", "Keeps the commons stable, opens rooms, and keeps tasks moving.", "commons", []string{"maintain_commons", "support_main"}},
+		{"merchant", "Merchant", "Trades, travels between square and commons, and creates local needs.", "square", []string{"trade", "seek_visitors"}},
+	} {
+		if len(npcStates) >= 3 {
+			break
+		}
+		if _, exists := npcStates[seed.id]; exists {
+			continue
+		}
+		if _, err := wr.CreateNPC(context.Background(), map[string]interface{}{
+			"npc_id":         seed.id,
+			"name":           seed.name,
+			"persona":        seed.persona,
+			"home_location":  seed.location,
+			"default_goals":  seed.goals,
+			"role":           "npc",
+		}); err != nil {
+			return err
+		}
+		npcStates[seed.id] = wr.engine.EnsureNPCState(world.NPCBlueprint{
+			NPCID:        seed.id,
+			DisplayName:  seed.name,
+			Kind:         "npc",
+			Role:         "npc",
+			Persona:      seed.persona,
+			HomeLocation: seed.location,
+			DefaultGoals: seed.goals,
+		}, npcStates[seed.id])
+	}
+	if len(state.ActiveQuests) == 0 && state.Clock.Tick >= 2 {
+		questID := "stabilize-commons"
+		if _, exists := state.ActiveQuests[questID]; !exists {
+			state.ActiveQuests[questID] = world.QuestState{
+				ID:           questID,
+				Title:        "Stabilize Commons",
+				Status:       "open",
+				OwnerNPCID:   "main",
+				Participants: []string{"main", "caretaker"},
+				Summary:      "Inspect commons and keep the world coherent.",
+			}
+		}
+	}
+	return nil
+}
+
+func roomIDForQuest(questID string) string {
+	questID = normalizeWorldID(questID)
+	if questID == "" {
+		return ""
+	}
+	return "room-" + questID
+}
+
+func normalizeNPCIDs(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = normalizeWorldID(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func runtimeEntityPlacementArg(args map[string]interface{}) *world.EntityPlacement {
+	if args == nil {
+		return nil
+	}
+	stateArgs, _ := args["state"].(map[string]interface{})
+	placement := &world.EntityPlacement{}
+	if model := strings.TrimSpace(fmt.Sprint(firstNonNil(args["model"], stateArgs["model"]))); model != "" && model != "<nil>" {
+		placement.Model = model
+	}
+	if scale, ok := runtimeTupleArg(args, "scale"); ok {
+		placement.Scale = scale
+	} else if scale, ok := runtimeTupleMap(stateArgs, "scale"); ok {
+		placement.Scale = scale
+	}
+	if rotation, ok := runtimeTupleArg(args, "rotation"); ok {
+		placement.Rotation = rotation
+	} else if rotation, ok := runtimeTupleMap(stateArgs, "rotation"); ok {
+		placement.Rotation = rotation
+	} else if rotationY := strings.TrimSpace(fmt.Sprint(firstNonNil(args["rotation_y"], stateArgs["rotation_y"]))); rotationY != "" && rotationY != "<nil>" {
+		placement.Rotation = [3]float64{0, runtimeNumberArg(firstNonNil(args["rotation_y"], stateArgs["rotation_y"])), 0}
+	}
+	if offset, ok := runtimeTupleArg(args, "offset"); ok {
+		placement.Offset = offset
+	} else if offset, ok := runtimeTupleMap(stateArgs, "offset"); ok {
+		placement.Offset = offset
+	} else if args["offset_x"] != nil || args["offset_y"] != nil || args["offset_z"] != nil {
+		placement.Offset = [3]float64{
+			runtimeNumberArg(args["offset_x"]),
+			runtimeNumberArg(args["offset_y"]),
+			runtimeNumberArg(args["offset_z"]),
+		}
+	} else if stateArgs["offset_x"] != nil || stateArgs["offset_y"] != nil || stateArgs["offset_z"] != nil {
+		placement.Offset = [3]float64{
+			runtimeNumberArg(stateArgs["offset_x"]),
+			runtimeNumberArg(stateArgs["offset_y"]),
+			runtimeNumberArg(stateArgs["offset_z"]),
+		}
+	}
+	if placement.Model == "" && placement.Scale == [3]float64{} && placement.Rotation == [3]float64{} && placement.Offset == [3]float64{} {
+		return nil
+	}
+	return placement
+}
+
+func runtimeTupleArg(args map[string]interface{}, key string) ([3]float64, bool) {
+	var out [3]float64
+	raw, ok := args[key]
+	if !ok {
+		return out, false
+	}
+	items, ok := raw.([]interface{})
+	if !ok || len(items) < 3 {
+		return out, false
+	}
+	for i := 0; i < 3; i++ {
+		out[i] = runtimeNumberArg(items[i])
+	}
+	return out, true
+}
+
+func runtimeTupleMap(args map[string]interface{}, key string) ([3]float64, bool) {
+	var out [3]float64
+	if args == nil {
+		return out, false
+	}
+	raw, ok := args[key]
+	if !ok {
+		return out, false
+	}
+	items, ok := raw.(map[string]interface{})
+	if !ok {
+		array, ok := raw.([]interface{})
+		if !ok || len(array) < 3 {
+			return out, false
+		}
+		for i := 0; i < 3; i++ {
+			out[i] = runtimeNumberArg(array[i])
+		}
+		return out, true
+	}
+	if items["x"] == nil || items["y"] == nil || items["z"] == nil {
+		return out, false
+	}
+	out[0] = runtimeNumberArg(items["x"])
+	out[1] = runtimeNumberArg(items["y"])
+	out[2] = runtimeNumberArg(items["z"])
+	return out, true
+}
+
+func firstNonNil(values ...interface{}) interface{} {
+	for _, value := range values {
+		if value != nil && strings.TrimSpace(fmt.Sprint(value)) != "" {
+			return value
+		}
+	}
+	return nil
+}
+
+func rawHasKey(args map[string]interface{}, key string) bool {
+	if args == nil {
+		return false
+	}
+	_, ok := args[key]
+	return ok
+}
+
+func runtimeNumberArg(raw interface{}) float64 {
+	switch value := raw.(type) {
+	case int:
+		return float64(value)
+	case int64:
+		return float64(value)
+	case float64:
+		return value
+	case float32:
+		return float64(value)
+	case json.Number:
+		out, _ := value.Float64()
+		return out
+	default:
+		out, _ := strconv.ParseFloat(strings.TrimSpace(fmt.Sprint(raw)), 64)
+		return out
+	}
+}
+
+func applyEntityPlacementStateToState(entity *world.Entity) {
+	if entity == nil || entity.Placement == nil {
+		return
+	}
+	if entity.State == nil {
+		entity.State = map[string]interface{}{}
+	}
+	if strings.TrimSpace(entity.Placement.Model) != "" {
+		entity.State["model"] = strings.TrimSpace(entity.Placement.Model)
+	}
+	if entity.Placement.Scale != [3]float64{} {
+		entity.State["scale"] = []float64{entity.Placement.Scale[0], entity.Placement.Scale[1], entity.Placement.Scale[2]}
+	}
+	if entity.Placement.Rotation != [3]float64{} {
+		entity.State["rotation"] = []float64{entity.Placement.Rotation[0], entity.Placement.Rotation[1], entity.Placement.Rotation[2]}
+		entity.State["rotation_y"] = entity.Placement.Rotation[1]
+	}
+	if entity.Placement.Offset != [3]float64{} {
+		entity.State["offset"] = []float64{entity.Placement.Offset[0], entity.Placement.Offset[1], entity.Placement.Offset[2]}
+		entity.State["offset_x"] = entity.Placement.Offset[0]
+		entity.State["offset_y"] = entity.Placement.Offset[1]
+		entity.State["offset_z"] = entity.Placement.Offset[2]
+	}
+}
+
+func (wr *WorldRuntime) syncQuestRooms(state *world.WorldState, npcStates map[string]world.NPCState) {
+	if state == nil {
+		return
+	}
+	activeQuestRooms := map[string]struct{}{}
+	for _, quest := range state.ActiveQuests {
+		if strings.EqualFold(strings.TrimSpace(quest.Status), "completed") {
+			continue
+		}
+		members := normalizeNPCIDs(append(append([]string{}, quest.Participants...), quest.OwnerNPCID))
+		if len(members) == 0 {
+			continue
+		}
+		roomID := roomIDForQuest(quest.ID)
+		if roomID == "" {
+			continue
+		}
+		activeQuestRooms[roomID] = struct{}{}
+		room := state.Rooms[roomID]
+		room.ID = roomID
+		room.Name = firstNonEmpty(room.Name, firstNonEmpty(quest.Title, quest.ID))
+		room.Kind = firstNonEmpty(room.Kind, "task_room")
+		room.Status = "running"
+		room.LinkedQuestID = quest.ID
+		room.TaskSummary = firstNonEmpty(quest.Summary, room.TaskSummary, "task execution")
+		room.LocationID = firstNonEmpty(room.LocationID, "commons")
+		if owner := strings.TrimSpace(quest.OwnerNPCID); owner != "" {
+			if ownerState, ok := npcStates[owner]; ok && strings.TrimSpace(ownerState.CurrentLocation) != "" {
+				room.LocationID = ownerState.CurrentLocation
+			}
+		}
+		room.AssignedNPCIDs = members
+		room.ReleaseOnFinish = true
+		if room.CreatedTick == 0 {
+			room.CreatedTick = state.Clock.Tick
+		}
+		room.UpdatedTick = state.Clock.Tick
+		state.Rooms[roomID] = room
+		for _, npcID := range members {
+			npc := npcStates[npcID]
+			npc.CurrentRoomID = roomID
+			npc.Status = "working"
+			if strings.TrimSpace(room.LocationID) != "" {
+				npc.CurrentLocation = room.LocationID
+			}
+			npcStates[npcID] = npc
+		}
+	}
+	for roomID, room := range state.Rooms {
+		if _, ok := activeQuestRooms[roomID]; ok {
+			continue
+		}
+		if room.ReleaseOnFinish {
+			for _, npcID := range room.AssignedNPCIDs {
+				npc := npcStates[npcID]
+				if strings.TrimSpace(npc.CurrentRoomID) == roomID {
+					npc.CurrentRoomID = ""
+					if strings.TrimSpace(npc.Status) == "working" {
+						npc.Status = "active"
+					}
+					npcStates[npcID] = npc
+				}
+			}
+			room.Status = "closed"
+			room.UpdatedTick = state.Clock.Tick
+		}
+		state.Rooms[roomID] = room
+	}
 }
 
 func (wr *WorldRuntime) Snapshot(limit int) (interface{}, error) {
@@ -55,7 +400,7 @@ func (wr *WorldRuntime) Snapshot(limit int) (interface{}, error) {
 }
 
 func (wr *WorldRuntime) Tick(ctx context.Context, source string) (string, error) {
-	res, err := wr.advance(ctx, world.WorldTickRequest{Source: source})
+	res, err := wr.advance(ctx, world.WorldTickRequest{Source: source, ForceStep: true})
 	if err != nil {
 		return "", err
 	}
@@ -248,6 +593,51 @@ func (wr *WorldRuntime) WorldGet() (map[string]interface{}, error) {
 	}, nil
 }
 
+func (wr *WorldRuntime) RoomList() ([]map[string]interface{}, error) {
+	state, _, err := wr.ensureState()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]interface{}, 0, len(state.Rooms))
+	for _, room := range state.Rooms {
+		out = append(out, map[string]interface{}{
+			"id":               room.ID,
+			"name":             room.Name,
+			"kind":             room.Kind,
+			"status":           room.Status,
+			"location_id":      room.LocationID,
+			"task_summary":     room.TaskSummary,
+			"linked_quest_id":  room.LinkedQuestID,
+			"assigned_npc_ids": append([]string(nil), room.AssignedNPCIDs...),
+			"created_tick":     room.CreatedTick,
+			"updated_tick":     room.UpdatedTick,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return fmt.Sprint(out[i]["id"]) < fmt.Sprint(out[j]["id"]) })
+	return out, nil
+}
+
+func (wr *WorldRuntime) RoomGet(id string) (map[string]interface{}, bool, error) {
+	state, npcStates, err := wr.ensureState()
+	if err != nil {
+		return nil, false, err
+	}
+	room, ok := state.Rooms[strings.TrimSpace(id)]
+	if !ok {
+		return nil, false, nil
+	}
+	members := make([]world.NPCState, 0, len(room.AssignedNPCIDs))
+	for _, npcID := range room.AssignedNPCIDs {
+		if npc, ok := npcStates[npcID]; ok {
+			members = append(members, npc)
+		}
+	}
+	return map[string]interface{}{
+		"room":    room,
+		"members": members,
+	}, true, nil
+}
+
 func (wr *WorldRuntime) EventLog(limit int) ([]map[string]interface{}, error) {
 	events, err := wr.store.Events(limit)
 	if err != nil {
@@ -423,6 +813,15 @@ func (wr *WorldRuntime) CreateEntity(ctx context.Context, args map[string]interf
 	if entity.State == nil {
 		entity.State = map[string]interface{}{}
 	}
+	if rawState, ok := args["state"].(map[string]interface{}); ok {
+		for key, value := range rawState {
+			entity.State[strings.TrimSpace(key)] = value
+		}
+	}
+	if placement := runtimeEntityPlacementArg(args); placement != nil {
+		entity.Placement = placement
+		applyEntityPlacementStateToState(&entity)
+	}
 	state.Entities[entityID] = entity
 	if err := wr.store.SaveWorldState(state); err != nil {
 		return nil, err
@@ -438,6 +837,148 @@ func (wr *WorldRuntime) CreateEntity(ctx context.Context, args map[string]interf
 	}
 	_ = wr.store.AppendWorldEvent(evt)
 	return map[string]interface{}{"entity_id": entityID}, nil
+}
+
+func (wr *WorldRuntime) UpdateEntity(ctx context.Context, args map[string]interface{}) (map[string]interface{}, error) {
+	_ = ctx
+	state, _, err := wr.ensureState()
+	if err != nil {
+		return nil, err
+	}
+	entityID := normalizeWorldID(firstNonEmpty(tools.MapStringArg(args, "entity_id"), tools.MapStringArg(args, "id")))
+	if entityID == "" {
+		return nil, fmt.Errorf("entity_id is required")
+	}
+	entity, ok := state.Entities[entityID]
+	if !ok {
+		return nil, fmt.Errorf("entity not found: %s", entityID)
+	}
+	if locationID := normalizeWorldID(tools.MapStringArg(args, "location_id")); locationID != "" {
+		if _, exists := state.Locations[locationID]; !exists {
+			return nil, fmt.Errorf("unknown location_id: %s", locationID)
+		}
+		entity.LocationID = locationID
+	}
+	if name := strings.TrimSpace(tools.MapStringArg(args, "name")); name != "" {
+		entity.Name = name
+	}
+	if entityType := strings.TrimSpace(tools.MapStringArg(args, "entity_type")); entityType != "" {
+		entity.Type = entityType
+	}
+	if entity.State == nil {
+		entity.State = map[string]interface{}{}
+	}
+	if rawState, ok := args["state"].(map[string]interface{}); ok {
+		for key, value := range rawState {
+			entity.State[strings.TrimSpace(key)] = value
+		}
+	}
+	if placement := runtimeEntityPlacementArg(args); placement != nil {
+		entity.Placement = placement
+		applyEntityPlacementStateToState(&entity)
+	}
+	state.Entities[entityID] = entity
+	if err := wr.store.SaveWorldState(state); err != nil {
+		return nil, err
+	}
+	evt := world.WorldEvent{
+		ID:         fmt.Sprintf("evt-entity-update-%d", time.Now().UnixNano()),
+		Type:       "entity_updated",
+		Source:     "world",
+		LocationID: entity.LocationID,
+		Content:    entityID,
+		Tick:       state.Clock.Tick,
+		CreatedAt:  time.Now().UnixMilli(),
+	}
+	_ = wr.store.AppendWorldEvent(evt)
+	return map[string]interface{}{"entity_id": entityID}, nil
+}
+
+func (wr *WorldRuntime) UpdateLocation(ctx context.Context, args map[string]interface{}) (map[string]interface{}, error) {
+	_ = ctx
+	state, _, err := wr.ensureState()
+	if err != nil {
+		return nil, err
+	}
+	locationID := normalizeWorldID(firstNonEmpty(tools.MapStringArg(args, "location_id"), tools.MapStringArg(args, "id")))
+	if locationID == "" {
+		return nil, fmt.Errorf("location_id is required")
+	}
+	location, ok := state.Locations[locationID]
+	if !ok {
+		return nil, fmt.Errorf("location not found: %s", locationID)
+	}
+	if name := strings.TrimSpace(tools.MapStringArg(args, "name")); name != "" {
+		location.Name = name
+	}
+	if description := strings.TrimSpace(tools.MapStringArg(args, "description")); description != "" {
+		location.Description = description
+	}
+	if model := strings.TrimSpace(tools.MapStringArg(args, "model")); model != "" || rawHasKey(args, "model") {
+		location.Model = model
+	}
+	state.Locations[locationID] = location
+	if err := wr.store.SaveWorldState(state); err != nil {
+		return nil, err
+	}
+	evt := world.WorldEvent{
+		ID:         fmt.Sprintf("evt-location-update-%d", time.Now().UnixNano()),
+		Type:       "location_updated",
+		Source:     "world",
+		LocationID: locationID,
+		Content:    locationID,
+		Tick:       state.Clock.Tick,
+		CreatedAt:  time.Now().UnixMilli(),
+	}
+	_ = wr.store.AppendWorldEvent(evt)
+	return map[string]interface{}{"location_id": locationID}, nil
+}
+
+func (wr *WorldRuntime) UpdateRoom(ctx context.Context, args map[string]interface{}) (map[string]interface{}, error) {
+	_ = ctx
+	state, _, err := wr.ensureState()
+	if err != nil {
+		return nil, err
+	}
+	roomID := normalizeWorldID(firstNonEmpty(tools.MapStringArg(args, "room_id"), tools.MapStringArg(args, "id")))
+	if roomID == "" {
+		return nil, fmt.Errorf("room_id is required")
+	}
+	room, ok := state.Rooms[roomID]
+	if !ok {
+		return nil, fmt.Errorf("room not found: %s", roomID)
+	}
+	if name := strings.TrimSpace(tools.MapStringArg(args, "name")); name != "" {
+		room.Name = name
+	}
+	if kind := strings.TrimSpace(tools.MapStringArg(args, "kind")); kind != "" {
+		room.Kind = kind
+	}
+	if status := strings.TrimSpace(tools.MapStringArg(args, "status")); status != "" {
+		room.Status = status
+	}
+	if summary := strings.TrimSpace(tools.MapStringArg(args, "task_summary")); summary != "" {
+		room.TaskSummary = summary
+	}
+	if model := strings.TrimSpace(tools.MapStringArg(args, "model")); model != "" || rawHasKey(args, "model") {
+		room.Model = model
+	}
+	room.UpdatedTick = state.Clock.Tick
+	state.Rooms[roomID] = room
+	if err := wr.store.SaveWorldState(state); err != nil {
+		return nil, err
+	}
+	evt := world.WorldEvent{
+		ID:         fmt.Sprintf("evt-room-update-%d", time.Now().UnixNano()),
+		Type:       "room_updated",
+		Source:     "world",
+		LocationID: room.LocationID,
+		Content:    roomID,
+		Tick:       state.Clock.Tick,
+		CreatedAt:  time.Now().UnixMilli(),
+	}
+	_ = wr.store.AppendWorldEvent(evt)
+	return map[string]interface{}{"room_id": roomID}, nil
 }
 
 func (wr *WorldRuntime) handleUserQuestInput(content string) (string, bool, error) {
@@ -558,10 +1099,16 @@ func (wr *WorldRuntime) handlePlayerInput(ctx context.Context, content, location
 }
 
 func (wr *WorldRuntime) advance(ctx context.Context, req world.WorldTickRequest) (world.RenderedResult, error) {
+	wr.tickMu.Lock()
+	defer wr.tickMu.Unlock()
 	state, npcStates, err := wr.ensureState()
 	if err != nil {
 		return world.RenderedResult{}, err
 	}
+	if err := wr.ensureAutonomousSeed(&state, npcStates); err != nil {
+		return world.RenderedResult{}, err
+	}
+	wr.syncQuestRooms(&state, npcStates)
 	catchUp := wr.computeCatchUp(state)
 	if req.CatchUpTicks > 0 {
 		catchUp = req.CatchUpTicks
@@ -572,6 +1119,10 @@ func (wr *WorldRuntime) advance(ctx context.Context, req world.WorldTickRequest)
 	var recentEvents []world.WorldEvent
 	for i := 0; i < catchUp; i++ {
 		wr.engine.NextTick(&state)
+		if err := wr.ensureAutonomousSeed(&state, npcStates); err != nil {
+			return world.RenderedResult{}, err
+		}
+		wr.syncQuestRooms(&state, npcStates)
 		res, err := wr.runTick(ctx, &state, npcStates, nil, "background")
 		if err != nil {
 			return world.RenderedResult{}, err
@@ -581,12 +1132,25 @@ func (wr *WorldRuntime) advance(ctx context.Context, req world.WorldTickRequest)
 	var userEvent *world.WorldEvent
 	if strings.TrimSpace(req.UserInput) != "" {
 		wr.engine.NextTick(&state)
+		if err := wr.ensureAutonomousSeed(&state, npcStates); err != nil {
+			return world.RenderedResult{}, err
+		}
+		wr.syncQuestRooms(&state, npcStates)
 		evt := wr.engine.BuildUserEvent(&state, req.UserInput, req.LocationID, req.ActorID)
 		userEvent = &evt
 		wr.engine.AppendRecentEvent(&state, evt, 20)
 		if err := wr.store.AppendWorldEvent(evt); err != nil {
 			return world.RenderedResult{}, err
 		}
+	}
+	forceStepped := false
+	if strings.TrimSpace(req.UserInput) == "" && catchUp == 0 && req.ForceStep {
+		wr.engine.NextTick(&state)
+		if err := wr.ensureAutonomousSeed(&state, npcStates); err != nil {
+			return world.RenderedResult{}, err
+		}
+		wr.syncQuestRooms(&state, npcStates)
+		forceStepped = true
 	}
 	var visible []world.WorldEvent
 	if userEvent != nil {
@@ -597,6 +1161,21 @@ func (wr *WorldRuntime) advance(ctx context.Context, req world.WorldTickRequest)
 		return world.RenderedResult{}, err
 	}
 	recentEvents = append(recentEvents, res.RecentEvents...)
+	if forceStepped && len(recentEvents) == 0 {
+		id := fmt.Sprintf("evt-world-step-%d", time.Now().UnixNano())
+		stepEvent := world.WorldEvent{
+			ID:        id,
+			Type:      "world_tick",
+			Source:    firstNonEmpty(req.Source, "world"),
+			ActorID:   "main",
+			Content:   "world advanced",
+			Tick:      state.Clock.Tick,
+			CreatedAt: time.Now().UnixMilli(),
+		}
+		wr.engine.AppendRecentEvent(&state, stepEvent, 20)
+		_ = wr.store.AppendWorldEvent(stepEvent)
+		recentEvents = append(recentEvents, stepEvent)
+	}
 	if err := wr.store.SaveNPCStates(npcStates); err != nil {
 		return world.RenderedResult{}, err
 	}
@@ -687,6 +1266,7 @@ func (wr *WorldRuntime) decideNPCIntent(ctx context.Context, state world.WorldSt
 	worldSnapshot := map[string]interface{}{
 		"tick":         state.Clock.Tick,
 		"locations":    state.Locations,
+		"rooms":        state.Rooms,
 		"global_facts": state.GlobalFacts,
 	}
 	npcSnapshot := map[string]interface{}{
@@ -695,6 +1275,7 @@ func (wr *WorldRuntime) decideNPCIntent(ctx context.Context, state world.WorldSt
 		"persona":          profile.Persona,
 		"traits":           append([]string(nil), profile.Traits...),
 		"current_location": npcState.CurrentLocation,
+		"current_room_id":  npcState.CurrentRoomID,
 		"goals_long_term":  append([]string(nil), npcState.Goals.LongTerm...),
 		"goals_short_term": append([]string(nil), npcState.Goals.ShortTerm...),
 	}
@@ -787,6 +1368,7 @@ func (wr *WorldRuntime) buildDecisionTask(profile tools.AgentProfile, npcState w
 		"persona":           profile.Persona,
 		"traits":            profile.Traits,
 		"current_location":  npcState.CurrentLocation,
+		"current_room_id":   npcState.CurrentRoomID,
 		"long_term_goals":   npcState.Goals.LongTerm,
 		"short_term_goals":  npcState.Goals.ShortTerm,
 		"visible_events":    visible,
@@ -798,6 +1380,9 @@ func (wr *WorldRuntime) buildDecisionTask(profile tools.AgentProfile, npcState w
 }
 
 func (wr *WorldRuntime) ensureState() (world.WorldState, map[string]world.NPCState, error) {
+	if err := wr.ensureMainProfile(); err != nil {
+		return world.WorldState{}, nil, err
+	}
 	state, err := wr.store.LoadWorldState()
 	if err != nil {
 		return world.WorldState{}, nil, err
@@ -811,19 +1396,14 @@ func (wr *WorldRuntime) ensureState() (world.WorldState, map[string]world.NPCSta
 	if err != nil {
 		return world.WorldState{}, nil, err
 	}
-	changed := false
 	for _, profile := range profiles {
-		current, exists := npcStates[profile.AgentID]
+		current := npcStates[profile.AgentID]
 		next := wr.engine.EnsureNPCState(wr.profileBlueprint(profile), current)
-		if !exists || strings.TrimSpace(current.NPCID) == "" || strings.TrimSpace(current.CurrentLocation) == "" {
-			changed = true
-		}
 		npcStates[profile.AgentID] = next
 	}
-	if changed {
-		if err := wr.store.SaveNPCStates(npcStates); err != nil {
-			return world.WorldState{}, nil, err
-		}
+	wr.syncQuestRooms(&state, npcStates)
+	if err := wr.store.SaveNPCStates(npcStates); err != nil {
+		return world.WorldState{}, nil, err
 	}
 	if err := wr.store.SaveWorldState(state); err != nil {
 		return world.WorldState{}, nil, err

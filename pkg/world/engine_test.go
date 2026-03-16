@@ -101,3 +101,41 @@ func TestApplyIntentInteractAppliesQuestAndResourceEffects(t *testing.T) {
 		t.Fatalf("expected quest completion, got %+v", quest)
 	}
 }
+
+func TestApplyIntentInteractAppliesEntityPlacementAndLocation(t *testing.T) {
+	engine := NewEngine()
+	state := DefaultWorldState()
+	state.Entities["bench"] = Entity{
+		ID:         "bench",
+		LocationID: "square",
+		State:      map[string]interface{}{},
+	}
+	npc := &NPCState{NPCID: "main", CurrentLocation: "square"}
+	delta := engine.ApplyIntent(&state, npc, ActionIntent{
+		ActorID:      "main",
+		Action:       "interact",
+		TargetEntity: "bench",
+		ProposedEffects: map[string]interface{}{
+			"entity_location": "commons",
+			"entity_placement": map[string]interface{}{
+				"model":      "entity.table",
+				"rotation_y": 1.57,
+				"offset_x":   0.8,
+				"offset_z":   -0.4,
+			},
+		},
+	})
+	if !delta.Applied {
+		t.Fatalf("expected interact to apply, got %+v", delta)
+	}
+	entity := state.Entities["bench"]
+	if entity.LocationID != "commons" {
+		t.Fatalf("expected entity moved to commons, got %+v", entity)
+	}
+	if entity.Placement == nil || entity.Placement.Model != "entity.table" {
+		t.Fatalf("expected placement model set, got %+v", entity.Placement)
+	}
+	if entity.State["rotation_y"] != 1.57 {
+		t.Fatalf("expected state rotation_y mirrored, got %+v", entity.State)
+	}
+}

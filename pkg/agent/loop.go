@@ -443,6 +443,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		loop.model = strings.TrimSpace(primaryModel)
 	}
 	go loop.runAgentDigestTicker()
+	go loop.runWorldTicker()
 	// Initialize provider fallback chain (primary + inferred providers).
 	loop.providerChain = []providerCandidate{}
 	loop.providerPool = map[string]providers.LLMProvider{}
@@ -2837,6 +2838,19 @@ func (al *AgentLoop) runAgentDigestTicker() {
 	defer ticker.Stop()
 	for now := range ticker.C {
 		al.flushDueAgentDigests(now)
+	}
+}
+
+func (al *AgentLoop) runWorldTicker() {
+	if al == nil || al.worldRuntime == nil || !al.worldRuntime.Enabled() {
+		return
+	}
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, _ = al.worldRuntime.AutoTick(ctx, "world_loop")
+		cancel()
 	}
 }
 

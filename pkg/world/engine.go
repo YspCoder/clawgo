@@ -13,6 +13,96 @@ func NewEngine() *Engine {
 	return &Engine{}
 }
 
+func parsePlacementTuple(raw interface{}) ([3]float64, bool) {
+	var out [3]float64
+	items, ok := raw.([]interface{})
+	if !ok || len(items) < 3 {
+		return out, false
+	}
+	for i := 0; i < 3; i++ {
+		out[i] = numberToFloat(items[i])
+	}
+	return out, true
+}
+
+func parsePlacementTupleMap(raw interface{}, keys [3]string) ([3]float64, bool) {
+	var out [3]float64
+	items, ok := raw.(map[string]interface{})
+	if !ok {
+		return out, false
+	}
+	for i, key := range keys {
+		value, exists := items[key]
+		if !exists {
+			return out, false
+		}
+		out[i] = numberToFloat(value)
+	}
+	return out, true
+}
+
+func parseEntityPlacement(raw map[string]interface{}) *EntityPlacement {
+	if len(raw) == 0 {
+		return nil
+	}
+	placement := &EntityPlacement{}
+	if model := strings.TrimSpace(fmt.Sprint(raw["model"])); model != "" {
+		placement.Model = model
+	}
+	if value, ok := parsePlacementTuple(raw["scale"]); ok {
+		placement.Scale = value
+	} else if value, ok := parsePlacementTupleMap(raw["scale"], [3]string{"x", "y", "z"}); ok {
+		placement.Scale = value
+	}
+	if value, ok := parsePlacementTuple(raw["rotation"]); ok {
+		placement.Rotation = value
+	} else if value, ok := parsePlacementTupleMap(raw["rotation"], [3]string{"x", "y", "z"}); ok {
+		placement.Rotation = value
+	} else if raw["rotation_y"] != nil {
+		placement.Rotation = [3]float64{0, numberToFloat(raw["rotation_y"]), 0}
+	}
+	if value, ok := parsePlacementTuple(raw["offset"]); ok {
+		placement.Offset = value
+	} else if value, ok := parsePlacementTupleMap(raw["offset"], [3]string{"x", "y", "z"}); ok {
+		placement.Offset = value
+	} else if raw["offset_x"] != nil || raw["offset_y"] != nil || raw["offset_z"] != nil {
+		placement.Offset = [3]float64{
+			numberToFloat(raw["offset_x"]),
+			numberToFloat(raw["offset_y"]),
+			numberToFloat(raw["offset_z"]),
+		}
+	}
+	if placement.Model == "" && placement.Scale == [3]float64{} && placement.Rotation == [3]float64{} && placement.Offset == [3]float64{} {
+		return nil
+	}
+	return placement
+}
+
+func applyEntityPlacementState(entity *Entity) {
+	if entity == nil || entity.Placement == nil {
+		return
+	}
+	if entity.State == nil {
+		entity.State = map[string]interface{}{}
+	}
+	if strings.TrimSpace(entity.Placement.Model) != "" {
+		entity.State["model"] = strings.TrimSpace(entity.Placement.Model)
+	}
+	if entity.Placement.Scale != [3]float64{} {
+		entity.State["scale"] = []float64{entity.Placement.Scale[0], entity.Placement.Scale[1], entity.Placement.Scale[2]}
+	}
+	if entity.Placement.Rotation != [3]float64{} {
+		entity.State["rotation"] = []float64{entity.Placement.Rotation[0], entity.Placement.Rotation[1], entity.Placement.Rotation[2]}
+		entity.State["rotation_y"] = entity.Placement.Rotation[1]
+	}
+	if entity.Placement.Offset != [3]float64{} {
+		entity.State["offset"] = []float64{entity.Placement.Offset[0], entity.Placement.Offset[1], entity.Placement.Offset[2]}
+		entity.State["offset_x"] = entity.Placement.Offset[0]
+		entity.State["offset_y"] = entity.Placement.Offset[1]
+		entity.State["offset_z"] = entity.Placement.Offset[2]
+	}
+}
+
 func (e *Engine) EnsureWorld(state *WorldState) {
 	if state == nil {
 		return
@@ -38,6 +128,9 @@ func (e *Engine) EnsureWorld(state *WorldState) {
 	}
 	if state.Entities == nil {
 		state.Entities = map[string]Entity{}
+	}
+	if state.Rooms == nil {
+		state.Rooms = map[string]RoomState{}
 	}
 	if state.ActiveQuests == nil {
 		state.ActiveQuests = map[string]QuestState{}
@@ -237,6 +330,7 @@ func (e *Engine) ApplyIntent(state *WorldState, npc *NPCState, intent ActionInte
 			entity.State["last_effect"] = effect
 		}
 		e.applyProposedEffects(state, npc, intent, &entity)
+		applyEntityPlacementState(&entity)
 		state.Entities[targetEntity] = entity
 		delta.Applied = true
 		npc.LastActiveTick = state.Clock.Tick
@@ -297,6 +391,12 @@ func (e *Engine) applyProposedEffects(state *WorldState, npc *NPCState, intent A
 				entity.State[strings.TrimSpace(key)] = value
 			}
 		}
+		if raw, ok := intent.ProposedEffects["entity_placement"].(map[string]interface{}); ok {
+			entity.Placement = parseEntityPlacement(raw)
+		}
+		if locationID := strings.TrimSpace(fmt.Sprint(intent.ProposedEffects["entity_location"])); locationID != "" {
+			entity.LocationID = locationID
+		}
 	}
 	if raw, ok := intent.ProposedEffects["quest_update"].(map[string]interface{}); ok {
 		questID := strings.TrimSpace(fmt.Sprint(raw["id"]))
@@ -346,15 +446,24 @@ func (e *Engine) Snapshot(state WorldState, npcStates map[string]NPCState, recen
 	}
 	active := make([]string, 0, len(npcStates))
 	quests := make([]QuestState, 0, len(state.ActiveQuests))
+	rooms := make([]RoomState, 0, len(state.Rooms))
 	occupancy := map[string][]string{}
 	entityOccupancy := map[string][]string{}
+	roomOccupancy := map[string][]string{}
 	for id, npc := range npcStates {
 		active = append(active, id)
+		if strings.TrimSpace(npc.CurrentRoomID) != "" {
+			roomOccupancy[npc.CurrentRoomID] = append(roomOccupancy[npc.CurrentRoomID], id)
+			continue
+		}
 		loc := firstNonEmpty(npc.CurrentLocation, "commons")
 		occupancy[loc] = append(occupancy[loc], id)
 	}
 	for _, quest := range state.ActiveQuests {
 		quests = append(quests, quest)
+	}
+	for _, room := range state.Rooms {
+		rooms = append(rooms, room)
 	}
 	for id, entity := range state.Entities {
 		loc := firstNonEmpty(entity.LocationID, "commons")
@@ -364,11 +473,17 @@ func (e *Engine) Snapshot(state WorldState, npcStates map[string]NPCState, recen
 	sort.Slice(quests, func(i, j int) bool {
 		return firstNonEmpty(quests[i].ID, quests[i].Title) < firstNonEmpty(quests[j].ID, quests[j].Title)
 	})
+	sort.Slice(rooms, func(i, j int) bool {
+		return firstNonEmpty(rooms[i].ID, rooms[i].Name) < firstNonEmpty(rooms[j].ID, rooms[j].Name)
+	})
 	for key := range occupancy {
 		sort.Strings(occupancy[key])
 	}
 	for key := range entityOccupancy {
 		sort.Strings(entityOccupancy[key])
+	}
+	for key := range roomOccupancy {
+		sort.Strings(roomOccupancy[key])
 	}
 	return SnapshotSummary{
 		WorldID:            state.WorldID,
@@ -376,13 +491,16 @@ func (e *Engine) Snapshot(state WorldState, npcStates map[string]NPCState, recen
 		SimTimeUnix:        state.Clock.SimTimeUnix,
 		Player:             state.Player,
 		Locations:          state.Locations,
+		Entities:           state.Entities,
 		NPCCount:           len(npcStates),
 		ActiveNPCs:         active,
 		Quests:             quests,
+		Rooms:              rooms,
 		RecentEvents:       recentEvents,
 		PendingIntentCount: pendingIntents,
 		Occupancy:          occupancy,
 		EntityOccupancy:    entityOccupancy,
+		RoomOccupancy:      roomOccupancy,
 		NPCStates:          npcStates,
 	}
 }

@@ -12,6 +12,7 @@ type Location struct {
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Neighbors   []string `json:"neighbors,omitempty"`
+	Model       string   `json:"model,omitempty"`
 }
 
 type Entity struct {
@@ -19,7 +20,15 @@ type Entity struct {
 	Name       string                 `json:"name,omitempty"`
 	Type       string                 `json:"type,omitempty"`
 	LocationID string                 `json:"location_id,omitempty"`
+	Placement  *EntityPlacement       `json:"placement,omitempty"`
 	State      map[string]interface{} `json:"state,omitempty"`
+}
+
+type EntityPlacement struct {
+	Model     string    `json:"model,omitempty"`
+	Scale     [3]float64 `json:"scale,omitempty"`
+	Rotation  [3]float64 `json:"rotation,omitempty"`
+	Offset    [3]float64 `json:"offset,omitempty"`
 }
 
 type QuestState struct {
@@ -29,6 +38,21 @@ type QuestState struct {
 	OwnerNPCID   string   `json:"owner_npc_id,omitempty"`
 	Participants []string `json:"participants,omitempty"`
 	Summary      string   `json:"summary,omitempty"`
+}
+
+type RoomState struct {
+	ID              string   `json:"id"`
+	Name            string   `json:"name,omitempty"`
+	Kind            string   `json:"kind,omitempty"`
+	Status          string   `json:"status,omitempty"`
+	LocationID      string   `json:"location_id,omitempty"`
+	Model           string   `json:"model,omitempty"`
+	TaskSummary     string   `json:"task_summary,omitempty"`
+	LinkedQuestID   string   `json:"linked_quest_id,omitempty"`
+	AssignedNPCIDs  []string `json:"assigned_npc_ids,omitempty"`
+	CreatedTick     int64    `json:"created_tick,omitempty"`
+	UpdatedTick     int64    `json:"updated_tick,omitempty"`
+	ReleaseOnFinish bool     `json:"release_on_finish,omitempty"`
 }
 
 type WorldEvent struct {
@@ -51,6 +75,7 @@ type WorldState struct {
 	Locations    map[string]Location    `json:"locations,omitempty"`
 	GlobalFacts  map[string]interface{} `json:"global_facts,omitempty"`
 	Entities     map[string]Entity      `json:"entities,omitempty"`
+	Rooms        map[string]RoomState   `json:"rooms,omitempty"`
 	ActiveQuests map[string]QuestState  `json:"active_quests,omitempty"`
 	RecentEvents []WorldEvent           `json:"recent_events,omitempty"`
 }
@@ -81,6 +106,7 @@ type NPCState struct {
 	PrivateMemorySummary string                 `json:"private_memory_summary,omitempty"`
 	Status               string                 `json:"status,omitempty"`
 	LastActiveTick       int64                  `json:"last_active_tick,omitempty"`
+	CurrentRoomID        string                 `json:"current_room_id,omitempty"`
 }
 
 type NPCBlueprint struct {
@@ -124,6 +150,7 @@ type WorldTickRequest struct {
 	ActorID       string       `json:"actor_id,omitempty"`
 	UserInput     string       `json:"user_input,omitempty"`
 	LocationID    string       `json:"location_id,omitempty"`
+	ForceStep     bool         `json:"force_step,omitempty"`
 	CatchUpTicks  int          `json:"catch_up_ticks,omitempty"`
 	MaxNPCPerTick int          `json:"max_npc_per_tick,omitempty"`
 	VisibleEvents []WorldEvent `json:"visible_events,omitempty"`
@@ -142,12 +169,15 @@ type SnapshotSummary struct {
 	SimTimeUnix        int64               `json:"sim_time_unix,omitempty"`
 	Player             PlayerState         `json:"player,omitempty"`
 	Locations          map[string]Location `json:"locations,omitempty"`
+	Entities           map[string]Entity   `json:"entities,omitempty"`
 	NPCCount           int                 `json:"npc_count,omitempty"`
 	ActiveNPCs         []string            `json:"active_npcs,omitempty"`
 	Quests             []QuestState        `json:"quests,omitempty"`
+	Rooms              []RoomState         `json:"rooms,omitempty"`
 	RecentEvents       []WorldEvent        `json:"recent_events,omitempty"`
 	PendingIntentCount int                 `json:"pending_intent_count,omitempty"`
 	Occupancy          map[string][]string `json:"occupancy,omitempty"`
 	EntityOccupancy    map[string][]string `json:"entity_occupancy,omitempty"`
+	RoomOccupancy      map[string][]string `json:"room_occupancy,omitempty"`
 	NPCStates          map[string]NPCState `json:"npc_states,omitempty"`
 }

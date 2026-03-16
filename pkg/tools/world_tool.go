@@ -14,6 +14,9 @@ type WorldToolRuntime interface {
 	NPCGet(id string) (map[string]interface{}, bool, error)
 	EntityList() ([]map[string]interface{}, error)
 	EntityGet(id string) (map[string]interface{}, bool, error)
+	UpdateEntity(ctx context.Context, args map[string]interface{}) (map[string]interface{}, error)
+	UpdateLocation(ctx context.Context, args map[string]interface{}) (map[string]interface{}, error)
+	UpdateRoom(ctx context.Context, args map[string]interface{}) (map[string]interface{}, error)
 	WorldGet() (map[string]interface{}, error)
 	EventLog(limit int) ([]map[string]interface{}, error)
 	CreateNPC(ctx context.Context, args map[string]interface{}) (map[string]interface{}, error)
@@ -34,14 +37,14 @@ func NewWorldTool(runtime WorldToolRuntime) *WorldTool {
 func (t *WorldTool) Name() string { return "world" }
 
 func (t *WorldTool) Description() string {
-	return "Inspect and drive the world runtime: snapshot, tick, npc_list, npc_get, entity_list, entity_get, world_get, event_log, npc_create, entity_create, quest_list, quest_get, quest_create."
+	return "Inspect and drive the world runtime: snapshot, tick, npc_list, npc_get, entity_list, entity_get, entity_update, location_update, room_update, world_get, event_log, npc_create, entity_create, quest_list, quest_get, quest_create."
 }
 
 func (t *WorldTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"action":        map[string]interface{}{"type": "string", "description": "snapshot|tick|npc_list|npc_get|entity_list|entity_get|world_get|event_log|npc_create|entity_create|quest_list|quest_get|quest_create"},
+			"action":        map[string]interface{}{"type": "string", "description": "snapshot|tick|npc_list|npc_get|entity_list|entity_get|entity_update|location_update|room_update|world_get|event_log|npc_create|entity_create|quest_list|quest_get|quest_create"},
 			"id":            map[string]interface{}{"type": "string", "description": "npc id for npc_get"},
 			"limit":         map[string]interface{}{"type": "integer", "description": "maximum event/snapshot items"},
 			"source":        map[string]interface{}{"type": "string", "description": "tick source label"},
@@ -156,6 +159,24 @@ func (t *WorldTool) Execute(ctx context.Context, args map[string]interface{}) (s
 			return "", err
 		}
 		return fmt.Sprintf("Created entity %s", strings.TrimSpace(MapStringArg(out, "entity_id"))), nil
+	case "entity_update":
+		out, err := t.runtime.UpdateEntity(ctx, args)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Updated entity %s", strings.TrimSpace(MapStringArg(out, "entity_id"))), nil
+	case "location_update":
+		out, err := t.runtime.UpdateLocation(ctx, args)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Updated location %s", strings.TrimSpace(MapStringArg(out, "location_id"))), nil
+	case "room_update":
+		out, err := t.runtime.UpdateRoom(ctx, args)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Updated room %s", strings.TrimSpace(MapStringArg(out, "room_id"))), nil
 	case "quest_list":
 		out, err := t.runtime.QuestList()
 		if err != nil {

@@ -172,6 +172,95 @@ func TestWorldRuntimeCreateEntityAndGet(t *testing.T) {
 	}
 }
 
+func TestWorldRuntimeUpdateEntityPlacement(t *testing.T) {
+	workspace := t.TempDir()
+	manager := tools.NewAgentManager(nil, workspace, nil)
+	runtime := NewWorldRuntime(workspace, manager.ProfileStore(), tools.NewAgentDispatcher(manager), manager)
+	if _, err := runtime.CreateEntity(context.Background(), map[string]interface{}{
+		"entity_id":   "bench",
+		"name":        "Bench",
+		"entity_type": "table",
+		"location_id": "square",
+	}); err != nil {
+		t.Fatalf("create entity failed: %v", err)
+	}
+	if _, err := runtime.UpdateEntity(context.Background(), map[string]interface{}{
+		"entity_id":   "bench",
+		"location_id": "commons",
+		"model":       "entity.table",
+		"rotation_y":  1.57,
+		"offset":      []interface{}{0.5, 0, -0.25},
+		"scale":       []interface{}{1.2, 1.2, 1.2},
+	}); err != nil {
+		t.Fatalf("update entity failed: %v", err)
+	}
+	entity, found, err := runtime.EntityGet("bench")
+	if err != nil || !found {
+		t.Fatalf("expected updated entity, found=%v err=%v", found, err)
+	}
+	data, _ := json.Marshal(entity)
+	text := string(data)
+	if !strings.Contains(text, `"location_id":"commons"`) {
+		t.Fatalf("expected updated location, got %s", text)
+	}
+	if !strings.Contains(text, `"model":"entity.table"`) {
+		t.Fatalf("expected updated model, got %s", text)
+	}
+}
+
+func TestWorldRuntimeUpdateLocationAndRoomModel(t *testing.T) {
+	workspace := t.TempDir()
+	manager := tools.NewAgentManager(nil, workspace, nil)
+	runtime := NewWorldRuntime(workspace, manager.ProfileStore(), tools.NewAgentDispatcher(manager), manager)
+
+	if _, err := runtime.UpdateLocation(context.Background(), map[string]interface{}{
+		"location_id": "commons",
+		"model":       "location.plaza",
+		"description": "Central commons",
+	}); err != nil {
+		t.Fatalf("update location failed: %v", err)
+	}
+	if _, err := runtime.CreateQuest(context.Background(), map[string]interface{}{
+		"id":           "room-test",
+		"title":        "Room Test",
+		"owner_npc_id": "main",
+		"status":       "accepted",
+		"summary":      "test room",
+	}); err != nil {
+		t.Fatalf("create quest failed: %v", err)
+	}
+	state, npcStates, err := runtime.ensureState()
+	if err != nil {
+		t.Fatalf("ensure state failed: %v", err)
+	}
+	runtime.syncQuestRooms(&state, npcStates)
+	if err := runtime.store.SaveWorldState(state); err != nil {
+		t.Fatalf("save state failed: %v", err)
+	}
+	if _, err := runtime.UpdateRoom(context.Background(), map[string]interface{}{
+		"room_id": "room-room-test",
+		"model":   "room.task",
+		"name":    "Task Room",
+	}); err != nil {
+		t.Fatalf("update room failed: %v", err)
+	}
+
+	worldOut, err := runtime.WorldGet()
+	if err != nil {
+		t.Fatalf("world get failed: %v", err)
+	}
+	worldState, ok := worldOut["world_state"].(world.WorldState)
+	if !ok {
+		t.Fatalf("unexpected world_state payload: %T", worldOut["world_state"])
+	}
+	if got := worldState.Locations["commons"].Model; got != "location.plaza" {
+		t.Fatalf("expected commons model updated, got %q", got)
+	}
+	if got := worldState.Rooms["room-room-test"].Model; got != "room.task" {
+		t.Fatalf("expected room model updated, got %q", got)
+	}
+}
+
 func TestWorldRuntimeSnapshotIncludesEntityOccupancyAfterInteract(t *testing.T) {
 	workspace := t.TempDir()
 	manager := tools.NewAgentManager(nil, workspace, nil)

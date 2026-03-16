@@ -59,7 +59,7 @@ func (s *Server) unsubscribeRuntimeLive(ch chan []byte) {
 }
 
 func (s *Server) runtimeLiveLoop() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
 		if !s.publishRuntimeSnapshot(context.Background()) {
