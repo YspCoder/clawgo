@@ -42,51 +42,18 @@
         "outcomes_title": "Execution Outcomes"
       }
     },
-    "router": {
-      "enabled": true,
-      "main_agent_id": "main",
-      "strategy": "rules_first",
-      "policy": {
-        "intent_max_input_chars": 1200,
-        "max_rounds_without_user": 200
-      },
-      "rules": [
-        {
-          "agent_id": "coder",
-          "keywords": ["代码", "实现", "修复", "重构", "bug", "debug", "implement", "refactor"]
-        },
-        {
-          "agent_id": "tester",
-          "keywords": ["测试", "回归", "验证", "test", "regression", "verify"]
-        }
-      ],
-      "allow_direct_agent_chat": false,
-      "max_hops": 6,
-      "default_timeout_sec": 600,
-      "default_wait_reply": true,
-      "sticky_thread_owner": true
-    },
-    "communication": {
-      "mode": "mediated",
-      "persist_threads": true,
-      "persist_messages": true,
-      "max_messages_per_thread": 100,
-      "dead_letter_queue": true,
-      "default_message_ttl_sec": 86400
-    },
-    "subagents": {
+    "agents": {
       "main": {
         "enabled": true,
-        "type": "router",
-        "notify_main_policy": "final_only",
-        "display_name": "Main Agent",
+        "kind": "agent",
+        "type": "agent",
+        "display_name": "World Mind",
         "role": "orchestrator",
-        "system_prompt_file": "agents/main/AGENT.md",
+        "description": "The world mind that arbitrates events, advances ticks, and responds to users as the game's core intelligence.",
+        "prompt_file": "agents/main/AGENT.md",
         "memory_namespace": "main",
-        "accept_from": ["user", "coder", "tester"],
-        "can_talk_to": ["coder", "tester"],
         "tools": {
-          "allowlist": ["sessions", "subagents", "memory_search", "repo_map"]
+          "allowlist": ["sessions", "world", "agent_profile", "memory_search", "repo_map"]
         },
         "runtime": {
           "provider": "codex",
@@ -96,41 +63,51 @@
           "max_parallel_runs": 4
         }
       },
-      "coder": {
+      "innkeeper": {
         "enabled": true,
-        "type": "worker",
-        "notify_main_policy": "final_only",
-        "display_name": "Code Agent",
-        "role": "code",
-        "system_prompt_file": "agents/coder/AGENT.md",
-        "memory_namespace": "coder",
-        "accept_from": ["main", "tester"],
-        "can_talk_to": ["main", "tester"],
+        "kind": "npc",
+        "type": "npc",
+        "display_name": "Innkeeper",
+        "role": "host",
+        "description": "Keeps the tavern running, greets travelers, and passes along rumors.",
+        "persona": "Warm, observant, and quick to notice unusual visitors.",
+        "traits": ["welcoming", "practical", "well-informed"],
+        "faction": "tavern",
+        "home_location": "commons",
+        "default_goals": ["welcome travelers", "share useful rumors", "maintain order"],
+        "perception_scope": 1,
+        "world_tags": ["npc", "host", "rumors"],
+        "prompt_file": "agents/innkeeper/AGENT.md",
+        "memory_namespace": "innkeeper",
         "tools": {
-          "allowlist": ["filesystem", "shell", "repo_map", "sessions"]
+          "allowlist": ["sessions", "world", "memory_search"]
         },
         "runtime": {
           "provider": "openai",
           "temperature": 0.2,
           "max_retries": 1,
           "retry_backoff_ms": 1000,
-          "max_task_chars": 20000,
-          "max_result_chars": 12000,
           "max_parallel_runs": 2
         }
       },
-      "tester": {
+      "scout": {
         "enabled": true,
-        "type": "worker",
-        "notify_main_policy": "on_blocked",
-        "display_name": "Test Agent",
-        "role": "test",
-        "system_prompt_file": "agents/tester/AGENT.md",
-        "memory_namespace": "tester",
-        "accept_from": ["main", "coder"],
-        "can_talk_to": ["main", "coder"],
+        "kind": "npc",
+        "type": "npc",
+        "display_name": "Scout",
+        "role": "watcher",
+        "description": "Watches nearby routes and returns with sightings and warnings.",
+        "persona": "Alert, terse, and mission-focused.",
+        "traits": ["curious", "fast", "loyal"],
+        "faction": "watch",
+        "home_location": "square",
+        "default_goals": ["patrol nearby paths", "report unusual events", "protect the commons"],
+        "perception_scope": 2,
+        "world_tags": ["npc", "patrol", "watch"],
+        "prompt_file": "agents/scout/AGENT.md",
+        "memory_namespace": "scout",
         "tools": {
-          "allowlist": ["shell", "filesystem", "process_manager", "sessions"]
+          "allowlist": ["sessions", "world", "memory_search"]
         },
         "runtime": {
           "provider": "anthropic",
@@ -142,11 +119,11 @@
       },
       "node.edge-dev.main": {
         "enabled": true,
-        "type": "worker",
+        "kind": "agent",
+        "type": "agent",
         "transport": "node",
         "node_id": "edge-dev",
         "parent_agent_id": "main",
-        "notify_main_policy": "internal_only",
         "display_name": "Edge Dev Main Agent",
         "role": "remote_main",
         "memory_namespace": "node.edge-dev.main",

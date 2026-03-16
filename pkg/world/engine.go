@@ -27,6 +27,12 @@ func (e *Engine) EnsureWorld(state *WorldState) {
 	if state.Locations == nil || len(state.Locations) == 0 {
 		state.Locations = DefaultWorldState().Locations
 	}
+	if strings.TrimSpace(state.Player.PlayerID) == "" {
+		state.Player = DefaultWorldState().Player
+	}
+	if strings.TrimSpace(state.Player.CurrentLocation) == "" {
+		state.Player.CurrentLocation = "commons"
+	}
 	if state.GlobalFacts == nil {
 		state.GlobalFacts = map[string]interface{}{}
 	}
@@ -81,14 +87,15 @@ func (e *Engine) NextTick(state *WorldState) int64 {
 	return state.Clock.Tick
 }
 
-func (e *Engine) BuildUserEvent(state *WorldState, input, locationID string) WorldEvent {
+func (e *Engine) BuildUserEvent(state *WorldState, input, locationID, actorID string) WorldEvent {
 	e.EnsureWorld(state)
 	locationID = firstNonEmpty(locationID, "commons")
+	actorID = firstNonEmpty(actorID, "user")
 	return WorldEvent{
 		ID:         fmt.Sprintf("evt-user-%d", time.Now().UnixNano()),
 		Type:       "user_input",
 		Source:     "user",
-		ActorID:    "user",
+		ActorID:    actorID,
 		LocationID: locationID,
 		Content:    strings.TrimSpace(input),
 		Tick:       state.Clock.Tick,
@@ -367,6 +374,7 @@ func (e *Engine) Snapshot(state WorldState, npcStates map[string]NPCState, recen
 		WorldID:            state.WorldID,
 		Tick:               state.Clock.Tick,
 		SimTimeUnix:        state.Clock.SimTimeUnix,
+		Player:             state.Player,
 		Locations:          state.Locations,
 		NPCCount:           len(npcStates),
 		ActiveNPCs:         active,

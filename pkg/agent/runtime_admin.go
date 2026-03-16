@@ -64,6 +64,18 @@ func (al *AgentLoop) runtimeAdminHandlers() map[string]runtimeAdminHandler {
 			}
 			return map[string]interface{}{"message": out}, nil
 		},
+		"world_player_get": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+			if al.worldRuntime == nil {
+				return nil, fmt.Errorf("world runtime is not configured")
+			}
+			return al.worldRuntime.PlayerGet()
+		},
+		"world_player_action": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+			if al.worldRuntime == nil {
+				return nil, fmt.Errorf("world runtime is not configured")
+			}
+			return al.worldRuntime.PlayerAction(ctx, args)
+		},
 		"world_npc_list": func(ctx context.Context, args map[string]interface{}) (interface{}, error) {
 			if al.worldRuntime == nil {
 				return nil, fmt.Errorf("world runtime is not configured")

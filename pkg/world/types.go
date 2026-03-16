@@ -47,11 +47,20 @@ type WorldEvent struct {
 type WorldState struct {
 	WorldID      string                 `json:"world_id"`
 	Clock        Clock                  `json:"clock"`
+	Player       PlayerState            `json:"player"`
 	Locations    map[string]Location    `json:"locations,omitempty"`
 	GlobalFacts  map[string]interface{} `json:"global_facts,omitempty"`
 	Entities     map[string]Entity      `json:"entities,omitempty"`
 	ActiveQuests map[string]QuestState  `json:"active_quests,omitempty"`
 	RecentEvents []WorldEvent           `json:"recent_events,omitempty"`
+}
+
+type PlayerState struct {
+	PlayerID        string `json:"player_id"`
+	DisplayName     string `json:"display_name,omitempty"`
+	CurrentLocation string `json:"current_location,omitempty"`
+	Status          string `json:"status,omitempty"`
+	LastActionTick  int64  `json:"last_action_tick,omitempty"`
 }
 
 type GoalSet struct {
@@ -112,6 +121,7 @@ type WorldDelta struct {
 
 type WorldTickRequest struct {
 	Source        string       `json:"source,omitempty"`
+	ActorID       string       `json:"actor_id,omitempty"`
 	UserInput     string       `json:"user_input,omitempty"`
 	LocationID    string       `json:"location_id,omitempty"`
 	CatchUpTicks  int          `json:"catch_up_ticks,omitempty"`
@@ -130,6 +140,7 @@ type SnapshotSummary struct {
 	WorldID            string              `json:"world_id,omitempty"`
 	Tick               int64               `json:"tick,omitempty"`
 	SimTimeUnix        int64               `json:"sim_time_unix,omitempty"`
+	Player             PlayerState         `json:"player,omitempty"`
 	Locations          map[string]Location `json:"locations,omitempty"`
 	NPCCount           int                 `json:"npc_count,omitempty"`
 	ActiveNPCs         []string            `json:"active_npcs,omitempty"`

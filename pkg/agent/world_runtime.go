@@ -62,6 +62,96 @@ func (wr *WorldRuntime) Tick(ctx context.Context, source string) (string, error)
 	return res.Text, nil
 }
 
+func (wr *WorldRuntime) PlayerGet() (map[string]interface{}, error) {
+	state, _, err := wr.ensureState()
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"player": state.Player,
+	}, nil
+}
+
+func (wr *WorldRuntime) PlayerAction(ctx context.Context, args map[string]interface{}) (map[string]interface{}, error) {
+	state, _, err := wr.ensureState()
+	if err != nil {
+		return nil, err
+	}
+	action := strings.ToLower(strings.TrimSpace(tools.MapStringArg(args, "action")))
+	if action == "" {
+		return nil, fmt.Errorf("action is required")
+	}
+	player := state.Player
+	if strings.TrimSpace(player.PlayerID) == "" {
+		player = world.DefaultWorldState().Player
+	}
+	switch action {
+	case "move":
+		target := normalizeWorldID(firstNonEmpty(tools.MapStringArg(args, "location_id"), tools.MapStringArg(args, "target_location")))
+		if target == "" {
+			return nil, fmt.Errorf("location_id is required")
+		}
+		current := state.Locations[player.CurrentLocation]
+		if player.CurrentLocation != target && !runtimeContainsString(current.Neighbors, target) {
+			return nil, fmt.Errorf("location_not_reachable")
+		}
+		player.CurrentLocation = target
+		player.LastActionTick = state.Clock.Tick
+		state.Player = player
+		evt := world.WorldEvent{
+			ID:         fmt.Sprintf("evt-player-move-%d", time.Now().UnixNano()),
+			Type:       "player_move",
+			Source:     "player",
+			ActorID:    player.PlayerID,
+			LocationID: target,
+			Content:    target,
+			Tick:       state.Clock.Tick,
+			CreatedAt:  time.Now().UnixMilli(),
+		}
+		wr.engine.AppendRecentEvent(&state, evt, 20)
+		if err := wr.store.SaveWorldState(state); err != nil {
+			return nil, err
+		}
+		if err := wr.store.AppendWorldEvent(evt); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"ok": true, "message": fmt.Sprintf("moved to %s", target), "player": state.Player}, nil
+	case "speak":
+		target := strings.TrimSpace(firstNonEmpty(tools.MapStringArg(args, "target_npc_id"), tools.MapStringArg(args, "target_id")))
+		prompt := strings.TrimSpace(firstNonEmpty(tools.MapStringArg(args, "prompt"), tools.MapStringArg(args, "speech")))
+		content := prompt
+		if target != "" {
+			content = fmt.Sprintf("我在 %s 对 NPC %s 说：%s", firstNonEmpty(player.CurrentLocation, "commons"), target, firstNonEmpty(prompt, "你好。"))
+		}
+		return wr.handlePlayerInput(ctx, content, player.CurrentLocation, player.PlayerID)
+	case "interact":
+		target := strings.TrimSpace(firstNonEmpty(tools.MapStringArg(args, "target_entity_id"), tools.MapStringArg(args, "target_id")))
+		if target == "" {
+			return nil, fmt.Errorf("target_entity_id is required")
+		}
+		prompt := strings.TrimSpace(firstNonEmpty(tools.MapStringArg(args, "prompt"), tools.MapStringArg(args, "speech")))
+		content := fmt.Sprintf("我在 %s 与实体 %s 互动：%s", firstNonEmpty(player.CurrentLocation, "commons"), target, firstNonEmpty(prompt, "检查它并告诉我发生了什么。"))
+		return wr.handlePlayerInput(ctx, content, player.CurrentLocation, player.PlayerID)
+	case "quest_accept", "quest_progress", "quest_complete":
+		questID := strings.TrimSpace(firstNonEmpty(tools.MapStringArg(args, "quest_id"), tools.MapStringArg(args, "target_id")))
+		if questID == "" {
+			return nil, fmt.Errorf("quest_id is required")
+		}
+		var content string
+		switch action {
+		case "quest_accept":
+			content = fmt.Sprintf("接受任务 %s", questID)
+		case "quest_progress":
+			content = fmt.Sprintf("推进任务 %s %s", questID, strings.TrimSpace(tools.MapStringArg(args, "prompt")))
+		case "quest_complete":
+			content = fmt.Sprintf("完成任务 %s", questID)
+		}
+		return wr.handlePlayerInput(ctx, strings.TrimSpace(content), player.CurrentLocation, player.PlayerID)
+	default:
+		return nil, fmt.Errorf("unsupported action: %s", action)
+	}
+}
+
 func (wr *WorldRuntime) NPCList() ([]map[string]interface{}, error) {
 	_, npcStates, err := wr.ensureState()
 	if err != nil {
@@ -436,15 +526,35 @@ func (wr *WorldRuntime) HandleUserInput(ctx context.Context, content, channel, c
 	if out, handled, err := wr.handleUserQuestInput(content); handled || err != nil {
 		return out, err
 	}
-	res, err := wr.advance(ctx, world.WorldTickRequest{
-		Source:     "user",
-		UserInput:  content,
-		LocationID: "commons",
-	})
+	out, err := wr.handlePlayerInput(ctx, content, "commons", "user")
 	if err != nil {
 		return "", err
 	}
-	return res.Text, nil
+	return tools.MapStringArg(out, "message"), nil
+}
+
+func (wr *WorldRuntime) handlePlayerInput(ctx context.Context, content, locationID, actorID string) (map[string]interface{}, error) {
+	if out, handled, err := wr.handleUserQuestInput(content); handled || err != nil {
+		return map[string]interface{}{"ok": err == nil, "message": out}, err
+	}
+	res, err := wr.advance(ctx, world.WorldTickRequest{
+		Source:     "player",
+		UserInput:  content,
+		LocationID: locationID,
+		ActorID:    actorID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	state, _, stateErr := wr.ensureState()
+	if stateErr != nil {
+		return nil, stateErr
+	}
+	return map[string]interface{}{
+		"ok":      true,
+		"message": res.Text,
+		"player":  state.Player,
+	}, nil
 }
 
 func (wr *WorldRuntime) advance(ctx context.Context, req world.WorldTickRequest) (world.RenderedResult, error) {
@@ -471,7 +581,7 @@ func (wr *WorldRuntime) advance(ctx context.Context, req world.WorldTickRequest)
 	var userEvent *world.WorldEvent
 	if strings.TrimSpace(req.UserInput) != "" {
 		wr.engine.NextTick(&state)
-		evt := wr.engine.BuildUserEvent(&state, req.UserInput, req.LocationID)
+		evt := wr.engine.BuildUserEvent(&state, req.UserInput, req.LocationID, req.ActorID)
 		userEvent = &evt
 		wr.engine.AppendRecentEvent(&state, evt, 20)
 		if err := wr.store.AppendWorldEvent(evt); err != nil {
@@ -859,6 +969,16 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func runtimeContainsString(items []string, target string) bool {
+	target = strings.TrimSpace(target)
+	for _, item := range items {
+		if strings.TrimSpace(item) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func containsAnyQuestPhrase(text string, needles ...string) bool {

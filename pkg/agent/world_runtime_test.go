@@ -219,6 +219,60 @@ func TestWorldRuntimeSnapshotIncludesEntityOccupancyAfterInteract(t *testing.T) 
 	}
 }
 
+func TestWorldRuntimePlayerDefaultsAndActions(t *testing.T) {
+	workspace := t.TempDir()
+	manager := tools.NewAgentManager(nil, workspace, nil)
+	store := manager.ProfileStore()
+	if _, err := store.Upsert(tools.AgentProfile{
+		AgentID:      "keeper",
+		Name:         "Keeper",
+		Kind:         "npc",
+		Persona:      "Greets visitors.",
+		HomeLocation: "commons",
+		DefaultGoals: []string{"watch the square"},
+		Status:       "active",
+	}); err != nil {
+		t.Fatalf("profile upsert failed: %v", err)
+	}
+	manager.SetRunFunc(func(ctx context.Context, task *tools.AgentTask) (string, error) {
+		return `{"actor_id":"keeper","action":"speak","speech":"Welcome, traveler."}`, nil
+	})
+	runtime := NewWorldRuntime(workspace, store, tools.NewAgentDispatcher(manager), manager)
+
+	playerOut, err := runtime.PlayerGet()
+	if err != nil {
+		t.Fatalf("player get failed: %v", err)
+	}
+	data, _ := json.Marshal(playerOut)
+	if !strings.Contains(string(data), `"current_location":"commons"`) {
+		t.Fatalf("expected default player location commons, got %s", string(data))
+	}
+
+	moveOut, err := runtime.PlayerAction(context.Background(), map[string]interface{}{
+		"action":      "move",
+		"location_id": "square",
+	})
+	if err != nil {
+		t.Fatalf("player move failed: %v", err)
+	}
+	moveData, _ := json.Marshal(moveOut)
+	if !strings.Contains(string(moveData), `"current_location":"square"`) {
+		t.Fatalf("expected moved player to square, got %s", string(moveData))
+	}
+
+	speakOut, err := runtime.PlayerAction(context.Background(), map[string]interface{}{
+		"action":        "speak",
+		"target_npc_id": "keeper",
+		"prompt":        "你好",
+	})
+	if err != nil {
+		t.Fatalf("player speak failed: %v", err)
+	}
+	if !strings.Contains(tools.MapStringArg(speakOut, "message"), "keeper") && !strings.Contains(tools.MapStringArg(speakOut, "message"), "Welcome") {
+		t.Fatalf("unexpected speak result: %#v", speakOut)
+	}
+}
+
 func TestHandleRuntimeAdminSnapshotIncludesWorld(t *testing.T) {
 	workspace := t.TempDir()
 	manager := tools.NewAgentManager(nil, workspace, nil)

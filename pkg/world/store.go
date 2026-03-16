@@ -44,6 +44,12 @@ func DefaultWorldState() WorldState {
 			LastAdvance:  now,
 			TickDuration: 30,
 		},
+		Player: PlayerState{
+			PlayerID:        "player",
+			DisplayName:     "Player",
+			CurrentLocation: "commons",
+			Status:          "active",
+		},
 		Locations: map[string]Location{
 			"commons": {
 				ID:        "commons",
@@ -88,6 +94,12 @@ func (s *Store) LoadWorldState() (WorldState, error) {
 	}
 	if state.Locations == nil {
 		state.Locations = DefaultWorldState().Locations
+	}
+	if strings.TrimSpace(state.Player.PlayerID) == "" {
+		state.Player = DefaultWorldState().Player
+	}
+	if strings.TrimSpace(state.Player.CurrentLocation) == "" {
+		state.Player.CurrentLocation = "commons"
 	}
 	if state.GlobalFacts == nil {
 		state.GlobalFacts = map[string]interface{}{}
