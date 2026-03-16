@@ -209,9 +209,10 @@ func TestHandleWebUINodeArtifactsAppliesRetentionConfig(t *testing.T) {
 		t.Fatalf("save config: %v", err)
 	}
 	srv.SetConfigPath(cfgPath)
+	base := time.Now().UTC().Add(-2 * time.Hour)
 	auditLines := strings.Join([]string{
-		"{\"time\":\"2026-03-09T00:00:00Z\",\"node\":\"edge-a\",\"action\":\"screen_snapshot\",\"ok\":true,\"artifacts\":[{\"name\":\"one.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"content_base64\":\"b25l\"}]}",
-		"{\"time\":\"2026-03-09T00:01:00Z\",\"node\":\"edge-a\",\"action\":\"screen_snapshot\",\"ok\":true,\"artifacts\":[{\"name\":\"two.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"content_base64\":\"dHdv\"}]}",
+		fmt.Sprintf("{\"time\":%q,\"node\":\"edge-a\",\"action\":\"screen_snapshot\",\"ok\":true,\"artifacts\":[{\"name\":\"one.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"content_base64\":\"b25l\"}]}", base.Format(time.RFC3339)),
+		fmt.Sprintf("{\"time\":%q,\"node\":\"edge-a\",\"action\":\"screen_snapshot\",\"ok\":true,\"artifacts\":[{\"name\":\"two.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"content_base64\":\"dHdv\"}]}", base.Add(time.Minute).Format(time.RFC3339)),
 	}, "\n") + "\n"
 	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), []byte(auditLines), 0o644); err != nil {
 		t.Fatalf("write audit: %v", err)

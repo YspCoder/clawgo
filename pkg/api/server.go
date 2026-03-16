@@ -343,6 +343,25 @@ func requestOrigin(r *http.Request) string {
 	return scheme + "://" + canonicalOriginHost(r.Host, scheme == "https")
 }
 
+func sameSiteOrigin(originA, originB string) bool {
+	parsedA, err := url.Parse(strings.TrimSpace(originA))
+	if err != nil || parsedA == nil {
+		return false
+	}
+	parsedB, err := url.Parse(strings.TrimSpace(originB))
+	if err != nil || parsedB == nil {
+		return false
+	}
+	schemeA := strings.ToLower(strings.TrimSpace(parsedA.Scheme))
+	schemeB := strings.ToLower(strings.TrimSpace(parsedB.Scheme))
+	if schemeA == "" || schemeB == "" || schemeA != schemeB {
+		return false
+	}
+	hostA := strings.ToLower(strings.TrimSpace(parsedA.Hostname()))
+	hostB := strings.ToLower(strings.TrimSpace(parsedB.Hostname()))
+	return hostA != "" && hostA == hostB
+}
+
 func (s *Server) isTrustedOrigin(r *http.Request) bool {
 	if r == nil {
 		return false
@@ -360,7 +379,17 @@ func (s *Server) isTrustedOrigin(r *http.Request) bool {
 
 func (s *Server) shouldUseCrossSiteCookie(r *http.Request) bool {
 	origin := normalizeOrigin(r.Header.Get("Origin"))
-	return origin != "" && origin != requestOrigin(r) && s.isTrustedOrigin(r)
+	if origin == "" || !s.isTrustedOrigin(r) {
+		return false
+	}
+	reqOrigin := requestOrigin(r)
+	if origin == reqOrigin {
+		return false
+	}
+	if sameSiteOrigin(origin, reqOrigin) {
+		return false
+	}
+	return true
 }
 
 func (s *Server) websocketUpgrader() *websocket.Upgrader {

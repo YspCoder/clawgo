@@ -197,6 +197,34 @@ func TestHandleWebUIAuthSessionSetsCrossSiteCookieForAllowedOrigin(t *testing.T)
 	}
 }
 
+func TestHandleWebUIAuthSessionKeepsLaxCookieForSameIPDifferentPort(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("0.0.0.0", 0, "secret-token", nil)
+
+	req := httptest.NewRequest(http.MethodPost, "http://134.195.210.114:18790/api/auth/session", nil)
+	req.Host = "134.195.210.114:18790"
+	req.Header.Set("Origin", "http://134.195.210.114:3000")
+	req.Header.Set("Authorization", "Bearer secret-token")
+	rec := httptest.NewRecorder()
+
+	srv.withCORS(http.HandlerFunc(srv.handleWebUIAuthSession)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one cookie, got %d", len(cookies))
+	}
+	if cookies[0].SameSite != http.SameSiteLaxMode {
+		t.Fatalf("expected SameSite=Lax for same-IP direct session, got %v", cookies[0].SameSite)
+	}
+	if cookies[0].Secure {
+		t.Fatalf("expected non-secure cookie for plain HTTP direct IP session")
+	}
+}
+
 func TestHandleWebUIUploadDoesNotExposeAbsolutePath(t *testing.T) {
 	t.Parallel()
 
