@@ -1,13 +1,18 @@
-# TOOLS.md - Local Tool Notes
+# TOOLS.md
 
-Use this file for environment-specific notes, for example:
+Use this file for environment-specific operational notes.
 
-- host aliases
-- API endpoints
-- SSH shortcuts
-- camera device names
-- preferred voice/model settings
+Prefer notes that help the world mind or NPC runtime execute faster and more safely, such as:
+- gateway addresses
+- local node endpoints
+- model/provider quirks
+- channel-specific operational constraints
+- camera or device names
+- world admin shortcuts
+- preferred debugging commands
 
 Rules:
-- Keep credentials out of this file.
-- Store only operational hints that improve execution speed.
+- never store credentials here
+- keep entries short and actionable
+- prefer operational hints over prose explanation
+- update this file when local infrastructure changes in a way the runtime should remember

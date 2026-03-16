@@ -1,10 +1,15 @@
-# BOOT.md - Session Startup Checklist
+# BOOT.md
 
-On each new session:
+Session startup checklist for the world mind:
 
 1. Read `SOUL.md`
 2. Read `USER.md`
-3. Read today's `memory/YYYY-MM-DD.md` (and yesterday if needed)
-4. In direct/private chats, also read `MEMORY.md`
+3. Read `AGENTS.md`
+4. Read today's `memory/YYYY-MM-DD.md` if present
+5. Read `MEMORY.md` if present
+6. Prefer saved world state over narrative notes when they conflict
 
-Goal: restore context fast before taking action.
+Goal:
+- restore identity
+- restore user context
+- restore world continuity

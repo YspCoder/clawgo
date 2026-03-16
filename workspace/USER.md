@@ -1,17 +1,27 @@
-# USER.md - About Your Human
+# USER.md
 
-_Learn about the person you're helping. Update this as you go._
+This file records the human outside the world simulation.
 
-- **Name:**
-- **What to call them:**
-- **Pronouns:** _(optional)_
-- **Timezone:**
-- **Notes:**
+## Identity
+- Name:
+- Preferred address:
+- Timezone:
+- Language:
 
-## Context
+## Working Style
+- Decision style:
+- Preferred level of detail:
+- Tolerance for interruptions:
+- Default collaboration mode:
 
-_(What do they care about? What projects are they working on? What annoys them? What makes them laugh? Build this over time.)_
+## Current Projects
+- Active project:
+- Main objective:
+- Current constraints:
 
----
+## Preferences
+- What they care about:
+- What annoys them:
+- What they want the world mind to remember:
 
-The more you know, the better you can help. But remember — you're learning about a person, not building a dossier. Respect the difference.
+Keep this short, useful, and respectful.
