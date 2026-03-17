@@ -162,22 +162,6 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 	return "", false
 }
 
-func (sl *SkillsLoader) LoadSkillsForContext(skillNames []string) string {
-	if len(skillNames) == 0 {
-		return ""
-	}
-
-	var parts []string
-	for _, name := range skillNames {
-		content, ok := sl.LoadSkill(name)
-		if ok {
-			parts = append(parts, fmt.Sprintf("### Skill: %s\n\n%s", name, content))
-		}
-	}
-
-	return strings.Join(parts, "\n\n---\n\n")
-}
-
 func (sl *SkillsLoader) BuildSkillsSummary() string {
 	allSkills := sl.ListSkills()
 	if len(allSkills) == 0 {

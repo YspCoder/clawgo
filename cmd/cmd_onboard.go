@@ -37,30 +37,6 @@ func onboard() {
 	fmt.Println("  1. Chat: clawgo agent -m \"Hello!\"")
 }
 
-func ensureConfigOnboard(configPath string, defaults *config.Config) (string, error) {
-	if defaults == nil {
-		return "", fmt.Errorf("defaults is nil")
-	}
-	if defaults.Gateway.Token == "" {
-		defaults.Gateway.Token = config.DefaultConfig().Gateway.Token
-	}
-
-	exists := true
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		exists = false
-	} else if err != nil {
-		return "", err
-	}
-
-	if err := config.SaveConfig(configPath, defaults); err != nil {
-		return "", err
-	}
-	if exists {
-		return "overwritten", nil
-	}
-	return "created", nil
-}
-
 func copyEmbeddedToTarget(targetDir string, overwrite func(relPath string) bool) error {
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create target directory: %w", err)

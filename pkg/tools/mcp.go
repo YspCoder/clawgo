@@ -1223,19 +1223,6 @@ func buildMCPDynamicToolName(serverName, remoteName string) string {
 	return trimmed + suffix
 }
 
-func ParseMCPDynamicToolName(name string) (serverName string, remoteName string, ok bool) {
-	const prefix = "mcp__"
-	if !strings.HasPrefix(strings.TrimSpace(name), prefix) {
-		return "", "", false
-	}
-	rest := strings.TrimPrefix(strings.TrimSpace(name), prefix)
-	parts := strings.SplitN(rest, "__", 2)
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-		return "", "", false
-	}
-	return parts[0], parts[1], true
-}
-
 var mcpToolSegmentPattern = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
 
 func sanitizeMCPToolSegment(in string) string {
