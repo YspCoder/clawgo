@@ -138,22 +138,6 @@
           "retry_backoff_ms": 1000,
           "max_parallel_runs": 2
         }
-      },
-      "node.edge-dev.main": {
-        "enabled": true,
-        "type": "worker",
-        "transport": "node",
-        "node_id": "edge-dev",
-        "parent_agent_id": "main",
-        "notify_main_policy": "internal_only",
-        "display_name": "Edge Dev Main Agent",
-        "role": "remote_main",
-        "memory_namespace": "node.edge-dev.main",
-        "runtime": {
-          "max_retries": 1,
-          "retry_backoff_ms": 1000,
-          "max_parallel_runs": 1
-        }
       }
     }
   },
@@ -387,21 +371,7 @@
   "gateway": {
     "host": "0.0.0.0",
     "port": 18790,
-    "token": "",
-    "nodes": {
-      "p2p": {
-        "enabled": false,
-        "transport": "websocket_tunnel",
-        "stun_servers": [],
-        "ice_servers": [
-          {
-            "urls": [
-              "stun:stun.l.google.com:19302"
-            ]
-          }
-        ]
-      }
-    }
+    "token": ""
   },
   "cron": {
     "min_sleep_sec": 1,

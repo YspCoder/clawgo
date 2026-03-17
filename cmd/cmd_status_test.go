@@ -25,12 +25,6 @@ func TestStatusCmdUsesActiveProviderDetails(t *testing.T) {
 	cfg.Logging.Enabled = false
 	cfg.Agents.Defaults.Workspace = workspace
 	cfg.Agents.Defaults.Model.Primary = "backup/backup-model"
-	cfg.Gateway.Nodes.P2P.Enabled = true
-	cfg.Gateway.Nodes.P2P.Transport = "webrtc"
-	cfg.Gateway.Nodes.P2P.STUNServers = []string{"stun:stun.example.net:3478"}
-	cfg.Gateway.Nodes.P2P.ICEServers = []config.GatewayICEConfig{
-		{URLs: []string{"turn:turn.example.net:3478"}, Username: "user", Credential: "secret"},
-	}
 	cfg.Models.Providers["openai"] = config.ProviderConfig{
 		APIBase:    "https://primary.example/v1",
 		APIKey:     "",
@@ -78,11 +72,5 @@ func TestStatusCmdUsesActiveProviderDetails(t *testing.T) {
 	}
 	if !strings.Contains(out, "API Key Status: configured") {
 		t.Fatalf("expected active provider api key status in output, got: %s", out)
-	}
-	if !strings.Contains(out, "Nodes P2P: enabled=true transport=webrtc") {
-		t.Fatalf("expected nodes p2p status in output, got: %s", out)
-	}
-	if !strings.Contains(out, "Nodes P2P ICE: stun=1 ice=1") {
-		t.Fatalf("expected nodes p2p ice summary in output, got: %s", out)
 	}
 }

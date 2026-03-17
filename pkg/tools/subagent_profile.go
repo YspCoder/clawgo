@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/YspCoder/clawgo/pkg/config"
-	"github.com/YspCoder/clawgo/pkg/nodes"
 	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 )
 
@@ -20,7 +19,6 @@ type SubagentProfile struct {
 	AgentID          string   `json:"agent_id"`
 	Name             string   `json:"name"`
 	Transport        string   `json:"transport,omitempty"`
-	NodeID           string   `json:"node_id,omitempty"`
 	ParentAgentID    string   `json:"parent_agent_id,omitempty"`
 	NotifyMainPolicy string   `json:"notify_main_policy,omitempty"`
 	Role             string   `json:"role,omitempty"`
@@ -126,9 +124,6 @@ func (s *SubagentProfileStore) Upsert(profile SubagentProfile) (*SubagentProfile
 	if managed, ok := s.configProfileLocked(p.AgentID); ok {
 		return nil, fmt.Errorf("subagent profile %q is managed by %s", p.AgentID, managed.ManagedBy)
 	}
-	if managed, ok := s.nodeProfileLocked(p.AgentID); ok {
-		return nil, fmt.Errorf("subagent profile %q is managed by %s", p.AgentID, managed.ManagedBy)
-	}
 
 	now := time.Now().UnixMilli()
 	path := s.profilePath(p.AgentID)
@@ -167,9 +162,6 @@ func (s *SubagentProfileStore) Delete(agentID string) error {
 	if managed, ok := s.configProfileLocked(id); ok {
 		return fmt.Errorf("subagent profile %q is managed by %s", id, managed.ManagedBy)
 	}
-	if managed, ok := s.nodeProfileLocked(id); ok {
-		return fmt.Errorf("subagent profile %q is managed by %s", id, managed.ManagedBy)
-	}
 
 	err := os.Remove(s.profilePath(id))
 	if err != nil && !os.IsNotExist(err) {
@@ -186,7 +178,6 @@ func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
 		p.Name = p.AgentID
 	}
 	p.Transport = normalizeProfileTransport(p.Transport)
-	p.NodeID = strings.TrimSpace(p.NodeID)
 	p.ParentAgentID = normalizeSubagentIdentifier(p.ParentAgentID)
 	p.NotifyMainPolicy = normalizeNotifyMainPolicy(p.NotifyMainPolicy)
 	p.Role = strings.TrimSpace(p.Role)
@@ -277,12 +268,6 @@ func (s *SubagentProfileStore) mergedProfilesLocked() (map[string]SubagentProfil
 	for _, p := range s.configProfilesLocked() {
 		merged[p.AgentID] = p
 	}
-	for _, p := range s.nodeProfilesLocked() {
-		if _, exists := merged[p.AgentID]; exists {
-			continue
-		}
-		merged[p.AgentID] = p
-	}
 	fileProfiles, err := s.fileProfilesLocked()
 	if err != nil {
 		return nil, err
@@ -356,31 +341,6 @@ func (s *SubagentProfileStore) configProfileLocked(agentID string) (SubagentProf
 	return profileFromConfig(id, subcfg), true
 }
 
-func (s *SubagentProfileStore) nodeProfileLocked(agentID string) (SubagentProfile, bool) {
-	id := normalizeSubagentIdentifier(agentID)
-	if id == "" {
-		return SubagentProfile{}, false
-	}
-	cfg := runtimecfg.Get()
-	parentAgentID := "main"
-	if cfg != nil {
-		if mainID := normalizeSubagentIdentifier(cfg.Agents.Router.MainAgentID); mainID != "" {
-			parentAgentID = mainID
-		}
-	}
-	for _, node := range nodes.DefaultManager().List() {
-		if isLocalNode(node.ID) {
-			continue
-		}
-		for _, profile := range profilesFromNode(node, parentAgentID) {
-			if profile.AgentID == id {
-				return profile, true
-			}
-		}
-	}
-	return SubagentProfile{}, false
-}
-
 func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentProfile {
 	status := "active"
 	if !subcfg.Enabled {
@@ -390,7 +350,6 @@ func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentPro
 		AgentID:          agentID,
 		Name:             strings.TrimSpace(subcfg.DisplayName),
 		Transport:        strings.TrimSpace(subcfg.Transport),
-		NodeID:           strings.TrimSpace(subcfg.NodeID),
 		ParentAgentID:    strings.TrimSpace(subcfg.ParentAgentID),
 		NotifyMainPolicy: strings.TrimSpace(subcfg.NotifyMainPolicy),
 		Role:             strings.TrimSpace(subcfg.Role),
@@ -405,111 +364,6 @@ func profileFromConfig(agentID string, subcfg config.SubagentConfig) SubagentPro
 		Status:           status,
 		ManagedBy:        "config.json",
 	})
-}
-
-func (s *SubagentProfileStore) nodeProfilesLocked() []SubagentProfile {
-	nodeItems := nodes.DefaultManager().List()
-	if len(nodeItems) == 0 {
-		return nil
-	}
-	cfg := runtimecfg.Get()
-	parentAgentID := "main"
-	if cfg != nil {
-		if mainID := normalizeSubagentIdentifier(cfg.Agents.Router.MainAgentID); mainID != "" {
-			parentAgentID = mainID
-		}
-	}
-	out := make([]SubagentProfile, 0, len(nodeItems))
-	for _, node := range nodeItems {
-		if isLocalNode(node.ID) {
-			continue
-		}
-		profiles := profilesFromNode(node, parentAgentID)
-		for _, profile := range profiles {
-			if profile.AgentID == "" {
-				continue
-			}
-			out = append(out, profile)
-		}
-	}
-	return out
-}
-
-func profilesFromNode(node nodes.NodeInfo, parentAgentID string) []SubagentProfile {
-	name := strings.TrimSpace(node.Name)
-	if name == "" {
-		name = strings.TrimSpace(node.ID)
-	}
-	status := "active"
-	if !node.Online {
-		status = "disabled"
-	}
-	rootAgentID := nodeBranchAgentID(node.ID)
-	if rootAgentID == "" {
-		return nil
-	}
-	out := []SubagentProfile{normalizeSubagentProfile(SubagentProfile{
-		AgentID:         rootAgentID,
-		Name:            name + " Main Agent",
-		Transport:       "node",
-		NodeID:          strings.TrimSpace(node.ID),
-		ParentAgentID:   parentAgentID,
-		Role:            "remote_main",
-		MemoryNamespace: rootAgentID,
-		Status:          status,
-		ManagedBy:       "node_registry",
-	})}
-	for _, agent := range node.Agents {
-		agentID := normalizeSubagentIdentifier(agent.ID)
-		if agentID == "" || agentID == "main" {
-			continue
-		}
-		out = append(out, normalizeSubagentProfile(SubagentProfile{
-			AgentID:         nodeChildAgentID(node.ID, agentID),
-			Name:            nodeChildAgentDisplayName(name, agent),
-			Transport:       "node",
-			NodeID:          strings.TrimSpace(node.ID),
-			ParentAgentID:   rootAgentID,
-			Role:            strings.TrimSpace(agent.Role),
-			MemoryNamespace: nodeChildAgentID(node.ID, agentID),
-			Status:          status,
-			ManagedBy:       "node_registry",
-		}))
-	}
-	return out
-}
-
-func nodeBranchAgentID(nodeID string) string {
-	id := normalizeSubagentIdentifier(nodeID)
-	if id == "" {
-		return ""
-	}
-	return "node." + id + ".main"
-}
-
-func nodeChildAgentID(nodeID, agentID string) string {
-	nodeID = normalizeSubagentIdentifier(nodeID)
-	agentID = normalizeSubagentIdentifier(agentID)
-	if nodeID == "" || agentID == "" {
-		return ""
-	}
-	return "node." + nodeID + "." + agentID
-}
-
-func nodeChildAgentDisplayName(nodeName string, agent nodes.AgentInfo) string {
-	base := strings.TrimSpace(agent.DisplayName)
-	if base == "" {
-		base = strings.TrimSpace(agent.ID)
-	}
-	nodeName = strings.TrimSpace(nodeName)
-	if nodeName == "" {
-		return base
-	}
-	return nodeName + " / " + base
-}
-
-func isLocalNode(nodeID string) bool {
-	return normalizeSubagentIdentifier(nodeID) == "local"
 }
 
 type SubagentProfileTool struct {

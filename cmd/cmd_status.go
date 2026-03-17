@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/YspCoder/clawgo/pkg/config"
-	"github.com/YspCoder/clawgo/pkg/nodes"
 	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
@@ -55,38 +54,6 @@ func statusCmd() {
 			fmt.Printf("Log File: %s\n", cfg.LogFilePath())
 			fmt.Printf("Log Max Size: %d MB\n", cfg.Logging.MaxSizeMB)
 			fmt.Printf("Log Retention: %d days\n", cfg.Logging.RetentionDays)
-		}
-		fmt.Printf("Nodes P2P: enabled=%t transport=%s\n", cfg.Gateway.Nodes.P2P.Enabled, strings.TrimSpace(cfg.Gateway.Nodes.P2P.Transport))
-		fmt.Printf("Nodes P2P ICE: stun=%d ice=%d\n", len(cfg.Gateway.Nodes.P2P.STUNServers), len(cfg.Gateway.Nodes.P2P.ICEServers))
-		ns := nodes.DefaultManager().List()
-		if len(ns) > 0 {
-			online := 0
-			caps := map[string]int{"run": 0, "model": 0, "camera": 0, "screen": 0, "location": 0, "canvas": 0}
-			for _, n := range ns {
-				if n.Online {
-					online++
-				}
-				if n.Capabilities.Run {
-					caps["run"]++
-				}
-				if n.Capabilities.Model {
-					caps["model"]++
-				}
-				if n.Capabilities.Camera {
-					caps["camera"]++
-				}
-				if n.Capabilities.Screen {
-					caps["screen"]++
-				}
-				if n.Capabilities.Location {
-					caps["location"]++
-				}
-				if n.Capabilities.Canvas {
-					caps["canvas"]++
-				}
-			}
-			fmt.Printf("Nodes: total=%d online=%d\n", len(ns), online)
-			fmt.Printf("Nodes Capabilities: run=%d model=%d camera=%d screen=%d location=%d canvas=%d\n", caps["run"], caps["model"], caps["camera"], caps["screen"], caps["location"], caps["canvas"])
 		}
 	}
 }

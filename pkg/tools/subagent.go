@@ -21,7 +21,6 @@ type SubagentRun struct {
 	Role             string                 `json:"role"`
 	AgentID          string                 `json:"agent_id"`
 	Transport        string                 `json:"transport,omitempty"`
-	NodeID           string                 `json:"node_id,omitempty"`
 	ParentAgentID    string                 `json:"parent_agent_id,omitempty"`
 	NotifyMainPolicy string                 `json:"notify_main_policy,omitempty"`
 	SessionKey       string                 `json:"session_key"`
@@ -168,7 +167,6 @@ func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptio
 	memoryNS := agentID
 	systemPromptFile := ""
 	transport := "local"
-	nodeID := ""
 	parentAgentID := ""
 	notifyMainPolicy := "final_only"
 	toolAllowlist := []string(nil)
@@ -201,7 +199,6 @@ func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptio
 		if transport == "" {
 			transport = "local"
 		}
-		nodeID = strings.TrimSpace(profile.NodeID)
 		parentAgentID = strings.TrimSpace(profile.ParentAgentID)
 		notifyMainPolicy = normalizeNotifyMainPolicy(profile.NotifyMainPolicy)
 		systemPromptFile = strings.TrimSpace(profile.SystemPromptFile)
@@ -279,7 +276,6 @@ func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptio
 		Role:             role,
 		AgentID:          agentID,
 		Transport:        transport,
-		NodeID:           nodeID,
 		ParentAgentID:    parentAgentID,
 		NotifyMainPolicy: notifyMainPolicy,
 		SessionKey:       sessionKey,

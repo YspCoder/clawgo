@@ -24,12 +24,10 @@ import (
 	"github.com/YspCoder/clawgo/pkg/cron"
 	"github.com/YspCoder/clawgo/pkg/heartbeat"
 	"github.com/YspCoder/clawgo/pkg/logger"
-	"github.com/YspCoder/clawgo/pkg/nodes"
 	"github.com/YspCoder/clawgo/pkg/providers"
 	"github.com/YspCoder/clawgo/pkg/runtimecfg"
 	"github.com/YspCoder/clawgo/pkg/sentinel"
 	"github.com/YspCoder/clawgo/pkg/wsrelay"
-	"github.com/pion/webrtc/v4"
 )
 
 func gatewayCmd() {
@@ -125,57 +123,7 @@ func gatewayCmd() {
 		fmt.Println("Sentinel service started")
 	}
 
-	registryServer := api.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token, nodes.DefaultManager())
-	configureGatewayNodeP2P := func(loop *agent.AgentLoop, server *api.Server, runtimeCfg *config.Config) {
-		if loop == nil || server == nil || runtimeCfg == nil {
-			return
-		}
-		buildICEServers := func() []webrtc.ICEServer {
-			out := make([]webrtc.ICEServer, 0, len(runtimeCfg.Gateway.Nodes.P2P.ICEServers))
-			for _, serverCfg := range runtimeCfg.Gateway.Nodes.P2P.ICEServers {
-				urls := make([]string, 0, len(serverCfg.URLs))
-				for _, raw := range serverCfg.URLs {
-					if v := strings.TrimSpace(raw); v != "" {
-						urls = append(urls, v)
-					}
-				}
-				if len(urls) == 0 {
-					continue
-				}
-				out = append(out, webrtc.ICEServer{
-					URLs:       urls,
-					Username:   strings.TrimSpace(serverCfg.Username),
-					Credential: serverCfg.Credential,
-				})
-			}
-			return out
-		}
-		server.SetNodeP2PStatusHandler(func() map[string]interface{} {
-			return map[string]interface{}{
-				"enabled":         runtimeCfg.Gateway.Nodes.P2P.Enabled,
-				"transport":       strings.TrimSpace(runtimeCfg.Gateway.Nodes.P2P.Transport),
-				"configured_stun": append([]string(nil), runtimeCfg.Gateway.Nodes.P2P.STUNServers...),
-				"configured_ice":  len(runtimeCfg.Gateway.Nodes.P2P.ICEServers),
-			}
-		})
-		switch {
-		case runtimeCfg.Gateway.Nodes.P2P.Enabled && strings.EqualFold(strings.TrimSpace(runtimeCfg.Gateway.Nodes.P2P.Transport), "webrtc"):
-			webrtcTransport := nodes.NewWebRTCTransport(runtimeCfg.Gateway.Nodes.P2P.STUNServers, buildICEServers()...)
-			loop.SetNodeP2PTransport(webrtcTransport)
-			server.SetNodeWebRTCTransport(webrtcTransport)
-			server.SetNodeP2PStatusHandler(func() map[string]interface{} {
-				snapshot := webrtcTransport.Snapshot()
-				snapshot["enabled"] = true
-				snapshot["transport"] = "webrtc"
-				snapshot["configured_stun"] = append([]string(nil), runtimeCfg.Gateway.Nodes.P2P.STUNServers...)
-				snapshot["configured_ice"] = len(runtimeCfg.Gateway.Nodes.P2P.ICEServers)
-				return snapshot
-			})
-		default:
-			server.SetNodeWebRTCTransport(nil)
-		}
-	}
-	configureGatewayNodeP2P(agentLoop, registryServer, cfg)
+	registryServer := api.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.Token)
 	registryServer.SetGatewayVersion(version)
 	registryServer.SetConfigPath(getConfigPath())
 	registryServer.SetToken(cfg.Gateway.Token)
@@ -220,9 +168,6 @@ func gatewayCmd() {
 				out = append(out, entry)
 			}
 			return out
-		})
-		registryServer.SetNodeDispatchHandler(func(cctx context.Context, req nodes.Request, mode string) (nodes.Response, error) {
-			return loop.DispatchNodeRequest(cctx, req, mode)
 		})
 		registryServer.SetToolsCatalogHandler(func() interface{} {
 			return loop.GetToolCatalog()
@@ -429,8 +374,7 @@ func gatewayCmd() {
 		runtimeSame := reflect.DeepEqual(cfg.Agents, newCfg.Agents) &&
 			reflect.DeepEqual(cfg.Models, newCfg.Models) &&
 			reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
-			reflect.DeepEqual(cfg.Channels, newCfg.Channels) &&
-			reflect.DeepEqual(cfg.Gateway.Nodes, newCfg.Gateway.Nodes)
+			reflect.DeepEqual(cfg.Channels, newCfg.Channels)
 
 		if runtimeSame {
 			configureLogging(newCfg)
@@ -451,7 +395,6 @@ func gatewayCmd() {
 			registryServer.SetToken(cfg.Gateway.Token)
 			registryServer.SetWorkspacePath(cfg.WorkspacePath())
 			registryServer.SetLogFilePath(cfg.LogFilePath())
-			configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 			fmt.Println("Config hot-reload applied (logging/metadata only)")
 			return nil
 		}
@@ -480,7 +423,6 @@ func gatewayCmd() {
 		registryServer.SetToken(cfg.Gateway.Token)
 		registryServer.SetWorkspacePath(cfg.WorkspacePath())
 		registryServer.SetLogFilePath(cfg.LogFilePath())
-		configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 		registryServer.SetWhatsAppBridge(whatsAppBridge, embeddedWhatsAppBridgeBasePath)
 		sentinelService.Stop()
 		sentinelService = sentinel.NewService(

@@ -118,47 +118,6 @@ func Validate(cfg *Config) []error {
 	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
 		errs = append(errs, fmt.Errorf("gateway.port must be in 1..65535"))
 	}
-	switch strings.ToLower(strings.TrimSpace(cfg.Gateway.Nodes.P2P.Transport)) {
-	case "", "websocket_tunnel", "webrtc":
-	default:
-		errs = append(errs, fmt.Errorf("gateway.nodes.p2p.transport must be one of: websocket_tunnel, webrtc"))
-	}
-	errs = append(errs, validateNonEmptyStringList("gateway.nodes.p2p.stun_servers", cfg.Gateway.Nodes.P2P.STUNServers)...)
-	for i, server := range cfg.Gateway.Nodes.P2P.ICEServers {
-		prefix := fmt.Sprintf("gateway.nodes.p2p.ice_servers[%d]", i)
-		errs = append(errs, validateNonEmptyStringList(prefix+".urls", server.URLs)...)
-		needsAuth := false
-		for _, raw := range server.URLs {
-			u := strings.ToLower(strings.TrimSpace(raw))
-			if strings.HasPrefix(u, "turn:") || strings.HasPrefix(u, "turns:") {
-				needsAuth = true
-				break
-			}
-		}
-		if needsAuth {
-			if strings.TrimSpace(server.Username) == "" {
-				errs = append(errs, fmt.Errorf("%s.username is required for turn/turns urls", prefix))
-			}
-			if strings.TrimSpace(server.Credential) == "" {
-				errs = append(errs, fmt.Errorf("%s.credential is required for turn/turns urls", prefix))
-			}
-		}
-	}
-	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.action_tags", cfg.Gateway.Nodes.Dispatch.ActionTags)...)
-	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.agent_tags", cfg.Gateway.Nodes.Dispatch.AgentTags)...)
-	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.allow_actions", cfg.Gateway.Nodes.Dispatch.AllowActions)...)
-	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.deny_actions", cfg.Gateway.Nodes.Dispatch.DenyActions)...)
-	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.allow_agents", cfg.Gateway.Nodes.Dispatch.AllowAgents)...)
-	errs = append(errs, validateDispatchTagMap("gateway.nodes.dispatch.deny_agents", cfg.Gateway.Nodes.Dispatch.DenyAgents)...)
-	if cfg.Gateway.Nodes.Artifacts.Enabled && cfg.Gateway.Nodes.Artifacts.KeepLatest <= 0 {
-		errs = append(errs, fmt.Errorf("gateway.nodes.artifacts.keep_latest must be > 0 when enabled=true"))
-	}
-	if cfg.Gateway.Nodes.Artifacts.KeepLatest < 0 {
-		errs = append(errs, fmt.Errorf("gateway.nodes.artifacts.keep_latest must be >= 0"))
-	}
-	if cfg.Gateway.Nodes.Artifacts.RetainDays < 0 {
-		errs = append(errs, fmt.Errorf("gateway.nodes.artifacts.retain_days must be >= 0"))
-	}
 	if cfg.Cron.MinSleepSec <= 0 {
 		errs = append(errs, fmt.Errorf("cron.min_sleep_sec must be > 0"))
 	}
@@ -425,9 +384,9 @@ func validateSubagents(cfg *Config) []error {
 		transport := strings.TrimSpace(raw.Transport)
 		if transport != "" {
 			switch transport {
-			case "local", "node":
+			case "local":
 			default:
-				errs = append(errs, fmt.Errorf("agents.subagents.%s.transport must be one of: local, node", id))
+				errs = append(errs, fmt.Errorf("agents.subagents.%s.transport must be one of: local", id))
 			}
 		}
 		if policy := strings.TrimSpace(raw.NotifyMainPolicy); policy != "" {
@@ -436,9 +395,6 @@ func validateSubagents(cfg *Config) []error {
 			default:
 				errs = append(errs, fmt.Errorf("agents.subagents.%s.notify_main_policy must be one of: final_only, milestone, on_blocked, always, internal_only", id))
 			}
-		}
-		if transport == "node" && strings.TrimSpace(raw.NodeID) == "" {
-			errs = append(errs, fmt.Errorf("agents.subagents.%s.node_id is required when transport=node", id))
 		}
 		if raw.Runtime.TimeoutSec < 0 {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.timeout_sec must be >= 0", id))
@@ -461,7 +417,7 @@ func validateSubagents(cfg *Config) []error {
 		if raw.Tools.MaxParallelCalls < 0 {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.tools.max_parallel_calls must be >= 0", id))
 		}
-		if raw.Enabled && transport != "node" && strings.TrimSpace(raw.SystemPromptFile) == "" {
+		if raw.Enabled && strings.TrimSpace(raw.SystemPromptFile) == "" {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.system_prompt_file is required when enabled=true", id))
 		}
 		if promptFile := strings.TrimSpace(raw.SystemPromptFile); promptFile != "" {

@@ -71,7 +71,6 @@ type SubagentConfig struct {
 	Enabled               bool                  `json:"enabled"`
 	Type                  string                `json:"type,omitempty"`
 	Transport             string                `json:"transport,omitempty"`
-	NodeID                string                `json:"node_id,omitempty"`
 	ParentAgentID         string                `json:"parent_agent_id,omitempty"`
 	NotifyMainPolicy      string                `json:"notify_main_policy,omitempty"`
 	DisplayName           string                `json:"display_name,omitempty"`
@@ -282,48 +281,9 @@ type ProviderResponsesConfig struct {
 }
 
 type GatewayConfig struct {
-	Host  string             `json:"host" env:"CLAWGO_GATEWAY_HOST"`
-	Port  int                `json:"port" env:"CLAWGO_GATEWAY_PORT"`
-	Token string             `json:"token" env:"CLAWGO_GATEWAY_TOKEN"`
-	Nodes GatewayNodesConfig `json:"nodes,omitempty"`
-}
-
-type GatewayNodesConfig struct {
-	P2P       GatewayNodesP2PConfig       `json:"p2p,omitempty"`
-	Dispatch  GatewayNodesDispatchConfig  `json:"dispatch,omitempty"`
-	Artifacts GatewayNodesArtifactsConfig `json:"artifacts,omitempty"`
-}
-
-type GatewayICEConfig struct {
-	URLs       []string `json:"urls,omitempty"`
-	Username   string   `json:"username,omitempty"`
-	Credential string   `json:"credential,omitempty"`
-}
-
-type GatewayNodesP2PConfig struct {
-	Enabled     bool               `json:"enabled"`
-	Transport   string             `json:"transport,omitempty"`
-	STUNServers []string           `json:"stun_servers,omitempty"`
-	ICEServers  []GatewayICEConfig `json:"ice_servers,omitempty"`
-}
-
-type GatewayNodesDispatchConfig struct {
-	PreferLocal        bool                `json:"prefer_local,omitempty"`
-	PreferP2P          bool                `json:"prefer_p2p,omitempty"`
-	AllowRelayFallback bool                `json:"allow_relay_fallback,omitempty"`
-	ActionTags         map[string][]string `json:"action_tags,omitempty"`
-	AgentTags          map[string][]string `json:"agent_tags,omitempty"`
-	AllowActions       map[string][]string `json:"allow_actions,omitempty"`
-	DenyActions        map[string][]string `json:"deny_actions,omitempty"`
-	AllowAgents        map[string][]string `json:"allow_agents,omitempty"`
-	DenyAgents         map[string][]string `json:"deny_agents,omitempty"`
-}
-
-type GatewayNodesArtifactsConfig struct {
-	Enabled     bool `json:"enabled,omitempty"`
-	KeepLatest  int  `json:"keep_latest,omitempty"`
-	RetainDays  int  `json:"retain_days,omitempty"`
-	PruneOnRead bool `json:"prune_on_read,omitempty"`
+	Host  string `json:"host" env:"CLAWGO_GATEWAY_HOST"`
+	Port  int    `json:"port" env:"CLAWGO_GATEWAY_PORT"`
+	Token string `json:"token" env:"CLAWGO_GATEWAY_TOKEN"`
 }
 
 type CronConfig struct {
@@ -569,31 +529,6 @@ func DefaultConfig() *Config {
 			Host:  "0.0.0.0",
 			Port:  18790,
 			Token: generateGatewayToken(),
-			Nodes: GatewayNodesConfig{
-				P2P: GatewayNodesP2PConfig{
-					Enabled:     false,
-					Transport:   "websocket_tunnel",
-					STUNServers: []string{},
-					ICEServers:  []GatewayICEConfig{},
-				},
-				Dispatch: GatewayNodesDispatchConfig{
-					PreferLocal:        false,
-					PreferP2P:          true,
-					AllowRelayFallback: true,
-					ActionTags:         map[string][]string{},
-					AgentTags:          map[string][]string{},
-					AllowActions:       map[string][]string{},
-					DenyActions:        map[string][]string{},
-					AllowAgents:        map[string][]string{},
-					DenyAgents:         map[string][]string{},
-				},
-				Artifacts: GatewayNodesArtifactsConfig{
-					Enabled:     false,
-					KeepLatest:  500,
-					RetainDays:  7,
-					PruneOnRead: true,
-				},
-			},
 		},
 		Cron: CronConfig{
 			MinSleepSec:                  1,

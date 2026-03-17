@@ -67,8 +67,6 @@ func main() {
 		cronCmd()
 	case "channel":
 		channelCmd()
-	case "node":
-		nodeCmd()
 	case "skills":
 		skillsCmd()
 	case "tui":
