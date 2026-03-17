@@ -3,9 +3,7 @@ set -euo pipefail
 
 OWNER="YspCoder"
 REPO="clawgo"
-WEBUI_REPO="clawgo-web"
 BIN="clawgo"
-WEBUI_ASSET="webui.tar.gz"
 INSTALL_DIR="/usr/local/bin"
 VARIANT="${CLAWGO_CHANNEL_VARIANT:-full}"
 VARIANT_EXPLICIT=0
@@ -22,7 +20,6 @@ Usage: $0 [--variant full|none|telegram|discord|feishu|maixcam|qq|dingtalk|whats
 Install or upgrade ClawGo from the latest GitHub release.
 
 Notes:
-  - The installer can optionally download WebUI from the matching tag in $OWNER/$WEBUI_REPO.
   - Variant 'none' installs the no-channel build.
   - OpenClaw migration is offered only when a legacy workspace is detected.
 EOF
@@ -250,36 +247,6 @@ install_binary() {
   log "Installed $BIN to $INSTALL_DIR/$BIN"
 }
 
-install_webui() {
-  local target_dir="$1"
-  local file="$WEBUI_ASSET"
-  local url="https://github.com/$OWNER/$WEBUI_REPO/releases/download/$TAG/$file"
-  local out="$TMPDIR/$file"
-  local extract_dir="$TMPDIR/webui-extract"
-
-  require_cmd tar
-  require_cmd rsync
-  mkdir -p "$extract_dir" "$target_dir"
-
-  log "Downloading optional WebUI package from $OWNER/$WEBUI_REPO@$TAG ..."
-  if ! curl -fSL "$url" -o "$out"; then
-    warn "Failed to download $file from $url"
-    return 1
-  fi
-
-  rm -rf "$target_dir"
-  mkdir -p "$target_dir"
-  tar -xzf "$out" -C "$extract_dir"
-
-  if [[ -d "$extract_dir/webui" ]]; then
-    rsync -a --delete "$extract_dir/webui/" "$target_dir/"
-  else
-    rsync -a --delete "$extract_dir/" "$target_dir/"
-  fi
-
-  log "Installed WebUI to $target_dir"
-}
-
 migrate_local_openclaw() {
   local src="${1:-$LEGACY_WORKSPACE_DIR}"
   local dst="${2:-$WORKSPACE_DIR}"
@@ -433,13 +400,6 @@ main() {
   trap 'rm -rf "$TMPDIR"' EXIT
 
   install_binary
-  if prompt_yes_no "Install optional WebUI from $OWNER/$WEBUI_REPO@$TAG?" "N"; then
-    local_webui_dir="$HOME/clawgo-webui"
-    tty_read local_webui_dir "Enter WebUI install directory: " "$local_webui_dir"
-    install_webui "$local_webui_dir" || warn "WebUI installation failed. You can install it later by downloading $WEBUI_ASSET from the $TAG release."
-  else
-    log "Skipped optional WebUI installation."
-  fi
   offer_openclaw_migration
   offer_onboard
 
