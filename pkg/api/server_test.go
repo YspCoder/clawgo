@@ -86,7 +86,7 @@ func TestHandleWebUIWhatsAppStatusMapsLegacyBridgeURLToEmbeddedPath(t *testing.T
 	}
 }
 
-func TestHandleWebUIConfigPostIsDisabled(t *testing.T) {
+func TestHandleWebUIConfigPostSavesRawConfig(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -99,17 +99,76 @@ func TestHandleWebUIConfigPostIsDisabled(t *testing.T) {
 
 	srv := NewServer("127.0.0.1", 0, "")
 	srv.SetConfigPath(cfgPath)
+	hookCalled := 0
+	srv.SetConfigAfterHook(func() error {
+		hookCalled++
+		return nil
+	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/config", strings.NewReader(`{"gateway":{"host":"127.0.0.1"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/config", strings.NewReader(`{"gateway":{"host":"127.0.0.1","port":7788,"token":"abc"},"logging":{"enabled":false,"persist":false,"level":"debug","file":"logs/app.log","format":"text"},"models":{"providers":{"openai":{"api_base":"https://api.openai.com/v1","auth":"bearer","api_key":"secret","models":["gpt-5"],"timeout_sec":120}}},"tools":{"shell":{"enabled":true},"mcp":{"enabled":false}},"agents":{"defaults":{"model":{"primary":"openai/gpt-5"},"max_tool_iterations":10,"execution":{"run_state_ttl_seconds":3600,"run_state_max":128,"tool_parallel_safe_names":[],"tool_max_parallel_calls":4}},"router":{"enabled":false,"policy":{"intent_max_input_chars":2000,"max_rounds_without_user":3}},"subagents":{}},"channels":{"telegram":{"enabled":true,"token":"bot-token"}},"cron":{"enabled":false},"sentinel":{"enabled":false}}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.handleWebUIConfig(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "webui config editing is disabled") {
-		t.Fatalf("unexpected body: %s", rec.Body.String())
+	if hookCalled != 1 {
+		t.Fatalf("expected hook to be called once, got %d", hookCalled)
+	}
+	updated, err := cfgpkg.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if updated.Gateway.Host != "127.0.0.1" {
+		t.Fatalf("expected updated gateway host, got %q", updated.Gateway.Host)
+	}
+	if !updated.Channels.Telegram.Enabled {
+		t.Fatalf("expected telegram channel to remain editable")
+	}
+}
+
+func TestHandleWebUIConfigPostSavesNormalizedConfig(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Logging.Enabled = false
+	cfg.Gateway.Host = "0.0.0.0"
+	cfg.Gateway.Port = 7788
+	cfg.Models.Providers["openai"] = cfgpkg.ProviderConfig{
+		APIBase:    "https://api.openai.com/v1",
+		Auth:       "bearer",
+		APIKey:     "secret",
+		Models:     []string{"gpt-5"},
+		TimeoutSec: 120,
+	}
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetConfigPath(cfgPath)
+	srv.SetConfigAfterHook(func() error { return nil })
+
+	req := httptest.NewRequest(http.MethodPost, "/api/config?mode=normalized", strings.NewReader(`{"core":{"gateway":{"host":"127.0.0.1","port":18790},"tools":{"shell_enabled":false,"mcp_enabled":true}},"runtime":{"router":{"enabled":true,"strategy":"rules_first","max_hops":2,"default_timeout_sec":90},"providers":{"openai":{"api_base":"https://api.openai.com/v1","auth":"bearer","timeout_sec":150}}}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.handleWebUIConfig(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	updated, err := cfgpkg.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if updated.Gateway.Host != "127.0.0.1" || updated.Gateway.Port != 18790 {
+		t.Fatalf("expected normalized gateway update, got %s:%d", updated.Gateway.Host, updated.Gateway.Port)
+	}
+	if updated.Tools.Shell.Enabled {
+		t.Fatalf("expected shell tool to be disabled by normalized save")
 	}
 }
 

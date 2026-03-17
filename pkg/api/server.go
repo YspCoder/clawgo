@@ -322,10 +322,85 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 		out, _ := json.MarshalIndent(merged, "", "  ")
 		_, _ = w.Write(out)
 	case http.MethodPost:
-		http.Error(w, "webui config editing is disabled", http.StatusMethodNotAllowed)
+		if err := s.saveWebUIConfig(r); err != nil {
+			var validationErr *configValidationError
+			if errors.As(err, &validationErr) {
+				writeJSONStatus(w, http.StatusBadRequest, map[string]interface{}{
+					"ok":     false,
+					"error":  validationErr.Error(),
+					"errors": validationErr.Fields,
+				})
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]interface{}{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+type configValidationError struct {
+	Fields []string
+}
+
+func (e *configValidationError) Error() string {
+	if e == nil || len(e.Fields) == 0 {
+		return "invalid config"
+	}
+	return "invalid config: " + strings.Join(e.Fields, "; ")
+}
+
+func (s *Server) saveWebUIConfig(r *http.Request) error {
+	if r == nil {
+		return fmt.Errorf("request is nil")
+	}
+	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+	switch mode {
+	case "", "raw":
+		cfg := cfgpkg.DefaultConfig()
+		if err := json.NewDecoder(r.Body).Decode(cfg); err != nil {
+			return fmt.Errorf("decode config: %w", err)
+		}
+		return s.persistWebUIConfig(cfg)
+	case "normalized":
+		cfg, err := cfgpkg.LoadConfig(s.configPath)
+		if err != nil {
+			return err
+		}
+		var view cfgpkg.NormalizedConfig
+		if err := json.NewDecoder(r.Body).Decode(&view); err != nil {
+			return fmt.Errorf("decode normalized config: %w", err)
+		}
+		cfg.ApplyNormalizedView(view)
+		return s.persistWebUIConfig(cfg)
+	default:
+		return fmt.Errorf("unsupported config mode: %s", mode)
+	}
+}
+
+func (s *Server) persistWebUIConfig(cfg *cfgpkg.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+	cfg.Normalize()
+	if errs := cfgpkg.Validate(cfg); len(errs) > 0 {
+		fields := make([]string, 0, len(errs))
+		for _, err := range errs {
+			if err != nil {
+				fields = append(fields, err.Error())
+			}
+		}
+		return &configValidationError{Fields: fields}
+	}
+	if err := cfgpkg.SaveConfig(s.configPath, cfg); err != nil {
+		return err
+	}
+	if s.onConfigAfter != nil {
+		return s.onConfigAfter()
+	}
+	return requestSelfReloadSignal()
 }
 
 func mergeJSONMap(base, override map[string]interface{}) map[string]interface{} {
