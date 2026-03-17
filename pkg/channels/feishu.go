@@ -410,25 +410,6 @@ func (c *FeishuChannel) buildFeishuMediaOutbound(ctx context.Context, media stri
 	return larkim.MsgTypeFile, string(b), nil
 }
 
-func (c *FeishuChannel) buildFeishuFileFromBytes(ctx context.Context, name string, data []byte) (string, string, error) {
-	fileReq := larkim.NewCreateFileReqBuilder().
-		Body(larkim.NewCreateFileReqBodyBuilder().
-			FileType("stream").
-			FileName(name).
-			Duration(0).
-			File(bytes.NewReader(data)).
-			Build()).
-		Build()
-	fileResp, err := c.client.Im.File.Create(ctx, fileReq)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to upload feishu file: %w", err)
-	}
-	if !fileResp.Success() {
-		return "", "", fmt.Errorf("feishu file upload error: code=%d msg=%s", fileResp.Code, fileResp.Msg)
-	}
-	b, _ := json.Marshal(fileResp.Data)
-	return larkim.MsgTypeFile, string(b), nil
-}
 
 func readFeishuMedia(media string) (string, []byte, error) {
 	if strings.HasPrefix(media, "http://") || strings.HasPrefix(media, "https://") {

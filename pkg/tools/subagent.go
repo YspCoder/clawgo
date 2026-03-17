@@ -11,11 +11,10 @@ import (
 	"time"
 
 	"github.com/YspCoder/clawgo/pkg/bus"
-	"github.com/YspCoder/clawgo/pkg/ekg"
 	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
-type SubagentTask struct {
+type SubagentRun struct {
 	ID               string                 `json:"id"`
 	Task             string                 `json:"task"`
 	Label            string                 `json:"label"`
@@ -51,10 +50,10 @@ type SubagentTask struct {
 }
 
 type SubagentManager struct {
-	tasks              map[string]*SubagentTask
+	runs               map[string]*SubagentRun
 	cancelFuncs        map[string]context.CancelFunc
 	waiters            map[string]map[chan struct{}]struct{}
-	recoverableTaskIDs []string
+	recoverableRunIDs  []string
 	archiveAfterMinute int64
 	mu                 sync.RWMutex
 	provider           providers.LLMProvider
@@ -65,7 +64,6 @@ type SubagentManager struct {
 	profileStore       *SubagentProfileStore
 	runStore           *SubagentRunStore
 	mailboxStore       *AgentMailboxStore
-	ekg                *ekg.Engine
 }
 
 type SubagentSpawnOptions struct {
@@ -91,7 +89,7 @@ func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *b
 	runStore := NewSubagentRunStore(workspace)
 	mailboxStore := NewAgentMailboxStore(workspace)
 	mgr := &SubagentManager{
-		tasks:              make(map[string]*SubagentTask),
+		runs:               make(map[string]*SubagentRun),
 		cancelFuncs:        make(map[string]context.CancelFunc),
 		waiters:            make(map[string]map[chan struct{}]struct{}),
 		archiveAfterMinute: 60,
@@ -102,41 +100,40 @@ func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *b
 		profileStore:       store,
 		runStore:           runStore,
 		mailboxStore:       mailboxStore,
-		ekg:                ekg.New(workspace),
 	}
 	if runStore != nil {
-		for _, task := range runStore.List() {
-			mgr.tasks[task.ID] = task
-			if task.Status == RuntimeStatusRunning {
-				mgr.recoverableTaskIDs = append(mgr.recoverableTaskIDs, task.ID)
+		for _, run := range runStore.List() {
+			mgr.runs[run.ID] = run
+			if run.Status == RuntimeStatusRunning {
+				mgr.recoverableRunIDs = append(mgr.recoverableRunIDs, run.ID)
 			}
 		}
 		mgr.nextID = runStore.NextIDSeed()
 	}
-	go mgr.resumeRecoveredTasks()
+	go mgr.resumeRecoveredRuns()
 	return mgr
 }
 
 func (sm *SubagentManager) Spawn(ctx context.Context, opts SubagentSpawnOptions) (string, error) {
-	task, err := sm.spawnTask(ctx, opts)
+	run, err := sm.spawnRun(ctx, opts)
 	if err != nil {
 		return "", err
 	}
-	desc := fmt.Sprintf("Spawned subagent for task: %s (agent=%s)", task.Task, task.AgentID)
-	if task.Label != "" {
-		desc = fmt.Sprintf("Spawned subagent '%s' for task: %s (agent=%s)", task.Label, task.Task, task.AgentID)
+	desc := fmt.Sprintf("Spawned subagent for task: %s (agent=%s)", run.Task, run.AgentID)
+	if run.Label != "" {
+		desc = fmt.Sprintf("Spawned subagent '%s' for task: %s (agent=%s)", run.Label, run.Task, run.AgentID)
 	}
-	if task.Role != "" {
-		desc += fmt.Sprintf(" role=%s", task.Role)
+	if run.Role != "" {
+		desc += fmt.Sprintf(" role=%s", run.Role)
 	}
 	return desc, nil
 }
 
-func (sm *SubagentManager) SpawnTask(ctx context.Context, opts SubagentSpawnOptions) (*SubagentTask, error) {
-	return sm.spawnTask(ctx, opts)
+func (sm *SubagentManager) SpawnRun(ctx context.Context, opts SubagentSpawnOptions) (*SubagentRun, error) {
+	return sm.spawnRun(ctx, opts)
 }
 
-func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOptions) (*SubagentTask, error) {
+func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptions) (*SubagentRun, error) {
 	task := strings.TrimSpace(opts.Task)
 	if task == "" {
 		return nil, fmt.Errorf("task is required")
@@ -253,13 +250,13 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	taskID := fmt.Sprintf("subagent-%d", sm.nextID)
+	runID := fmt.Sprintf("subagent-%d", sm.nextID)
 	sm.nextID++
-	sessionKey := buildSubagentSessionKey(agentID, taskID)
+	sessionKey := buildSubagentSessionKey(agentID, runID)
 
 	now := time.Now().UnixMilli()
 	if correlationID == "" {
-		correlationID = taskID
+		correlationID = runID
 	}
 	if sm.mailboxStore != nil {
 		thread, err := sm.mailboxStore.EnsureThread(AgentThread{
@@ -275,8 +272,8 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 			threadID = thread.ThreadID
 		}
 	}
-	subagentTask := &SubagentTask{
-		ID:               taskID,
+	subagentRun := &SubagentRun{
+		ID:               runID,
 		Task:             task,
 		Label:            label,
 		Role:             role,
@@ -305,9 +302,9 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		Updated:          now,
 	}
 	taskCtx, cancel := context.WithCancel(ctx)
-	sm.tasks[taskID] = subagentTask
-	sm.cancelFuncs[taskID] = cancel
-	sm.recordMailboxMessageLocked(subagentTask, AgentMessage{
+	sm.runs[runID] = subagentRun
+	sm.cancelFuncs[runID] = cancel
+	sm.recordMailboxMessageLocked(subagentRun, AgentMessage{
 		ThreadID:      threadID,
 		FromAgent:     "main",
 		ToAgent:       agentID,
@@ -318,115 +315,91 @@ func (sm *SubagentManager) spawnTask(ctx context.Context, opts SubagentSpawnOpti
 		Status:        "queued",
 		CreatedAt:     now,
 	})
-	sm.persistTaskLocked(subagentTask, "spawned", "")
+	sm.persistRunLocked(subagentRun, "spawned", "")
 
-	go sm.runTask(taskCtx, subagentTask)
-	return cloneSubagentTask(subagentTask), nil
+	go sm.runSubagent(taskCtx, subagentRun)
+	return cloneSubagentRun(subagentRun), nil
 }
 
-func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask) {
+func (sm *SubagentManager) runSubagent(ctx context.Context, run *SubagentRun) {
 	defer func() {
 		sm.mu.Lock()
-		delete(sm.cancelFuncs, task.ID)
+		delete(sm.cancelFuncs, run.ID)
 		sm.mu.Unlock()
 	}()
 
 	sm.mu.Lock()
-	task.Status = RuntimeStatusRunning
-	task.Created = time.Now().UnixMilli()
-	task.Updated = task.Created
-	sm.persistTaskLocked(task, "started", "")
+	run.Status = RuntimeStatusRunning
+	run.Created = time.Now().UnixMilli()
+	run.Updated = run.Created
+	sm.persistRunLocked(run, "started", "")
 	sm.mu.Unlock()
 
-	result, runErr := sm.runWithRetry(ctx, task)
+	result, runErr := sm.runWithRetry(ctx, run)
 	sm.mu.Lock()
 	if runErr != nil {
-		task.Status = RuntimeStatusFailed
-		task.Result = fmt.Sprintf("Error: %v", runErr)
-		task.Result = applySubagentResultQuota(task.Result, task.MaxResultChars)
-		task.Updated = time.Now().UnixMilli()
-		task.WaitingReply = false
-		sm.recordMailboxMessageLocked(task, AgentMessage{
-			ThreadID:      task.ThreadID,
-			FromAgent:     task.AgentID,
+		run.Status = RuntimeStatusFailed
+		run.Result = fmt.Sprintf("Error: %v", runErr)
+		run.Result = applySubagentResultQuota(run.Result, run.MaxResultChars)
+		run.Updated = time.Now().UnixMilli()
+		run.WaitingReply = false
+		sm.recordMailboxMessageLocked(run, AgentMessage{
+			ThreadID:      run.ThreadID,
+			FromAgent:     run.AgentID,
 			ToAgent:       "main",
-			ReplyTo:       task.LastMessageID,
-			CorrelationID: task.CorrelationID,
+			ReplyTo:       run.LastMessageID,
+			CorrelationID: run.CorrelationID,
 			Type:          "result",
-			Content:       task.Result,
+			Content:       run.Result,
 			Status:        "delivered",
-			CreatedAt:     task.Updated,
+			CreatedAt:     run.Updated,
 		})
-		sm.persistTaskLocked(task, "failed", task.Result)
-		sm.notifyTaskWaitersLocked(task.ID)
+		sm.persistRunLocked(run, "failed", run.Result)
+		sm.notifyRunWaitersLocked(run.ID)
 	} else {
-		task.Status = RuntimeStatusCompleted
-		task.Result = applySubagentResultQuota(result, task.MaxResultChars)
-		task.Updated = time.Now().UnixMilli()
-		task.WaitingReply = false
-		sm.recordMailboxMessageLocked(task, AgentMessage{
-			ThreadID:      task.ThreadID,
-			FromAgent:     task.AgentID,
+		run.Status = RuntimeStatusCompleted
+		run.Result = applySubagentResultQuota(result, run.MaxResultChars)
+		run.Updated = time.Now().UnixMilli()
+		run.WaitingReply = false
+		sm.recordMailboxMessageLocked(run, AgentMessage{
+			ThreadID:      run.ThreadID,
+			FromAgent:     run.AgentID,
 			ToAgent:       "main",
-			ReplyTo:       task.LastMessageID,
-			CorrelationID: task.CorrelationID,
+			ReplyTo:       run.LastMessageID,
+			CorrelationID: run.CorrelationID,
 			Type:          "result",
-			Content:       task.Result,
+			Content:       run.Result,
 			Status:        "delivered",
-			CreatedAt:     task.Updated,
+			CreatedAt:     run.Updated,
 		})
-		sm.persistTaskLocked(task, "completed", task.Result)
-		sm.notifyTaskWaitersLocked(task.ID)
+		sm.persistRunLocked(run, "completed", run.Result)
+		sm.notifyRunWaitersLocked(run.ID)
 	}
 	sm.mu.Unlock()
 
-	sm.recordEKG(task, runErr)
-
 	// 2. Result broadcast
-	if sm.bus != nil && shouldNotifyMainOnFinal(task.NotifyMainPolicy, runErr, task) {
-		announceContent, notifyReason := buildSubagentMainNotification(task, runErr)
+	if sm.bus != nil && shouldNotifyMainOnFinal(run.NotifyMainPolicy, runErr, run) {
+		announceContent, notifyReason := buildSubagentMainNotification(run, runErr)
 		sm.bus.PublishInbound(bus.InboundMessage{
 			Channel:    "system",
-			SenderID:   fmt.Sprintf("subagent:%s", task.ID),
-			ChatID:     fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			SessionKey: task.SessionKey,
+			SenderID:   fmt.Sprintf("subagent:%s", run.ID),
+			ChatID:     fmt.Sprintf("%s:%s", run.OriginChannel, run.OriginChatID),
+			SessionKey: run.SessionKey,
 			Content:    announceContent,
 			Metadata: map[string]string{
 				"trigger":       "subagent",
-				"subagent_id":   task.ID,
-				"agent_id":      task.AgentID,
-				"role":          task.Role,
-				"session_key":   task.SessionKey,
-				"memory_ns":     task.MemoryNS,
-				"retry_count":   fmt.Sprintf("%d", task.RetryCount),
-				"timeout_sec":   fmt.Sprintf("%d", task.TimeoutSec),
-				"status":        task.Status,
+				"subagent_id":   run.ID,
+				"agent_id":      run.AgentID,
+				"role":          run.Role,
+				"session_key":   run.SessionKey,
+				"memory_ns":     run.MemoryNS,
+				"retry_count":   fmt.Sprintf("%d", run.RetryCount),
+				"timeout_sec":   fmt.Sprintf("%d", run.TimeoutSec),
+				"status":        run.Status,
 				"notify_reason": notifyReason,
 			},
 		})
 	}
-}
-
-func (sm *SubagentManager) recordEKG(task *SubagentTask, runErr error) {
-	if sm == nil || sm.ekg == nil || task == nil {
-		return
-	}
-	status := "success"
-	logText := strings.TrimSpace(task.Result)
-	if runErr != nil {
-		status = "error"
-		if isBlockedSubagentError(runErr) {
-			logText = "blocked: " + strings.TrimSpace(task.Result)
-		}
-	}
-	sm.ekg.Record(ekg.Event{
-		TaskID:  task.ID,
-		Session: task.SessionKey,
-		Channel: task.OriginChannel,
-		Source:  "subagent",
-		Status:  status,
-		Log:     logText,
-	})
 }
 
 func normalizeNotifyMainPolicy(v string) string {
@@ -440,7 +413,7 @@ func normalizeNotifyMainPolicy(v string) string {
 	}
 }
 
-func shouldNotifyMainOnFinal(policy string, runErr error, task *SubagentTask) bool {
+func shouldNotifyMainOnFinal(policy string, runErr error, run *SubagentRun) bool {
 	switch normalizeNotifyMainPolicy(policy) {
 	case "internal_only":
 		return false
@@ -455,7 +428,7 @@ func shouldNotifyMainOnFinal(policy string, runErr error, task *SubagentTask) bo
 	}
 }
 
-func buildSubagentMainNotification(task *SubagentTask, runErr error) (string, string) {
+func buildSubagentMainNotification(run *SubagentRun, runErr error) (string, string) {
 	status := "completed"
 	reason := "final"
 	if runErr != nil {
@@ -467,12 +440,12 @@ func buildSubagentMainNotification(task *SubagentTask, runErr error) (string, st
 	}
 	return fmt.Sprintf(
 		"Subagent update\nagent: %s\nrun: %s\nstatus: %s\nreason: %s\ntask: %s\nsummary: %s",
-		strings.TrimSpace(task.AgentID),
-		strings.TrimSpace(task.ID),
+		strings.TrimSpace(run.AgentID),
+		strings.TrimSpace(run.ID),
 		status,
 		reason,
-		summarizeSubagentText(firstNonEmpty(task.Label, task.Task), 120),
-		summarizeSubagentText(task.Result, 280),
+		summarizeSubagentText(firstNonEmpty(run.Label, run.Task), 120),
+		summarizeSubagentText(run.Result, 280),
 	), reason
 }
 
@@ -528,42 +501,35 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func (sm *SubagentManager) runWithRetry(ctx context.Context, task *SubagentTask) (string, error) {
-	maxRetries := normalizePositiveBound(task.MaxRetries, 0, 8)
-	backoffMs := normalizePositiveBound(task.RetryBackoff, 500, 120000)
-	timeoutSec := normalizePositiveBound(task.TimeoutSec, 0, 3600)
+func (sm *SubagentManager) runWithRetry(ctx context.Context, run *SubagentRun) (string, error) {
+	maxRetries := normalizePositiveBound(run.MaxRetries, 0, 8)
+	backoffMs := normalizePositiveBound(run.RetryBackoff, 500, 120000)
+	timeoutSec := normalizePositiveBound(run.TimeoutSec, 0, 3600)
 
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		result, err := runStringTaskWithTaskWatchdog(
-			ctx,
-			timeoutSec,
-			2*time.Second,
-			stringTaskWatchdogOptions{
-				ProgressFn: func() int {
-					return sm.taskWatchdogProgress(task)
-				},
-				CanExtend: func() bool {
-					return sm.taskCanAutoExtend(task)
-				},
-			},
-			func(runCtx context.Context) (string, error) {
-				return sm.executeTaskOnce(runCtx, task)
-			},
-		)
+		runCtx := ctx
+		var cancel context.CancelFunc
+		if timeoutSec > 0 {
+			runCtx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+		}
+		result, err := sm.executeRunOnce(runCtx, run)
+		if cancel != nil {
+			cancel()
+		}
 		if err == nil {
 			sm.mu.Lock()
-			task.RetryCount = attempt
-			task.Updated = time.Now().UnixMilli()
-			sm.persistTaskLocked(task, "attempt_succeeded", "")
+			run.RetryCount = attempt
+			run.Updated = time.Now().UnixMilli()
+			sm.persistRunLocked(run, "attempt_succeeded", "")
 			sm.mu.Unlock()
 			return result, nil
 		}
 		lastErr = err
 		sm.mu.Lock()
-		task.RetryCount = attempt
-		task.Updated = time.Now().UnixMilli()
-		sm.persistTaskLocked(task, "attempt_failed", err.Error())
+		run.RetryCount = attempt
+		run.Updated = time.Now().UnixMilli()
+		sm.persistRunLocked(run, "attempt_failed", err.Error())
 		sm.mu.Unlock()
 		if attempt >= maxRetries {
 			break
@@ -575,47 +541,18 @@ func (sm *SubagentManager) runWithRetry(ctx context.Context, task *SubagentTask)
 		}
 	}
 	if lastErr == nil {
-		lastErr = fmt.Errorf("subagent task failed with unknown error")
+		lastErr = fmt.Errorf("subagent run failed with unknown error")
 	}
 	return "", lastErr
 }
 
-func (sm *SubagentManager) taskWatchdogProgress(task *SubagentTask) int {
-	if sm == nil || task == nil {
-		return 0
+func (sm *SubagentManager) executeRunOnce(ctx context.Context, run *SubagentRun) (string, error) {
+	if run == nil {
+		return "", fmt.Errorf("subagent run is nil")
 	}
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	current, ok := sm.tasks[task.ID]
-	if !ok || current == nil {
-		current = task
-	}
-	if current.Updated <= 0 {
-		return 0
-	}
-	return int(current.Updated)
-}
-
-func (sm *SubagentManager) taskCanAutoExtend(task *SubagentTask) bool {
-	if sm == nil || task == nil {
-		return false
-	}
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	current, ok := sm.tasks[task.ID]
-	if !ok || current == nil {
-		current = task
-	}
-	return strings.EqualFold(strings.TrimSpace(current.Status), "running")
-}
-
-func (sm *SubagentManager) executeTaskOnce(ctx context.Context, task *SubagentTask) (string, error) {
-	if task == nil {
-		return "", fmt.Errorf("subagent task is nil")
-	}
-	pending, consumedIDs := sm.consumeThreadInbox(task)
+	pending, consumedIDs := sm.consumeThreadInbox(run)
 	if sm.runFunc != nil {
-		result, err := sm.runFunc(ctx, task)
+		result, err := sm.runFunc(ctx, run)
 		if err != nil {
 			sm.restoreMessageStatuses(consumedIDs)
 		} else {
@@ -628,7 +565,7 @@ func (sm *SubagentManager) executeTaskOnce(ctx context.Context, task *SubagentTa
 		return "", fmt.Errorf("no llm provider configured for subagent execution")
 	}
 
-	systemPrompt := sm.resolveSystemPrompt(task)
+	systemPrompt := sm.resolveSystemPrompt(run)
 	messages := []providers.Message{
 		{
 			Role:    "system",
@@ -636,7 +573,7 @@ func (sm *SubagentManager) executeTaskOnce(ctx context.Context, task *SubagentTa
 		},
 		{
 			Role:    "user",
-			Content: task.Task,
+			Content: run.Task,
 		},
 	}
 	if strings.TrimSpace(pending) != "" {
@@ -657,16 +594,16 @@ func (sm *SubagentManager) executeTaskOnce(ctx context.Context, task *SubagentTa
 	return response.Content, nil
 }
 
-func (sm *SubagentManager) resolveSystemPrompt(task *SubagentTask) string {
+func (sm *SubagentManager) resolveSystemPrompt(run *SubagentRun) string {
 	systemPrompt := "You are a subagent. Follow workspace AGENTS.md and complete the task independently."
 	workspacePrompt := sm.readWorkspacePromptFile("AGENTS.md")
 	if workspacePrompt != "" {
 		systemPrompt = "Workspace policy (AGENTS.md):\n" + workspacePrompt + "\n\nComplete the given task independently and report the result."
 	}
-	if task == nil {
+	if run == nil {
 		return systemPrompt
 	}
-	if promptFile := strings.TrimSpace(task.SystemPromptFile); promptFile != "" {
+	if promptFile := strings.TrimSpace(run.SystemPromptFile); promptFile != "" {
 		if promptText := sm.readWorkspacePromptFile(promptFile); promptText != "" {
 			return systemPrompt + "\n\nSubagent policy (" + promptFile + "):\n" + promptText
 		}
@@ -692,13 +629,13 @@ func (sm *SubagentManager) readWorkspacePromptFile(relPath string) string {
 	return strings.TrimSpace(string(data))
 }
 
-type SubagentRunFunc func(ctx context.Context, task *SubagentTask) (string, error)
+type SubagentRunFunc func(ctx context.Context, run *SubagentRun) (string, error)
 
 func (sm *SubagentManager) SetRunFunc(f SubagentRunFunc) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.runFunc = f
-	go sm.resumeRecoveredTasks()
+	go sm.resumeRecoveredRuns()
 }
 
 func (sm *SubagentManager) ProfileStore() *SubagentProfileStore {
@@ -707,7 +644,7 @@ func (sm *SubagentManager) ProfileStore() *SubagentProfileStore {
 	return sm.profileStore
 }
 
-func (sm *SubagentManager) resumeRecoveredTasks() {
+func (sm *SubagentManager) resumeRecoveredRuns() {
 	if sm == nil {
 		return
 	}
@@ -716,194 +653,83 @@ func (sm *SubagentManager) resumeRecoveredTasks() {
 		sm.mu.Unlock()
 		return
 	}
-	taskIDs := append([]string(nil), sm.recoverableTaskIDs...)
-	sm.recoverableTaskIDs = nil
-	toResume := make([]*SubagentTask, 0, len(taskIDs))
-	for _, taskID := range taskIDs {
-		task, ok := sm.tasks[taskID]
-		if !ok || task == nil || task.Status != "running" {
+	runIDs := append([]string(nil), sm.recoverableRunIDs...)
+	sm.recoverableRunIDs = nil
+	toResume := make([]*SubagentRun, 0, len(runIDs))
+	for _, runID := range runIDs {
+		run, ok := sm.runs[runID]
+		if !ok || run == nil || run.Status != "running" {
 			continue
 		}
-		task.Updated = time.Now().UnixMilli()
-		sm.persistTaskLocked(task, "recovered", "auto-resumed after restart")
-		toResume = append(toResume, task)
+		run.Updated = time.Now().UnixMilli()
+		sm.persistRunLocked(run, "recovered", "auto-resumed after restart")
+		toResume = append(toResume, run)
 	}
 	sm.mu.Unlock()
 
-	for _, task := range toResume {
+	for _, run := range toResume {
 		taskCtx, cancel := context.WithCancel(context.Background())
 		sm.mu.Lock()
-		sm.cancelFuncs[task.ID] = cancel
+		sm.cancelFuncs[run.ID] = cancel
 		sm.mu.Unlock()
-		go sm.runTask(taskCtx, task)
+		go sm.runSubagent(taskCtx, run)
 	}
 }
 
-func (sm *SubagentManager) NextTaskSequence() int {
+func (sm *SubagentManager) NextRunSequence() int {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.nextID
 }
 
-func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	sm.pruneArchivedLocked()
-	task, ok := sm.tasks[taskID]
-	if !ok && sm.runStore != nil {
-		return sm.runStore.Get(taskID)
-	}
-	return task, ok
-}
-
-func (sm *SubagentManager) ListTasks() []*SubagentTask {
+func (sm *SubagentManager) listRuns() []*SubagentRun {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.pruneArchivedLocked()
 
-	tasks := make([]*SubagentTask, 0, len(sm.tasks))
-	seen := make(map[string]struct{}, len(sm.tasks))
-	for _, task := range sm.tasks {
-		tasks = append(tasks, task)
-		seen[task.ID] = struct{}{}
+	runs := make([]*SubagentRun, 0, len(sm.runs))
+	seen := make(map[string]struct{}, len(sm.runs))
+	for _, run := range sm.runs {
+		runs = append(runs, run)
+		seen[run.ID] = struct{}{}
 	}
 	if sm.runStore != nil {
-		for _, task := range sm.runStore.List() {
-			if _, ok := seen[task.ID]; ok {
+		for _, run := range sm.runStore.List() {
+			if _, ok := seen[run.ID]; ok {
 				continue
 			}
-			tasks = append(tasks, task)
+			runs = append(runs, run)
 		}
 	}
-	return tasks
+	return runs
 }
 
-func (sm *SubagentManager) KillTask(taskID string) bool {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	t, ok := sm.tasks[taskID]
-	if !ok {
-		return false
-	}
-	if cancel, ok := sm.cancelFuncs[taskID]; ok {
-		cancel()
-		delete(sm.cancelFuncs, taskID)
-	}
-	if !IsTerminalRuntimeStatus(t.Status) {
-		t.Status = RuntimeStatusCancelled
-		t.WaitingReply = false
-		t.Updated = time.Now().UnixMilli()
-		sm.persistTaskLocked(t, "killed", "")
-		sm.notifyTaskWaitersLocked(taskID)
-	}
-	return true
-}
-
-func (sm *SubagentManager) SteerTask(taskID, message string) bool {
-	return sm.sendTaskMessage(taskID, "main", "control", message, false, "")
-}
-
-func (sm *SubagentManager) SendTaskMessage(taskID, message string) bool {
-	return sm.sendTaskMessage(taskID, "main", "message", message, false, "")
-}
-
-func (sm *SubagentManager) ReplyToTask(taskID, replyToMessageID, message string) bool {
-	return sm.sendTaskMessage(taskID, "main", "reply", message, false, replyToMessageID)
-}
-
-func (sm *SubagentManager) AckTaskMessage(taskID, messageID string) bool {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	t, ok := sm.tasks[taskID]
-	if !ok {
-		return false
-	}
-	if sm.mailboxStore == nil {
-		return false
-	}
-	if strings.TrimSpace(messageID) == "" {
-		return false
-	}
-	t.Updated = time.Now().UnixMilli()
-	msg, err := sm.mailboxStore.UpdateMessageStatus(messageID, "acked", t.Updated)
-	if err != nil {
-		return false
-	}
-	t.LastMessageID = msg.MessageID
-	t.WaitingReply = false
-	sm.persistTaskLocked(t, "acked", messageID)
-	return true
-}
-
-func (sm *SubagentManager) ResumeTask(ctx context.Context, taskID string) (string, bool) {
-	sm.mu.RLock()
-	t, ok := sm.tasks[taskID]
-	sm.mu.RUnlock()
-	if !ok {
-		return "", false
-	}
-	if strings.TrimSpace(t.Task) == "" {
-		return "", false
-	}
-	label := strings.TrimSpace(t.Label)
-	if label == "" {
-		label = "resumed"
-	} else {
-		label = label + "-resumed"
-	}
-	_, err := sm.Spawn(ctx, SubagentSpawnOptions{
-		Task:           t.Task,
-		Label:          label,
-		Role:           t.Role,
-		AgentID:        t.AgentID,
-		MaxRetries:     t.MaxRetries,
-		RetryBackoff:   t.RetryBackoff,
-		TimeoutSec:     t.TimeoutSec,
-		MaxTaskChars:   t.MaxTaskChars,
-		MaxResultChars: t.MaxResultChars,
-		OriginChannel:  t.OriginChannel,
-		OriginChatID:   t.OriginChatID,
-		ThreadID:       t.ThreadID,
-		CorrelationID:  t.CorrelationID,
-		ParentRunID:    t.ID,
-	})
-	if err != nil {
-		return "", false
-	}
-	sm.mu.Lock()
-	if original, ok := sm.tasks[taskID]; ok {
-		sm.persistTaskLocked(original, "resumed", label)
-	}
-	sm.mu.Unlock()
-	return label, true
-}
-
-func (sm *SubagentManager) Events(taskID string, limit int) ([]SubagentRunEvent, error) {
+func (sm *SubagentManager) Events(runID string, limit int) ([]SubagentRunEvent, error) {
 	if sm.runStore == nil {
 		return nil, nil
 	}
-	return sm.runStore.Events(taskID, limit)
+	return sm.runStore.Events(runID, limit)
 }
 
 func (sm *SubagentManager) RuntimeSnapshot(limit int) RuntimeSnapshot {
 	if sm == nil {
 		return RuntimeSnapshot{}
 	}
-	tasks := sm.ListTasks()
+	runs := sm.listRuns()
 	snapshot := RuntimeSnapshot{
-		Tasks: make([]TaskRecord, 0, len(tasks)),
-		Runs:  make([]RunRecord, 0, len(tasks)),
+		Requests: make([]RequestRecord, 0, len(runs)),
+		Runs:     make([]RunRecord, 0, len(runs)),
 	}
 	seenThreads := map[string]struct{}{}
-	for _, task := range tasks {
-		snapshot.Tasks = append(snapshot.Tasks, taskToTaskRecord(task))
-		snapshot.Runs = append(snapshot.Runs, taskToRunRecord(task))
-		if evts, err := sm.Events(task.ID, limit); err == nil {
+	for _, run := range runs {
+		snapshot.Requests = append(snapshot.Requests, runToRequestRecord(run))
+		snapshot.Runs = append(snapshot.Runs, runToRunRecord(run))
+		if evts, err := sm.Events(run.ID, limit); err == nil {
 			for _, evt := range evts {
 				snapshot.Events = append(snapshot.Events, EventRecord{
 					ID:         EventRecordID(evt.RunID, evt.Type, evt.At),
 					RunID:      evt.RunID,
-					TaskID:     evt.RunID,
+					RequestID:  evt.RunID,
 					AgentID:    evt.AgentID,
 					Type:       evt.Type,
 					Status:     evt.Status,
@@ -913,7 +739,7 @@ func (sm *SubagentManager) RuntimeSnapshot(limit int) RuntimeSnapshot {
 				})
 			}
 		}
-		threadID := strings.TrimSpace(task.ThreadID)
+		threadID := strings.TrimSpace(run.ThreadID)
 		if threadID == "" {
 			continue
 		}
@@ -953,16 +779,6 @@ func (sm *SubagentManager) Inbox(agentID string, limit int) ([]AgentMessage, err
 	return sm.mailboxStore.Inbox(agentID, limit)
 }
 
-func (sm *SubagentManager) TaskInbox(taskID string, limit int) ([]AgentMessage, error) {
-	sm.mu.RLock()
-	task, ok := sm.tasks[taskID]
-	sm.mu.RUnlock()
-	if !ok || sm.mailboxStore == nil {
-		return nil, nil
-	}
-	return sm.mailboxStore.ThreadInbox(task.ThreadID, task.AgentID, limit)
-}
-
 func (sm *SubagentManager) Message(messageID string) (*AgentMessage, bool) {
 	if sm.mailboxStore == nil {
 		return nil, false
@@ -975,12 +791,12 @@ func (sm *SubagentManager) pruneArchivedLocked() {
 		return
 	}
 	cutoff := time.Now().Add(-time.Duration(sm.archiveAfterMinute) * time.Minute).UnixMilli()
-	for id, t := range sm.tasks {
-		if !IsTerminalRuntimeStatus(t.Status) {
+	for id, run := range sm.runs {
+		if !IsTerminalRuntimeStatus(run.Status) {
 			continue
 		}
-		if t.Updated > 0 && t.Updated < cutoff {
-			delete(sm.tasks, id)
+		if run.Updated > 0 && run.Updated < cutoff {
+			delete(sm.runs, id)
 			delete(sm.cancelFuncs, id)
 		}
 	}
@@ -1036,23 +852,23 @@ func normalizeSubagentIdentifier(in string) string {
 	return out
 }
 
-func buildSubagentSessionKey(agentID, taskID string) string {
+func buildSubagentSessionKey(agentID, runID string) string {
 	a := normalizeSubagentIdentifier(agentID)
 	if a == "" {
 		a = "default"
 	}
-	t := normalizeSubagentIdentifier(taskID)
+	t := normalizeSubagentIdentifier(runID)
 	if t == "" {
-		t = "task"
+		t = "run"
 	}
 	return fmt.Sprintf("subagent:%s:%s", a, t)
 }
 
-func (sm *SubagentManager) persistTaskLocked(task *SubagentTask, eventType, message string) {
-	if task == nil || sm.runStore == nil {
+func (sm *SubagentManager) persistRunLocked(run *SubagentRun, eventType, message string) {
+	if run == nil || sm.runStore == nil {
 		return
 	}
-	cp := cloneSubagentTask(task)
+	cp := cloneSubagentRun(run)
 	_ = sm.runStore.AppendRun(cp)
 	_ = sm.runStore.AppendEvent(SubagentRunEvent{
 		RunID:      cp.ID,
@@ -1065,13 +881,13 @@ func (sm *SubagentManager) persistTaskLocked(task *SubagentTask, eventType, mess
 	})
 }
 
-func (sm *SubagentManager) WaitTask(ctx context.Context, taskID string) (*SubagentTask, bool, error) {
+func (sm *SubagentManager) waitRun(ctx context.Context, runID string) (*SubagentRun, bool, error) {
 	if sm == nil {
 		return nil, false, fmt.Errorf("subagent manager not available")
 	}
-	taskID = strings.TrimSpace(taskID)
-	if taskID == "" {
-		return nil, false, fmt.Errorf("task id is required")
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return nil, false, fmt.Errorf("run id is required")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -1079,29 +895,29 @@ func (sm *SubagentManager) WaitTask(ctx context.Context, taskID string) (*Subage
 	ch := make(chan struct{}, 1)
 	sm.mu.Lock()
 	sm.pruneArchivedLocked()
-	task, ok := sm.tasks[taskID]
+	run, ok := sm.runs[runID]
 	if !ok && sm.runStore != nil {
-		if persisted, found := sm.runStore.Get(taskID); found && persisted != nil {
+		if persisted, found := sm.runStore.Get(runID); found && persisted != nil {
 			if IsTerminalRuntimeStatus(persisted.Status) {
 				sm.mu.Unlock()
 				return persisted, true, nil
 			}
 		}
 	}
-	if ok && task != nil && IsTerminalRuntimeStatus(task.Status) {
-		cp := cloneSubagentTask(task)
+	if ok && run != nil && IsTerminalRuntimeStatus(run.Status) {
+		cp := cloneSubagentRun(run)
 		sm.mu.Unlock()
 		return cp, true, nil
 	}
-	waiters := sm.waiters[taskID]
+	waiters := sm.waiters[runID]
 	if waiters == nil {
 		waiters = map[chan struct{}]struct{}{}
-		sm.waiters[taskID] = waiters
+		sm.waiters[runID] = waiters
 	}
 	waiters[ch] = struct{}{}
 	sm.mu.Unlock()
 
-	defer sm.removeTaskWaiter(taskID, ch)
+	defer sm.removeRunWaiter(runID, ch)
 	for {
 		select {
 		case <-ctx.Done():
@@ -1109,14 +925,14 @@ func (sm *SubagentManager) WaitTask(ctx context.Context, taskID string) (*Subage
 		case <-ch:
 			sm.mu.Lock()
 			sm.pruneArchivedLocked()
-			task, ok := sm.tasks[taskID]
-			if ok && task != nil && IsTerminalRuntimeStatus(task.Status) {
-				cp := cloneSubagentTask(task)
+			run, ok := sm.runs[runID]
+			if ok && run != nil && IsTerminalRuntimeStatus(run.Status) {
+				cp := cloneSubagentRun(run)
 				sm.mu.Unlock()
 				return cp, true, nil
 			}
 			if !ok && sm.runStore != nil {
-				if persisted, found := sm.runStore.Get(taskID); found && persisted != nil && IsTerminalRuntimeStatus(persisted.Status) {
+				if persisted, found := sm.runStore.Get(runID); found && persisted != nil && IsTerminalRuntimeStatus(persisted.Status) {
 					sm.mu.Unlock()
 					return persisted, true, nil
 				}
@@ -1126,24 +942,24 @@ func (sm *SubagentManager) WaitTask(ctx context.Context, taskID string) (*Subage
 	}
 }
 
-func (sm *SubagentManager) removeTaskWaiter(taskID string, ch chan struct{}) {
+func (sm *SubagentManager) removeRunWaiter(runID string, ch chan struct{}) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	waiters := sm.waiters[taskID]
+	waiters := sm.waiters[runID]
 	if len(waiters) == 0 {
-		delete(sm.waiters, taskID)
+		delete(sm.waiters, runID)
 		return
 	}
 	delete(waiters, ch)
 	if len(waiters) == 0 {
-		delete(sm.waiters, taskID)
+		delete(sm.waiters, runID)
 	}
 }
 
-func (sm *SubagentManager) notifyTaskWaitersLocked(taskID string) {
-	waiters := sm.waiters[taskID]
+func (sm *SubagentManager) notifyRunWaitersLocked(runID string) {
+	waiters := sm.waiters[runID]
 	if len(waiters) == 0 {
-		delete(sm.waiters, taskID)
+		delete(sm.waiters, runID)
 		return
 	}
 	for ch := range waiters {
@@ -1152,80 +968,31 @@ func (sm *SubagentManager) notifyTaskWaitersLocked(taskID string) {
 		default:
 		}
 	}
-	delete(sm.waiters, taskID)
+	delete(sm.waiters, runID)
 }
 
-func (sm *SubagentManager) recordMailboxMessageLocked(task *SubagentTask, msg AgentMessage) {
-	if sm.mailboxStore == nil || task == nil {
+func (sm *SubagentManager) recordMailboxMessageLocked(run *SubagentRun, msg AgentMessage) {
+	if sm.mailboxStore == nil || run == nil {
 		return
 	}
 	if strings.TrimSpace(msg.ThreadID) == "" {
-		msg.ThreadID = task.ThreadID
+		msg.ThreadID = run.ThreadID
 	}
 	stored, err := sm.mailboxStore.AppendMessage(msg)
 	if err != nil {
 		return
 	}
-	task.LastMessageID = stored.MessageID
+	run.LastMessageID = stored.MessageID
 	if stored.RequiresReply {
-		task.WaitingReply = true
+		run.WaitingReply = true
 	}
 }
 
-func (sm *SubagentManager) sendTaskMessage(taskID, fromAgent, msgType, message string, requiresReply bool, replyTo string) bool {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	t, ok := sm.tasks[taskID]
-	if !ok {
-		return false
-	}
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return false
-	}
-	fromAgent = strings.TrimSpace(fromAgent)
-	if fromAgent == "" {
-		fromAgent = "main"
-	}
-	t.Updated = time.Now().UnixMilli()
-	if fromAgent == "main" {
-		t.Steering = append(t.Steering, message)
-	}
-	if strings.TrimSpace(replyTo) == "" {
-		replyTo = t.LastMessageID
-	}
-	toAgent := t.AgentID
-	if fromAgent != "main" {
-		toAgent = "main"
-	}
-	sm.recordMailboxMessageLocked(t, AgentMessage{
-		ThreadID:      t.ThreadID,
-		FromAgent:     fromAgent,
-		ToAgent:       toAgent,
-		ReplyTo:       replyTo,
-		CorrelationID: t.CorrelationID,
-		Type:          msgType,
-		Content:       message,
-		RequiresReply: requiresReply,
-		Status:        "queued",
-		CreatedAt:     t.Updated,
-	})
-	switch msgType {
-	case "control":
-		sm.persistTaskLocked(t, "steered", message)
-	case "reply":
-		sm.persistTaskLocked(t, "reply_sent", message)
-	default:
-		sm.persistTaskLocked(t, "message_sent", message)
-	}
-	return true
-}
-
-func (sm *SubagentManager) consumeThreadInbox(task *SubagentTask) (string, []string) {
-	if task == nil || sm.mailboxStore == nil {
+func (sm *SubagentManager) consumeThreadInbox(run *SubagentRun) (string, []string) {
+	if run == nil || sm.mailboxStore == nil {
 		return "", nil
 	}
-	msgs, err := sm.mailboxStore.ThreadInbox(task.ThreadID, task.AgentID, 0)
+	msgs, err := sm.mailboxStore.ThreadInbox(run.ThreadID, run.AgentID, 0)
 	if err != nil || len(msgs) == 0 {
 		return "", nil
 	}

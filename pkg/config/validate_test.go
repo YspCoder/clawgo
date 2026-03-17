@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -62,9 +63,10 @@ func TestValidateSubagentsRejectsAbsolutePromptFile(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
+	absolutePrompt := filepath.Join(t.TempDir(), "AGENT.md")
 	cfg.Agents.Subagents["coder"] = SubagentConfig{
 		Enabled:          true,
-		SystemPromptFile: "/tmp/AGENT.md",
+		SystemPromptFile: absolutePrompt,
 		Runtime: SubagentRuntimeConfig{
 			Provider: "openai",
 		},

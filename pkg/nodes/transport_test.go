@@ -3,6 +3,7 @@ package nodes
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -77,17 +78,18 @@ func TestWebsocketP2PTransportSend(t *testing.T) {
 func TestNormalizeDevicePayloadBuildsArtifacts(t *testing.T) {
 	t.Parallel()
 
+	path := filepath.Join(string(filepath.Separator), "tmp", "screen.png")
 	payload := normalizeDevicePayload("screen_snapshot", map[string]interface{}{
 		"media_type": "image",
 		"storage":    "path",
-		"path":       "/tmp/screen.png",
+		"path":       path,
 		"mime_type":  "image/png",
 	})
 	artifacts, ok := payload["artifacts"].([]map[string]interface{})
 	if !ok || len(artifacts) != 1 {
 		t.Fatalf("expected one artifact, got %+v", payload["artifacts"])
 	}
-	if artifacts[0]["kind"] != "image" || artifacts[0]["path"] != "/tmp/screen.png" {
+	if artifacts[0]["kind"] != "image" || filepath.Clean(artifacts[0]["path"].(string)) != filepath.Clean(path) {
 		t.Fatalf("unexpected artifact payload: %+v", artifacts[0])
 	}
 }
@@ -95,10 +97,11 @@ func TestNormalizeDevicePayloadBuildsArtifacts(t *testing.T) {
 func TestNormalizeDevicePayloadNormalizesExistingArtifactRows(t *testing.T) {
 	t.Parallel()
 
+	path := filepath.Join(string(filepath.Separator), "tmp", "screen.png")
 	payload := normalizeDevicePayload("screen_snapshot", map[string]interface{}{
 		"artifacts": []map[string]interface{}{
 			{
-				"path":       "/tmp/screen.png",
+				"path":       path,
 				"kind":       "image",
 				"size_bytes": "42",
 			},

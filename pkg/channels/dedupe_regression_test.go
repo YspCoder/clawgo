@@ -40,7 +40,8 @@ func TestDispatchOutbound_DeduplicatesRepeatedSend(t *testing.T) {
 		t.Fatalf("new manager: %v", err)
 	}
 	rc := &recordingChannel{}
-	mgr.RegisterChannel("test", rc)
+	mgr.channels["test"] = rc
+	mgr.refreshSnapshot()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -85,7 +86,8 @@ func TestDispatchOutbound_DifferentButtonsShouldNotDeduplicate(t *testing.T) {
 		t.Fatalf("new manager: %v", err)
 	}
 	rc := &recordingChannel{}
-	mgr.RegisterChannel("test", rc)
+	mgr.channels["test"] = rc
+	mgr.refreshSnapshot()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

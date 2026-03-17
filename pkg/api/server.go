@@ -50,7 +50,6 @@ type Server struct {
 	artifactStatsMu sync.Mutex
 	artifactStats   map[string]interface{}
 	gatewayVersion  string
-	webuiVersion    string
 	configPath      string
 	workspacePath   string
 	logFilePath     string
@@ -58,18 +57,8 @@ type Server struct {
 	onChatHistory   func(sessionKey string) []map[string]interface{}
 	onConfigAfter   func() error
 	onCron          func(action string, args map[string]interface{}) (interface{}, error)
-	onSubagents     func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)
 	onNodeDispatch  func(ctx context.Context, req nodes.Request, mode string) (nodes.Response, error)
 	onToolsCatalog  func() interface{}
-	webUIDir        string
-	ekgCacheMu      sync.Mutex
-	ekgCachePath    string
-	ekgCacheStamp   time.Time
-	ekgCacheSize    int64
-	ekgCacheRows    []map[string]interface{}
-	liveRuntimeMu   sync.Mutex
-	liveRuntimeSubs map[chan []byte]struct{}
-	liveRuntimeOn   bool
 	whatsAppBridge  *channels.WhatsAppBridgeService
 	whatsAppBase    string
 	oauthFlowMu     sync.Mutex
@@ -97,7 +86,6 @@ func NewServer(host string, port int, token string, mgr *nodes.Manager) *Server 
 		nodeConnIDs:     map[string]string{},
 		nodeSockets:     map[string]*nodeSocketConn{},
 		artifactStats:   map[string]interface{}{},
-		liveRuntimeSubs: map[chan []byte]struct{}{},
 		oauthFlows:      map[string]*providers.OAuthPendingFlow{},
 		extraRoutes:     map[string]http.Handler{},
 	}
@@ -119,87 +107,6 @@ func (c *nodeSocketConn) Send(msg nodes.WireMessage) error {
 	return c.conn.WriteJSON(msg)
 }
 
-func publishLiveSnapshot(subs map[chan []byte]struct{}, payload []byte) {
-	for ch := range subs {
-		select {
-		case ch <- payload:
-		default:
-			select {
-			case <-ch:
-			default:
-			}
-			select {
-			case ch <- payload:
-			default:
-			}
-		}
-	}
-}
-
-func (s *Server) subscribeRuntimeLive(ctx context.Context) chan []byte {
-	ch := make(chan []byte, 1)
-	s.liveRuntimeMu.Lock()
-	s.liveRuntimeSubs[ch] = struct{}{}
-	start := !s.liveRuntimeOn
-	if start {
-		s.liveRuntimeOn = true
-	}
-	s.liveRuntimeMu.Unlock()
-	if start {
-		go s.runtimeLiveLoop()
-	}
-	go func() {
-		<-ctx.Done()
-		s.unsubscribeRuntimeLive(ch)
-	}()
-	return ch
-}
-
-func (s *Server) unsubscribeRuntimeLive(ch chan []byte) {
-	s.liveRuntimeMu.Lock()
-	delete(s.liveRuntimeSubs, ch)
-	s.liveRuntimeMu.Unlock()
-}
-
-func (s *Server) runtimeLiveLoop() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-	for {
-		if !s.publishRuntimeSnapshot(context.Background()) {
-			s.liveRuntimeMu.Lock()
-			if len(s.liveRuntimeSubs) == 0 {
-				s.liveRuntimeOn = false
-				s.liveRuntimeMu.Unlock()
-				return
-			}
-			s.liveRuntimeMu.Unlock()
-		}
-		<-ticker.C
-	}
-}
-
-func (s *Server) publishRuntimeSnapshot(ctx context.Context) bool {
-	if s == nil {
-		return false
-	}
-	payload := map[string]interface{}{
-		"ok":       true,
-		"type":     "runtime_snapshot",
-		"snapshot": s.buildWebUIRuntimeSnapshot(ctx),
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return false
-	}
-	s.liveRuntimeMu.Lock()
-	defer s.liveRuntimeMu.Unlock()
-	if len(s.liveRuntimeSubs) == 0 {
-		return false
-	}
-	publishLiveSnapshot(s.liveRuntimeSubs, data)
-	return true
-}
-
 func (s *Server) SetConfigPath(path string)    { s.configPath = strings.TrimSpace(path) }
 func (s *Server) SetWorkspacePath(path string) { s.workspacePath = strings.TrimSpace(path) }
 func (s *Server) SetLogFilePath(path string)   { s.logFilePath = strings.TrimSpace(path) }
@@ -214,16 +121,11 @@ func (s *Server) SetConfigAfterHook(fn func() error) { s.onConfigAfter = fn }
 func (s *Server) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
 }
-func (s *Server) SetSubagentHandler(fn func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error)) {
-	s.onSubagents = fn
-}
 func (s *Server) SetNodeDispatchHandler(fn func(ctx context.Context, req nodes.Request, mode string) (nodes.Response, error)) {
 	s.onNodeDispatch = fn
 }
 func (s *Server) SetToolsCatalogHandler(fn func() interface{}) { s.onToolsCatalog = fn }
-func (s *Server) SetWebUIDir(dir string)                       { s.webUIDir = strings.TrimSpace(dir) }
 func (s *Server) SetGatewayVersion(v string)                   { s.gatewayVersion = strings.TrimSpace(v) }
-func (s *Server) SetWebUIVersion(v string)                     { s.webuiVersion = strings.TrimSpace(v) }
 func (s *Server) SetProtectedRoute(path string, handler http.Handler) {
 	if s == nil {
 		return
@@ -399,12 +301,10 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/nodes/register", s.handleRegister)
 	mux.HandleFunc("/nodes/heartbeat", s.handleHeartbeat)
 	mux.HandleFunc("/nodes/connect", s.handleNodeConnect)
-	mux.HandleFunc("/", s.handleWebUIAsset)
 	mux.HandleFunc("/api/config", s.handleWebUIConfig)
 	mux.HandleFunc("/api/chat", s.handleWebUIChat)
 	mux.HandleFunc("/api/chat/history", s.handleWebUIChatHistory)
 	mux.HandleFunc("/api/chat/live", s.handleWebUIChatLive)
-	mux.HandleFunc("/api/runtime", s.handleWebUIRuntime)
 	mux.HandleFunc("/api/version", s.handleWebUIVersion)
 	mux.HandleFunc("/api/provider/oauth/start", s.handleWebUIProviderOAuthStart)
 	mux.HandleFunc("/api/provider/oauth/complete", s.handleWebUIProviderOAuthComplete)
@@ -429,12 +329,9 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/sessions", s.handleWebUISessions)
 	mux.HandleFunc("/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/api/workspace_file", s.handleWebUIWorkspaceFile)
-	mux.HandleFunc("/api/subagents_runtime", s.handleWebUISubagentsRuntime)
 	mux.HandleFunc("/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
 	mux.HandleFunc("/api/tools", s.handleWebUITools)
 	mux.HandleFunc("/api/mcp/install", s.handleWebUIMCPInstall)
-	mux.HandleFunc("/api/task_queue", s.handleWebUITaskQueue)
-	mux.HandleFunc("/api/ekg_stats", s.handleWebUIEKGStats)
 	mux.HandleFunc("/api/logs/live", s.handleWebUILogsLive)
 	mux.HandleFunc("/api/logs/recent", s.handleWebUILogsRecent)
 	s.extraRoutesMu.RLock()
@@ -658,81 +555,6 @@ func (s *Server) handleNodeConnect(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleWebUI(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if s.token != "" {
-		http.SetCookie(w, &http.Cookie{
-			Name:     "clawgo_webui_token",
-			Value:    s.token,
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   86400,
-		})
-	}
-	if s.tryServeWebUIDist(w, r, "/index.html") {
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(webUIHTML))
-}
-
-func (s *Server) handleWebUIAsset(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if strings.HasPrefix(r.URL.Path, "/api/") {
-		http.NotFound(w, r)
-		return
-	}
-	if r.URL.Path == "/" {
-		s.handleWebUI(w, r)
-		return
-	}
-	if s.tryServeWebUIDist(w, r, r.URL.Path) {
-		return
-	}
-	// SPA fallback
-	if s.tryServeWebUIDist(w, r, "/index.html") {
-		return
-	}
-	http.NotFound(w, r)
-}
-
-func (s *Server) tryServeWebUIDist(w http.ResponseWriter, r *http.Request, reqPath string) bool {
-	dir := strings.TrimSpace(s.webUIDir)
-	if dir == "" {
-		return false
-	}
-	p := strings.TrimPrefix(reqPath, "/")
-	if reqPath == "/" || reqPath == "/index.html" {
-		p = "index.html"
-	}
-	p = filepath.Clean(strings.TrimPrefix(p, "/"))
-	if strings.HasPrefix(p, "..") {
-		return false
-	}
-	full := filepath.Join(dir, p)
-	fi, err := os.Stat(full)
-	if err != nil || fi.IsDir() {
-		return false
-	}
-	http.ServeFile(w, r, full)
-	return true
-}
-
 func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -805,107 +627,7 @@ func (s *Server) handleWebUIConfig(w http.ResponseWriter, r *http.Request) {
 		out, _ := json.MarshalIndent(merged, "", "  ")
 		_, _ = w.Write(out)
 	case http.MethodPost:
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		confirmRisky, _ := tools.MapBoolArg(body, "confirm_risky")
-		delete(body, "confirm_risky")
-
-		oldCfgRaw, _ := os.ReadFile(s.configPath)
-		var oldMap map[string]interface{}
-		_ = json.Unmarshal(oldCfgRaw, &oldMap)
-		riskyOldMap := oldMap
-		riskyNewMap := body
-		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "normalized") {
-			if loaded, err := cfgpkg.LoadConfig(s.configPath); err == nil && loaded != nil {
-				if raw, err := json.Marshal(loaded.NormalizedView()); err == nil {
-					_ = json.Unmarshal(raw, &riskyOldMap)
-				}
-			}
-		}
-
-		riskyPaths := collectRiskyConfigPaths(riskyOldMap, riskyNewMap)
-		changedRisky := make([]string, 0)
-		for _, p := range riskyPaths {
-			if fmt.Sprintf("%v", getPathValue(riskyOldMap, p)) != fmt.Sprintf("%v", getPathValue(riskyNewMap, p)) {
-				changedRisky = append(changedRisky, p)
-			}
-		}
-		if len(changedRisky) > 0 && !confirmRisky {
-			writeJSONStatus(w, http.StatusBadRequest, map[string]interface{}{
-				"ok":               false,
-				"error":            "risky fields changed; confirmation required",
-				"requires_confirm": true,
-				"changed_fields":   changedRisky,
-			})
-			return
-		}
-
-		cfg := cfgpkg.DefaultConfig()
-		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "normalized") {
-			loaded, err := cfgpkg.LoadConfig(s.configPath)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			cfg = loaded
-			candidate, err := json.Marshal(body)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			var normalized cfgpkg.NormalizedConfig
-			dec := json.NewDecoder(bytes.NewReader(candidate))
-			dec.DisallowUnknownFields()
-			if err := dec.Decode(&normalized); err != nil {
-				http.Error(w, "normalized config validation failed: "+err.Error(), http.StatusBadRequest)
-				return
-			}
-			cfg.ApplyNormalizedView(normalized)
-		} else {
-			candidate, err := json.Marshal(body)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			dec := json.NewDecoder(bytes.NewReader(candidate))
-			dec.DisallowUnknownFields()
-			if err := dec.Decode(cfg); err != nil {
-				http.Error(w, "config schema validation failed: "+err.Error(), http.StatusBadRequest)
-				return
-			}
-		}
-		if errs := cfgpkg.Validate(cfg); len(errs) > 0 {
-			list := make([]string, 0, len(errs))
-			for _, e := range errs {
-				list = append(list, e.Error())
-			}
-			writeJSONStatus(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "config validation failed", "details": list})
-			return
-		}
-
-		if err := cfgpkg.SaveConfig(s.configPath, cfg); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if s.onConfigAfter != nil {
-			if err := s.onConfigAfter(); err != nil {
-				http.Error(w, "config saved but reload failed: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			if err := requestSelfReloadSignal(); err != nil {
-				http.Error(w, "config saved but reload signal failed: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
-		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "normalized") {
-			writeJSON(w, map[string]interface{}{"ok": true, "reloaded": true, "config": cfg.NormalizedView()})
-			return
-		}
-		writeJSON(w, map[string]interface{}{"ok": true, "reloaded": true})
+		http.Error(w, "webui config editing is disabled", http.StatusMethodNotAllowed)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -927,82 +649,6 @@ func mergeJSONMap(base, override map[string]interface{}) map[string]interface{} 
 		base[k] = v
 	}
 	return base
-}
-
-func getPathValue(m map[string]interface{}, path string) interface{} {
-	if m == nil || strings.TrimSpace(path) == "" {
-		return nil
-	}
-	parts := strings.Split(path, ".")
-	var cur interface{} = m
-	for _, p := range parts {
-		node, ok := cur.(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		cur = node[p]
-	}
-	return cur
-}
-
-func collectRiskyConfigPaths(oldMap, newMap map[string]interface{}) []string {
-	paths := []string{
-		"channels.telegram.token",
-		"channels.telegram.allow_from",
-		"channels.telegram.allow_chats",
-		"models.providers.openai.api_base",
-		"models.providers.openai.api_key",
-		"runtime.providers.openai.api_base",
-		"runtime.providers.openai.api_key",
-		"gateway.token",
-		"gateway.port",
-	}
-	seen := map[string]bool{}
-	for _, path := range paths {
-		seen[path] = true
-	}
-	for _, name := range collectProviderNames(oldMap, newMap) {
-		for _, field := range []string{"api_base", "api_key"} {
-			path := "models.providers." + name + "." + field
-			if !seen[path] {
-				paths = append(paths, path)
-				seen[path] = true
-			}
-			normalizedPath := "runtime.providers." + name + "." + field
-			if !seen[normalizedPath] {
-				paths = append(paths, normalizedPath)
-				seen[normalizedPath] = true
-			}
-		}
-	}
-	return paths
-}
-
-func collectProviderNames(maps ...map[string]interface{}) []string {
-	seen := map[string]bool{}
-	names := make([]string, 0)
-	for _, root := range maps {
-		models, _ := root["models"].(map[string]interface{})
-		providers, _ := models["providers"].(map[string]interface{})
-		for name := range providers {
-			if strings.TrimSpace(name) == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			names = append(names, name)
-		}
-		runtimeMap, _ := root["runtime"].(map[string]interface{})
-		runtimeProviders, _ := runtimeMap["providers"].(map[string]interface{})
-		for name := range runtimeProviders {
-			if strings.TrimSpace(name) == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	return names
 }
 
 func (s *Server) handleWebUIUpload(w http.ResponseWriter, r *http.Request) {
@@ -1732,7 +1378,6 @@ func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"ok":                true,
 		"gateway_version":   firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
-		"webui_version":     firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
 		"compiled_channels": channels.CompiledChannelKeys(),
 	})
 }
@@ -1885,14 +1530,6 @@ func (s *Server) webUIWhatsAppStatusPayload(ctx context.Context) (map[string]int
 	}, http.StatusOK
 }
 
-func (s *Server) loadWhatsAppConfig() (cfgpkg.WhatsAppConfig, error) {
-	cfg, err := s.loadConfig()
-	if err != nil {
-		return cfgpkg.WhatsAppConfig{}, err
-	}
-	return cfg.Channels.WhatsApp, nil
-}
-
 func (s *Server) loadConfig() (*cfgpkg.Config, error) {
 	configPath := strings.TrimSpace(s.configPath)
 	if configPath == "" {
@@ -1987,81 +1624,6 @@ func renderQRCodeSVG(code *qr.Code, scale, quietZone int) string {
 	}
 	b.WriteString(`</g></svg>`)
 	return b.String()
-}
-
-func (s *Server) handleWebUIRuntime(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	conn, err := nodesWebsocketUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-
-	ctx := r.Context()
-	sub := s.subscribeRuntimeLive(ctx)
-	initial := map[string]interface{}{
-		"ok":       true,
-		"type":     "runtime_snapshot",
-		"snapshot": s.buildWebUIRuntimeSnapshot(ctx),
-	}
-	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	if err := conn.WriteJSON(initial); err != nil {
-		return
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case payload := <-sub:
-			_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-				return
-			}
-		}
-	}
-}
-
-func (s *Server) buildWebUIRuntimeSnapshot(ctx context.Context) map[string]interface{} {
-	var providerPayload map[string]interface{}
-	var normalizedConfig interface{}
-	if strings.TrimSpace(s.configPath) != "" {
-		if cfg, err := cfgpkg.LoadConfig(strings.TrimSpace(s.configPath)); err == nil {
-			providerPayload = providers.GetProviderRuntimeSnapshot(cfg)
-			normalizedConfig = cfg.NormalizedView()
-		}
-	}
-	if providerPayload == nil {
-		providerPayload = map[string]interface{}{"items": []interface{}{}}
-	}
-	runtimePayload := map[string]interface{}{}
-	if s.onSubagents != nil {
-		if res, err := s.onSubagents(ctx, "snapshot", map[string]interface{}{"limit": 200}); err == nil {
-			if m, ok := res.(map[string]interface{}); ok {
-				runtimePayload = m
-			}
-		}
-	}
-	return map[string]interface{}{
-		"version":    s.webUIVersionPayload(),
-		"config":     normalizedConfig,
-		"runtime":    runtimePayload,
-		"nodes":      s.webUINodesPayload(ctx),
-		"sessions":   s.webUISessionsPayload(),
-		"task_queue": s.webUITaskQueuePayload(false),
-		"ekg":        s.webUIEKGSummaryPayload("24h"),
-		"providers":  providerPayload,
-	}
-}
-
-func (s *Server) webUIVersionPayload() map[string]interface{} {
-	return map[string]interface{}{
-		"gateway_version":   firstNonEmptyString(s.gatewayVersion, gatewayBuildVersion()),
-		"webui_version":     firstNonEmptyString(s.webuiVersion, detectWebUIVersion(strings.TrimSpace(s.webUIDir))),
-		"compiled_channels": channels.CompiledChannelKeys(),
-	}
 }
 
 func (s *Server) webUINodesPayload(ctx context.Context) map[string]interface{} {
@@ -2721,250 +2283,6 @@ func (s *Server) deleteNodeArtifact(id string) (bool, bool, error) {
 	return deletedFile, true, nil
 }
 
-func (s *Server) webUISessionsPayload() map[string]interface{} {
-	sessionsDir := filepath.Join(filepath.Dir(s.workspacePath), "agents", "main", "sessions")
-	_ = os.MkdirAll(sessionsDir, 0755)
-	type item struct {
-		Key     string `json:"key"`
-		Channel string `json:"channel,omitempty"`
-	}
-	out := make([]item, 0, 16)
-	entries, err := os.ReadDir(sessionsDir)
-	if err == nil {
-		seen := map[string]struct{}{}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".deleted.") {
-				continue
-			}
-			key := strings.TrimSuffix(name, ".jsonl")
-			if strings.TrimSpace(key) == "" {
-				continue
-			}
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			channel := ""
-			if i := strings.Index(key, ":"); i > 0 {
-				channel = key[:i]
-			}
-			out = append(out, item{Key: key, Channel: channel})
-		}
-	}
-	if len(out) == 0 {
-		out = append(out, item{Key: "main", Channel: "main"})
-	}
-	return map[string]interface{}{"sessions": out}
-}
-
-func (s *Server) webUITaskQueuePayload(includeHeartbeat bool) map[string]interface{} {
-	path := s.memoryFilePath("task-audit.jsonl")
-	b, err := os.ReadFile(path)
-	lines := []string{}
-	if err == nil {
-		lines = strings.Split(string(b), "\n")
-	}
-	type agg struct {
-		Last     map[string]interface{}
-		Logs     []string
-		Attempts int
-	}
-	m := map[string]*agg{}
-	for _, ln := range lines {
-		if ln == "" {
-			continue
-		}
-		var row map[string]interface{}
-		if err := json.Unmarshal([]byte(ln), &row); err != nil {
-			continue
-		}
-		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
-		if !includeHeartbeat && source == "heartbeat" {
-			continue
-		}
-		id := fmt.Sprintf("%v", row["task_id"])
-		if id == "" {
-			continue
-		}
-		if _, ok := m[id]; !ok {
-			m[id] = &agg{Last: row, Logs: []string{}, Attempts: 0}
-		}
-		a := m[id]
-		a.Last = row
-		a.Attempts++
-		if lg := strings.TrimSpace(fmt.Sprintf("%v", row["log"])); lg != "" {
-			if len(a.Logs) == 0 || a.Logs[len(a.Logs)-1] != lg {
-				a.Logs = append(a.Logs, lg)
-				if len(a.Logs) > 20 {
-					a.Logs = a.Logs[len(a.Logs)-20:]
-				}
-			}
-		}
-	}
-	items := make([]map[string]interface{}, 0, len(m))
-	running := make([]map[string]interface{}, 0)
-	for _, a := range m {
-		row := a.Last
-		row["logs"] = a.Logs
-		row["attempts"] = a.Attempts
-		items = append(items, row)
-		if fmt.Sprintf("%v", row["status"]) == "running" {
-			running = append(running, row)
-		}
-	}
-	queuePath := s.memoryFilePath("task_queue.json")
-	if qb, qErr := os.ReadFile(queuePath); qErr == nil {
-		var q map[string]interface{}
-		if json.Unmarshal(qb, &q) == nil {
-			if arr, ok := q["running"].([]interface{}); ok {
-				for _, it := range arr {
-					if row, ok := it.(map[string]interface{}); ok {
-						running = append(running, row)
-					}
-				}
-			}
-		}
-	}
-	sort.Slice(items, func(i, j int) bool {
-		return fmt.Sprintf("%v", items[i]["updated_at"]) > fmt.Sprintf("%v", items[j]["updated_at"])
-	})
-	sort.Slice(running, func(i, j int) bool {
-		return fmt.Sprintf("%v", running[i]["updated_at"]) > fmt.Sprintf("%v", running[j]["updated_at"])
-	})
-	if len(items) > 30 {
-		items = items[:30]
-	}
-	return map[string]interface{}{"items": items, "running": running}
-}
-
-func (s *Server) webUIEKGSummaryPayload(window string) map[string]interface{} {
-	ekgPath := s.memoryFilePath("ekg-events.jsonl")
-	window = strings.ToLower(strings.TrimSpace(window))
-	windowDur := 24 * time.Hour
-	switch window {
-	case "6h":
-		windowDur = 6 * time.Hour
-	case "24h", "":
-		windowDur = 24 * time.Hour
-	case "7d":
-		windowDur = 7 * 24 * time.Hour
-	}
-	selectedWindow := window
-	if selectedWindow == "" {
-		selectedWindow = "24h"
-	}
-	cutoff := time.Now().UTC().Add(-windowDur)
-	rows := s.loadEKGRowsCached(ekgPath, 3000)
-	type kv struct {
-		Key   string  `json:"key"`
-		Score float64 `json:"score,omitempty"`
-		Count int     `json:"count,omitempty"`
-	}
-	providerScore := map[string]float64{}
-	providerScoreWorkload := map[string]float64{}
-	errSigCount := map[string]int{}
-	errSigHeartbeat := map[string]int{}
-	errSigWorkload := map[string]int{}
-	sourceStats := map[string]int{}
-	channelStats := map[string]int{}
-	for _, row := range rows {
-		ts := strings.TrimSpace(fmt.Sprintf("%v", row["time"]))
-		if ts != "" {
-			if tm, err := time.Parse(time.RFC3339, ts); err == nil && tm.Before(cutoff) {
-				continue
-			}
-		}
-		provider := strings.TrimSpace(fmt.Sprintf("%v", row["provider"]))
-		status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
-		errSig := strings.TrimSpace(fmt.Sprintf("%v", row["errsig"]))
-		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
-		channel := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["channel"])))
-		if source == "heartbeat" {
-			continue
-		}
-		if source == "" {
-			source = "unknown"
-		}
-		if channel == "" {
-			channel = "unknown"
-		}
-		sourceStats[source]++
-		channelStats[channel]++
-		if provider != "" {
-			providerScoreWorkload[provider] += 1
-			if status == "success" {
-				providerScore[provider] += 1
-			} else if status == "error" {
-				providerScore[provider] -= 2
-			}
-		}
-		if errSig != "" {
-			errSigWorkload[errSig]++
-			if source == "heartbeat" {
-				errSigHeartbeat[errSig]++
-			} else if status == "error" {
-				errSigCount[errSig]++
-			}
-		}
-	}
-	toTopScore := func(m map[string]float64, limit int) []kv {
-		out := make([]kv, 0, len(m))
-		for k, v := range m {
-			out = append(out, kv{Key: k, Score: v})
-		}
-		sort.Slice(out, func(i, j int) bool {
-			if out[i].Score == out[j].Score {
-				return out[i].Key < out[j].Key
-			}
-			return out[i].Score > out[j].Score
-		})
-		if len(out) > limit {
-			out = out[:limit]
-		}
-		return out
-	}
-	toTopCount := func(m map[string]int, limit int) []kv {
-		out := make([]kv, 0, len(m))
-		for k, v := range m {
-			out = append(out, kv{Key: k, Count: v})
-		}
-		sort.Slice(out, func(i, j int) bool {
-			if out[i].Count == out[j].Count {
-				return out[i].Key < out[j].Key
-			}
-			return out[i].Count > out[j].Count
-		})
-		if len(out) > limit {
-			out = out[:limit]
-		}
-		return out
-	}
-	return map[string]interface{}{
-		"ok":                    true,
-		"window":                selectedWindow,
-		"rows":                  len(rows),
-		"provider_top_score":    toTopScore(providerScore, 5),
-		"provider_top_workload": toTopCount(mapFromFloatCounts(providerScoreWorkload), 5),
-		"errsig_top":            toTopCount(errSigCount, 5),
-		"errsig_top_heartbeat":  toTopCount(errSigHeartbeat, 5),
-		"errsig_top_workload":   toTopCount(errSigWorkload, 5),
-		"source_top":            toTopCount(sourceStats, 5),
-		"channel_top":           toTopCount(channelStats, 5),
-	}
-}
-
-func mapFromFloatCounts(src map[string]float64) map[string]int {
-	out := make(map[string]int, len(src))
-	for k, v := range src {
-		out[k] = int(v)
-	}
-	return out
-}
-
 func (s *Server) handleWebUITools(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -3535,32 +2853,30 @@ func (s *Server) buildNodeAgentTrees(ctx context.Context, nodeList []nodes.NodeI
 }
 
 func (s *Server) fetchRegistryItems(ctx context.Context) []map[string]interface{} {
-	if s == nil || s.onSubagents == nil {
+	_ = ctx
+	if s == nil || strings.TrimSpace(s.configPath) == "" {
 		return nil
 	}
-	result, err := s.onSubagents(ctx, "registry", nil)
-	if err != nil {
+	cfg, err := cfgpkg.LoadConfig(strings.TrimSpace(s.configPath))
+	if err != nil || cfg == nil {
 		return nil
 	}
-	payload, ok := result.(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	rawItems, ok := payload["items"].([]map[string]interface{})
-	if ok {
-		return rawItems
-	}
-	list, ok := payload["items"].([]interface{})
-	if !ok {
-		return nil
-	}
-	items := make([]map[string]interface{}, 0, len(list))
-	for _, item := range list {
-		row, ok := item.(map[string]interface{})
-		if ok {
-			items = append(items, row)
+	items := make([]map[string]interface{}, 0, len(cfg.Agents.Subagents))
+	for agentID, subcfg := range cfg.Agents.Subagents {
+		if !subcfg.Enabled {
+			continue
 		}
+		items = append(items, map[string]interface{}{
+			"agent_id":     agentID,
+			"display_name": subcfg.DisplayName,
+			"role":         subcfg.Role,
+			"type":         subcfg.Type,
+			"transport":    fallbackString(strings.TrimSpace(subcfg.Transport), "local"),
+		})
 	}
+	sort.Slice(items, func(i, j int) bool {
+		return strings.TrimSpace(stringFromMap(items[i], "agent_id")) < strings.TrimSpace(stringFromMap(items[j], "agent_id"))
+	})
 	return items
 }
 
@@ -3584,7 +2900,7 @@ func (s *Server) fetchRemoteNodeRegistry(ctx context.Context, node nodes.NodeInf
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return s.fetchRemoteNodeRegistryLegacy(ctx, node)
+		return nil, fmt.Errorf("remote subagent registry unavailable: %s", strings.TrimSpace(node.ID))
 	}
 	var payload struct {
 		OK        bool                    `json:"ok"`
@@ -3592,47 +2908,13 @@ func (s *Server) fetchRemoteNodeRegistry(ctx context.Context, node nodes.NodeInf
 		RawConfig map[string]interface{}  `json:"raw_config"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
-		return s.fetchRemoteNodeRegistryLegacy(ctx, node)
+		return nil, err
 	}
 	items := buildRegistryItemsFromNormalizedConfig(payload.Config)
 	if len(items) > 0 {
 		return items, nil
 	}
-	return s.fetchRemoteNodeRegistryLegacy(ctx, node)
-}
-
-func (s *Server) fetchRemoteNodeRegistryLegacy(ctx context.Context, node nodes.NodeInfo) ([]map[string]interface{}, error) {
-	baseURL := nodeWebUIBaseURL(node)
-	if baseURL == "" {
-		return nil, fmt.Errorf("node %s endpoint missing", strings.TrimSpace(node.ID))
-	}
-	reqURL := baseURL + "/api/subagents_runtime?action=registry"
-	if tok := strings.TrimSpace(node.Token); tok != "" {
-		reqURL += "&token=" + url.QueryEscape(tok)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("remote status %d", resp.StatusCode)
-	}
-	var payload struct {
-		OK     bool `json:"ok"`
-		Result struct {
-			Items []map[string]interface{} `json:"items"`
-		} `json:"result"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
-		return nil, err
-	}
-	return payload.Result.Items, nil
+	return nil, fmt.Errorf("remote subagent registry unavailable: %s", strings.TrimSpace(node.ID))
 }
 
 func buildRegistryItemsFromNormalizedConfig(view cfgpkg.NormalizedConfig) []map[string]interface{} {
@@ -4244,10 +3526,6 @@ func gatewayBuildVersion() string {
 	return "unknown"
 }
 
-func detectWebUIVersion(webUIDir string) string {
-	_ = webUIDir
-	return "dev"
-}
 
 func firstNonEmptyString(values ...string) string {
 	for _, v := range values {
@@ -4599,10 +3877,6 @@ func ensureClawHubReady(ctx context.Context) (string, error) {
 		return strings.Join(outs, "\n"), nil
 	}
 	return strings.Join(outs, "\n"), fmt.Errorf("installed clawhub but executable still not found in PATH")
-}
-
-func ensureMCPPackageInstalled(ctx context.Context, pkgName string) (output string, binName string, binPath string, err error) {
-	return ensureMCPPackageInstalledWithInstaller(ctx, pkgName, "npm")
 }
 
 func ensureMCPPackageInstalledWithInstaller(ctx context.Context, pkgName, installer string) (output string, binName string, binPath string, err error) {
@@ -5056,13 +4330,6 @@ func anyToString(v interface{}) string {
 	}
 }
 
-func derefInt(v *int) int {
-	if v == nil {
-		return 0
-	}
-	return *v
-}
-
 func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -5151,58 +4418,6 @@ func (s *Server) handleWebUIToolAllowlistGroups(w http.ResponseWriter, r *http.R
 		"ok":     true,
 		"groups": tools.ToolAllowlistGroups(),
 	})
-}
-
-func (s *Server) handleWebUISubagentsRuntime(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if s.onSubagents == nil {
-		http.Error(w, "subagent runtime handler not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	action := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("action")))
-	args := map[string]interface{}{}
-	switch r.Method {
-	case http.MethodGet:
-		if action == "" {
-			action = "list"
-		}
-		for key, values := range r.URL.Query() {
-			if key == "action" || key == "token" || len(values) == 0 {
-				continue
-			}
-			args[key] = strings.TrimSpace(values[0])
-		}
-	case http.MethodPost:
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		if body == nil {
-			body = map[string]interface{}{}
-		}
-		if action == "" {
-			if raw := stringFromMap(body, "action"); raw != "" {
-				action = strings.ToLower(strings.TrimSpace(raw))
-			}
-		}
-		delete(body, "action")
-		args = body
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	result, err := s.onSubagents(r.Context(), action, args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]interface{}{"ok": true, "result": result})
 }
 
 func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
@@ -5305,333 +4520,6 @@ func (s *Server) handleWebUIWorkspaceFile(w http.ResponseWriter, r *http.Request
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func (s *Server) handleWebUITaskQueue(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	path := s.memoryFilePath("task-audit.jsonl")
-	includeHeartbeat := r.URL.Query().Get("include_heartbeat") == "1"
-	b, err := os.ReadFile(path)
-	lines := []string{}
-	if err == nil {
-		lines = strings.Split(string(b), "\n")
-	}
-	type agg struct {
-		Last     map[string]interface{}
-		Logs     []string
-		Attempts int
-	}
-	m := map[string]*agg{}
-	for _, ln := range lines {
-		if ln == "" {
-			continue
-		}
-		var row map[string]interface{}
-		if err := json.Unmarshal([]byte(ln), &row); err != nil {
-			continue
-		}
-		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
-		if !includeHeartbeat && source == "heartbeat" {
-			continue
-		}
-		id := fmt.Sprintf("%v", row["task_id"])
-		if id == "" {
-			continue
-		}
-		if _, ok := m[id]; !ok {
-			m[id] = &agg{Last: row, Logs: []string{}, Attempts: 0}
-		}
-		a := m[id]
-		a.Last = row
-		a.Attempts++
-		if lg := strings.TrimSpace(fmt.Sprintf("%v", row["log"])); lg != "" {
-			if len(a.Logs) == 0 || a.Logs[len(a.Logs)-1] != lg {
-				a.Logs = append(a.Logs, lg)
-				if len(a.Logs) > 20 {
-					a.Logs = a.Logs[len(a.Logs)-20:]
-				}
-			}
-		}
-	}
-	items := make([]map[string]interface{}, 0, len(m))
-	running := make([]map[string]interface{}, 0)
-	for _, a := range m {
-		row := a.Last
-		row["logs"] = a.Logs
-		row["attempts"] = a.Attempts
-		items = append(items, row)
-		if fmt.Sprintf("%v", row["status"]) == "running" {
-			running = append(running, row)
-		}
-	}
-
-	// Merge command watchdog queue from memory/task_queue.json for visibility.
-	queuePath := s.memoryFilePath("task_queue.json")
-	if qb, qErr := os.ReadFile(queuePath); qErr == nil {
-		var q map[string]interface{}
-		if json.Unmarshal(qb, &q) == nil {
-			if arr, ok := q["running"].([]interface{}); ok {
-				for _, item := range arr {
-					row, ok := item.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					id := fmt.Sprintf("%v", row["id"])
-					if strings.TrimSpace(id) == "" {
-						continue
-					}
-					label := fmt.Sprintf("%v", row["label"])
-					source := strings.TrimSpace(fmt.Sprintf("%v", row["source"]))
-					if source == "" {
-						source = "task_watchdog"
-					}
-					rec := map[string]interface{}{
-						"task_id":       "cmd:" + id,
-						"time":          fmt.Sprintf("%v", row["started_at"]),
-						"status":        "running",
-						"source":        "task_watchdog",
-						"channel":       source,
-						"session":       "watchdog:" + id,
-						"input_preview": label,
-						"duration_ms":   0,
-						"attempts":      1,
-						"retry_count":   0,
-						"logs": []string{
-							fmt.Sprintf("watchdog source=%s heavy=%v", source, row["heavy"]),
-							fmt.Sprintf("next_check_at=%v stalled_rounds=%v/%v", row["next_check_at"], row["stalled_rounds"], row["stall_round_limit"]),
-						},
-						"idle_run": true,
-					}
-					items = append(items, rec)
-					running = append(running, rec)
-				}
-			}
-			if arr, ok := q["waiting"].([]interface{}); ok {
-				for _, item := range arr {
-					row, ok := item.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					id := fmt.Sprintf("%v", row["id"])
-					if strings.TrimSpace(id) == "" {
-						continue
-					}
-					label := fmt.Sprintf("%v", row["label"])
-					source := strings.TrimSpace(fmt.Sprintf("%v", row["source"]))
-					if source == "" {
-						source = "task_watchdog"
-					}
-					rec := map[string]interface{}{
-						"task_id":       "cmd:" + id,
-						"time":          fmt.Sprintf("%v", row["enqueued_at"]),
-						"status":        "waiting",
-						"source":        "task_watchdog",
-						"channel":       source,
-						"session":       "watchdog:" + id,
-						"input_preview": label,
-						"duration_ms":   0,
-						"attempts":      1,
-						"retry_count":   0,
-						"logs": []string{
-							fmt.Sprintf("watchdog source=%s heavy=%v", source, row["heavy"]),
-							fmt.Sprintf("enqueued_at=%v", row["enqueued_at"]),
-						},
-						"idle_run": true,
-					}
-					items = append(items, rec)
-				}
-			}
-			if wd, ok := q["watchdog"].(map[string]interface{}); ok {
-				items = append(items, map[string]interface{}{
-					"task_id":       "cmd:watchdog",
-					"time":          fmt.Sprintf("%v", q["time"]),
-					"status":        "running",
-					"source":        "task_watchdog",
-					"channel":       "watchdog",
-					"session":       "watchdog:stats",
-					"input_preview": "task watchdog capacity snapshot",
-					"duration_ms":   0,
-					"attempts":      1,
-					"retry_count":   0,
-					"logs": []string{
-						fmt.Sprintf("cpu_total=%v usage_ratio=%v reserve_pct=%v", wd["cpu_total"], wd["usage_ratio"], wd["reserve_pct"]),
-						fmt.Sprintf("active=%v/%v heavy=%v/%v waiting=%v running=%v", wd["active"], wd["max_active"], wd["active_heavy"], wd["max_heavy"], wd["waiting"], wd["running"]),
-					},
-					"idle_run": true,
-				})
-			}
-		}
-	}
-
-	sort.Slice(items, func(i, j int) bool { return fmt.Sprintf("%v", items[i]["time"]) > fmt.Sprintf("%v", items[j]["time"]) })
-	stats := map[string]int{"total": len(items), "running": len(running)}
-	writeJSON(w, map[string]interface{}{"ok": true, "running": running, "items": items, "stats": stats})
-}
-
-func (s *Server) loadEKGRowsCached(path string, maxLines int) []map[string]interface{} {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return nil
-	}
-	fi, err := os.Stat(path)
-	if err != nil {
-		return nil
-	}
-	s.ekgCacheMu.Lock()
-	defer s.ekgCacheMu.Unlock()
-	if s.ekgCachePath == path && s.ekgCacheSize == fi.Size() && s.ekgCacheStamp.Equal(fi.ModTime()) && len(s.ekgCacheRows) > 0 {
-		return s.ekgCacheRows
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	lines := strings.Split(string(b), "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	if maxLines > 0 && len(lines) > maxLines {
-		lines = lines[len(lines)-maxLines:]
-	}
-	rows := make([]map[string]interface{}, 0, len(lines))
-	for _, ln := range lines {
-		if strings.TrimSpace(ln) == "" {
-			continue
-		}
-		var row map[string]interface{}
-		if json.Unmarshal([]byte(ln), &row) == nil {
-			rows = append(rows, row)
-		}
-	}
-	s.ekgCachePath = path
-	s.ekgCacheSize = fi.Size()
-	s.ekgCacheStamp = fi.ModTime()
-	s.ekgCacheRows = rows
-	return rows
-}
-
-func (s *Server) handleWebUIEKGStats(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	ekgPath := s.memoryFilePath("ekg-events.jsonl")
-	window := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("window")))
-	windowDur := 24 * time.Hour
-	switch window {
-	case "6h":
-		windowDur = 6 * time.Hour
-	case "24h", "":
-		windowDur = 24 * time.Hour
-	case "7d":
-		windowDur = 7 * 24 * time.Hour
-	}
-	selectedWindow := window
-	if selectedWindow == "" {
-		selectedWindow = "24h"
-	}
-	cutoff := time.Now().UTC().Add(-windowDur)
-	rows := s.loadEKGRowsCached(ekgPath, 3000)
-	type kv struct {
-		Key   string  `json:"key"`
-		Score float64 `json:"score,omitempty"`
-		Count int     `json:"count,omitempty"`
-	}
-	providerScore := map[string]float64{}
-	providerScoreWorkload := map[string]float64{}
-	errSigCount := map[string]int{}
-	errSigHeartbeat := map[string]int{}
-	errSigWorkload := map[string]int{}
-	sourceStats := map[string]int{}
-	channelStats := map[string]int{}
-	for _, row := range rows {
-		ts := strings.TrimSpace(fmt.Sprintf("%v", row["time"]))
-		if ts != "" {
-			if tm, err := time.Parse(time.RFC3339, ts); err == nil {
-				if tm.Before(cutoff) {
-					continue
-				}
-			}
-		}
-		provider := strings.TrimSpace(fmt.Sprintf("%v", row["provider"]))
-		status := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"])))
-		errSig := strings.TrimSpace(fmt.Sprintf("%v", row["errsig"]))
-		source := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["source"])))
-		channel := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["channel"])))
-		if source == "heartbeat" {
-			continue
-		}
-		if source == "" {
-			source = "unknown"
-		}
-		if channel == "" {
-			channel = "unknown"
-		}
-		sourceStats[source]++
-		channelStats[channel]++
-		if provider != "" {
-			switch status {
-			case "success":
-				providerScore[provider] += 1
-				providerScoreWorkload[provider] += 1
-			case "suppressed":
-				providerScore[provider] += 0.2
-				providerScoreWorkload[provider] += 0.2
-			case "error":
-				providerScore[provider] -= 1
-				providerScoreWorkload[provider] -= 1
-			}
-		}
-		if errSig != "" && status == "error" {
-			errSigCount[errSig]++
-			errSigWorkload[errSig]++
-		}
-	}
-	toTopScore := func(m map[string]float64, n int) []kv {
-		out := make([]kv, 0, len(m))
-		for k, v := range m {
-			out = append(out, kv{Key: k, Score: v})
-		}
-		sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
-		if len(out) > n {
-			out = out[:n]
-		}
-		return out
-	}
-	toTopCount := func(m map[string]int, n int) []kv {
-		out := make([]kv, 0, len(m))
-		for k, v := range m {
-			out = append(out, kv{Key: k, Count: v})
-		}
-		sort.Slice(out, func(i, j int) bool { return out[i].Count > out[j].Count })
-		if len(out) > n {
-			out = out[:n]
-		}
-		return out
-	}
-	writeJSON(w, map[string]interface{}{
-		"ok":                    true,
-		"window":                selectedWindow,
-		"provider_top":          toTopScore(providerScore, 5),
-		"provider_top_workload": toTopScore(providerScoreWorkload, 5),
-		"errsig_top":            toTopCount(errSigCount, 5),
-		"errsig_top_heartbeat":  toTopCount(errSigHeartbeat, 5),
-		"errsig_top_workload":   toTopCount(errSigWorkload, 5),
-		"source_stats":          sourceStats,
-		"channel_stats":         channelStats,
-		"escalation_count":      0,
-	})
 }
 
 func (s *Server) handleWebUILogsRecent(w http.ResponseWriter, r *http.Request) {
@@ -5778,31 +4666,3 @@ func hotReloadFieldInfo() []map[string]interface{} {
 		{"path": "gateway.*", "name": "Gateway", "description": "Mostly hot-reloadable; host/port may require restart"},
 	}
 }
-
-const webUIHTML = `<!doctype html>
-<html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>ClawGo WebUI</title>
-<style>body{font-family:system-ui;margin:20px;max-width:980px}textarea{width:100%;min-height:220px}#chatlog{white-space:pre-wrap;border:1px solid #ddd;padding:12px;min-height:180px}</style>
-</head><body>
-<h2>ClawGo WebUI</h2>
-<p>Token: <input id="token" placeholder="gateway token" style="width:320px"/></p>
-<h3>Config (dynamic + hot reload)</h3>
-<button onclick="loadCfg()">Load Config</button>
-<button onclick="saveCfg()">Save + Reload</button>
-<textarea id="cfg"></textarea>
-<h3>Chat (supports media upload)</h3>
-<div>Session: <input id="session" value="webui:default"/> <input id="msg" placeholder="message" style="width:420px"/> <input id="file" type="file"/> <button onclick="sendChat()">Send</button></div>
-<div id="chatlog"></div>
-<script>
-function auth(){const t=document.getElementById('token').value.trim();return t?('?token='+encodeURIComponent(t)):''}
-async function loadCfg(){let r=await fetch('/api/config'+auth());document.getElementById('cfg').value=await r.text()}
-async function saveCfg(){let j=JSON.parse(document.getElementById('cfg').value);let r=await fetch('/api/config'+auth(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(j)});alert(await r.text())}
-async function sendChat(){
- let media='';const f=document.getElementById('file').files[0];
- if(f){let fd=new FormData();fd.append('file',f);let ur=await fetch('/api/upload'+auth(),{method:'POST',body:fd});let uj=await ur.json();media=uj.path||''}
- const payload={session:document.getElementById('session').value,message:document.getElementById('msg').value,media};
- let r=await fetch('/api/chat'+auth(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});let t=await r.text();
- document.getElementById('chatlog').textContent += '\nUSER> '+payload.message+(media?(' [file:'+media+']'):'')+'\nBOT> '+t+'\n';
-}
-loadCfg();
-</script></body></html>`

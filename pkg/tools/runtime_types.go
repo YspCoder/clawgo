@@ -36,7 +36,7 @@ func (d DispatchDecision) Valid() bool {
 	return strings.TrimSpace(d.TargetAgent) != "" && strings.TrimSpace(d.TaskText) != ""
 }
 
-type TaskRecord struct {
+type RequestRecord struct {
 	ID            string `json:"id"`
 	ThreadID      string `json:"thread_id,omitempty"`
 	CorrelationID string `json:"correlation_id,omitempty"`
@@ -51,7 +51,7 @@ type TaskRecord struct {
 
 type RunRecord struct {
 	ID            string        `json:"id"`
-	TaskID        string        `json:"task_id,omitempty"`
+	RequestID     string        `json:"request_id,omitempty"`
 	ThreadID      string        `json:"thread_id,omitempty"`
 	CorrelationID string        `json:"correlation_id,omitempty"`
 	AgentID       string        `json:"agent_id,omitempty"`
@@ -68,7 +68,7 @@ type RunRecord struct {
 type EventRecord struct {
 	ID         string        `json:"id,omitempty"`
 	RunID      string        `json:"run_id,omitempty"`
-	TaskID     string        `json:"task_id,omitempty"`
+	RequestID  string        `json:"request_id,omitempty"`
 	AgentID    string        `json:"agent_id,omitempty"`
 	Type       string        `json:"type"`
 	Status     string        `json:"status,omitempty"`
@@ -81,7 +81,7 @@ type EventRecord struct {
 type ArtifactRecord struct {
 	ID            string `json:"id,omitempty"`
 	RunID         string `json:"run_id,omitempty"`
-	TaskID        string `json:"task_id,omitempty"`
+	RequestID     string `json:"request_id,omitempty"`
 	ThreadID      string `json:"thread_id,omitempty"`
 	Kind          string `json:"kind,omitempty"`
 	Name          string `json:"name,omitempty"`
@@ -109,7 +109,7 @@ type ThreadRecord struct {
 }
 
 type RuntimeSnapshot struct {
-	Tasks     []TaskRecord     `json:"tasks,omitempty"`
+	Requests  []RequestRecord  `json:"requests,omitempty"`
 	Runs      []RunRecord      `json:"runs,omitempty"`
 	Events    []EventRecord    `json:"events,omitempty"`
 	Threads   []ThreadRecord   `json:"threads,omitempty"`
@@ -118,7 +118,7 @@ type RuntimeSnapshot struct {
 
 type ExecutionRun struct {
 	Run      RunRecord        `json:"run"`
-	Task     TaskRecord       `json:"task"`
+	Request  RequestRecord    `json:"request"`
 	Decision DispatchDecision `json:"decision,omitempty"`
 }
 

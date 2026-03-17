@@ -579,18 +579,23 @@ func TestResolveMCPWorkingDirWorkspaceScoped(t *testing.T) {
 
 func TestResolveMCPWorkingDirRejectsOutsideWorkspaceWithoutFullPermission(t *testing.T) {
 	workspace := t.TempDir()
-	_, err := resolveMCPWorkingDir(workspace, config.MCPServerConfig{WorkingDir: "/"})
+	outside := filepath.Dir(workspace)
+	if filepath.Clean(outside) == filepath.Clean(workspace) {
+		t.Skip("unable to construct outside-workspace path")
+	}
+	_, err := resolveMCPWorkingDir(workspace, config.MCPServerConfig{WorkingDir: outside})
 	if err == nil {
 		t.Fatal("expected outside-workspace path to be rejected")
 	}
 }
 
 func TestResolveMCPWorkingDirAllowsAbsolutePathWithFullPermission(t *testing.T) {
-	dir, err := resolveMCPWorkingDir(t.TempDir(), config.MCPServerConfig{Permission: "full", WorkingDir: "/"})
+	absolute := filepath.Clean(filepath.Dir(t.TempDir()))
+	dir, err := resolveMCPWorkingDir(t.TempDir(), config.MCPServerConfig{Permission: "full", WorkingDir: absolute})
 	if err != nil {
 		t.Fatalf("resolveMCPWorkingDir returned error: %v", err)
 	}
-	if dir != "/" {
+	if dir != absolute {
 		t.Fatalf("unexpected working dir: %q", dir)
 	}
 }

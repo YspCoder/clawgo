@@ -311,10 +311,6 @@ func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, to
 	return p.postJSON(ctx, endpointFor(p.apiBase, "/responses"), requestBody)
 }
 
-func toResponsesInputItems(msg Message) []map[string]interface{} {
-	return toResponsesInputItemsWithState(msg, nil)
-}
-
 func toResponsesInputItemsWithState(msg Message, pendingCalls map[string]struct{}) []map[string]interface{} {
 	role := strings.ToLower(strings.TrimSpace(msg.Role))
 	switch role {
@@ -2231,13 +2227,6 @@ func (p *HTTPProvider) codexCompatRequestBody(requestBody map[string]interface{}
 	return codexCompatRequestBody(requestBody)
 }
 
-func (p *HTTPProvider) useClaudeCompat() bool {
-	if p == nil || p.oauth == nil {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(p.oauth.cfg.Provider), defaultClaudeOAuthProvider)
-}
-
 func (p *HTTPProvider) oauthProvider() string {
 	if p == nil || p.oauth == nil {
 		return ""
@@ -2723,58 +2712,12 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 	return NewHTTPProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 }
 
-func CreateProviders(cfg *config.Config) (map[string]LLMProvider, error) {
-	configs := getAllProviderConfigs(cfg)
-	if len(configs) == 0 {
-		return nil, fmt.Errorf("no providers configured")
-	}
-	out := make(map[string]LLMProvider, len(configs))
-	for name := range configs {
-		p, err := CreateProviderByName(cfg, name)
-		if err != nil {
-			return nil, err
-		}
-		out[name] = p
-	}
-	return out, nil
-}
-
-func GetProviderModels(cfg *config.Config, name string) []string {
-	pc, err := getProviderConfigByName(cfg, name)
-	if err != nil {
-		return nil
-	}
-	out := make([]string, 0, len(pc.Models))
-	seen := map[string]bool{}
-	for _, m := range pc.Models {
-		model := strings.TrimSpace(m)
-		if model == "" || seen[model] {
-			continue
-		}
-		seen[model] = true
-		out = append(out, model)
-	}
-	return out
-}
-
 func ProviderSupportsResponsesCompact(cfg *config.Config, name string) bool {
 	pc, err := getProviderConfigByName(cfg, name)
 	if err != nil {
 		return false
 	}
 	return pc.SupportsResponsesCompact
-}
-
-func ListProviderNames(cfg *config.Config) []string {
-	configs := getAllProviderConfigs(cfg)
-	if len(configs) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(configs))
-	for name := range configs {
-		names = append(names, name)
-	}
-	return names
 }
 
 func getAllProviderConfigs(cfg *config.Config) map[string]config.ProviderConfig {

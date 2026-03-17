@@ -15,15 +15,13 @@ import (
 )
 
 // MemoryStore manages persistent memory for the agent.
-// - Long-term memory: MEMORY.md (workspace root, compatible with OpenClaw)
+// - Long-term memory: MEMORY.md
 // - Daily notes: memory/YYYY-MM-DD.md
-// It also supports legacy locations for backward compatibility.
 type MemoryStore struct {
-	workspace        string
-	namespace        string
-	memoryDir        string
-	memoryFile       string
-	legacyMemoryFile string
+	workspace  string
+	namespace  string
+	memoryDir  string
+	memoryFile string
 }
 
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
@@ -41,17 +39,15 @@ func NewMemoryStoreWithNamespace(workspace, namespace string) *MemoryStore {
 
 	memoryDir := filepath.Join(baseDir, "memory")
 	memoryFile := filepath.Join(baseDir, "MEMORY.md")
-	legacyMemoryFile := filepath.Join(memoryDir, "MEMORY.md")
 
 	// Ensure memory directory exists
 	os.MkdirAll(memoryDir, 0755)
 
 	return &MemoryStore{
-		workspace:        workspace,
-		namespace:        ns,
-		memoryDir:        memoryDir,
-		memoryFile:       memoryFile,
-		legacyMemoryFile: legacyMemoryFile,
+		workspace:  workspace,
+		namespace:  ns,
+		memoryDir:  memoryDir,
+		memoryFile: memoryFile,
 	}
 }
 
@@ -64,24 +60,6 @@ func (ms *MemoryStore) getTodayFile() string {
 // Returns empty string if the file doesn't exist.
 func (ms *MemoryStore) ReadLongTerm() string {
 	if data, err := os.ReadFile(ms.memoryFile); err == nil {
-		return string(data)
-	}
-	if data, err := os.ReadFile(ms.legacyMemoryFile); err == nil {
-		return string(data)
-	}
-	return ""
-}
-
-// WriteLongTerm writes content to the long-term memory file (MEMORY.md).
-func (ms *MemoryStore) WriteLongTerm(content string) error {
-	return os.WriteFile(ms.memoryFile, []byte(content), 0644)
-}
-
-// ReadToday reads today's daily note.
-// Returns empty string if the file doesn't exist.
-func (ms *MemoryStore) ReadToday() string {
-	todayFile := ms.getTodayFile()
-	if data, err := os.ReadFile(todayFile); err == nil {
 		return string(data)
 	}
 	return ""
@@ -121,17 +99,8 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 	for i := 0; i < days; i++ {
 		date := time.Now().AddDate(0, 0, -i)
 
-		// Preferred format: memory/YYYY-MM-DD.md
-		newPath := filepath.Join(ms.memoryDir, date.Format("2006-01-02")+".md")
-		if data, err := os.ReadFile(newPath); err == nil {
-			notes = append(notes, string(data))
-			continue
-		}
-
-		// Backward-compatible format: memory/YYYYMM/YYYYMMDD.md
-		legacyDate := date.Format("20060102")
-		legacyPath := filepath.Join(ms.memoryDir, legacyDate[:6], legacyDate+".md")
-		if data, err := os.ReadFile(legacyPath); err == nil {
+		path := filepath.Join(ms.memoryDir, date.Format("2006-01-02")+".md")
+		if data, err := os.ReadFile(path); err == nil {
 			notes = append(notes, string(data))
 		}
 	}

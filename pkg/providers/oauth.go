@@ -318,10 +318,6 @@ func (m *OAuthLoginManager) CredentialFile() string {
 	return m.manager.cfg.CredentialFile
 }
 
-func (m *OAuthLoginManager) StartManualFlow() (*OAuthPendingFlow, error) {
-	return m.StartManualFlowWithOptions(OAuthLoginOptions{})
-}
-
 func (m *OAuthLoginManager) StartManualFlowWithOptions(opts OAuthLoginOptions) (*OAuthPendingFlow, error) {
 	if m == nil || m.manager == nil {
 		return nil, fmt.Errorf("oauth login manager not configured")
@@ -349,10 +345,6 @@ func (m *OAuthLoginManager) StartManualFlowWithOptions(opts OAuthLoginOptions) (
 		AuthURL:      m.manager.authorizationURL(state, pkceChallenge),
 		Instructions: "Open the authorization URL, finish login, then paste the final callback URL.",
 	}, nil
-}
-
-func (m *OAuthLoginManager) CompleteManualFlow(ctx context.Context, apiBase string, flow *OAuthPendingFlow, callbackURL string) (*OAuthSessionInfo, []string, error) {
-	return m.CompleteManualFlowWithOptions(ctx, apiBase, flow, callbackURL, OAuthLoginOptions{})
 }
 
 func (m *OAuthLoginManager) CompleteManualFlowWithOptions(ctx context.Context, apiBase string, flow *OAuthPendingFlow, callbackURL string, opts OAuthLoginOptions) (*OAuthSessionInfo, []string, error) {
@@ -390,10 +382,6 @@ func (m *OAuthLoginManager) CompleteManualFlowWithOptions(ctx context.Context, a
 		AccountLabel:   sessionLabel(session),
 		NetworkProxy:   maskedProxyURL(session.NetworkProxy),
 	}, models, nil
-}
-
-func (m *OAuthLoginManager) ImportAuthJSON(ctx context.Context, apiBase string, fileName string, data []byte) (*OAuthSessionInfo, []string, error) {
-	return m.ImportAuthJSONWithOptions(ctx, apiBase, fileName, data, OAuthLoginOptions{})
 }
 
 func (m *OAuthLoginManager) ImportAuthJSONWithOptions(ctx context.Context, apiBase string, fileName string, data []byte, opts OAuthLoginOptions) (*OAuthSessionInfo, []string, error) {
@@ -744,47 +732,6 @@ func defaultRefreshLead(provider string, overrideSec int) time.Duration {
 	default:
 		return 30 * time.Minute
 	}
-}
-
-func (m *oauthManager) models(ctx context.Context, apiBase string) ([]string, error) {
-	attempts, err := m.prepareAttemptsLocked(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(attempts) == 0 {
-		return nil, fmt.Errorf("oauth session not found, run `clawgo provider login` first")
-	}
-	var merged []string
-	seen := map[string]struct{}{}
-	var lastErr error
-	for _, attempt := range attempts {
-		client, err := m.httpClientForSession(attempt.Session)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		models, err := fetchOpenAIModels(ctx, client, apiBase, attempt.Token)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		attempt.Session.Models = append([]string(nil), models...)
-		_ = m.persistSessionLocked(attempt.Session)
-		for _, model := range models {
-			if _, ok := seen[model]; ok {
-				continue
-			}
-			seen[model] = struct{}{}
-			merged = append(merged, model)
-		}
-	}
-	if len(merged) > 0 {
-		return merged, nil
-	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, fmt.Errorf("no oauth sessions available")
 }
 
 func (m *oauthManager) login(ctx context.Context, apiBase string, opts OAuthLoginOptions) (*oauthSession, []string, error) {

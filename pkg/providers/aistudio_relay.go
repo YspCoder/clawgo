@@ -35,14 +35,6 @@ func getAIStudioRelayManager() *wsrelay.Manager {
 	return aistudioRelayRegistry.manager
 }
 
-func aistudioChannelID(providerName string, options map[string]interface{}) string {
-	channels := aistudioChannelCandidates(providerName, options)
-	if len(channels) > 0 {
-		return channels[0]
-	}
-	return ""
-}
-
 func aistudioChannelCandidates(providerName string, options map[string]interface{}) []string {
 	for _, key := range []string{"aistudio_channel", "aistudio_provider", "relay_provider", "channel_id", "provider_id"} {
 		if value, ok := stringOption(options, key); ok && strings.TrimSpace(value) != "" {

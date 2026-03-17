@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +72,7 @@ func TestFilesystemToolsParseStringArgs(t *testing.T) {
 
 func TestSpawnToolParsesStringNumbers(t *testing.T) {
 	manager := NewSubagentManager(nil, t.TempDir(), nil)
-	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+	manager.SetRunFunc(func(ctx context.Context, run *SubagentRun) (string, error) {
 		return "ok", nil
 	})
 	tool := NewSpawnTool(manager)
@@ -95,8 +97,14 @@ func TestExecBrowserWebToolsParseStringArgs(t *testing.T) {
 	t.Parallel()
 
 	execTool := NewExecTool(configShellForTest(), t.TempDir(), NewProcessManager(t.TempDir()))
+	command := "printf hi"
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("sh"); err != nil {
+			t.Skip("sh is not available in test environment")
+		}
+	}
 	execOut, err := execTool.Execute(context.Background(), map[string]interface{}{
-		"command":    "printf hi",
+		"command":    command,
 		"background": "false",
 	})
 	if err != nil {

@@ -113,26 +113,6 @@ func (s *SessionScheduler) Acquire(ctx context.Context, sessionKey string, keys 
 	}
 }
 
-func (s *SessionScheduler) Close() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return
-	}
-	s.closed = true
-	for _, st := range s.sessions {
-		for _, w := range st.waiters {
-			select {
-			case w.ch <- struct{}{}:
-			default:
-			}
-		}
-	}
-}
-
 func (s *SessionScheduler) releaseFunc(sessionKey string, runID uint64) func() {
 	var once sync.Once
 	return func() {

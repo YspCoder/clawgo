@@ -1238,7 +1238,7 @@ type tuiClient struct {
 func (c *tuiClient) ping() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	req, err := c.newRequest(ctx, http.MethodGet, "/webui/api/version", nil)
+	req, err := c.newRequest(ctx, http.MethodGet, "/api/version", nil)
 	if err != nil {
 		return err
 	}
@@ -1255,7 +1255,7 @@ func (c *tuiClient) ping() error {
 }
 
 func (c *tuiClient) history(ctx context.Context, session string) ([]tuiMessage, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, "/webui/api/chat/history?session="+url.QueryEscape(session), nil)
+	req, err := c.newRequest(ctx, http.MethodGet, "/api/chat/history?session="+url.QueryEscape(session), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1278,7 +1278,7 @@ func (c *tuiClient) history(ctx context.Context, session string) ([]tuiMessage, 
 }
 
 func (c *tuiClient) sessions(ctx context.Context) ([]tuiSession, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, "/webui/api/sessions", nil)
+	req, err := c.newRequest(ctx, http.MethodGet, "/api/sessions", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1331,7 +1331,7 @@ func (c *tuiClient) streamChat(ctx context.Context, session, content string, sen
 }
 
 func (c *tuiClient) openChatSocket(ctx context.Context) (*websocket.Conn, error) {
-	wsURL, err := c.websocketURL("/webui/api/chat/live")
+	wsURL, err := c.websocketURL("/api/chat/live")
 	if err != nil {
 		return nil, err
 	}

@@ -59,7 +59,6 @@ func NewSessionManager(storage string) *SessionManager {
 
 	if storage != "" {
 		os.MkdirAll(storage, 0755)
-		sm.migrateLegacySessions()
 		sm.cleanupArchivedSessions()
 		sm.loadSessions()
 	}
@@ -172,20 +171,6 @@ func (sm *SessionManager) GetSummary(key string) string {
 	return session.Summary
 }
 
-func (sm *SessionManager) SetSummary(key string, summary string) {
-	sm.mu.RLock()
-	session, ok := sm.sessions[key]
-	sm.mu.RUnlock()
-
-	if ok {
-		session.mu.Lock()
-		defer session.mu.Unlock()
-
-		session.Summary = summary
-		session.Updated = time.Now()
-	}
-}
-
 func (sm *SessionManager) CompactSession(key string, keepLast int, note string) bool {
 	sm.mu.RLock()
 	session, ok := sm.sessions[key]
@@ -245,119 +230,6 @@ func (sm *SessionManager) SetPreferredLanguage(key, lang string) {
 	session.PreferredLanguage = lang
 	session.Updated = time.Now()
 	session.mu.Unlock()
-}
-
-func (sm *SessionManager) PurgeOrphanToolOutputs(key string) int {
-	sm.mu.RLock()
-	session, ok := sm.sessions[key]
-	sm.mu.RUnlock()
-	if !ok {
-		return 0
-	}
-
-	session.mu.Lock()
-	defer session.mu.Unlock()
-	pending := map[string]struct{}{}
-	kept := make([]providers.Message, 0, len(session.Messages))
-	removed := 0
-	for _, m := range session.Messages {
-		role := strings.ToLower(strings.TrimSpace(m.Role))
-		switch role {
-		case "assistant":
-			for _, tc := range m.ToolCalls {
-				id := strings.TrimSpace(tc.ID)
-				if id != "" {
-					pending[id] = struct{}{}
-				}
-			}
-			kept = append(kept, m)
-		case "tool":
-			id := strings.TrimSpace(m.ToolCallID)
-			if id == "" {
-				removed++
-				continue
-			}
-			if _, ok := pending[id]; !ok {
-				removed++
-				continue
-			}
-			delete(pending, id)
-			kept = append(kept, m)
-		default:
-			kept = append(kept, m)
-		}
-	}
-	if removed == 0 {
-		return 0
-	}
-	session.Messages = kept
-	session.Updated = time.Now()
-	if sm.storage != "" {
-		_ = sm.rewriteSessionFileLocked(session)
-		_ = sm.writeOpenClawSessionsIndex()
-	}
-	return removed
-}
-
-func (sm *SessionManager) rewriteSessionFileLocked(session *Session) error {
-	if sm.storage == "" || session == nil {
-		return nil
-	}
-	path := filepath.Join(sm.storage, session.Key+".jsonl")
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	for _, msg := range session.Messages {
-		e := toOpenClawMessageEvent(msg)
-		b, err := json.Marshal(e)
-		if err != nil {
-			return fmt.Errorf("marshal session message: %w", err)
-		}
-		if _, err := f.Write(append(b, '\n')); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (sm *SessionManager) ResetSession(key string) {
-	sm.mu.RLock()
-	session, ok := sm.sessions[key]
-	sm.mu.RUnlock()
-	if !ok {
-		return
-	}
-	session.mu.Lock()
-	session.Messages = []providers.Message{}
-	session.Summary = ""
-	session.Updated = time.Now()
-	if sm.storage != "" {
-		_ = sm.rewriteSessionFileLocked(session)
-		_ = sm.writeOpenClawSessionsIndex()
-	}
-	session.mu.Unlock()
-}
-
-func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
-	sm.mu.RLock()
-	session, ok := sm.sessions[key]
-	sm.mu.RUnlock()
-
-	if !ok {
-		return
-	}
-
-	session.mu.Lock()
-	defer session.mu.Unlock()
-
-	if len(session.Messages) <= keepLast {
-		return
-	}
-
-	session.Messages = session.Messages[len(session.Messages)-keepLast:]
-	session.Updated = time.Now()
 }
 
 func (sm *SessionManager) Save(session *Session) error {
@@ -531,50 +403,7 @@ func (sm *SessionManager) writeOpenClawSessionsIndex() error {
 	if err := os.WriteFile(filepath.Join(sm.storage, "sessions.json"), data, 0644); err != nil {
 		return err
 	}
-	// Cleanup legacy .meta files: sessions.json is source of truth now.
-	entries, _ := os.ReadDir(sm.storage)
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".meta" {
-			continue
-		}
-		_ = os.Remove(filepath.Join(sm.storage, e.Name()))
-	}
 	return nil
-}
-
-func (sm *SessionManager) migrateLegacySessions() {
-	if sm.storage == "" {
-		return
-	}
-	root := filepath.Dir(filepath.Dir(filepath.Dir(sm.storage))) // ~/.clawgo
-	candidates := []string{
-		filepath.Join(root, "sessions"),
-		filepath.Join(filepath.Dir(sm.storage), "sessions"),
-	}
-	for _, legacy := range candidates {
-		if strings.TrimSpace(legacy) == "" || legacy == sm.storage {
-			continue
-		}
-		entries, err := os.ReadDir(legacy)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if !(strings.HasSuffix(name, ".jsonl") || name == "sessions.json" || strings.Contains(name, ".jsonl.deleted.")) {
-				continue
-			}
-			src := filepath.Join(legacy, name)
-			dst := filepath.Join(sm.storage, name)
-			if _, err := os.Stat(dst); err == nil {
-				continue
-			}
-			_ = os.Rename(src, dst)
-		}
-	}
 }
 
 func (sm *SessionManager) cleanupArchivedSessions() {

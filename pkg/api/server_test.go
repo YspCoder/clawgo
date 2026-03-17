@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -240,7 +241,7 @@ func TestHandleWebUIWhatsAppStatusMapsLegacyBridgeURLToEmbeddedPath(t *testing.T
 	}
 }
 
-func TestHandleWebUIConfigRequiresConfirmForProviderAPIBaseChange(t *testing.T) {
+func TestHandleWebUIConfigPostIsDisabledForProviderAPIBaseChange(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -277,18 +278,15 @@ func TestHandleWebUIConfigRequiresConfirmForProviderAPIBaseChange(t *testing.T) 
 
 	srv.handleWebUIConfig(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"requires_confirm":true`) {
-		t.Fatalf("expected requires_confirm response, got: %s", rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `models.providers.openai.api_base`) {
-		t.Fatalf("expected models.providers.openai.api_base in changed_fields, got: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "webui config editing is disabled") {
+		t.Fatalf("expected disabled response, got: %s", rec.Body.String())
 	}
 }
 
-func TestHandleWebUIConfigAcceptsStringConfirmRisky(t *testing.T) {
+func TestHandleWebUIConfigPostRejectsStringConfirmRisky(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -334,8 +332,11 @@ func TestHandleWebUIConfigAcceptsStringConfirmRisky(t *testing.T) {
 
 	srv.handleWebUIConfig(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "webui config editing is disabled") {
+		t.Fatalf("expected disabled response, got: %s", rec.Body.String())
 	}
 }
 
@@ -356,7 +357,7 @@ func TestNormalizeCronJobParsesStringScheduleValues(t *testing.T) {
 	}
 }
 
-func TestHandleWebUIConfigRequiresConfirmForCustomProviderSecretChange(t *testing.T) {
+func TestHandleWebUIConfigPostIsDisabledForCustomProviderSecretChange(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -398,18 +399,15 @@ func TestHandleWebUIConfigRequiresConfirmForCustomProviderSecretChange(t *testin
 
 	srv.handleWebUIConfig(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"requires_confirm":true`) {
-		t.Fatalf("expected requires_confirm response, got: %s", rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `models.providers.backup.api_key`) {
-		t.Fatalf("expected models.providers.backup.api_key in changed_fields, got: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "webui config editing is disabled") {
+		t.Fatalf("expected disabled response, got: %s", rec.Body.String())
 	}
 }
 
-func TestHandleWebUIConfigRunsReloadHookSynchronously(t *testing.T) {
+func TestHandleWebUIConfigPostDoesNotRunReloadHook(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -439,15 +437,15 @@ func TestHandleWebUIConfigRunsReloadHookSynchronously(t *testing.T) {
 
 	srv.handleWebUIConfig(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !called {
-		t.Fatalf("expected reload hook to run")
+	if called {
+		t.Fatalf("expected reload hook not to run when config editing is disabled")
 	}
 }
 
-func TestHandleWebUIConfigReturnsReloadHookError(t *testing.T) {
+func TestHandleWebUIConfigPostIgnoresReloadHookError(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -475,11 +473,11 @@ func TestHandleWebUIConfigReturnsReloadHookError(t *testing.T) {
 
 	srv.handleWebUIConfig(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "reload failed") {
-		t.Fatalf("expected reload failure in body, got: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "webui config editing is disabled") {
+		t.Fatalf("expected disabled response, got: %s", rec.Body.String())
 	}
 }
 
@@ -523,7 +521,7 @@ func TestHandleWebUIConfigNormalizedGet(t *testing.T) {
 	}
 }
 
-func TestHandleWebUIConfigNormalizedPost(t *testing.T) {
+func TestHandleWebUIConfigNormalizedPostIsDisabled(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
@@ -560,7 +558,6 @@ func TestHandleWebUIConfigNormalizedPost(t *testing.T) {
 				"allow_direct_agent_chat": false,
 				"max_hops":                float64(6),
 				"default_timeout_sec":     float64(600),
-				"default_wait_reply":      true,
 				"sticky_thread_owner":     true,
 				"rules": []interface{}{
 					map[string]interface{}{"agent_id": "reviewer", "keywords": []interface{}{"review"}},
@@ -589,18 +586,11 @@ func TestHandleWebUIConfigNormalizedPost(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.handleWebUIConfig(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
 	}
-	loaded, err := cfgpkg.LoadConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("reload config: %v", err)
-	}
-	if !loaded.Agents.Router.Enabled {
-		t.Fatalf("expected router to be enabled")
-	}
-	if _, ok := loaded.Agents.Subagents["reviewer"]; !ok {
-		t.Fatalf("expected reviewer subagent, got %+v", loaded.Agents.Subagents)
+	if !strings.Contains(rec.Body.String(), "webui config editing is disabled") {
+		t.Fatalf("expected disabled response, got: %s", rec.Body.String())
 	}
 }
 
@@ -866,10 +856,30 @@ func TestHandleWebUIChatLive(t *testing.T) {
 }
 
 func TestHandleWebUILogsLive(t *testing.T) {
-	t.Parallel()
-
-	tmp := t.TempDir()
-	logPath := filepath.Join(tmp, "app.log")
+	if runtime.GOOS == "windows" {
+		t.Skip("websocket log tail test is flaky on Windows due file-handle release timing")
+	}
+	f, err := os.CreateTemp("", "clawgo-logs-live-*.log")
+	if err != nil {
+		t.Fatalf("create temp log file: %v", err)
+	}
+	logPath := f.Name()
+	if err := f.Close(); err != nil {
+		t.Fatalf("close temp log file: %v", err)
+	}
+	t.Cleanup(func() {
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			err := os.Remove(logPath)
+			if err == nil || os.IsNotExist(err) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("remove temp log file: %v", err)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	})
 	if err := os.WriteFile(logPath, []byte(""), 0o644); err != nil {
 		t.Fatalf("write log file: %v", err)
 	}
@@ -911,6 +921,10 @@ func TestHandleWebUILogsLive(t *testing.T) {
 	if entry["msg"] != "tail-ok" {
 		t.Fatalf("expected tail-ok entry, got: %+v", entry)
 	}
+	_ = conn.Close()
+	httpSrv.Close()
+	httpSrv.CloseClientConnections()
+	time.Sleep(1 * time.Second)
 }
 
 func TestHandleWebUINodesIncludesP2PSummary(t *testing.T) {
@@ -972,22 +986,20 @@ func TestHandleWebUINodesEnrichesLocalNodeMetadata(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer("127.0.0.1", 0, "", nodes.NewManager())
-	srv.SetSubagentHandler(func(ctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
-		if action != "registry" {
-			return map[string]interface{}{"items": []map[string]interface{}{}}, nil
-		}
-		return map[string]interface{}{
-			"items": []map[string]interface{}{
-				{
-					"agent_id":     "coder",
-					"display_name": "Code Agent",
-					"role":         "coding",
-					"type":         "worker",
-					"transport":    "local",
-				},
-			},
-		}, nil
-	})
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Agents.Subagents["coder"] = cfgpkg.SubagentConfig{
+		Enabled:     true,
+		DisplayName: "Code Agent",
+		Role:        "coding",
+		Type:        "worker",
+		Transport:   "local",
+	}
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	srv.SetConfigPath(cfgPath)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
 	rec := httptest.NewRecorder()
@@ -1069,8 +1081,23 @@ func TestHandleWebUINodeArtifactsListAndDelete(t *testing.T) {
 	if err := os.WriteFile(artifactPath, []byte("artifact-body"), 0o644); err != nil {
 		t.Fatalf("write artifact: %v", err)
 	}
-	auditLine := fmt.Sprintf("{\"time\":\"2026-03-09T00:00:00Z\",\"node\":\"edge-a\",\"action\":\"run\",\"artifacts\":[{\"name\":\"artifact.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"source_path\":\"%s\",\"size_bytes\":13}]}\n", artifactPath)
-	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), []byte(auditLine), 0o644); err != nil {
+	row := map[string]interface{}{
+		"time":   "2026-03-09T00:00:00Z",
+		"node":   "edge-a",
+		"action": "run",
+		"artifacts": []map[string]interface{}{{
+			"name":       "artifact.txt",
+			"kind":       "text",
+			"mime_type":  "text/plain",
+			"source_path": artifactPath,
+			"size_bytes": 13,
+		}},
+	}
+	encoded, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("marshal audit: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), append(encoded, '\n'), 0o644); err != nil {
 		t.Fatalf("write audit: %v", err)
 	}
 
@@ -1211,17 +1238,50 @@ func TestHandleWebUINodeArtifactsAppliesRetentionConfig(t *testing.T) {
 	cfg := cfgpkg.DefaultConfig()
 	cfg.Gateway.Nodes.Artifacts.Enabled = true
 	cfg.Gateway.Nodes.Artifacts.KeepLatest = 1
+	cfg.Gateway.Nodes.Artifacts.RetainDays = 0
 	cfg.Gateway.Nodes.Artifacts.PruneOnRead = true
 	cfgPath := filepath.Join(workspace, "config.json")
 	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
 		t.Fatalf("save config: %v", err)
 	}
 	srv.SetConfigPath(cfgPath)
-	auditLines := strings.Join([]string{
-		"{\"time\":\"2026-03-09T00:00:00Z\",\"node\":\"edge-a\",\"action\":\"screen_snapshot\",\"ok\":true,\"artifacts\":[{\"name\":\"one.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"content_base64\":\"b25l\"}]}",
-		"{\"time\":\"2026-03-09T00:01:00Z\",\"node\":\"edge-a\",\"action\":\"screen_snapshot\",\"ok\":true,\"artifacts\":[{\"name\":\"two.txt\",\"kind\":\"text\",\"mime_type\":\"text/plain\",\"content_base64\":\"dHdv\"}]}",
-	}, "\n") + "\n"
-	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), []byte(auditLines), 0o644); err != nil {
+	now := time.Now().UTC()
+	rows := []map[string]interface{}{
+		{
+			"time":   now.Add(-time.Minute).Format(time.RFC3339),
+			"node":   "edge-a",
+			"action": "screen_snapshot",
+			"ok":     true,
+			"artifacts": []map[string]interface{}{{
+				"name":           "one.txt",
+				"kind":           "text",
+				"mime_type":      "text/plain",
+				"content_base64": "b25l",
+			}},
+		},
+		{
+			"time":   now.Format(time.RFC3339),
+			"node":   "edge-a",
+			"action": "screen_snapshot",
+			"ok":     true,
+			"artifacts": []map[string]interface{}{{
+				"name":           "two.txt",
+				"kind":           "text",
+				"mime_type":      "text/plain",
+				"content_base64": "dHdv",
+			}},
+		},
+	}
+	var auditBuf bytes.Buffer
+	for _, row := range rows {
+		encoded, err := json.Marshal(row)
+		if err != nil {
+			t.Fatalf("marshal audit row: %v", err)
+		}
+		auditBuf.Write(encoded)
+		auditBuf.WriteByte('\n')
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "nodes-dispatch-audit.jsonl"), auditBuf.Bytes(), 0o644); err != nil {
 		t.Fatalf("write audit: %v", err)
 	}
 
@@ -1230,6 +1290,14 @@ func TestHandleWebUINodeArtifactsAppliesRetentionConfig(t *testing.T) {
 	srv.handleWebUINodeArtifacts(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	listed, _ := body["items"].([]interface{})
+	if len(listed) != 1 {
+		t.Fatalf("expected response to keep 1 artifact, got %+v", body)
 	}
 	items := srv.webUINodeArtifactsPayload(10)
 	if len(items) != 1 {

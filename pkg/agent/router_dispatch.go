@@ -37,7 +37,7 @@ func (al *AgentLoop) maybeAutoRoute(ctx context.Context, msg bus.InboundMessage)
 	}
 	waitCtx, cancel := context.WithTimeout(ctx, time.Duration(waitTimeout)*time.Second)
 	defer cancel()
-	task, err := al.subagentRouter.DispatchTask(waitCtx, tools.RouterDispatchRequest{
+		run, err := al.subagentRouter.DispatchRun(waitCtx, tools.RouterDispatchRequest{
 		Task:             decision.TaskText,
 		AgentID:          decision.TargetAgent,
 		Decision:         &decision,
@@ -48,16 +48,34 @@ func (al *AgentLoop) maybeAutoRoute(ctx context.Context, msg bus.InboundMessage)
 	if err != nil {
 		return "", true, err
 	}
-	reply, err := al.subagentRouter.WaitReply(waitCtx, task.ID, 100*time.Millisecond)
+	reply, err := al.subagentRouter.WaitRun(waitCtx, run.ID, 100*time.Millisecond)
 	if err != nil {
 		return "", true, err
 	}
 	return al.subagentRouter.MergeResults([]*tools.RouterReply{reply}), true, nil
 }
 
-func resolveAutoRouteTarget(cfg *config.Config, raw string) (string, string) {
-	decision := resolveDispatchDecision(cfg, raw)
-	return decision.TargetAgent, decision.TaskText
+func (al *AgentLoop) DispatchSubagentAndWait(ctx context.Context, req tools.RouterDispatchRequest, waitTimeout time.Duration) (string, error) {
+	if al == nil || al.subagentRouter == nil {
+		return "", nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if waitTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, waitTimeout)
+		defer cancel()
+	}
+	run, err := al.subagentRouter.DispatchRun(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	reply, err := al.subagentRouter.WaitRun(ctx, run.ID, 100*time.Millisecond)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(al.subagentRouter.MergeResults([]*tools.RouterReply{reply})), nil
 }
 
 func resolveDispatchDecision(cfg *config.Config, raw string) tools.DispatchDecision {

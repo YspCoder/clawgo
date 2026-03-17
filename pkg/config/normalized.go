@@ -46,7 +46,6 @@ type NormalizedRuntimeRouterConfig struct {
 	AllowDirectAgentChat bool             `json:"allow_direct_agent_chat,omitempty"`
 	MaxHops              int              `json:"max_hops,omitempty"`
 	DefaultTimeoutSec    int              `json:"default_timeout_sec,omitempty"`
-	DefaultWaitReply     bool             `json:"default_wait_reply,omitempty"`
 	StickyThreadOwner    bool             `json:"sticky_thread_owner,omitempty"`
 	Rules                []AgentRouteRule `json:"rules,omitempty"`
 }
@@ -119,7 +118,6 @@ func (c *Config) NormalizedView() NormalizedConfig {
 				AllowDirectAgentChat: c.Agents.Router.AllowDirectAgentChat,
 				MaxHops:              c.Agents.Router.MaxHops,
 				DefaultTimeoutSec:    c.Agents.Router.DefaultTimeoutSec,
-				DefaultWaitReply:     c.Agents.Router.DefaultWaitReply,
 				StickyThreadOwner:    c.Agents.Router.StickyThreadOwner,
 				Rules:                append([]AgentRouteRule(nil), c.Agents.Router.Rules...),
 			},
@@ -223,7 +221,6 @@ func (c *Config) ApplyNormalizedView(view NormalizedConfig) {
 	if view.Runtime.Router.DefaultTimeoutSec > 0 {
 		c.Agents.Router.DefaultTimeoutSec = view.Runtime.Router.DefaultTimeoutSec
 	}
-	c.Agents.Router.DefaultWaitReply = view.Runtime.Router.DefaultWaitReply
 	c.Agents.Router.StickyThreadOwner = view.Runtime.Router.StickyThreadOwner
 	c.Agents.Router.Rules = append([]AgentRouteRule(nil), view.Runtime.Router.Rules...)
 

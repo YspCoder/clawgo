@@ -177,12 +177,10 @@ func gatewayCmd() {
 	}
 	configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 	registryServer.SetGatewayVersion(version)
-	registryServer.SetWebUIVersion(version)
 	registryServer.SetConfigPath(getConfigPath())
 	registryServer.SetToken(cfg.Gateway.Token)
 	registryServer.SetWorkspacePath(cfg.WorkspacePath())
 	registryServer.SetLogFilePath(cfg.LogFilePath())
-	registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
 	aistudioRelay := wsrelay.NewManager(wsrelay.Options{
 		Path: "/v1/ws",
 		ProviderFactory: func(r *http.Request) (string, error) {
@@ -222,9 +220,6 @@ func gatewayCmd() {
 				out = append(out, entry)
 			}
 			return out
-		})
-		registryServer.SetSubagentHandler(func(cctx context.Context, action string, args map[string]interface{}) (interface{}, error) {
-			return loop.HandleSubagentRuntime(cctx, action, args)
 		})
 		registryServer.SetNodeDispatchHandler(func(cctx context.Context, req nodes.Request, mode string) (nodes.Response, error) {
 			return loop.DispatchNodeRequest(cctx, req, mode)
@@ -456,7 +451,6 @@ func gatewayCmd() {
 			registryServer.SetToken(cfg.Gateway.Token)
 			registryServer.SetWorkspacePath(cfg.WorkspacePath())
 			registryServer.SetLogFilePath(cfg.LogFilePath())
-			registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
 			configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 			fmt.Println("Config hot-reload applied (logging/metadata only)")
 			return nil
@@ -486,7 +480,6 @@ func gatewayCmd() {
 		registryServer.SetToken(cfg.Gateway.Token)
 		registryServer.SetWorkspacePath(cfg.WorkspacePath())
 		registryServer.SetLogFilePath(cfg.LogFilePath())
-		registryServer.SetWebUIDir(filepath.Join(cfg.WorkspacePath(), "webui"))
 		configureGatewayNodeP2P(agentLoop, registryServer, cfg)
 		registryServer.SetWhatsAppBridge(whatsAppBridge, embeddedWhatsAppBridgeBasePath)
 		sentinelService.Stop()

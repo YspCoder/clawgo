@@ -234,7 +234,7 @@ func TestAIStudioChannelIDPrefersHealthyAvailableRelay(t *testing.T) {
 	}
 	providerRuntimeRegistry.mu.Unlock()
 
-	got := aistudioChannelID("aistudio", nil)
+	got := aistudioChannelCandidates("aistudio", nil)[0]
 	if got != "aistudio-good" {
 		t.Fatalf("expected aistudio-good, got %q", got)
 	}
@@ -249,7 +249,7 @@ func TestAIStudioChannelIDExplicitOptionWins(t *testing.T) {
 	}
 	providerRuntimeRegistry.mu.Unlock()
 
-	got := aistudioChannelID("aistudio", map[string]interface{}{"aistudio_channel": "manual"})
+	got := aistudioChannelCandidates("aistudio", map[string]interface{}{"aistudio_channel": "manual"})[0]
 	if got != "manual" {
 		t.Fatalf("expected explicit channel manual, got %q", got)
 	}
@@ -273,7 +273,7 @@ func TestAIStudioChannelIDPrefersMostRecentSuccessfulRelay(t *testing.T) {
 	aistudioRelayRegistry.succeeded["aistudio-b"] = time.Now()
 	aistudioRelayRegistry.mu.Unlock()
 
-	got := aistudioChannelID("aistudio", nil)
+	got := aistudioChannelCandidates("aistudio", nil)[0]
 	if got != "aistudio-b" {
 		t.Fatalf("expected most recent successful relay aistudio-b, got %q", got)
 	}

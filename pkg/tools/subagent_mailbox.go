@@ -360,7 +360,7 @@ func messageToArtifactRecord(msg AgentMessage) ArtifactRecord {
 	return ArtifactRecord{
 		ID:            msg.MessageID,
 		RunID:         msg.CorrelationID,
-		TaskID:        msg.CorrelationID,
+		RequestID:     msg.CorrelationID,
 		ThreadID:      msg.ThreadID,
 		Kind:          "message",
 		Name:          msg.Type,

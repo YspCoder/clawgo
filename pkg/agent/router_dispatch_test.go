@@ -10,18 +10,18 @@ import (
 	"github.com/YspCoder/clawgo/pkg/tools"
 )
 
-func TestResolveAutoRouteTarget(t *testing.T) {
+func TestResolveDispatchDecisionExplicitAgent(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, SystemPromptFile: "agents/coder/AGENT.md"}
 
-	agentID, task := resolveAutoRouteTarget(cfg, "@coder fix login")
-	if agentID != "coder" || task != "fix login" {
-		t.Fatalf("unexpected route target: %s / %s", agentID, task)
+	decision := resolveDispatchDecision(cfg, "@coder fix login")
+	if decision.TargetAgent != "coder" || decision.TaskText != "fix login" {
+		t.Fatalf("unexpected route target: %+v", decision)
 	}
 }
 
-func TestResolveAutoRouteTargetRulesFirst(t *testing.T) {
+func TestResolveDispatchDecisionRulesFirst(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Router.Strategy = "rules_first"
@@ -29,9 +29,9 @@ func TestResolveAutoRouteTargetRulesFirst(t *testing.T) {
 	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing", SystemPromptFile: "agents/tester/AGENT.md"}
 	cfg.Agents.Router.Rules = []config.AgentRouteRule{{AgentID: "coder", Keywords: []string{"鐧诲綍", "bug"}}}
 
-	agentID, task := resolveAutoRouteTarget(cfg, "please fix the login bug and update the code")
-	if agentID != "coder" || task == "" {
-		t.Fatalf("expected coder route, got %s / %s", agentID, task)
+	decision := resolveDispatchDecision(cfg, "please fix the login bug and update the code")
+	if decision.TargetAgent != "coder" || decision.TaskText == "" {
+		t.Fatalf("expected coder route, got %+v", decision)
 	}
 }
 
@@ -45,7 +45,7 @@ func TestMaybeAutoRouteDispatchesExplicitAgentMention(t *testing.T) {
 
 	workspace := t.TempDir()
 	manager := tools.NewSubagentManager(nil, workspace, nil)
-	manager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
+	manager.SetRunFunc(func(ctx context.Context, run *tools.SubagentRun) (string, error) {
 		return "auto-routed", nil
 	})
 	loop := &AgentLoop{
@@ -102,7 +102,7 @@ func TestMaybeAutoRouteDispatchesRulesFirstMatch(t *testing.T) {
 
 	workspace := t.TempDir()
 	manager := tools.NewSubagentManager(nil, workspace, nil)
-	manager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
+	manager.SetRunFunc(func(ctx context.Context, run *tools.SubagentRun) (string, error) {
 		return "tested", nil
 	})
 	loop := &AgentLoop{
@@ -141,14 +141,14 @@ func TestResolveDispatchDecisionIncludesReason(t *testing.T) {
 	}
 }
 
-func TestResolveAutoRouteTargetSkipsOversizedIntent(t *testing.T) {
+func TestResolveDispatchDecisionSkipsOversizedIntent(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Router.Enabled = true
 	cfg.Agents.Router.Policy.IntentMaxInputChars = 5
 	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, SystemPromptFile: "agents/coder/AGENT.md"}
 
-	agentID, task := resolveAutoRouteTarget(cfg, "@coder implement auth")
-	if agentID != "" || task != "" {
-		t.Fatalf("expected oversized intent to skip routing, got %s / %s", agentID, task)
+	decision := resolveDispatchDecision(cfg, "@coder implement auth")
+	if decision.TargetAgent != "" || decision.TaskText != "" {
+		t.Fatalf("expected oversized intent to skip routing, got %+v", decision)
 	}
 }

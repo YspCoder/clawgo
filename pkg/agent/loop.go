@@ -18,7 +18,6 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +26,6 @@ import (
 	"github.com/YspCoder/clawgo/pkg/bus"
 	"github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/cron"
-	"github.com/YspCoder/clawgo/pkg/ekg"
 	"github.com/YspCoder/clawgo/pkg/logger"
 	"github.com/YspCoder/clawgo/pkg/nodes"
 	"github.com/YspCoder/clawgo/pkg/providers"
@@ -60,14 +58,12 @@ type AgentLoop struct {
 	providerPool         map[string]providers.LLMProvider
 	providerResponses    map[string]config.ProviderResponsesConfig
 	telegramStreaming    bool
-	ekg                  *ekg.Engine
 	providerMu           sync.RWMutex
 	sessionProvider      map[string]string
 	streamMu             sync.Mutex
 	sessionStreamed      map[string]bool
 	subagentManager      *tools.SubagentManager
 	subagentRouter       *tools.SubagentRouter
-	subagentConfigTool   *tools.SubagentConfigTool
 	nodeRouter           *nodes.Router
 	configPath           string
 	subagentDigestMu     sync.Mutex
@@ -101,9 +97,6 @@ func (al *AgentLoop) SetConfigPath(path string) {
 		return
 	}
 	al.configPath = strings.TrimSpace(path)
-	if al.subagentConfigTool != nil {
-		al.subagentConfigTool.SetConfigPath(al.configPath)
-	}
 }
 
 func (al *AgentLoop) SetNodeP2PTransport(t nodes.Transport) {
@@ -158,10 +151,6 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(readTool)
 	toolsRegistry.Register(writeTool)
 	toolsRegistry.Register(listTool)
-	// OpenClaw-compatible aliases
-	toolsRegistry.Register(tools.NewAliasTool("read", "Read file content (OpenClaw-compatible alias of read_file)", readTool, map[string]string{"file_path": "path"}))
-	toolsRegistry.Register(tools.NewAliasTool("write", "Write file content (OpenClaw-compatible alias of write_file)", writeTool, map[string]string{"file_path": "path"}))
-	toolsRegistry.Register(tools.NewAliasTool("edit", "Edit file content (OpenClaw-compatible alias of edit_file)", tools.NewEditFileTool(workspace), map[string]string{"file_path": "path", "old_string": "oldText", "new_string": "newText"}))
 	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
 	toolsRegistry.Register(tools.NewProcessTool(processManager))
 	toolsRegistry.Register(tools.NewSkillExecTool(workspace))
@@ -278,11 +267,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	// Register spawn tool
 	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus)
 	subagentRouter := tools.NewSubagentRouter(subagentManager)
-	subagentConfigTool := tools.NewSubagentConfigTool("")
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
-	toolsRegistry.Register(tools.NewSubagentsTool(subagentManager))
-	toolsRegistry.Register(subagentConfigTool)
 	if store := subagentManager.ProfileStore(); store != nil {
 		toolsRegistry.Register(tools.NewSubagentProfileTool(store))
 	}
@@ -339,14 +325,12 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		audit:                newTriggerAudit(workspace),
 		running:              false,
 		sessionScheduler:     NewSessionScheduler(0),
-		ekg:                  ekg.New(workspace),
 		sessionProvider:      map[string]string{},
 		sessionStreamed:      map[string]bool{},
 		providerResponses:    map[string]config.ProviderResponsesConfig{},
 		telegramStreaming:    cfg.Channels.Telegram.Streaming,
 		subagentManager:      subagentManager,
 		subagentRouter:       subagentRouter,
-		subagentConfigTool:   subagentConfigTool,
 		nodeRouter:           nodesRouter,
 		subagentDigestDelay:  5 * time.Second,
 		subagentDigests:      map[string]*subagentDigestState{},
@@ -427,26 +411,26 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	}
 
 	// Inject recursive run logic so subagents can use full tool-calling flows.
-	subagentManager.SetRunFunc(func(ctx context.Context, task *tools.SubagentTask) (string, error) {
-		if task == nil {
-			return "", fmt.Errorf("subagent task is nil")
+	subagentManager.SetRunFunc(func(ctx context.Context, run *tools.SubagentRun) (string, error) {
+		if run == nil {
+			return "", fmt.Errorf("subagent run is nil")
 		}
-		if strings.EqualFold(strings.TrimSpace(task.Transport), "node") {
-			return loop.dispatchNodeSubagentTask(ctx, task)
+		if strings.EqualFold(strings.TrimSpace(run.Transport), "node") {
+			return loop.dispatchNodeSubagentRun(ctx, run)
 		}
-		sessionKey := strings.TrimSpace(task.SessionKey)
+		sessionKey := strings.TrimSpace(run.SessionKey)
 		if sessionKey == "" {
-			sessionKey = fmt.Sprintf("subagent:%s", strings.TrimSpace(task.ID))
+			sessionKey = fmt.Sprintf("subagent:%s", strings.TrimSpace(run.ID))
 		}
-		taskInput := loop.buildSubagentTaskInput(task)
-		ns := normalizeMemoryNamespace(task.MemoryNS)
+		taskInput := loop.buildSubagentRunInput(run)
+		ns := normalizeMemoryNamespace(run.MemoryNS)
 		ctx = withMemoryNamespaceContext(ctx, ns)
-		ctx = withToolAllowlistContext(ctx, task.ToolAllowlist)
-		channel := strings.TrimSpace(task.OriginChannel)
+		ctx = withToolAllowlistContext(ctx, run.ToolAllowlist)
+		channel := strings.TrimSpace(run.OriginChannel)
 		if channel == "" {
 			channel = "cli"
 		}
-		chatID := strings.TrimSpace(task.OriginChatID)
+		chatID := strings.TrimSpace(run.OriginChatID)
 		if chatID == "" {
 			chatID = "direct"
 		}
@@ -469,20 +453,20 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	return loop
 }
 
-func (al *AgentLoop) dispatchNodeSubagentTask(ctx context.Context, task *tools.SubagentTask) (string, error) {
-	if al == nil || task == nil {
-		return "", fmt.Errorf("node subagent task is nil")
+func (al *AgentLoop) dispatchNodeSubagentRun(ctx context.Context, run *tools.SubagentRun) (string, error) {
+	if al == nil || run == nil {
+		return "", fmt.Errorf("node subagent run is nil")
 	}
 	if al.nodeRouter == nil {
 		return "", fmt.Errorf("node router is not configured")
 	}
-	nodeID := strings.TrimSpace(task.NodeID)
+	nodeID := strings.TrimSpace(run.NodeID)
 	if nodeID == "" {
-		return "", fmt.Errorf("node-backed subagent %q missing node_id", task.AgentID)
+		return "", fmt.Errorf("node-backed subagent %q missing node_id", run.AgentID)
 	}
-	taskInput := loopTaskInputForNode(task)
+	taskInput := loopRunInputForNode(run)
 	reqArgs := map[string]interface{}{}
-	if remoteAgentID := remoteAgentIDForNodeBranch(task.AgentID, nodeID); remoteAgentID != "" {
+	if remoteAgentID := remoteAgentIDForNodeBranch(run.AgentID, nodeID); remoteAgentID != "" {
 		reqArgs["remote_agent_id"] = remoteAgentID
 	}
 	resp, err := al.nodeRouter.Dispatch(ctx, nodes.Request{
@@ -523,14 +507,14 @@ func remoteAgentIDForNodeBranch(agentID, nodeID string) string {
 	return remote
 }
 
-func loopTaskInputForNode(task *tools.SubagentTask) string {
-	if task == nil {
+func loopRunInputForNode(run *tools.SubagentRun) string {
+	if run == nil {
 		return ""
 	}
-	if parent := strings.TrimSpace(task.ParentAgentID); parent != "" {
-		return fmt.Sprintf("Parent Agent: %s\nSubtree Branch: %s\n\nTask:\n%s", parent, task.AgentID, strings.TrimSpace(task.Task))
+	if parent := strings.TrimSpace(run.ParentAgentID); parent != "" {
+		return fmt.Sprintf("Parent Agent: %s\nSubtree Branch: %s\n\nTask:\n%s", parent, run.AgentID, strings.TrimSpace(run.Task))
 	}
-	return strings.TrimSpace(task.Task)
+	return strings.TrimSpace(run.Task)
 }
 
 func nodeAgentTaskResult(payload map[string]interface{}) string {
@@ -546,12 +530,12 @@ func nodeAgentTaskResult(payload map[string]interface{}) string {
 	return ""
 }
 
-func (al *AgentLoop) buildSubagentTaskInput(task *tools.SubagentTask) string {
-	if task == nil {
+func (al *AgentLoop) buildSubagentRunInput(run *tools.SubagentRun) string {
+	if run == nil {
 		return ""
 	}
-	taskText := strings.TrimSpace(task.Task)
-	if promptFile := strings.TrimSpace(task.SystemPromptFile); promptFile != "" {
+	taskText := strings.TrimSpace(run.Task)
+	if promptFile := strings.TrimSpace(run.SystemPromptFile); promptFile != "" {
 		if promptText := al.readSubagentPromptFile(promptFile); promptText != "" {
 			return fmt.Sprintf("Role Profile Policy (%s):\n%s\n\nTask:\n%s", promptFile, promptText, taskText)
 		}
@@ -637,13 +621,6 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 	for _, candidate := range al.providerChain[1:] {
 		candidateNames = append(candidateNames, candidate.name)
 	}
-	if al.ekg != nil {
-		errSig := ""
-		if primaryErr != nil {
-			errSig = primaryErr.Error()
-		}
-		candidateNames = al.ekg.RankProvidersForError(candidateNames, errSig)
-	}
 	ranked := make([]providerCandidate, 0, len(al.providerChain)-1)
 	used := make([]bool, len(al.providerChain)-1)
 	for _, name := range candidateNames {
@@ -667,17 +644,6 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 			continue
 		}
 		resp, err := p.Chat(ctx, messages, toolDefs, candidateModel, options)
-		if al.ekg != nil {
-			st := "success"
-			lg := "fallback provider success"
-			errSig := ""
-			if err != nil {
-				st = "error"
-				lg = err.Error()
-				errSig = err.Error()
-			}
-			al.ekg.Record(ekg.Event{Session: msg.SessionKey, Channel: msg.Channel, Source: "provider_fallback", Status: st, Provider: candidate.name, Model: candidateModel, ErrSig: errSig, Log: lg})
-		}
 		if err == nil {
 			logger.WarnCF("agent", logger.C0150, map[string]interface{}{"provider": candidate.name, "model": candidateModel, "ref": candidate.ref})
 			return resp, candidate.name, nil
@@ -821,15 +787,10 @@ func (al *AgentLoop) consumeSessionStreamed(sessionKey string) bool {
 }
 
 func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage) {
-	taskID := buildAuditTaskID(msg)
-	started := time.Now()
-	al.appendTaskAuditEvent(taskID, msg, "running", started, 0, "started", false)
-
 	response, err := al.processPlannedMessage(ctx, msg)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			al.audit.Record(al.getTrigger(msg), msg.Channel, msg.SessionKey, true, err)
-			al.appendTaskAudit(taskID, msg, started, err, true)
 			return
 		}
 		response = fmt.Sprintf("Error processing message: %v", err)
@@ -855,111 +816,6 @@ func (al *AgentLoop) processInbound(ctx context.Context, msg bus.InboundMessage)
 		al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Action: "finalize", Content: response, ReplyToID: replyID})
 	}
 	al.audit.Record(trigger, msg.Channel, msg.SessionKey, suppressed, err)
-	al.appendTaskAudit(taskID, msg, started, err, suppressed)
-}
-
-func shortSessionKey(s string) string {
-	if len(s) <= 8 {
-		return s
-	}
-	return s[:8]
-}
-
-func buildAuditTaskID(msg bus.InboundMessage) string {
-	trigger := ""
-	if msg.Metadata != nil {
-		trigger = strings.ToLower(strings.TrimSpace(msg.Metadata["trigger"]))
-	}
-	sessionPart := shortSessionKey(msg.SessionKey)
-	switch trigger {
-	case "heartbeat":
-		if sessionPart == "" {
-			sessionPart = "default"
-		}
-		return "heartbeat:" + sessionPart
-	default:
-		return fmt.Sprintf("%s-%d", sessionPart, time.Now().Unix()%100000)
-	}
-}
-
-func (al *AgentLoop) appendTaskAudit(taskID string, msg bus.InboundMessage, started time.Time, runErr error, suppressed bool) {
-	status := "success"
-	logText := "completed"
-	if runErr != nil {
-		status = "error"
-		logText = runErr.Error()
-	} else if suppressed {
-		status = "suppressed"
-		logText = "suppressed"
-	}
-	al.appendTaskAuditEvent(taskID, msg, status, started, int(time.Since(started).Milliseconds()), logText, suppressed)
-}
-
-func (al *AgentLoop) appendTaskAuditEvent(taskID string, msg bus.InboundMessage, status string, started time.Time, durationMs int, logText string, suppressed bool) {
-	if al.workspace == "" {
-		return
-	}
-	path := filepath.Join(al.workspace, "memory", "task-audit.jsonl")
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	source := "direct"
-	if msg.Metadata != nil && msg.Metadata["trigger"] != "" {
-		source = msg.Metadata["trigger"]
-	}
-	row := map[string]interface{}{
-		"task_id":       taskID,
-		"time":          time.Now().UTC().Format(time.RFC3339),
-		"channel":       msg.Channel,
-		"session":       msg.SessionKey,
-		"chat_id":       msg.ChatID,
-		"sender_id":     msg.SenderID,
-		"status":        status,
-		"source":        source,
-		"idle_run":      false,
-		"duration_ms":   durationMs,
-		"suppressed":    suppressed,
-		"retry_count":   0,
-		"log":           logText,
-		"input_preview": truncate(strings.ReplaceAll(msg.Content, "\n", " "), 180),
-		"media_count":   len(msg.MediaItems),
-		"media_items":   msg.MediaItems,
-		"provider":      al.getSessionProvider(msg.SessionKey),
-		"model":         al.model,
-	}
-	if msg.Metadata != nil {
-		if v := strings.TrimSpace(msg.Metadata["context_extra_chars"]); v != "" {
-			if n, err := strconv.Atoi(v); err == nil {
-				row["context_extra_chars"] = n
-			}
-		}
-		if v := strings.TrimSpace(msg.Metadata["context_ekg_chars"]); v != "" {
-			if n, err := strconv.Atoi(v); err == nil {
-				row["context_ekg_chars"] = n
-			}
-		}
-		if v := strings.TrimSpace(msg.Metadata["context_memory_chars"]); v != "" {
-			if n, err := strconv.Atoi(v); err == nil {
-				row["context_memory_chars"] = n
-			}
-		}
-	}
-	if al.ekg != nil {
-		al.ekg.Record(ekg.Event{
-			TaskID:  taskID,
-			Session: msg.SessionKey,
-			Channel: msg.Channel,
-			Source:  source,
-			Status:  status,
-			Log:     logText,
-		})
-	}
-
-	b, _ := json.Marshal(row)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.Write(append(b, '\n'))
 }
 
 func sessionShardCount() int {
@@ -2449,16 +2305,6 @@ func resolveMessageToolTarget(args map[string]interface{}, fallbackChannel, fall
 	return channel, chatID
 }
 
-func extractFirstSourceLine(text string) string {
-	for _, line := range strings.Split(text, "\n") {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(strings.ToLower(t), "source:") {
-			return t
-		}
-	}
-	return ""
-}
-
 func shouldDropNoReply(text string) bool {
 	t := strings.TrimSpace(text)
 	return strings.EqualFold(t, "NO_REPLY")
@@ -2615,7 +2461,7 @@ func (al *AgentLoop) runSubagentDigestTicker() {
 	if al == nil {
 		return
 	}
-	tick := tools.GlobalWatchdogTick
+	tick := time.Second
 	if tick <= 0 {
 		tick = time.Second
 	}

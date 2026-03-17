@@ -34,30 +34,6 @@ func TestSessionsToolParsesStringArguments(t *testing.T) {
 	}
 }
 
-func TestSubagentsToolParsesStringLimits(t *testing.T) {
-	manager := NewSubagentManager(nil, t.TempDir(), nil)
-	_, err := manager.Spawn(context.Background(), SubagentSpawnOptions{
-		Task:    "check",
-		Label:   "demo",
-		AgentID: "coder",
-	})
-	if err != nil {
-		t.Fatalf("spawn failed: %v", err)
-	}
-	tool := NewSubagentsTool(manager)
-	out, err := tool.Execute(context.Background(), map[string]interface{}{
-		"action": "list",
-		"limit":  "1",
-	})
-	if err != nil {
-		t.Fatalf("subagents execute failed: %v", err)
-	}
-	if !strings.Contains(out, "Subagents:") {
-		t.Fatalf("unexpected output: %s", out)
-	}
-	time.Sleep(50 * time.Millisecond)
-}
-
 func TestNodesToolParsesStringDurationAndArtifactPaths(t *testing.T) {
 	t.Parallel()
 

@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
     [string]$Output = "build/clawgo-windows-amd64-slim.exe",
-    [switch]$EmbedWebUI,
     [switch]$Compress
 )
 
@@ -10,7 +9,6 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $embedDir = Join-Path $repoRoot "cmd/workspace"
 $workspaceDir = Join-Path $repoRoot "workspace"
-$webuiDistDir = Join-Path $repoRoot "webui/dist"
 $outputPath = Join-Path $repoRoot $Output
 
 function Copy-DirectoryContents {
@@ -32,14 +30,6 @@ try {
     }
 
     Copy-DirectoryContents -Source $workspaceDir -Destination $embedDir
-
-    if ($EmbedWebUI) {
-        if (-not (Test-Path $webuiDistDir)) {
-            throw "EmbedWebUI was requested, but WebUI dist is missing: $webuiDistDir"
-        }
-        $embedWebuiDir = Join-Path $embedDir "webui"
-        Copy-DirectoryContents -Source $webuiDistDir -Destination $embedWebuiDir
-    }
 
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $outputPath) | Out-Null
 

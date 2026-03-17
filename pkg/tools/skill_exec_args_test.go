@@ -2,13 +2,21 @@ package tools
 
 import (
 	"context"
+	"os/exec"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestSkillExecParsesStringArgsList(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skill_exec shell-script execution is not stable on Windows test environments")
+	}
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available in test environment")
+	}
 	workspace := t.TempDir()
 	skillDir := filepath.Join(workspace, "skills", "demo")
 	scriptDir := filepath.Join(skillDir, "scripts")

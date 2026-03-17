@@ -27,7 +27,7 @@ type RouterDispatchRequest struct {
 }
 
 type RouterReply struct {
-	TaskID        string
+	RunID         string
 	ThreadID      string
 	CorrelationID string
 	AgentID       string
@@ -45,7 +45,7 @@ func NewSubagentRouter(manager *SubagentManager) *SubagentRouter {
 	return &SubagentRouter{manager: manager}
 }
 
-func (r *SubagentRouter) DispatchTask(ctx context.Context, req RouterDispatchRequest) (*SubagentTask, error) {
+func (r *SubagentRouter) DispatchRun(ctx context.Context, req RouterDispatchRequest) (*SubagentRun, error) {
 	if r == nil || r.manager == nil {
 		return nil, fmt.Errorf("subagent router is not configured")
 	}
@@ -57,7 +57,7 @@ func (r *SubagentRouter) DispatchTask(ctx context.Context, req RouterDispatchReq
 			req.Task = strings.TrimSpace(req.Decision.TaskText)
 		}
 	}
-	task, err := r.manager.SpawnTask(ctx, SubagentSpawnOptions{
+	run, err := r.manager.SpawnRun(ctx, SubagentSpawnOptions{
 		Task:             req.Task,
 		Label:            req.Label,
 		Role:             req.Role,
@@ -77,34 +77,34 @@ func (r *SubagentRouter) DispatchTask(ctx context.Context, req RouterDispatchReq
 	if err != nil {
 		return nil, err
 	}
-	return task, nil
+	return run, nil
 }
 
-func (r *SubagentRouter) WaitReply(ctx context.Context, taskID string, interval time.Duration) (*RouterReply, error) {
+func (r *SubagentRouter) WaitRun(ctx context.Context, runID string, interval time.Duration) (*RouterReply, error) {
 	if r == nil || r.manager == nil {
 		return nil, fmt.Errorf("subagent router is not configured")
 	}
 	_ = interval
-	taskID = strings.TrimSpace(taskID)
-	if taskID == "" {
-		return nil, fmt.Errorf("task id is required")
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return nil, fmt.Errorf("run id is required")
 	}
-	task, ok, err := r.manager.WaitTask(ctx, taskID)
+	run, ok, err := r.manager.waitRun(ctx, runID)
 	if err != nil {
 		return nil, err
 	}
-	if !ok || task == nil {
+	if !ok || run == nil {
 		return nil, fmt.Errorf("subagent not found")
 	}
 	return &RouterReply{
-		TaskID:        task.ID,
-		ThreadID:      task.ThreadID,
-		CorrelationID: task.CorrelationID,
-		AgentID:       task.AgentID,
-		Status:        task.Status,
-		Result:        strings.TrimSpace(task.Result),
-		Run:           taskToRunRecord(task),
-		Error:         taskRuntimeError(task),
+		RunID:         run.ID,
+		ThreadID:      run.ThreadID,
+		CorrelationID: run.CorrelationID,
+		AgentID:       run.AgentID,
+		Status:        run.Status,
+		Result:        strings.TrimSpace(run.Result),
+		Run:           runToRunRecord(run),
+		Error:         runRuntimeError(run),
 	}, nil
 }
 
@@ -117,7 +117,7 @@ func (r *SubagentRouter) MergeResults(replies []*RouterReply) string {
 		if reply == nil {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("[%s] agent=%s status=%s\n", reply.TaskID, reply.AgentID, reply.Status))
+		sb.WriteString(fmt.Sprintf("[%s] agent=%s status=%s\n", reply.RunID, reply.AgentID, reply.Status))
 		if txt := strings.TrimSpace(reply.Result); txt != "" {
 			sb.WriteString(txt)
 		} else {

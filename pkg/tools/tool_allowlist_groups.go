@@ -17,13 +17,13 @@ var defaultToolAllowlistGroups = []ToolAllowlistGroup{
 		Name:        "files_read",
 		Description: "Read-only workspace file tools",
 		Aliases:     []string{"file_read", "readonly_files"},
-		Tools:       []string{"read_file", "list_dir", "repo_map", "read"},
+		Tools:       []string{"read_file", "list_dir"},
 	},
 	{
 		Name:        "files_write",
 		Description: "Workspace file modification tools",
 		Aliases:     []string{"file_write"},
-		Tools:       []string{"write_file", "edit_file", "write", "edit"},
+		Tools:       []string{"write_file", "edit_file"},
 	},
 	{
 		Name:        "memory_read",
@@ -44,10 +44,10 @@ var defaultToolAllowlistGroups = []ToolAllowlistGroup{
 		Tools:       []string{"memory_search", "memory_get", "memory_write"},
 	},
 	{
-		Name:        "subagents",
-		Description: "Subagent management tools",
-		Aliases:     []string{"subagent", "agent_runtime"},
-		Tools:       []string{"spawn", "subagents", "subagent_profile"},
+		Name:        "subagent",
+		Description: "Subagent execution tools",
+		Aliases:     []string{"agent_runtime"},
+		Tools:       []string{"spawn", "subagent_profile"},
 	},
 	{
 		Name:        "skills",

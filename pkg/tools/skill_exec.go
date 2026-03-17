@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -81,10 +80,6 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
 		return "", err
 	}
-	if strings.TrimSpace(t.workspace) != "" {
-		globalCommandWatchdog.setQueuePath(filepath.Join(strings.TrimSpace(t.workspace), "memory", "task_queue.json"))
-	}
-
 	skillDir, err := t.resolveSkillDir(skill)
 	if err != nil {
 		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
@@ -121,48 +116,26 @@ func (t *SkillExecTool) Execute(ctx context.Context, args map[string]interface{}
 	if len(cmdArgs) > 0 {
 		commandLabel += " " + strings.Join(cmdArgs, " ")
 	}
-	policy := buildCommandRuntimePolicy(commandLabel, 2*time.Second)
-	var merged strings.Builder
-	var runErr error
-	for attempt := 0; attempt <= policy.MaxRestarts; attempt++ {
-		cmd, err := buildSkillCommand(ctx, scriptPath, cmdArgs)
-		if err != nil {
-			t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
-			return "", err
-		}
-		cmd.Dir = skillDir
-		var stdout, stderr trackedOutput
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		err = runCommandWithDynamicTick(ctx, cmd, "skill_exec", commandLabel, policy.Difficulty, policy.BaseTick, policy.StallRoundLimit, func() int {
-			return stdout.Len() + stderr.Len()
-		})
-		out := stdout.String()
-		if stderr.Len() > 0 {
-			out += "\nSTDERR:\n" + stderr.String()
-		}
-		if strings.TrimSpace(out) != "" {
-			if merged.Len() > 0 {
-				merged.WriteString("\n")
-			}
-			merged.WriteString(out)
-		}
-		if err == nil {
-			runErr = nil
-			break
-		}
-		runErr = err
-		if errors.Is(err, ErrCommandNoProgress) && ctx.Err() == nil && attempt < policy.MaxRestarts {
-			merged.WriteString(fmt.Sprintf("\n[RESTART] no progress for %d ticks, restarting (%d/%d)\n",
-				policy.StallRoundLimit, attempt+1, policy.MaxRestarts))
-			continue
-		}
-		break
+	cmd, err := buildSkillCommand(ctx, scriptPath, cmdArgs)
+	if err != nil {
+		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, err.Error())
+		return "", err
 	}
-	output := merged.String()
+	cmd.Dir = skillDir
+	var stdout, stderr trackedOutput
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+	output := stdout.String()
+	if stderr.Len() > 0 {
+		output += "\nSTDERR:\n" + stderr.String()
+	}
 	if runErr != nil {
 		t.writeAudit(skill, script, reason, callerAgent, callerScope, false, runErr.Error())
-		return "", fmt.Errorf("skill execution failed: %w\n%s", runErr, output)
+		if strings.TrimSpace(output) != "" {
+			return "", fmt.Errorf("skill execution failed: %w\n%s", runErr, output)
+		}
+		return "", fmt.Errorf("skill execution failed: %w", runErr)
 	}
 
 	out := strings.TrimSpace(output)

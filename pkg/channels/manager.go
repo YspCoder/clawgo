@@ -406,21 +406,6 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 	}
 }
 
-func (m *Manager) GetChannel(name string) (Channel, bool) {
-	cur, _ := m.snapshot.Load().(map[string]Channel)
-	channel, ok := cur[name]
-	return channel, ok
-}
-
-func (m *Manager) GetStatus() map[string]interface{} {
-	cur, _ := m.snapshot.Load().(map[string]Channel)
-	status := make(map[string]interface{}, len(cur))
-	for name := range cur {
-		status[name] = map[string]interface{}{}
-	}
-	return status
-}
-
 func (m *Manager) GetEnabledChannels() []string {
 	cur, _ := m.snapshot.Load().(map[string]Channel)
 	names := make([]string, 0, len(cur))
@@ -428,20 +413,6 @@ func (m *Manager) GetEnabledChannels() []string {
 		names = append(names, name)
 	}
 	return names
-}
-
-func (m *Manager) RegisterChannel(name string, channel Channel) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.channels[name] = channel
-	m.refreshSnapshot()
-}
-
-func (m *Manager) UnregisterChannel(name string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.channels, name)
-	m.refreshSnapshot()
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

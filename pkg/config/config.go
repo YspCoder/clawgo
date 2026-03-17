@@ -45,7 +45,6 @@ type AgentRouterConfig struct {
 	AllowDirectAgentChat bool                    `json:"allow_direct_agent_chat,omitempty"`
 	MaxHops              int                     `json:"max_hops,omitempty"`
 	DefaultTimeoutSec    int                     `json:"default_timeout_sec,omitempty"`
-	DefaultWaitReply     bool                    `json:"default_wait_reply,omitempty"`
 	StickyThreadOwner    bool                    `json:"sticky_thread_owner,omitempty"`
 }
 
@@ -465,7 +464,7 @@ func DefaultConfig() *Config {
 				Execution: AgentExecutionConfig{
 					RunStateTTLSeconds:    1800,
 					RunStateMax:           500,
-					ToolParallelSafeNames: []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "repo_map", "system_info"},
+					ToolParallelSafeNames: []string{"read_file", "list_files", "find_files", "grep_files", "memory_search", "web_search", "system_info"},
 					ToolMaxParallelCalls:  2,
 				},
 				SummaryPolicy: SystemSummaryPolicyConfig{
@@ -490,7 +489,6 @@ func DefaultConfig() *Config {
 				AllowDirectAgentChat: false,
 				MaxHops:              6,
 				DefaultTimeoutSec:    600,
-				DefaultWaitReply:     true,
 				StickyThreadOwner:    true,
 			},
 			Communication: AgentCommunicationConfig{

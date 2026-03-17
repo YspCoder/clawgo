@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/YspCoder/clawgo/pkg/providers"
 )
 
 func TestLoadSessionsReturnsScannerErrorForOversizedLine(t *testing.T) {
@@ -40,25 +38,3 @@ func TestFromJSONLLineParsesOpenClawToolResult(t *testing.T) {
 	}
 }
 
-func TestRewriteSessionFileLockedPersistsMessages(t *testing.T) {
-	t.Parallel()
-
-	storage := t.TempDir()
-	sm := &SessionManager{storage: storage}
-	session := &Session{
-		Key: "abc",
-		Messages: []providers.Message{
-			{Role: "user", Content: "hello"},
-		},
-	}
-	if err := sm.rewriteSessionFileLocked(session); err != nil {
-		t.Fatalf("rewrite session failed: %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(storage, "abc.jsonl"))
-	if err != nil {
-		t.Fatalf("read rewritten session failed: %v", err)
-	}
-	if !strings.Contains(string(data), `"role":"user"`) {
-		t.Fatalf("unexpected rewritten session contents: %s", string(data))
-	}
-}

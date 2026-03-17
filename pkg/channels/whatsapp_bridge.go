@@ -769,14 +769,6 @@ func (s *WhatsAppBridgeService) updateStatus(mut func(*WhatsAppBridgeStatus)) {
 	s.status.UpdatedAt = time.Now().Format(time.RFC3339)
 }
 
-func (s *WhatsAppBridgeService) broadcastWS(payload whatsappBridgeWSMessage) {
-	s.wsClientsMu.Lock()
-	defer s.wsClientsMu.Unlock()
-	for conn := range s.wsClients {
-		_ = conn.WriteJSON(payload)
-	}
-}
-
 func (s *WhatsAppBridgeService) broadcastWSMap(payload map[string]interface{}) {
 	s.wsClientsMu.Lock()
 	defer s.wsClientsMu.Unlock()

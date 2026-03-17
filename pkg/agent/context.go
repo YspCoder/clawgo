@@ -97,10 +97,6 @@ func (cb *ContextBuilder) buildToolsSection() string {
 	return sb.String()
 }
 
-func (cb *ContextBuilder) BuildSystemPrompt() string {
-	return cb.BuildSystemPromptWithMemoryNamespace("main")
-}
-
 func (cb *ContextBuilder) BuildSystemPromptWithMemoryNamespace(memoryNamespace string) string {
 	parts := []string{}
 
@@ -317,44 +313,6 @@ func (cb *ContextBuilder) BuildMessagesWithMemoryNamespace(history []providers.M
 	})
 
 	return messages
-}
-
-func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID, toolName, result string) []providers.Message {
-	messages = append(messages, providers.Message{
-		Role:       "tool",
-		Content:    result,
-		ToolCallID: toolCallID,
-	})
-	return messages
-}
-
-func (cb *ContextBuilder) AddAssistantMessage(messages []providers.Message, content string, toolCalls []map[string]interface{}) []providers.Message {
-	msg := providers.Message{
-		Role:    "assistant",
-		Content: content,
-	}
-	// Always add assistant message, whether or not it has tool calls
-	messages = append(messages, msg)
-	return messages
-}
-
-func (cb *ContextBuilder) loadSkills() string {
-	allSkills := cb.skillsLoader.ListSkills()
-	if len(allSkills) == 0 {
-		return ""
-	}
-
-	var skillNames []string
-	for _, s := range allSkills {
-		skillNames = append(skillNames, s.Name)
-	}
-
-	content := cb.skillsLoader.LoadSkillsForContext(skillNames)
-	if content == "" {
-		return ""
-	}
-
-	return "# Skill Definitions\n\n" + content
 }
 
 // GetSkillsInfo returns information about loaded skills.

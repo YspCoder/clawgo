@@ -854,10 +854,6 @@ func (c *TelegramChannel) handleStreamAction(ctx context.Context, chatID int64, 
 	return nil
 }
 
-func renderTelegramStreamChunks(content string) []telegramRenderedChunk {
-	return renderTelegramStreamChunksWithFinalize(content, false)
-}
-
 func renderTelegramStreamChunksWithFinalize(content string, finalizeRich bool) []telegramRenderedChunk {
 	raw := strings.TrimSpace(content)
 	if raw == "" {

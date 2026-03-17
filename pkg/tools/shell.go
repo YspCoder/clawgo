@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -81,12 +80,6 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 			cwd = wd
 		}
 	}
-	queueBase := strings.TrimSpace(t.workingDir)
-	if queueBase == "" {
-		queueBase = cwd
-	}
-	globalCommandWatchdog.setQueuePath(resolveCommandQueuePath(queueBase))
-
 	if bg, _ := MapBoolArg(args, "background"); bg {
 		if t.procManager == nil {
 			return "", fmt.Errorf("background process manager not configured")
@@ -117,38 +110,25 @@ func (t *ExecTool) executeInSandbox(ctx context.Context, command, cwd string) (s
 		t.sandboxImage,
 		"sh", "-c", command,
 	}
-	policy := buildCommandRuntimePolicy(command, t.commandTickBase(command))
-	var merged strings.Builder
-	for attempt := 0; attempt <= policy.MaxRestarts; attempt++ {
-		cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
-		var stdout, stderr trackedOutput
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		err := runCommandWithDynamicTick(ctx, cmd, "exec:sandbox", command, policy.Difficulty, policy.BaseTick, policy.StallRoundLimit, func() int {
-			return stdout.Len() + stderr.Len()
-		})
-		out := stdout.String()
-		if stderr.Len() > 0 {
-			out += "\nSTDERR:\n" + stderr.String()
-		}
-		if strings.TrimSpace(out) != "" {
-			if merged.Len() > 0 {
-				merged.WriteString("\n")
-			}
-			merged.WriteString(out)
-		}
-		if err == nil {
-			return merged.String(), nil
-		}
-		if errors.Is(err, ErrCommandNoProgress) && ctx.Err() == nil && attempt < policy.MaxRestarts {
-			merged.WriteString(fmt.Sprintf("\n[RESTART] no progress for %d ticks, restarting (%d/%d)\n",
-				policy.StallRoundLimit, attempt+1, policy.MaxRestarts))
-			continue
-		}
-		merged.WriteString(fmt.Sprintf("\nSandbox Exit code: %v", err))
-		return merged.String(), nil
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...)
+	var stdout, stderr trackedOutput
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	out := stdout.String()
+	if stderr.Len() > 0 {
+		out += "\nSTDERR:\n" + stderr.String()
 	}
-	return merged.String(), nil
+	if err != nil {
+		if strings.TrimSpace(out) != "" {
+			out += "\n"
+		}
+		out += fmt.Sprintf("Sandbox Exit code: %v", err)
+	}
+	if strings.TrimSpace(out) == "" {
+		out = "(no output)"
+	}
+	return out, nil
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {
@@ -185,43 +165,22 @@ func (t *ExecTool) executeCommand(ctx context.Context, command, cwd string) (str
 }
 
 func (t *ExecTool) runShellCommand(ctx context.Context, command, cwd string) (string, error) {
-	policy := buildCommandRuntimePolicy(command, t.commandTickBase(command))
-	var merged strings.Builder
-	for attempt := 0; attempt <= policy.MaxRestarts; attempt++ {
-		cmd := exec.CommandContext(ctx, "sh", "-c", command)
-		cmd.Env = buildExecEnv()
-		if cwd != "" {
-			cmd.Dir = cwd
-		}
-
-		var stdout, stderr trackedOutput
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		err := runCommandWithDynamicTick(ctx, cmd, "exec", command, policy.Difficulty, policy.BaseTick, policy.StallRoundLimit, func() int {
-			return stdout.Len() + stderr.Len()
-		})
-		out := stdout.String()
-		if stderr.Len() > 0 {
-			out += "\nSTDERR:\n" + stderr.String()
-		}
-		if strings.TrimSpace(out) != "" {
-			if merged.Len() > 0 {
-				merged.WriteString("\n")
-			}
-			merged.WriteString(out)
-		}
-		if err == nil {
-			return merged.String(), nil
-		}
-		if errors.Is(err, ErrCommandNoProgress) && ctx.Err() == nil && attempt < policy.MaxRestarts {
-			merged.WriteString(fmt.Sprintf("\n[RESTART] no progress for %d ticks, restarting (%d/%d)\n",
-				policy.StallRoundLimit, attempt+1, policy.MaxRestarts))
-			continue
-		}
-		return merged.String(), err
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd.Env = buildExecEnv()
+	if cwd != "" {
+		cmd.Dir = cwd
 	}
-	return merged.String(), nil
+
+	var stdout, stderr trackedOutput
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	out := stdout.String()
+	if stderr.Len() > 0 {
+		out += "\nSTDERR:\n" + stderr.String()
+	}
+	return out, err
 }
 
 func buildExecEnv() []string {
@@ -233,70 +192,6 @@ func buildExecEnv() []string {
 	}
 	// Append common paths to reduce false "command not found" in service/daemon envs.
 	return append(env, "PATH="+current+":"+fallback)
-}
-
-func (t *ExecTool) commandTickBase(command string) time.Duration {
-	base := 2 * time.Second
-	if isHeavyCommand(command) {
-		base = 4 * time.Second
-	}
-	// Reuse configured timeout as a pacing hint (not a kill deadline).
-	if t.timeout > 0 {
-		derived := t.timeout / 30
-		if derived > base {
-			base = derived
-		}
-	}
-	if base > 12*time.Second {
-		base = 12 * time.Second
-	}
-	return base
-}
-
-func resolveCommandQueuePath(cwd string) string {
-	cwd = strings.TrimSpace(cwd)
-	if cwd == "" {
-		if wd, err := os.Getwd(); err == nil {
-			cwd = wd
-		}
-	}
-	if cwd == "" {
-		return ""
-	}
-	abs, err := filepath.Abs(cwd)
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(abs, "memory", "task_queue.json")
-}
-
-func isHeavyCommand(command string) bool {
-	cmd := strings.ToLower(strings.TrimSpace(command))
-	if cmd == "" {
-		return false
-	}
-	heavyPatterns := []string{
-		"docker build",
-		"docker compose build",
-		"go build",
-		"go test",
-		"npm install",
-		"npm ci",
-		"npm run build",
-		"pnpm install",
-		"pnpm build",
-		"yarn install",
-		"yarn build",
-		"cargo build",
-		"mvn package",
-		"gradle build",
-	}
-	for _, p := range heavyPatterns {
-		if strings.Contains(cmd, p) {
-			return true
-		}
-	}
-	return false
 }
 
 func detectMissingCommandFromOutput(output string) string {

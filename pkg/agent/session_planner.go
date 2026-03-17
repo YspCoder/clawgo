@@ -1,21 +1,17 @@
 package agent
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/YspCoder/clawgo/pkg/bus"
-	"github.com/YspCoder/clawgo/pkg/ekg"
 	"github.com/YspCoder/clawgo/pkg/providers"
 	"github.com/YspCoder/clawgo/pkg/scheduling"
 )
@@ -283,9 +279,6 @@ func (al *AgentLoop) runPlannedTasks(ctx context.Context, msg bus.InboundMessage
 			if enriched.extraChars > 0 {
 				subMsg.Metadata["context_extra_chars"] = fmt.Sprintf("%d", enriched.extraChars)
 			}
-			if enriched.ekgChars > 0 {
-				subMsg.Metadata["context_ekg_chars"] = fmt.Sprintf("%d", enriched.ekgChars)
-			}
 			if enriched.memoryChars > 0 {
 				subMsg.Metadata["context_memory_chars"] = fmt.Sprintf("%d", enriched.memoryChars)
 			}
@@ -451,14 +444,12 @@ func summarizePlannedTaskProgressBody(body string, maxLines, maxChars int) strin
 }
 
 type taskPromptHints struct {
-	ekg    string
 	memory string
 }
 
 type plannedTaskPrompt struct {
 	content     string
 	extraChars  int
-	ekgChars    int
 	memoryChars int
 }
 
@@ -484,22 +475,11 @@ func (al *AgentLoop) enrichPlannedTaskContents(ctx context.Context, tasks []plan
 	return out
 }
 
-func (al *AgentLoop) enrichTaskContentWithMemoryAndEKG(ctx context.Context, task plannedTask) string {
-	return buildPlannedTaskPrompt(task.Content, al.collectTaskPromptHints(ctx, task)).content
-}
-
 func (al *AgentLoop) collectTaskPromptHints(ctx context.Context, task plannedTask) taskPromptHints {
-	hints := taskPromptHints{}
-	if risk := al.ekgHintForTask(task); risk != "" {
-		hints.ekg = risk
-		hints.memory = al.memoryHintForTask(ctx, task, true)
-		return hints
-	}
-	hints.memory = al.memoryHintForTask(ctx, task, false)
-	return hints
+	return taskPromptHints{memory: al.memoryHintForTask(ctx, task)}
 }
 
-func (al *AgentLoop) memoryHintForTask(ctx context.Context, task plannedTask, hasEKG bool) string {
+func (al *AgentLoop) memoryHintForTask(ctx context.Context, task plannedTask) string {
 	if al == nil || al.tools == nil {
 		return ""
 	}
@@ -507,9 +487,6 @@ func (al *AgentLoop) memoryHintForTask(ctx context.Context, task plannedTask, ha
 	maxChars := 360
 	if task.Total > 1 {
 		maxChars = 220
-	}
-	if hasEKG {
-		maxChars = 160
 	}
 	args := map[string]interface{}{
 		"query":      task.Content,
@@ -527,165 +504,6 @@ func (al *AgentLoop) memoryHintForTask(ctx context.Context, task plannedTask, ha
 		return ""
 	}
 	return compactMemoryHint(txt, maxChars)
-}
-
-func (al *AgentLoop) ekgHintForTask(task plannedTask) string {
-	if al == nil || al.ekg == nil || strings.TrimSpace(al.workspace) == "" {
-		return ""
-	}
-	evt, ok := al.findRecentRelatedErrorEvent(task.Content)
-	if !ok {
-		return ""
-	}
-	errSig := ekg.NormalizeErrorSignature(evt.Log)
-	if errSig == "" {
-		return ""
-	}
-	advice := al.ekg.GetAdvice(ekg.SignalContext{
-		TaskID:  evt.TaskID,
-		ErrSig:  errSig,
-		Source:  evt.Source,
-		Channel: evt.Channel,
-	})
-	if !advice.ShouldEscalate {
-		return ""
-	}
-	parts := []string{
-		fmt.Sprintf("repeat_errsig=%s", truncate(errSig, 72)),
-		fmt.Sprintf("backoff=%ds", advice.RetryBackoffSec),
-	}
-	if evt.Preview != "" {
-		parts = append(parts, "related_task="+truncate(strings.TrimSpace(evt.Preview), 96))
-	}
-	if len(advice.Reason) > 0 {
-		parts = append(parts, "reason="+truncate(strings.Join(advice.Reason, "+"), 64))
-	}
-	return strings.Join(parts, "; ")
-}
-
-type taskAuditErrorEvent struct {
-	TaskID     string
-	Source     string
-	Channel    string
-	Log        string
-	Preview    string
-	MatchScore int
-	MatchRatio float64
-}
-
-func (al *AgentLoop) findRecentRelatedErrorEvent(taskContent string) (taskAuditErrorEvent, bool) {
-	path := filepath.Join(strings.TrimSpace(al.workspace), "memory", "task-audit.jsonl")
-	f, err := os.Open(path)
-	if err != nil {
-		return taskAuditErrorEvent{}, false
-	}
-	defer f.Close()
-
-	kw := tokenizeTaskText(taskContent)
-	if len(kw) == 0 {
-		return taskAuditErrorEvent{}, false
-	}
-	var best taskAuditErrorEvent
-	bestScore := 0
-	bestRatio := 0.0
-
-	s := bufio.NewScanner(f)
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
-		var row map[string]interface{}
-		if json.Unmarshal([]byte(line), &row) != nil {
-			continue
-		}
-		if strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", row["status"]))) != "error" {
-			continue
-		}
-		logText := strings.TrimSpace(fmt.Sprintf("%v", row["log"]))
-		if logText == "" {
-			continue
-		}
-		preview := strings.TrimSpace(fmt.Sprintf("%v", row["input_preview"]))
-		previewKW := tokenizeTaskText(preview)
-		score := overlapScore(kw, previewKW)
-		ratio := overlapRatio(kw, previewKW, score)
-		if !isStrongTaskMatch(score, ratio) {
-			continue
-		}
-		if score < bestScore || (score == bestScore && ratio < bestRatio) {
-			continue
-		}
-		bestScore = score
-		bestRatio = ratio
-		best = taskAuditErrorEvent{
-			TaskID:     strings.TrimSpace(fmt.Sprintf("%v", row["task_id"])),
-			Source:     strings.TrimSpace(fmt.Sprintf("%v", row["source"])),
-			Channel:    strings.TrimSpace(fmt.Sprintf("%v", row["channel"])),
-			Log:        logText,
-			Preview:    preview,
-			MatchScore: score,
-			MatchRatio: ratio,
-		}
-	}
-	if bestScore == 0 || strings.TrimSpace(best.TaskID) == "" {
-		return taskAuditErrorEvent{}, false
-	}
-	return best, true
-}
-
-func tokenizeTaskText(s string) []string {
-	normalized := strings.NewReplacer("\n", " ", "\t", " ", ",", " ", "，", " ", ".", " ", "。", " ", ":", " ", "：", " ", ";", " ", "；", " ").Replace(strings.ToLower(strings.TrimSpace(s)))
-	parts := strings.Fields(normalized)
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if len(p) < 3 {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
-}
-
-func overlapScore(a, b []string) int {
-	if len(a) == 0 || len(b) == 0 {
-		return 0
-	}
-	set := make(map[string]struct{}, len(a))
-	for _, k := range a {
-		set[k] = struct{}{}
-	}
-	score := 0
-	for _, k := range b {
-		if _, ok := set[k]; ok {
-			score++
-		}
-	}
-	return score
-}
-
-func overlapRatio(a, b []string, score int) float64 {
-	if score <= 0 || len(a) == 0 || len(b) == 0 {
-		return 0
-	}
-	shorter := len(a)
-	if len(b) < shorter {
-		shorter = len(b)
-	}
-	if shorter <= 0 {
-		return 0
-	}
-	return float64(score) / float64(shorter)
-}
-
-func isStrongTaskMatch(score int, ratio float64) bool {
-	if score >= 4 {
-		return true
-	}
-	if score < 2 {
-		return false
-	}
-	return ratio >= 0.35
 }
 
 func compactMemoryHint(raw string, maxChars int) string {
@@ -719,23 +537,16 @@ func compactMemoryHint(raw string, maxChars int) string {
 	return truncate(strings.Join(parts, " | "), maxChars)
 }
 
-func renderTaskPromptWithHints(taskContent string, hints taskPromptHints) string {
-	return buildPlannedTaskPrompt(taskContent, hints).content
-}
-
 func buildPlannedTaskPrompt(taskContent string, hints taskPromptHints) plannedTaskPrompt {
 	base := strings.TrimSpace(taskContent)
 	if base == "" {
 		return plannedTaskPrompt{}
 	}
-	if hints.ekg == "" && hints.memory == "" {
+	if hints.memory == "" {
 		return plannedTaskPrompt{content: base}
 	}
 	lines := make([]string, 0, 4)
 	lines = append(lines, "Task Context:")
-	if hints.ekg != "" {
-		lines = append(lines, "EKG: "+hints.ekg)
-	}
 	if hints.memory != "" {
 		lines = append(lines, "Memory: "+hints.memory)
 	}
@@ -744,7 +555,6 @@ func buildPlannedTaskPrompt(taskContent string, hints taskPromptHints) plannedTa
 	return plannedTaskPrompt{
 		content:     content,
 		extraChars:  maxInt(len(content)-len(base), 0),
-		ekgChars:    len(hints.ekg),
 		memoryChars: len(hints.memory),
 	}
 }
@@ -761,7 +571,6 @@ func applyPromptBudget(hints *taskPromptHints, remaining *int) {
 		return
 	}
 	if *remaining <= 0 {
-		hints.ekg = ""
 		hints.memory = ""
 		return
 	}
@@ -770,23 +579,13 @@ func applyPromptBudget(hints *taskPromptHints, remaining *int) {
 		return
 	}
 	hints.memory = ""
-	needed = estimateHintChars(*hints)
-	if needed <= *remaining {
-		return
-	}
-	hints.ekg = ""
 }
 
 func estimateHintChars(hints taskPromptHints) int {
 	total := 0
-	if hints.ekg != "" {
-		total += len("Task Context:\nEKG: \nTask:\n") + len(hints.ekg)
-	}
 	if hints.memory != "" {
 		total += len("Memory: \n") + len(hints.memory)
-		if hints.ekg == "" {
-			total += len("Task Context:\nTask:\n")
-		}
+		total += len("Task Context:\nTask:\n")
 	}
 	return total
 }
@@ -794,14 +593,6 @@ func estimateHintChars(hints taskPromptHints) int {
 func dedupeTaskPromptHints(hints *taskPromptHints, seen map[string]struct{}) {
 	if hints == nil || seen == nil {
 		return
-	}
-	if hints.ekg != "" {
-		key := "ekg:" + hints.ekg
-		if _, ok := seen[key]; ok {
-			hints.ekg = ""
-		} else {
-			seen[key] = struct{}{}
-		}
 	}
 	if hints.memory != "" {
 		key := "memory:" + hints.memory

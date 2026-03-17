@@ -171,12 +171,6 @@ func (t *MemorySearchTool) getMemoryFiles(namespace string) []string {
 		files = append(files, mainMem)
 	}
 
-	// Backward-compatible location: memory/MEMORY.md
-	legacyMem := filepath.Join(base, "memory", "MEMORY.md")
-	if _, err := os.Stat(legacyMem); err == nil {
-		files = append(files, legacyMem)
-	}
-
 	// Recursively include memory/**/*.md
 	memDir := filepath.Join(base, "memory")
 	_ = filepath.WalkDir(memDir, func(path string, d os.DirEntry, err error) error {

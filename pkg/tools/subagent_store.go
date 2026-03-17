@@ -3,7 +3,6 @@ package tools
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,7 +26,7 @@ type SubagentRunStore struct {
 	runsPath   string
 	eventsPath string
 	mu         sync.RWMutex
-	runs       map[string]*SubagentTask
+	runs       map[string]*SubagentRun
 }
 
 func NewSubagentRunStore(workspace string) *SubagentRunStore {
@@ -40,7 +39,7 @@ func NewSubagentRunStore(workspace string) *SubagentRunStore {
 		dir:        dir,
 		runsPath:   filepath.Join(dir, "subagent_runs.jsonl"),
 		eventsPath: filepath.Join(dir, "subagent_events.jsonl"),
-		runs:       map[string]*SubagentTask{},
+		runs:       map[string]*SubagentRun{},
 	}
 	_ = os.MkdirAll(dir, 0755)
 	_ = store.load()
@@ -51,7 +50,7 @@ func (s *SubagentRunStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.runs = map[string]*SubagentTask{}
+	s.runs = map[string]*SubagentRun{}
 	f, err := os.Open(s.runsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -71,7 +70,7 @@ func (s *SubagentRunStore) load() error {
 		}
 		var record RunRecord
 		if err := json.Unmarshal([]byte(line), &record); err == nil && strings.TrimSpace(record.ID) != "" {
-			task := &SubagentTask{
+			run := &SubagentRun{
 				ID:            record.ID,
 				Task:          record.Input,
 				AgentID:       record.AgentID,
@@ -83,25 +82,25 @@ func (s *SubagentRunStore) load() error {
 				Created:       record.CreatedAt,
 				Updated:       record.UpdatedAt,
 			}
-			s.runs[task.ID] = task
+			s.runs[run.ID] = run
 			continue
 		}
-		var task SubagentTask
-		if err := json.Unmarshal([]byte(line), &task); err != nil {
+		var run SubagentRun
+		if err := json.Unmarshal([]byte(line), &run); err != nil {
 			continue
 		}
-		cp := cloneSubagentTask(&task)
-		s.runs[task.ID] = cp
+		cp := cloneSubagentRun(&run)
+		s.runs[run.ID] = cp
 	}
 	return scanner.Err()
 }
 
-func (s *SubagentRunStore) AppendRun(task *SubagentTask) error {
-	if s == nil || task == nil {
+func (s *SubagentRunStore) AppendRun(run *SubagentRun) error {
+	if s == nil || run == nil {
 		return nil
 	}
-	cp := cloneSubagentTask(task)
-	data, err := json.Marshal(taskToRunRecord(cp))
+	cp := cloneSubagentRun(run)
+	data, err := json.Marshal(runToRunRecord(cp))
 	if err != nil {
 		return err
 	}
@@ -130,7 +129,7 @@ func (s *SubagentRunStore) AppendEvent(evt SubagentRunEvent) error {
 	record := EventRecord{
 		ID:         EventRecordID(evt.RunID, evt.Type, evt.At),
 		RunID:      evt.RunID,
-		TaskID:     evt.RunID,
+		RequestID:  evt.RunID,
 		AgentID:    evt.AgentID,
 		Type:       evt.Type,
 		Status:     evt.Status,
@@ -156,28 +155,28 @@ func (s *SubagentRunStore) AppendEvent(evt SubagentRunEvent) error {
 	return err
 }
 
-func (s *SubagentRunStore) Get(runID string) (*SubagentTask, bool) {
+func (s *SubagentRunStore) Get(runID string) (*SubagentRun, bool) {
 	if s == nil {
 		return nil, false
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	task, ok := s.runs[strings.TrimSpace(runID)]
+	run, ok := s.runs[strings.TrimSpace(runID)]
 	if !ok {
 		return nil, false
 	}
-	return cloneSubagentTask(task), true
+	return cloneSubagentRun(run), true
 }
 
-func (s *SubagentRunStore) List() []*SubagentTask {
+func (s *SubagentRunStore) List() []*SubagentRun {
 	if s == nil {
 		return nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*SubagentTask, 0, len(s.runs))
-	for _, task := range s.runs {
-		out = append(out, cloneSubagentTask(task))
+	out := make([]*SubagentRun, 0, len(s.runs))
+	for _, run := range s.runs {
+		out = append(out, cloneSubagentRun(run))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Created != out[j].Created {
@@ -269,85 +268,72 @@ func parseSubagentSequence(runID string) int {
 	return n
 }
 
-func cloneSubagentTask(task *SubagentTask) *SubagentTask {
-	if task == nil {
+func cloneSubagentRun(run *SubagentRun) *SubagentRun {
+	if run == nil {
 		return nil
 	}
-	cp := *task
-	if len(task.ToolAllowlist) > 0 {
-		cp.ToolAllowlist = append([]string(nil), task.ToolAllowlist...)
+	cp := *run
+	if len(run.ToolAllowlist) > 0 {
+		cp.ToolAllowlist = append([]string(nil), run.ToolAllowlist...)
 	}
-	if len(task.Steering) > 0 {
-		cp.Steering = append([]string(nil), task.Steering...)
+	if len(run.Steering) > 0 {
+		cp.Steering = append([]string(nil), run.Steering...)
 	}
-	if task.SharedState != nil {
-		cp.SharedState = make(map[string]interface{}, len(task.SharedState))
-		for k, v := range task.SharedState {
+	if run.SharedState != nil {
+		cp.SharedState = make(map[string]interface{}, len(run.SharedState))
+		for k, v := range run.SharedState {
 			cp.SharedState[k] = v
 		}
 	}
 	return &cp
 }
 
-func taskToTaskRecord(task *SubagentTask) TaskRecord {
-	if task == nil {
-		return TaskRecord{}
+func runToRequestRecord(run *SubagentRun) RequestRecord {
+	if run == nil {
+		return RequestRecord{}
 	}
-	return TaskRecord{
-		ID:            task.ID,
-		ThreadID:      task.ThreadID,
-		CorrelationID: task.CorrelationID,
-		OwnerAgentID:  task.AgentID,
-		Status:        strings.TrimSpace(task.Status),
-		Input:         task.Task,
-		OriginChannel: task.OriginChannel,
-		OriginChatID:  task.OriginChatID,
-		CreatedAt:     task.Created,
-		UpdatedAt:     task.Updated,
+	return RequestRecord{
+		ID:            run.ID,
+		ThreadID:      run.ThreadID,
+		CorrelationID: run.CorrelationID,
+		OwnerAgentID:  run.AgentID,
+		Status:        strings.TrimSpace(run.Status),
+		Input:         run.Task,
+		OriginChannel: run.OriginChannel,
+		OriginChatID:  run.OriginChatID,
+		CreatedAt:     run.Created,
+		UpdatedAt:     run.Updated,
 	}
 }
 
-func taskRuntimeError(task *SubagentTask) *RuntimeError {
-	if task == nil || !strings.EqualFold(strings.TrimSpace(task.Status), RuntimeStatusFailed) {
+func runRuntimeError(run *SubagentRun) *RuntimeError {
+	if run == nil || !strings.EqualFold(strings.TrimSpace(run.Status), RuntimeStatusFailed) {
 		return nil
 	}
-	msg := strings.TrimSpace(task.Result)
+	msg := strings.TrimSpace(run.Result)
 	msg = strings.TrimPrefix(msg, "Error:")
 	msg = strings.TrimSpace(msg)
 	return NewRuntimeError("subagent_failed", msg, "subagent", false, "subagent")
 }
 
-func taskToRunRecord(task *SubagentTask) RunRecord {
-	if task == nil {
+func runToRunRecord(run *SubagentRun) RunRecord {
+	if run == nil {
 		return RunRecord{}
 	}
 	return RunRecord{
-		ID:            task.ID,
-		TaskID:        task.ID,
-		ThreadID:      task.ThreadID,
-		CorrelationID: task.CorrelationID,
-		AgentID:       task.AgentID,
-		ParentRunID:   task.ParentRunID,
+		ID:            run.ID,
+		RequestID:     run.ID,
+		ThreadID:      run.ThreadID,
+		CorrelationID: run.CorrelationID,
+		AgentID:       run.AgentID,
+		ParentRunID:   run.ParentRunID,
 		Kind:          "subagent",
-		Status:        strings.TrimSpace(task.Status),
-		Input:         task.Task,
-		Output:        strings.TrimSpace(task.Result),
-		Error:         taskRuntimeError(task),
-		CreatedAt:     task.Created,
-		UpdatedAt:     task.Updated,
+		Status:        strings.TrimSpace(run.Status),
+		Input:         run.Task,
+		Output:        strings.TrimSpace(run.Result),
+		Error:         runRuntimeError(run),
+		CreatedAt:     run.Created,
+		UpdatedAt:     run.Updated,
 	}
 }
 
-func formatSubagentEventLog(evt SubagentRunEvent) string {
-	base := fmt.Sprintf("- %d %s", evt.At, evt.Type)
-	if strings.TrimSpace(evt.Status) != "" {
-		base += fmt.Sprintf(" status=%s", evt.Status)
-	}
-	if evt.RetryCount > 0 {
-		base += fmt.Sprintf(" retry=%d", evt.RetryCount)
-	}
-	if strings.TrimSpace(evt.Message) != "" {
-		base += fmt.Sprintf(" msg=%s", strings.TrimSpace(evt.Message))
-	}
-	return base
-}

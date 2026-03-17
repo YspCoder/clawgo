@@ -2,7 +2,6 @@ package tools
 
 import (
 	"path/filepath"
-	"strings"
 )
 
 func normalizeMemoryNamespace(in string) string {
@@ -23,12 +22,4 @@ func memoryNamespaceBaseDir(workspace, namespace string) string {
 
 func parseMemoryNamespaceArg(args map[string]interface{}) string {
 	return normalizeMemoryNamespace(MapStringArg(args, "namespace"))
-}
-
-func isPathUnder(parent, child string) bool {
-	rel, err := filepath.Rel(parent, child)
-	if err != nil {
-		return false
-	}
-	return !strings.HasPrefix(rel, "..")
 }

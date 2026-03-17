@@ -7,15 +7,15 @@ import (
 	"time"
 )
 
-func TestSubagentRouterDispatchAndWaitReply(t *testing.T) {
+func TestSubagentRouterDispatchAndWaitRun(t *testing.T) {
 	workspace := t.TempDir()
 	manager := NewSubagentManager(nil, workspace, nil)
-	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+	manager.SetRunFunc(func(ctx context.Context, run *SubagentRun) (string, error) {
 		return "router-result", nil
 	})
 	router := NewSubagentRouter(manager)
 
-	task, err := router.DispatchTask(context.Background(), RouterDispatchRequest{
+	run, err := router.DispatchRun(context.Background(), RouterDispatchRequest{
 		Task:          "implement feature",
 		AgentID:       "coder",
 		OriginChannel: "cli",
@@ -24,13 +24,13 @@ func TestSubagentRouterDispatchAndWaitReply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch failed: %v", err)
 	}
-	if task.ThreadID == "" {
+	if run.ThreadID == "" {
 		t.Fatalf("expected thread id on dispatched task")
 	}
 
-	reply, err := router.WaitReply(context.Background(), task.ID, 20*time.Millisecond)
+	reply, err := router.WaitRun(context.Background(), run.ID, 20*time.Millisecond)
 	if err != nil {
-		t.Fatalf("wait reply failed: %v", err)
+		t.Fatalf("wait run failed: %v", err)
 	}
 	if reply.Status != "completed" || reply.Result != "router-result" {
 		t.Fatalf("unexpected reply: %+v", reply)
@@ -40,24 +40,24 @@ func TestSubagentRouterDispatchAndWaitReply(t *testing.T) {
 func TestSubagentRouterMergeResults(t *testing.T) {
 	router := NewSubagentRouter(nil)
 	out := router.MergeResults([]*RouterReply{
-		{TaskID: "subagent-1", AgentID: "coder", Status: "completed", Result: "done"},
-		{TaskID: "subagent-2", AgentID: "tester", Status: "failed", Result: "boom"},
+		{RunID: "subagent-1", AgentID: "coder", Status: "completed", Result: "done"},
+		{RunID: "subagent-2", AgentID: "tester", Status: "failed", Result: "boom"},
 	})
 	if !strings.Contains(out, "subagent-1") || !strings.Contains(out, "agent=tester") {
 		t.Fatalf("unexpected merged output: %s", out)
 	}
 }
 
-func TestSubagentRouterWaitReplyContextCancel(t *testing.T) {
+func TestSubagentRouterWaitRunContextCancel(t *testing.T) {
 	workspace := t.TempDir()
 	manager := NewSubagentManager(nil, workspace, nil)
-	manager.SetRunFunc(func(ctx context.Context, task *SubagentTask) (string, error) {
+	manager.SetRunFunc(func(ctx context.Context, run *SubagentRun) (string, error) {
 		<-ctx.Done()
 		return "", ctx.Err()
 	})
 	router := NewSubagentRouter(manager)
 
-	task, err := router.DispatchTask(context.Background(), RouterDispatchRequest{
+	run, err := router.DispatchRun(context.Background(), RouterDispatchRequest{
 		Task:          "long task",
 		AgentID:       "coder",
 		OriginChannel: "cli",
@@ -69,7 +69,7 @@ func TestSubagentRouterWaitReplyContextCancel(t *testing.T) {
 
 	waitCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, err := router.WaitReply(waitCtx, task.ID, 20*time.Millisecond); err == nil {
+	if _, err := router.WaitRun(waitCtx, run.ID, 20*time.Millisecond); err == nil {
 		t.Fatalf("expected context cancellation error")
 	}
 }

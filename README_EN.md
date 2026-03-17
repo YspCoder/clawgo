@@ -4,8 +4,8 @@
 
 ClawGo is not just another chat wrapper. It is a long-running, observable, recoverable, orchestrated runtime for real agent systems.
 
-- 👀 **Observable**: agent topology, internal streams, task audit, and EKG visibility
-- 🔁 **Recoverable**: persisted runtime state, restart recovery, progress-aware watchdog
+- 👀 **Observable**: agent topology, internal streams, task audit, and runtime visibility
+- 🔁 **Recoverable**: persisted runtime state and restart recovery
 - 🧩 **Orchestrated**: `main agent -> subagent -> main`, with local and remote node branches
 - ⚙️ **Operational**: `config.json`, `AGENT.md`, hot reload, WebUI, declarative registry
 
@@ -46,19 +46,14 @@ In one line:
 - `agent_messages.jsonl`
 - running tasks can recover after restart
 
-### 3. Progress-aware watchdog
-
-- system timeouts go through one global watchdog
-- active tasks are extended instead of being killed by a fixed wall-clock timeout
-- tasks time out only when they stop making progress
-
-### 4. Engineering-first agent configuration
+### 3. Engineering-first agent configuration
 
 - agent registry in `config.json`
 - `system_prompt_file -> AGENT.md`
-- WebUI for editing, hot reload, and runtime inspection
+- WebUI for inspection, account management, and runtime status
+- runtime config changes are file-driven, not edited from WebUI
 
-### 5. Built for long-running use
+### 4. Built for long-running use
 
 - local-first
 - Go-native runtime
@@ -183,7 +178,7 @@ ClawGo currently has four layers:
 There are now two configuration views:
 
 - the persisted file still uses the raw structure shown below
-- the WebUI and runtime-facing APIs prefer a normalized view:
+- read APIs may expose a normalized view:
   - `core`
   - `runtime`
 
@@ -224,12 +219,8 @@ Notes:
   - `agents.defaults.execution`
   - `agents.defaults.summary_policy`
   - `agents.router.policy`
-- the WebUI now saves through the normalized schema first:
-  - `core.default_provider`
-  - `core.main_agent_id`
-  - `core.subagents`
-  - `runtime.router`
-  - `runtime.providers`
+- WebUI config editing is disabled
+- keep runtime config changes in `config.json`
 - runtime panels now consume the unified `runtime snapshot / runtime live`
 - enabled local subagents must define `system_prompt_file`
 - remote branches require:
@@ -331,6 +322,7 @@ ClawGo does not treat all agents as one shared context.
   - writes to its own memory namespace
 - `runtime store`
   - persists runs, events, threads, and messages
+  - keeps the task model internal to the runtime instead of exposing a public task control surface
 
 This gives you:
 

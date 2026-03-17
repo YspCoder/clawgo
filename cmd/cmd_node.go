@@ -833,23 +833,17 @@ func executeNodeAgentTask(ctx context.Context, info nodes.NodeInfo, req nodes.Re
 		}, nil
 	}
 
-	out, err := loop.HandleSubagentRuntime(ctx, "dispatch_and_wait", map[string]interface{}{
-		"task":             strings.TrimSpace(req.Task),
-		"agent_id":         remoteAgentID,
-		"channel":          "node",
-		"chat_id":          info.ID,
-		"wait_timeout_sec": float64(120),
-	})
+	out, err := loop.DispatchSubagentAndWait(ctx, tools.RouterDispatchRequest{
+		Task:             strings.TrimSpace(req.Task),
+		AgentID:          remoteAgentID,
+		NotifyMainPolicy: "internal_only",
+		OriginChannel:    "node",
+		OriginChatID:     info.ID,
+	}, 120*time.Second)
 	if err != nil {
 		return nodes.Response{}, err
 	}
-	payload, _ := out.(map[string]interface{})
-	result := strings.TrimSpace(fmt.Sprint(payload["merged"]))
-	if result == "" {
-		if reply, ok := payload["reply"].(*tools.RouterReply); ok {
-			result = strings.TrimSpace(reply.Result)
-		}
-	}
+	result := strings.TrimSpace(out)
 	artifacts, err := collectNodeArtifacts(executor.workspace, req.Args)
 	if err != nil {
 		return nodes.Response{}, err

@@ -5,25 +5,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/YspCoder/clawgo/pkg/config"
 )
 
-type onboardOptions struct {
-	syncWebUIOnly bool
-}
-
 func onboard() {
-	opts := parseOnboardOptions(os.Args[2:])
-	if opts.syncWebUIOnly {
-		cfg := config.DefaultConfig()
-		workspace := cfg.WorkspacePath()
-		createWorkspaceTemplates(workspace, true)
-		fmt.Printf("%s embedded WebUI refreshed in %s\n", logo, filepath.Join(workspace, "webui"))
-		return
-	}
-
 	configPath := getConfigPath()
 
 	if _, err := os.Stat(configPath); err == nil {
@@ -44,7 +30,7 @@ func onboard() {
 	}
 
 	workspace := cfg.WorkspacePath()
-	createWorkspaceTemplates(workspace, false)
+	createWorkspaceTemplates(workspace)
 
 	fmt.Printf("%s clawgo is ready!\n", logo)
 	fmt.Println("\nNext steps:")
@@ -73,16 +59,6 @@ func ensureConfigOnboard(configPath string, defaults *config.Config) (string, er
 		return "overwritten", nil
 	}
 	return "created", nil
-}
-
-func parseOnboardOptions(args []string) onboardOptions {
-	var opts onboardOptions
-	for _, arg := range args {
-		if strings.EqualFold(strings.TrimSpace(arg), "--sync-webui") {
-			opts.syncWebUIOnly = true
-		}
-	}
-	return opts
 }
 
 func copyEmbeddedToTarget(targetDir string, overwrite func(relPath string) bool) error {
@@ -127,15 +103,8 @@ func copyEmbeddedToTarget(targetDir string, overwrite func(relPath string) bool)
 	})
 }
 
-func createWorkspaceTemplates(workspace string, overwriteWebUI bool) {
-	var overwrite func(relPath string) bool
-	if overwriteWebUI {
-		overwrite = func(relPath string) bool {
-			relPath = filepath.ToSlash(relPath)
-			return strings.HasPrefix(relPath, "webui/")
-		}
-	}
-	err := copyEmbeddedToTarget(workspace, overwrite)
+func createWorkspaceTemplates(workspace string) {
+	err := copyEmbeddedToTarget(workspace, nil)
 	if err != nil {
 		fmt.Printf("Error copying workspace templates: %v\n", err)
 	}

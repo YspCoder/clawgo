@@ -236,7 +236,7 @@ func TestExecuteNodeRequestRunsLocalMainAgentTask(t *testing.T) {
 	}
 }
 
-func TestExecuteNodeRequestRunsLocalSubagentTask(t *testing.T) {
+func TestExecuteNodeRequestRunsLocalSubagentRun(t *testing.T) {
 	prevCfg := globalConfigPathOverride
 	prevProviderFactory := nodeProviderFactory
 	prevLoopFactory := nodeAgentLoopFactory
