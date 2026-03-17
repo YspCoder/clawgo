@@ -172,6 +172,35 @@ func TestHandleWebUIConfigPostSavesNormalizedConfig(t *testing.T) {
 	}
 }
 
+func TestWithCORSEchoesPreflightHeaders(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "")
+	handler := srv.withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/config", nil)
+	req.Header.Set("Origin", "https://dash.clawgo.dev")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "authorization,content-type,x-clawgo-client")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://dash.clawgo.dev" {
+		t.Fatalf("unexpected allow origin: %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "POST" {
+		t.Fatalf("unexpected allow methods: %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "authorization,content-type,x-clawgo-client" {
+		t.Fatalf("unexpected allow headers: %q", got)
+	}
+}
+
 func TestHandleWebUISessionsHidesInternalSessionsByDefault(t *testing.T) {
 	t.Parallel()
 

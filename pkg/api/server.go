@@ -238,10 +238,25 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		next = http.NotFoundHandler()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With")
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		allowMethods := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method"))
+		if allowMethods == "" {
+			allowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+		}
+		w.Header().Set("Access-Control-Allow-Methods", allowMethods)
+		allowHeaders := strings.TrimSpace(r.Header.Get("Access-Control-Request-Headers"))
+		if allowHeaders == "" {
+			allowHeaders = "Authorization, Content-Type, X-Requested-With, Accept, Origin, Cache-Control, Pragma"
+		}
+		w.Header().Set("Access-Control-Allow-Headers", allowHeaders)
 		w.Header().Set("Access-Control-Expose-Headers", "*")
+		w.Header().Set("Access-Control-Max-Age", "86400")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
