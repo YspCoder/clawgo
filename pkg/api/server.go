@@ -245,6 +245,7 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		} else {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		allowMethods := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method"))
 		if allowMethods == "" {
 			allowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"

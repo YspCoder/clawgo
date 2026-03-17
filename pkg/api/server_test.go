@@ -193,6 +193,9 @@ func TestWithCORSEchoesPreflightHeaders(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://dash.clawgo.dev" {
 		t.Fatalf("unexpected allow origin: %q", got)
 	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("unexpected allow credentials: %q", got)
+	}
 	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "POST" {
 		t.Fatalf("unexpected allow methods: %q", got)
 	}
