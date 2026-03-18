@@ -21,13 +21,14 @@ import (
 )
 
 const (
-	codexCompatBaseURL   = "https://chatgpt.com/backend-api/codex"
-	codexClientVersion   = "0.101.0"
-	codexCompatUserAgent = "codex_cli_rs/0.101.0 (Mac OS 26.0.1; arm64) Apple_Terminal/464"
-	qwenCompatBaseURL    = "https://portal.qwen.ai/v1"
-	qwenCompatUserAgent  = "QwenCode/0.10.3 (darwin; arm64)"
-	kimiCompatBaseURL    = "https://api.kimi.com/coding/v1"
-	kimiCompatUserAgent  = "KimiCLI/1.10.6"
+	codexCompatBaseURL    = "https://chatgpt.com/backend-api/codex"
+	codexClientVersion    = "0.115.0-alpha.27"
+	codexCompatOriginator = "codex-tui"
+	codexCompatUserAgent  = "codex-tui/0.115.0-alpha.27 (Mac OS 26.0.1; arm64) Apple_Terminal/464"
+	qwenCompatBaseURL     = "https://portal.qwen.ai/v1"
+	qwenCompatUserAgent   = "QwenCode/0.10.3 (darwin; arm64)"
+	kimiCompatBaseURL     = "https://api.kimi.com/coding/v1"
+	kimiCompatUserAgent   = "KimiCLI/1.10.6"
 )
 
 type providerAPIRuntimeState struct {
@@ -910,7 +911,7 @@ func applyAttemptProviderHeaders(req *http.Request, attempt authAttempt, provide
 		req.Header.Set("Accept", "application/json")
 	}
 	if attempt.kind != "api_key" {
-		req.Header.Set("Originator", "codex_cli_rs")
+		req.Header.Set("Originator", codexCompatOriginator)
 		if attempt.session != nil && strings.TrimSpace(attempt.session.AccountID) != "" {
 			req.Header.Set("Chatgpt-Account-Id", strings.TrimSpace(attempt.session.AccountID))
 		}

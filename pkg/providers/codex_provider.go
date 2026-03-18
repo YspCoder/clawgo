@@ -846,7 +846,7 @@ func applyCodexWebsocketHeaders(headers http.Header, attempt authAttempt, option
 	}
 	headers.Set("User-Agent", codexCompatUserAgent)
 	if attempt.kind != "api_key" {
-		headers.Set("Originator", "codex_cli_rs")
+		headers.Set("Originator", codexCompatOriginator)
 		if attempt.session != nil {
 			accountID := firstNonEmpty(
 				strings.TrimSpace(attempt.session.AccountID),

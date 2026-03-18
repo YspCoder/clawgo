@@ -99,7 +99,7 @@ func TestApplyAttemptProviderHeaders_CodexOAuth(t *testing.T) {
 	if got := req.Header.Get("Accept"); got != "text/event-stream" {
 		t.Fatalf("expected sse accept header, got %q", got)
 	}
-	if got := req.Header.Get("Originator"); got != "codex_cli_rs" {
+	if got := req.Header.Get("Originator"); got != codexCompatOriginator {
 		t.Fatalf("expected codex originator, got %q", got)
 	}
 	if got := req.Header.Get("Chatgpt-Account-Id"); got != "acct_123" {
