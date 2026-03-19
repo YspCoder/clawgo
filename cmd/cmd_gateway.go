@@ -175,14 +175,14 @@ func gatewayCmd() {
 	}
 	bindAgentLoopHandlers(agentLoop)
 	var reloadMu sync.Mutex
-	var applyReload func() error
-	registryServer.SetConfigAfterHook(func() error {
+	var applyReload func(forceRuntimeReload bool) error
+	registryServer.SetConfigAfterHook(func(forceRuntimeReload bool) error {
 		reloadMu.Lock()
 		defer reloadMu.Unlock()
 		if applyReload == nil {
 			return fmt.Errorf("reload handler not ready")
 		}
-		return applyReload()
+		return applyReload(forceRuntimeReload)
 	})
 	whatsAppBridge, whatsAppEmbedded := setupEmbeddedWhatsAppBridge(ctx, cfg)
 	if whatsAppBridge != nil {
@@ -341,7 +341,7 @@ func gatewayCmd() {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, gatewayNotifySignals()...)
-	applyReload = func() error {
+	applyReload = func(forceRuntimeReload bool) error {
 		fmt.Println("\nReloading config...")
 		newCfg, err := config.LoadConfig(getConfigPath())
 		if err != nil {
@@ -357,7 +357,7 @@ func gatewayCmd() {
 			fmt.Printf("Error starting heartbeat service: %v\n", err)
 		}
 
-		if reflect.DeepEqual(cfg, newCfg) {
+		if !forceRuntimeReload && reflect.DeepEqual(cfg, newCfg) {
 			fmt.Println("Config unchanged, skip reload")
 			return nil
 		}
@@ -376,7 +376,7 @@ func gatewayCmd() {
 			reflect.DeepEqual(cfg.Tools, newCfg.Tools) &&
 			reflect.DeepEqual(cfg.Channels, newCfg.Channels)
 
-		if runtimeSame {
+		if runtimeSame && !forceRuntimeReload {
 			configureLogging(newCfg)
 			sentinelService.Stop()
 			sentinelService = sentinel.NewService(
@@ -451,7 +451,7 @@ func gatewayCmd() {
 			switch {
 			case isGatewayReloadSignal(sig):
 				reloadMu.Lock()
-				err := applyReload()
+				err := applyReload(false)
 				reloadMu.Unlock()
 				if err != nil {
 					fmt.Printf("Reload failed: %v\n", err)

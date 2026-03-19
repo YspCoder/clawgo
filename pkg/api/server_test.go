@@ -100,7 +100,10 @@ func TestHandleWebUIConfigPostSavesRawConfig(t *testing.T) {
 	srv := NewServer("127.0.0.1", 0, "")
 	srv.SetConfigPath(cfgPath)
 	hookCalled := 0
-	srv.SetConfigAfterHook(func() error {
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error {
+		if forceRuntimeReload {
+			t.Fatalf("expected raw config save to use non-forced reload")
+		}
 		hookCalled++
 		return nil
 	})
@@ -150,7 +153,12 @@ func TestHandleWebUIConfigPostSavesNormalizedConfig(t *testing.T) {
 
 	srv := NewServer("127.0.0.1", 0, "")
 	srv.SetConfigPath(cfgPath)
-	srv.SetConfigAfterHook(func() error { return nil })
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error {
+		if forceRuntimeReload {
+			t.Fatalf("expected normalized config save to use non-forced reload")
+		}
+		return nil
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/config?mode=normalized", strings.NewReader(`{"core":{"gateway":{"host":"127.0.0.1","port":18790},"tools":{"shell_enabled":false,"mcp_enabled":true}},"runtime":{"router":{"enabled":true,"strategy":"rules_first","max_hops":2,"default_timeout_sec":90},"providers":{"openai":{"api_base":"https://api.openai.com/v1","auth":"bearer","timeout_sec":150}}}}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -169,6 +177,45 @@ func TestHandleWebUIConfigPostSavesNormalizedConfig(t *testing.T) {
 	}
 	if updated.Tools.Shell.Enabled {
 		t.Fatalf("expected shell tool to be disabled by normalized save")
+	}
+}
+
+func TestSaveProviderConfigForcesRuntimeReload(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Logging.Enabled = false
+	cfg.Models.Providers["openai"] = cfgpkg.ProviderConfig{
+		APIBase:    "https://api.openai.com/v1",
+		Auth:       "oauth",
+		Models:     []string{"gpt-5"},
+		TimeoutSec: 120,
+		OAuth: cfgpkg.ProviderOAuthConfig{
+			Provider:       "codex",
+			CredentialFile: filepath.Join(tmp, "auth.json"),
+		},
+	}
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetConfigPath(cfgPath)
+
+	forced := false
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error {
+		forced = forceRuntimeReload
+		return nil
+	})
+
+	pc := cfg.Models.Providers["openai"]
+	if err := srv.saveProviderConfig(cfg, "openai", pc); err != nil {
+		t.Fatalf("save provider config: %v", err)
+	}
+	if !forced {
+		t.Fatalf("expected provider config save to force runtime reload")
 	}
 }
 

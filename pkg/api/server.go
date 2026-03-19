@@ -48,7 +48,7 @@ type Server struct {
 	logFilePath    string
 	onChat         func(ctx context.Context, sessionKey, content string) (string, error)
 	onChatHistory  func(sessionKey string) []map[string]interface{}
-	onConfigAfter  func() error
+	onConfigAfter  func(forceRuntimeReload bool) error
 	onCron         func(action string, args map[string]interface{}) (interface{}, error)
 	onToolsCatalog func() interface{}
 	whatsAppBridge *channels.WhatsAppBridgeService
@@ -85,7 +85,7 @@ func (s *Server) SetChatHandler(fn func(ctx context.Context, sessionKey, content
 func (s *Server) SetChatHistoryHandler(fn func(sessionKey string) []map[string]interface{}) {
 	s.onChatHistory = fn
 }
-func (s *Server) SetConfigAfterHook(fn func() error) { s.onConfigAfter = fn }
+func (s *Server) SetConfigAfterHook(fn func(forceRuntimeReload bool) error) { s.onConfigAfter = fn }
 func (s *Server) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
 }
@@ -414,7 +414,7 @@ func (s *Server) persistWebUIConfig(cfg *cfgpkg.Config) error {
 		return err
 	}
 	if s.onConfigAfter != nil {
-		return s.onConfigAfter()
+		return s.onConfigAfter(false)
 	}
 	return requestSelfReloadSignal()
 }
@@ -978,7 +978,9 @@ func (s *Server) saveProviderConfig(cfg *cfgpkg.Config, name string, pc cfgpkg.P
 		return err
 	}
 	if s.onConfigAfter != nil {
-		if err := s.onConfigAfter(); err != nil {
+		// Provider updates may only change external credential file contents,
+		// so force a runtime rebuild even when config JSON remains identical.
+		if err := s.onConfigAfter(true); err != nil {
 			return err
 		}
 	} else {
