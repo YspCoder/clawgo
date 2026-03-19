@@ -67,6 +67,9 @@ type AgentLoop struct {
 	subagentDigestMu     sync.Mutex
 	subagentDigestDelay  time.Duration
 	subagentDigests      map[string]*subagentDigestState
+	runMu                sync.Mutex
+	runCancel            context.CancelFunc
+	runWG                sync.WaitGroup
 }
 
 type providerCandidate struct {
@@ -403,19 +406,34 @@ func (al *AgentLoop) readSubagentPromptFile(relPath string) string {
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
+	al.runMu.Lock()
+	if al.runCancel != nil {
+		al.runMu.Unlock()
+		return fmt.Errorf("agent loop already running")
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	al.runCancel = cancel
 	al.running = true
+	al.runMu.Unlock()
+	defer func() {
+		al.runMu.Lock()
+		al.running = false
+		al.runCancel = nil
+		al.runMu.Unlock()
+	}()
 
-	shards := al.buildSessionShards(ctx)
+	shards := al.buildSessionShards(runCtx)
 	defer func() {
 		for _, ch := range shards {
 			close(ch)
 		}
+		al.runWG.Wait()
 	}()
 
 	for al.running {
-		msg, ok := al.bus.ConsumeInbound(ctx)
+		msg, ok := al.bus.ConsumeInbound(runCtx)
 		if !ok {
-			if ctx.Err() != nil {
+			if runCtx.Err() != nil {
 				return nil
 			}
 			continue
@@ -423,7 +441,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		idx := sessionShardIndex(msg.SessionKey, len(shards))
 		select {
 		case shards[idx] <- msg:
-		case <-ctx.Done():
+		case <-runCtx.Done():
 			return nil
 		}
 	}
@@ -432,7 +450,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 }
 
 func (al *AgentLoop) Stop() {
+	al.runMu.Lock()
+	cancel := al.runCancel
+	al.runMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	al.running = false
+	al.runWG.Wait()
 }
 
 func (al *AgentLoop) buildSessionShards(ctx context.Context) []chan bus.InboundMessage {
@@ -440,7 +465,9 @@ func (al *AgentLoop) buildSessionShards(ctx context.Context) []chan bus.InboundM
 	shards := make([]chan bus.InboundMessage, count)
 	for i := 0; i < count; i++ {
 		shards[i] = make(chan bus.InboundMessage, 64)
+		al.runWG.Add(1)
 		go func(ch <-chan bus.InboundMessage) {
+			defer al.runWG.Done()
 			for msg := range ch {
 				al.processInbound(ctx, msg)
 			}

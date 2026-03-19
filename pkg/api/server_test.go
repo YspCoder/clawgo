@@ -100,7 +100,10 @@ func TestHandleWebUIConfigPostSavesRawConfig(t *testing.T) {
 	srv := NewServer("127.0.0.1", 0, "")
 	srv.SetConfigPath(cfgPath)
 	hookCalled := 0
-	srv.SetConfigAfterHook(func() error {
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error {
+		if forceRuntimeReload {
+			t.Fatalf("expected raw config save to use non-forced reload")
+		}
 		hookCalled++
 		return nil
 	})
@@ -150,7 +153,12 @@ func TestHandleWebUIConfigPostSavesNormalizedConfig(t *testing.T) {
 
 	srv := NewServer("127.0.0.1", 0, "")
 	srv.SetConfigPath(cfgPath)
-	srv.SetConfigAfterHook(func() error { return nil })
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error {
+		if forceRuntimeReload {
+			t.Fatalf("expected normalized config save to use non-forced reload")
+		}
+		return nil
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/config?mode=normalized", strings.NewReader(`{"core":{"gateway":{"host":"127.0.0.1","port":18790},"tools":{"shell_enabled":false,"mcp_enabled":true}},"runtime":{"router":{"enabled":true,"strategy":"rules_first","max_hops":2,"default_timeout_sec":90},"providers":{"openai":{"api_base":"https://api.openai.com/v1","auth":"bearer","timeout_sec":150}}}}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -246,6 +254,98 @@ func TestHandleWebUISessionsHidesInternalSessionsByDefault(t *testing.T) {
 	}
 	if len(payload.Sessions) != 1 || payload.Sessions[0].Key != "review-api" {
 		t.Fatalf("unexpected sessions: %+v", payload.Sessions)
+	}
+}
+
+func TestSaveProviderConfigForcesRuntimeReload(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Logging.Enabled = false
+	cfg.Models.Providers["openai"] = cfgpkg.ProviderConfig{
+		APIBase:    "https://api.openai.com/v1",
+		Auth:       "oauth",
+		Models:     []string{"gpt-5"},
+		TimeoutSec: 120,
+		OAuth: cfgpkg.ProviderOAuthConfig{
+			Provider:       "codex",
+			CredentialFile: filepath.Join(tmp, "auth.json"),
+		},
+	}
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetConfigPath(cfgPath)
+
+	forced := false
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error {
+		forced = forceRuntimeReload
+		return nil
+	})
+
+	pc := cfg.Models.Providers["openai"]
+	if err := srv.saveProviderConfig(cfg, "openai", pc); err != nil {
+		t.Fatalf("save provider config: %v", err)
+	}
+	if !forced {
+		t.Fatalf("expected provider config save to force runtime reload")
+	}
+}
+
+func TestHandleWebUIMemoryListsAndReadsWorkspaceMemoryFile(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "MEMORY.md"), []byte("# long-term\n"), 0o644); err != nil {
+		t.Fatalf("write workspace memory: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmp, "memory"), 0o755); err != nil {
+		t.Fatalf("mkdir memory dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "memory", "2026-03-19.md"), []byte("daily\n"), 0o644); err != nil {
+		t.Fatalf("write daily memory: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetWorkspacePath(tmp)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/memory", nil)
+	listRec := httptest.NewRecorder()
+	srv.handleWebUIMemory(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", listRec.Code, listRec.Body.String())
+	}
+	var listPayload struct {
+		OK    bool     `json:"ok"`
+		Files []string `json:"files"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listPayload); err != nil {
+		t.Fatalf("decode list payload: %v", err)
+	}
+	if len(listPayload.Files) < 2 || listPayload.Files[0] != "MEMORY.md" {
+		t.Fatalf("expected MEMORY.md in memory file list, got %+v", listPayload.Files)
+	}
+
+	readReq := httptest.NewRequest(http.MethodGet, "/api/memory?path=MEMORY.md", nil)
+	readRec := httptest.NewRecorder()
+	srv.handleWebUIMemory(readRec, readReq)
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", readRec.Code, readRec.Body.String())
+	}
+	var readPayload struct {
+		OK      bool   `json:"ok"`
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(readRec.Body.Bytes(), &readPayload); err != nil {
+		t.Fatalf("decode read payload: %v", err)
+	}
+	if readPayload.Path != "MEMORY.md" || readPayload.Content != "# long-term\n" {
+		t.Fatalf("unexpected memory payload: %+v", readPayload)
 	}
 }
 
