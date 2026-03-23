@@ -92,6 +92,28 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
+	if m.config.Channels.Weixin.Enabled {
+		if len(m.config.Channels.Weixin.Accounts) == 0 && strings.TrimSpace(m.config.Channels.Weixin.BotToken) == "" {
+			logger.WarnCF("channels", 0, map[string]interface{}{
+				"channel": "weixin",
+				"error":   "missing accounts",
+			})
+		} else {
+			weixin, err := NewWeixinChannel(m.config.Channels.Weixin, m.bus)
+			if err != nil {
+				logger.ErrorCF("channels", 0, map[string]interface{}{
+					logger.FieldChannel: "weixin",
+					logger.FieldError:   err.Error(),
+				})
+			} else {
+				m.channels["weixin"] = weixin
+				logger.InfoCF("channels", 0, map[string]interface{}{
+					logger.FieldChannel: "weixin",
+				})
+			}
+		}
+	}
+
 	if m.config.Channels.WhatsApp.Enabled {
 		if m.config.Channels.WhatsApp.BridgeURL == "" {
 			logger.WarnC("channels", logger.C0009)
@@ -413,6 +435,12 @@ func (m *Manager) GetEnabledChannels() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+func (m *Manager) GetChannel(name string) (Channel, bool) {
+	cur, _ := m.snapshot.Load().(map[string]Channel)
+	ch, ok := cur[strings.TrimSpace(name)]
+	return ch, ok
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

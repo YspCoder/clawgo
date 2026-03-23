@@ -187,6 +187,9 @@ func Validate(cfg *Config) []error {
 	if cfg.Channels.OutboundDedupeWindowSeconds <= 0 {
 		errs = append(errs, fmt.Errorf("channels.outbound_dedupe_window_seconds must be > 0"))
 	}
+	if cfg.Channels.Weixin.Enabled && len(cfg.Channels.Weixin.Accounts) == 0 && strings.TrimSpace(cfg.Channels.Weixin.BotToken) == "" {
+		errs = append(errs, fmt.Errorf("channels.weixin.accounts or channels.weixin.bot_token is required when channels.weixin.enabled=true"))
+	}
 	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token == "" {
 		errs = append(errs, fmt.Errorf("channels.telegram.token is required when channels.telegram.enabled=true"))
 	}

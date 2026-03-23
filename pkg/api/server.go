@@ -53,6 +53,7 @@ type Server struct {
 	onToolsCatalog func() interface{}
 	whatsAppBridge *channels.WhatsAppBridgeService
 	whatsAppBase   string
+	weixinChannel  *channels.WeixinChannel
 	oauthFlowMu    sync.Mutex
 	oauthFlows     map[string]*providers.OAuthPendingFlow
 	extraRoutesMu  sync.RWMutex
@@ -107,6 +108,10 @@ func (s *Server) SetProtectedRoute(path string, handler http.Handler) {
 func (s *Server) SetWhatsAppBridge(service *channels.WhatsAppBridgeService, basePath string) {
 	s.whatsAppBridge = service
 	s.whatsAppBase = strings.TrimSpace(basePath)
+}
+
+func (s *Server) SetWeixinChannel(ch *channels.WeixinChannel) {
+	s.weixinChannel = ch
 }
 
 func (s *Server) handleWhatsAppBridgeWS(w http.ResponseWriter, r *http.Request) {
@@ -190,6 +195,12 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/whatsapp/status", s.handleWebUIWhatsAppStatus)
 	mux.HandleFunc("/api/whatsapp/logout", s.handleWebUIWhatsAppLogout)
 	mux.HandleFunc("/api/whatsapp/qr.svg", s.handleWebUIWhatsAppQR)
+	mux.HandleFunc("/api/weixin/status", s.handleWebUIWeixinStatus)
+	mux.HandleFunc("/api/weixin/login/start", s.handleWebUIWeixinLoginStart)
+	mux.HandleFunc("/api/weixin/login/cancel", s.handleWebUIWeixinLoginCancel)
+	mux.HandleFunc("/api/weixin/qr.svg", s.handleWebUIWeixinQR)
+	mux.HandleFunc("/api/weixin/accounts/remove", s.handleWebUIWeixinAccountRemove)
+	mux.HandleFunc("/api/weixin/accounts/default", s.handleWebUIWeixinAccountDefault)
 	mux.HandleFunc("/api/upload", s.handleWebUIUpload)
 	mux.HandleFunc("/api/cron", s.handleWebUICron)
 	mux.HandleFunc("/api/skills", s.handleWebUISkills)
@@ -1318,6 +1329,227 @@ func (s *Server) webUIWhatsAppStatusPayload(ctx context.Context) (map[string]int
 	}, http.StatusOK
 }
 
+func (s *Server) handleWebUIWeixinStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	payload, code := s.webUIWeixinStatusPayload(r.Context())
+	writeJSONStatus(w, code, payload)
+}
+
+func (s *Server) handleWebUIWeixinLoginStart(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.weixinChannel == nil {
+		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if _, err := s.weixinChannel.StartLogin(r.Context()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	payload, code := s.webUIWeixinStatusPayload(r.Context())
+	writeJSONStatus(w, code, payload)
+}
+
+func (s *Server) handleWebUIWeixinLoginCancel(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.weixinChannel == nil {
+		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		LoginID string `json:"login_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	if !s.weixinChannel.CancelPendingLogin(body.LoginID) {
+		http.Error(w, "login_id not found", http.StatusNotFound)
+		return
+	}
+	payload, code := s.webUIWeixinStatusPayload(r.Context())
+	writeJSONStatus(w, code, payload)
+}
+
+func (s *Server) handleWebUIWeixinQR(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	payload, code := s.webUIWeixinStatusPayload(r.Context())
+	if code != http.StatusOK {
+		http.Error(w, "qr unavailable", http.StatusNotFound)
+		return
+	}
+	qrCode := ""
+	loginID := strings.TrimSpace(r.URL.Query().Get("login_id"))
+	if loginID != "" && s.weixinChannel != nil {
+		if pending := s.weixinChannel.PendingLoginByID(loginID); pending != nil {
+			qrCode = fallbackString(pending.QRCodeImgContent, pending.QRCode)
+		}
+	}
+	if qrCode == "" {
+		pendingItems, _ := payload["pending_logins"].([]interface{})
+		if len(pendingItems) > 0 {
+			if pending, ok := pendingItems[0].(map[string]interface{}); ok {
+				qrCode = fallbackString(stringFromMap(pending, "qr_code_img_content"), stringFromMap(pending, "qr_code"))
+			}
+		}
+	}
+	if strings.TrimSpace(qrCode) == "" {
+		http.Error(w, "qr unavailable", http.StatusNotFound)
+		return
+	}
+	qrImage, err := qr.Encode(strings.TrimSpace(qrCode), qr.M)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	_, _ = io.WriteString(w, renderQRCodeSVG(qrImage, 8, 24))
+}
+
+func (s *Server) handleWebUIWeixinAccountRemove(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.weixinChannel == nil {
+		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		BotID string `json:"bot_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	if err := s.weixinChannel.RemoveAccount(body.BotID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	payload, code := s.webUIWeixinStatusPayload(r.Context())
+	writeJSONStatus(w, code, payload)
+}
+
+func (s *Server) handleWebUIWeixinAccountDefault(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.weixinChannel == nil {
+		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		BotID string `json:"bot_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	if err := s.weixinChannel.SetDefaultAccount(body.BotID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	payload, code := s.webUIWeixinStatusPayload(r.Context())
+	writeJSONStatus(w, code, payload)
+}
+
+func (s *Server) webUIWeixinStatusPayload(ctx context.Context) (map[string]interface{}, int) {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return map[string]interface{}{
+			"ok":    false,
+			"error": err.Error(),
+		}, http.StatusInternalServerError
+	}
+	weixinCfg := cfg.Channels.Weixin
+	if s.weixinChannel == nil {
+		return map[string]interface{}{
+			"ok":       false,
+			"enabled":  weixinCfg.Enabled,
+			"base_url": weixinCfg.BaseURL,
+			"error":    "weixin channel unavailable",
+		}, http.StatusOK
+	}
+	pendingLogins, err := s.weixinChannel.RefreshLoginStatuses(ctx)
+	if err != nil {
+		return map[string]interface{}{
+			"ok":       false,
+			"enabled":  weixinCfg.Enabled,
+			"base_url": weixinCfg.BaseURL,
+			"error":    err.Error(),
+		}, http.StatusOK
+	}
+	accounts := s.weixinChannel.ListAccounts()
+	pendingPayload := make([]map[string]interface{}, 0, len(pendingLogins))
+	for _, pending := range pendingLogins {
+		pendingPayload = append(pendingPayload, map[string]interface{}{
+			"login_id":            pendingString(pending, "login_id"),
+			"qr_code":             pendingString(pending, "qr_code"),
+			"qr_code_img_content": pendingString(pending, "qr_code_img_content"),
+			"status":              pendingString(pending, "status"),
+			"last_error":          pendingString(pending, "last_error"),
+			"updated_at":          pendingString(pending, "updated_at"),
+			"qr_available":        pending != nil && strings.TrimSpace(fallbackString(pending.QRCodeImgContent, pending.QRCode)) != "",
+		})
+	}
+	var firstPending *channels.WeixinPendingLogin
+	if len(pendingLogins) > 0 {
+		firstPending = pendingLogins[0]
+	}
+	return map[string]interface{}{
+		"ok":             true,
+		"enabled":        weixinCfg.Enabled,
+		"base_url":       fallbackString(weixinCfg.BaseURL, "https://ilinkai.weixin.qq.com"),
+		"pending_logins": pendingPayload,
+		"pending_login": map[string]interface{}{
+			"login_id":            pendingString(firstPending, "login_id"),
+			"qr_code":             pendingString(firstPending, "qr_code"),
+			"qr_code_img_content": pendingString(firstPending, "qr_code_img_content"),
+			"status":              pendingString(firstPending, "status"),
+			"last_error":          pendingString(firstPending, "last_error"),
+			"updated_at":          pendingString(firstPending, "updated_at"),
+			"qr_available":        firstPending != nil && strings.TrimSpace(fallbackString(firstPending.QRCodeImgContent, firstPending.QRCode)) != "",
+		},
+		"accounts": accounts,
+	}, http.StatusOK
+}
+
 func (s *Server) loadConfig() (*cfgpkg.Config, error) {
 	configPath := strings.TrimSpace(s.configPath)
 	if configPath == "" {
@@ -1766,6 +1998,28 @@ func fallbackString(value, fallback string) string {
 		return value
 	}
 	return strings.TrimSpace(fallback)
+}
+
+func pendingString(item *channels.WeixinPendingLogin, key string) string {
+	if item == nil {
+		return ""
+	}
+	switch strings.TrimSpace(key) {
+	case "login_id":
+		return strings.TrimSpace(item.LoginID)
+	case "qr_code":
+		return strings.TrimSpace(item.QRCode)
+	case "qr_code_img_content":
+		return strings.TrimSpace(item.QRCodeImgContent)
+	case "status":
+		return strings.TrimSpace(item.Status)
+	case "last_error":
+		return strings.TrimSpace(item.LastError)
+	case "updated_at":
+		return strings.TrimSpace(item.UpdatedAt)
+	default:
+		return ""
+	}
 }
 
 func (s *Server) handleWebUICron(w http.ResponseWriter, r *http.Request) {

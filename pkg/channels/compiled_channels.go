@@ -3,7 +3,10 @@ package channels
 import "sort"
 
 func CompiledChannelKeys() []string {
-	out := make([]string, 0, 7)
+	out := make([]string, 0, 8)
+	if weixinCompiled {
+		out = append(out, "weixin")
+	}
 	if telegramCompiled {
 		out = append(out, "telegram")
 	}

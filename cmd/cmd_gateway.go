@@ -188,6 +188,12 @@ func gatewayCmd() {
 	if whatsAppBridge != nil {
 		registryServer.SetWhatsAppBridge(whatsAppBridge, embeddedWhatsAppBridgeBasePath)
 	}
+	if rawWeixin, ok := channelManager.GetChannel("weixin"); ok {
+		if weixinChannel, ok := rawWeixin.(*channels.WeixinChannel); ok {
+			weixinChannel.SetConfigPath(getConfigPath())
+			registryServer.SetWeixinChannel(weixinChannel)
+		}
+	}
 	registryServer.SetCronHandler(func(action string, args map[string]interface{}) (interface{}, error) {
 		getStr := func(k string) string {
 			v, _ := args[k].(string)
@@ -424,6 +430,14 @@ func gatewayCmd() {
 		registryServer.SetWorkspacePath(cfg.WorkspacePath())
 		registryServer.SetLogFilePath(cfg.LogFilePath())
 		registryServer.SetWhatsAppBridge(whatsAppBridge, embeddedWhatsAppBridgeBasePath)
+		if rawWeixin, ok := channelManager.GetChannel("weixin"); ok {
+			if weixinChannel, ok := rawWeixin.(*channels.WeixinChannel); ok {
+				weixinChannel.SetConfigPath(getConfigPath())
+				registryServer.SetWeixinChannel(weixinChannel)
+			}
+		} else {
+			registryServer.SetWeixinChannel(nil)
+		}
 		sentinelService.Stop()
 		sentinelService = sentinel.NewService(
 			getConfigPath(),

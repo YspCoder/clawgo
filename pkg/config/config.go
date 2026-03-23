@@ -170,6 +170,7 @@ type ChannelsConfig struct {
 	InboundMessageIDDedupeTTLSeconds  int            `json:"inbound_message_id_dedupe_ttl_seconds" env:"CLAWGO_CHANNELS_INBOUND_MESSAGE_ID_DEDUPE_TTL_SECONDS"`
 	InboundContentDedupeWindowSeconds int            `json:"inbound_content_dedupe_window_seconds" env:"CLAWGO_CHANNELS_INBOUND_CONTENT_DEDUPE_WINDOW_SECONDS"`
 	OutboundDedupeWindowSeconds       int            `json:"outbound_dedupe_window_seconds" env:"CLAWGO_CHANNELS_OUTBOUND_DEDUPE_WINDOW_SECONDS"`
+	Weixin                            WeixinConfig   `json:"weixin"`
 	WhatsApp                          WhatsAppConfig `json:"whatsapp"`
 	Telegram                          TelegramConfig `json:"telegram"`
 	Feishu                            FeishuConfig   `json:"feishu"`
@@ -185,6 +186,27 @@ type WhatsAppConfig struct {
 	AllowFrom              []string `json:"allow_from" env:"CLAWGO_CHANNELS_WHATSAPP_ALLOW_FROM"`
 	EnableGroups           bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_WHATSAPP_ENABLE_GROUPS"`
 	RequireMentionInGroups bool     `json:"require_mention_in_groups" env:"CLAWGO_CHANNELS_WHATSAPP_REQUIRE_MENTION_IN_GROUPS"`
+}
+
+type WeixinConfig struct {
+	Enabled       bool                  `json:"enabled" env:"CLAWGO_CHANNELS_WEIXIN_ENABLED"`
+	BaseURL       string                `json:"base_url" env:"CLAWGO_CHANNELS_WEIXIN_BASE_URL"`
+	DefaultBotID  string                `json:"default_bot_id,omitempty"`
+	Accounts      []WeixinAccountConfig `json:"accounts,omitempty"`
+	AllowFrom     []string              `json:"allow_from" env:"CLAWGO_CHANNELS_WEIXIN_ALLOW_FROM"`
+	BotID         string                `json:"bot_id,omitempty" env:"CLAWGO_CHANNELS_WEIXIN_BOT_ID"`
+	BotToken      string                `json:"bot_token,omitempty" env:"CLAWGO_CHANNELS_WEIXIN_BOT_TOKEN"`
+	IlinkUserID   string                `json:"ilink_user_id,omitempty" env:"CLAWGO_CHANNELS_WEIXIN_ILINK_USER_ID"`
+	ContextToken  string                `json:"context_token,omitempty" env:"CLAWGO_CHANNELS_WEIXIN_CONTEXT_TOKEN"`
+	GetUpdatesBuf string                `json:"get_updates_buf,omitempty" env:"CLAWGO_CHANNELS_WEIXIN_GET_UPDATES_BUF"`
+}
+
+type WeixinAccountConfig struct {
+	BotID         string `json:"bot_id"`
+	BotToken      string `json:"bot_token"`
+	IlinkUserID   string `json:"ilink_user_id,omitempty"`
+	ContextToken  string `json:"context_token,omitempty"`
+	GetUpdatesBuf string `json:"get_updates_buf,omitempty"`
 }
 
 type TelegramConfig struct {
@@ -465,6 +487,13 @@ func DefaultConfig() *Config {
 			InboundMessageIDDedupeTTLSeconds:  600,
 			InboundContentDedupeWindowSeconds: 12,
 			OutboundDedupeWindowSeconds:       12,
+			Weixin: WeixinConfig{
+				Enabled:      false,
+				BaseURL:      "https://ilinkai.weixin.qq.com",
+				DefaultBotID: "",
+				Accounts:     []WeixinAccountConfig{},
+				AllowFrom:    []string{},
+			},
 			WhatsApp: WhatsAppConfig{
 				Enabled:                false,
 				BridgeURL:              "",

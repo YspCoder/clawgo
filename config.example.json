@@ -145,6 +145,13 @@
     "inbound_message_id_dedupe_ttl_seconds": 600,
     "inbound_content_dedupe_window_seconds": 12,
     "outbound_dedupe_window_seconds": 12,
+    "weixin": {
+      "enabled": false,
+      "base_url": "https://ilinkai.weixin.qq.com",
+      "default_bot_id": "",
+      "accounts": [],
+      "allow_from": []
+    },
     "telegram": {
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
