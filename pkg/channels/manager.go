@@ -93,24 +93,17 @@ func (m *Manager) initChannels() error {
 	}
 
 	if m.config.Channels.Weixin.Enabled {
-		if len(m.config.Channels.Weixin.Accounts) == 0 && strings.TrimSpace(m.config.Channels.Weixin.BotToken) == "" {
-			logger.WarnCF("channels", 0, map[string]interface{}{
-				"channel": "weixin",
-				"error":   "missing accounts",
+		weixin, err := NewWeixinChannel(m.config.Channels.Weixin, m.bus)
+		if err != nil {
+			logger.ErrorCF("channels", 0, map[string]interface{}{
+				logger.FieldChannel: "weixin",
+				logger.FieldError:   err.Error(),
 			})
 		} else {
-			weixin, err := NewWeixinChannel(m.config.Channels.Weixin, m.bus)
-			if err != nil {
-				logger.ErrorCF("channels", 0, map[string]interface{}{
-					logger.FieldChannel: "weixin",
-					logger.FieldError:   err.Error(),
-				})
-			} else {
-				m.channels["weixin"] = weixin
-				logger.InfoCF("channels", 0, map[string]interface{}{
-					logger.FieldChannel: "weixin",
-				})
-			}
+			m.channels["weixin"] = weixin
+			logger.InfoCF("channels", 0, map[string]interface{}{
+				logger.FieldChannel: "weixin",
+			})
 		}
 	}
 
