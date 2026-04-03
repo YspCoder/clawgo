@@ -5,9 +5,6 @@ OWNER="YspCoder"
 REPO="clawgo"
 BIN="clawgo"
 INSTALL_DIR="/usr/local/bin"
-VARIANT="${CLAWGO_CHANNEL_VARIANT:-full}"
-VARIANT_EXPLICIT=0
-CHANNEL_VARIANTS=(full none telegram discord feishu maixcam qq dingtalk whatsapp)
 CONFIG_DIR="$HOME/.clawgo"
 CONFIG_PATH="$CONFIG_DIR/config.json"
 WORKSPACE_DIR="$HOME/.clawgo/workspace"
@@ -15,13 +12,10 @@ LEGACY_WORKSPACE_DIR="$HOME/.openclaw/workspace"
 
 usage() {
   cat <<EOF
-Usage: $0 [--variant full|none|telegram|discord|feishu|maixcam|qq|dingtalk|whatsapp]
+Usage: $0
 
 Install or upgrade ClawGo from the latest GitHub release.
-
-Notes:
-  - Variant 'none' installs the no-channel build.
-  - OpenClaw migration is offered only when a legacy workspace is detected.
+OpenClaw migration is offered only when a legacy workspace is detected.
 EOF
 }
 
@@ -80,29 +74,9 @@ tty_read() {
   printf -v "$__var_name" '%s' "$__reply"
 }
 
-is_valid_variant() {
-  local candidate="$1"
-  local item
-  for item in "${CHANNEL_VARIANTS[@]}"; do
-    if [[ "$item" == "$candidate" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --variant)
-        if [[ $# -lt 2 ]]; then
-          warn "--variant requires a value"
-          exit 1
-        fi
-        VARIANT="$2"
-        VARIANT_EXPLICIT=1
-        shift 2
-        ;;
       -h|--help)
         usage
         exit 0
@@ -114,65 +88,6 @@ parse_args() {
         ;;
     esac
   done
-}
-
-choose_variant() {
-  if ! is_valid_variant "$VARIANT"; then
-    warn "Unsupported variant: $VARIANT"
-    exit 1
-  fi
-
-  if [[ "$VARIANT_EXPLICIT" == "1" ]]; then
-    log "Selected variant: $VARIANT"
-    return
-  fi
-
-  if [[ ! -r /dev/tty ]]; then
-    log "Selected variant: $VARIANT"
-    return
-  fi
-
-  log "Choose install variant:"
-  log "  1. full          Full build with all channels"
-  log "  2. none          No-channel build"
-  log "  3. telegram      Telegram-only build"
-  log "  4. discord       Discord-only build"
-  log "  5. feishu        Feishu-only build"
-  log "  6. maixcam       MaixCam-only build"
-  log "  7. qq            QQ-only build"
-  log "  8. dingtalk      DingTalk-only build"
-  log "  9. whatsapp      WhatsApp-only build"
-
-  local choice default_choice
-  case "$VARIANT" in
-    full) default_choice="1" ;;
-    none) default_choice="2" ;;
-    telegram) default_choice="3" ;;
-    discord) default_choice="4" ;;
-    feishu) default_choice="5" ;;
-    maixcam) default_choice="6" ;;
-    qq) default_choice="7" ;;
-    dingtalk) default_choice="8" ;;
-    whatsapp) default_choice="9" ;;
-    *) default_choice="1" ;;
-  esac
-  tty_read choice "Enter your choice (1-9, default $default_choice): " "$default_choice"
-  case "$choice" in
-    1) VARIANT="full" ;;
-    2) VARIANT="none" ;;
-    3) VARIANT="telegram" ;;
-    4) VARIANT="discord" ;;
-    5) VARIANT="feishu" ;;
-    6) VARIANT="maixcam" ;;
-    7) VARIANT="qq" ;;
-    8) VARIANT="dingtalk" ;;
-    9) VARIANT="whatsapp" ;;
-    *)
-      warn "Invalid variant selection: $choice"
-      exit 1
-      ;;
-  esac
-  log "Selected variant: $VARIANT"
 }
 
 detect_platform() {
@@ -208,14 +123,7 @@ fetch_latest_tag() {
 }
 
 install_binary() {
-  local suffix=""
-  if [[ "$VARIANT" == "none" ]]; then
-    suffix="-nochannels"
-  elif [[ "$VARIANT" != "full" ]]; then
-    suffix="-$VARIANT"
-  fi
-
-  local file="${BIN}-${OS}-${ARCH}${suffix}.tar.gz"
+  local file="${BIN}-${OS}-${ARCH}.tar.gz"
   local url="https://github.com/$OWNER/$REPO/releases/download/$TAG/$file"
   local out="$TMPDIR/$file"
 
@@ -226,10 +134,10 @@ install_binary() {
   local extracted_bin=""
   if [[ -f "$TMPDIR/$BIN" ]]; then
     extracted_bin="$TMPDIR/$BIN"
-  elif [[ -f "$TMPDIR/${BIN}-${OS}-${ARCH}${suffix}" ]]; then
-    extracted_bin="$TMPDIR/${BIN}-${OS}-${ARCH}${suffix}"
+  elif [[ -f "$TMPDIR/${BIN}-${OS}-${ARCH}" ]]; then
+    extracted_bin="$TMPDIR/${BIN}-${OS}-${ARCH}"
   else
-    extracted_bin="$(find "$TMPDIR" -maxdepth 3 -type f \( -name "$BIN" -o -name "${BIN}-${OS}-${ARCH}${suffix}" -o -name "${BIN}-*" \) ! -name "*.tar.gz" ! -name "*.zip" | head -n1)"
+    extracted_bin="$(find "$TMPDIR" -maxdepth 3 -type f \( -name "$BIN" -o -name "${BIN}-${OS}-${ARCH}" -o -name "${BIN}-*" \) ! -name "*.tar.gz" ! -name "*.zip" | head -n1)"
   fi
 
   if [[ -z "$extracted_bin" || ! -f "$extracted_bin" ]]; then
@@ -394,7 +302,6 @@ main() {
 
   detect_platform
   fetch_latest_tag
-  choose_variant
 
   TMPDIR="$(mktemp -d)"
   trap 'rm -rf "$TMPDIR"' EXIT

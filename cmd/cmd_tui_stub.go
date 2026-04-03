@@ -8,5 +8,5 @@ var tuiEnabled = false
 
 func tuiCmd() {
 	fmt.Println("TUI is not included in this build.")
-	fmt.Println("Install the no-channel variant to use `clawgo tui`.")
+	fmt.Println("Build with `with_tui` tag to use `clawgo tui`.")
 }

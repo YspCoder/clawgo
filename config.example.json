@@ -161,22 +161,6 @@
       "enable_groups": true,
       "require_mention_in_groups": true
     },
-    "discord": {
-      "enabled": false,
-      "token": "YOUR_DISCORD_BOT_TOKEN",
-      "allow_from": []
-    },
-    "maixcam": {
-      "enabled": false,
-      "host": "0.0.0.0",
-      "port": 18790,
-      "allow_from": []
-    },
-    "whatsapp": {
-      "enabled": false,
-      "bridge_url": "ws://localhost:3001",
-      "allow_from": []
-    },
     "feishu": {
       "enabled": false,
       "app_id": "",
@@ -187,12 +171,6 @@
       "allow_chats": [],
       "enable_groups": true,
       "require_mention_in_groups": true
-    },
-    "dingtalk": {
-      "enabled": false,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
-      "allow_from": []
     }
   },
   "models": {

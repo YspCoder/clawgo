@@ -111,6 +111,35 @@ func TestValidateSubagentsRejectsInvalidNotifyMainPolicy(t *testing.T) {
 	}
 }
 
+func TestValidateSubagentsRejectsNodeTransport(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	cfg.Agents.Subagents["coder"] = SubagentConfig{
+		Enabled:          true,
+		Transport:        "node",
+		SystemPromptFile: "agents/coder/AGENT.md",
+		Runtime: SubagentRuntimeConfig{
+			Provider: "openai",
+		},
+	}
+
+	errs := Validate(cfg)
+	if len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "agents.subagents.coder.transport") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected transport validation error, got %v", errs)
+	}
+}
+
 func TestValidateSentinelWebhookURLRejectsInvalidScheme(t *testing.T) {
 	t.Parallel()
 

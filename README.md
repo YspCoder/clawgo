@@ -5,7 +5,7 @@
 ClawGo 不是“又一个聊天壳子”，而是一套可长期运行、可观测、可恢复、可编排的 Agent 运行时。
 
 - `main agent` 负责入口、路由、派发、汇总
-- `subagent runtime` 负责本地或远端分支执行
+- `subagent runtime` 负责本地分支执行
 - `runtime store` 持久化 run、event、thread、message、memory
 - WebUI 负责检查、状态展示和账号管理，不负责运行时配置写入
 
@@ -23,7 +23,7 @@ ClawGo 更关注真正的运行时能力：
 
 - 多 Agent 拓扑和内部协作流
 - 可恢复的 subagent run
-- 本地主控加远端 node 分支
+- 本地主控加本地 subagent 分支
 - 配置、审计、日志、记忆的工程化闭环
 
 一句话：
@@ -34,7 +34,7 @@ ClawGo 更关注真正的运行时能力：
 
 ### 1. 多 Agent 拓扑
 
-- 统一展示 `main / subagents / remote branches`
+- 统一展示 `main / subagents`
 - 内部协作流与用户对话分离
 - 子代理执行过程可追踪，但不会污染用户主通道
 
@@ -149,9 +149,7 @@ user -> main -> worker -> main -> user
    负责用户入口、路由、派发、汇总
 2. `local subagents`
    在 `config.json -> agents.subagents` 中声明，使用独立 session 和 memory namespace
-3. `node-backed branches`
-   远端节点作为受控 agent 分支挂载到主拓扑
-4. `runtime store`
+3. `runtime store`
    保存运行态、线程、消息、事件和审计数据
 
 说明：
@@ -205,10 +203,6 @@ user -> main -> worker -> main -> user
 - WebUI 配置编辑已禁用
 - 运行时配置修改请直接改 `config.json`
 - 启用中的本地 subagent 必须配置 `system_prompt_file`
-- 远端分支需要：
-  - `transport: "node"`
-  - `node_id`
-  - `parent_agent_id`
 
 完整示例见 [config.example.json](/G:/gopro/clawgo/config.example.json)。
 

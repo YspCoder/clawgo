@@ -18,7 +18,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -51,13 +50,13 @@ type Server struct {
 	onConfigAfter  func(forceRuntimeReload bool) error
 	onCron         func(action string, args map[string]interface{}) (interface{}, error)
 	onToolsCatalog func() interface{}
-	whatsAppBridge *channels.WhatsAppBridgeService
-	whatsAppBase   string
 	weixinChannel  *channels.WeixinChannel
 	oauthFlowMu    sync.Mutex
 	oauthFlows     map[string]*providers.OAuthPendingFlow
 	extraRoutesMu  sync.RWMutex
 	extraRoutes    map[string]http.Handler
+	eventSubsMu    sync.Mutex
+	eventSubs      map[*websocket.Conn]struct{}
 }
 
 func NewServer(host string, port int, token string) *Server {
@@ -73,6 +72,7 @@ func NewServer(host string, port int, token string) *Server {
 		token:       strings.TrimSpace(token),
 		oauthFlows:  map[string]*providers.OAuthPendingFlow{},
 		extraRoutes: map[string]http.Handler{},
+		eventSubs:   map[*websocket.Conn]struct{}{},
 	}
 }
 
@@ -105,45 +105,65 @@ func (s *Server) SetProtectedRoute(path string, handler http.Handler) {
 	}
 	s.extraRoutes[path] = handler
 }
-func (s *Server) SetWhatsAppBridge(service *channels.WhatsAppBridgeService, basePath string) {
-	s.whatsAppBridge = service
-	s.whatsAppBase = strings.TrimSpace(basePath)
-}
-
 func (s *Server) SetWeixinChannel(ch *channels.WeixinChannel) {
 	s.weixinChannel = ch
+	if ch != nil {
+		ch.SetPersistHook(func(source string) {
+			s.broadcastEvent(map[string]interface{}{
+				"type":   "config_changed",
+				"source": strings.TrimSpace(source),
+			})
+		})
+	}
 }
 
-func (s *Server) handleWhatsAppBridgeWS(w http.ResponseWriter, r *http.Request) {
-	if s.whatsAppBridge == nil {
-		http.Error(w, "whatsapp bridge unavailable", http.StatusServiceUnavailable)
+func (s *Server) handleWebUIEventsLive(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	s.whatsAppBridge.ServeWS(w, r)
-}
-
-func (s *Server) handleWhatsAppBridgeStatus(w http.ResponseWriter, r *http.Request) {
-	if s.whatsAppBridge == nil {
-		http.Error(w, "whatsapp bridge unavailable", http.StatusServiceUnavailable)
+	conn, err := websocketUpgrader.Upgrade(w, r, nil)
+	if err != nil {
 		return
 	}
-	s.whatsAppBridge.ServeStatus(w, r)
+	s.eventSubsMu.Lock()
+	s.eventSubs[conn] = struct{}{}
+	s.eventSubsMu.Unlock()
+	_ = conn.WriteJSON(map[string]interface{}{
+		"type": "ready",
+	})
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			break
+		}
+	}
+	s.eventSubsMu.Lock()
+	delete(s.eventSubs, conn)
+	s.eventSubsMu.Unlock()
+	_ = conn.Close()
 }
 
-func (s *Server) handleWhatsAppBridgeLogout(w http.ResponseWriter, r *http.Request) {
-	if s.whatsAppBridge == nil {
-		http.Error(w, "whatsapp bridge unavailable", http.StatusServiceUnavailable)
+func (s *Server) broadcastEvent(payload map[string]interface{}) {
+	if len(payload) == 0 {
 		return
 	}
-	s.whatsAppBridge.ServeLogout(w, r)
-}
-
-func joinServerRoute(base, endpoint string) string {
-	base = strings.TrimRight(strings.TrimSpace(base), "/")
-	if base == "" || base == "/" {
-		return "/" + strings.TrimPrefix(endpoint, "/")
+	s.eventSubsMu.Lock()
+	subs := make([]*websocket.Conn, 0, len(s.eventSubs))
+	for conn := range s.eventSubs {
+		subs = append(subs, conn)
 	}
-	return base + "/" + strings.TrimPrefix(endpoint, "/")
+	s.eventSubsMu.Unlock()
+	for _, conn := range subs {
+		if conn == nil {
+			continue
+		}
+		if err := conn.WriteJSON(payload); err != nil {
+			s.eventSubsMu.Lock()
+			delete(s.eventSubs, conn)
+			s.eventSubsMu.Unlock()
+			_ = conn.Close()
+		}
+	}
 }
 
 func writeJSON(w http.ResponseWriter, payload interface{}) {
@@ -185,6 +205,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/chat", s.handleWebUIChat)
 	mux.HandleFunc("/api/chat/history", s.handleWebUIChatHistory)
 	mux.HandleFunc("/api/chat/live", s.handleWebUIChatLive)
+	mux.HandleFunc("/api/events/live", s.handleWebUIEventsLive)
 	mux.HandleFunc("/api/version", s.handleWebUIVersion)
 	mux.HandleFunc("/api/provider/oauth/start", s.handleWebUIProviderOAuthStart)
 	mux.HandleFunc("/api/provider/oauth/complete", s.handleWebUIProviderOAuthComplete)
@@ -192,9 +213,6 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/provider/oauth/accounts", s.handleWebUIProviderOAuthAccounts)
 	mux.HandleFunc("/api/provider/models", s.handleWebUIProviderModels)
 	mux.HandleFunc("/api/provider/runtime", s.handleWebUIProviderRuntime)
-	mux.HandleFunc("/api/whatsapp/status", s.handleWebUIWhatsAppStatus)
-	mux.HandleFunc("/api/whatsapp/logout", s.handleWebUIWhatsAppLogout)
-	mux.HandleFunc("/api/whatsapp/qr.svg", s.handleWebUIWhatsAppQR)
 	mux.HandleFunc("/api/weixin/status", s.handleWebUIWeixinStatus)
 	mux.HandleFunc("/api/weixin/login/start", s.handleWebUIWeixinLoginStart)
 	mux.HandleFunc("/api/weixin/login/cancel", s.handleWebUIWeixinLoginCancel)
@@ -225,14 +243,6 @@ func (s *Server) Start(ctx context.Context) error {
 		}))
 	}
 	s.extraRoutesMu.RUnlock()
-	base := strings.TrimRight(strings.TrimSpace(s.whatsAppBase), "/")
-	if base == "" {
-		base = "/whatsapp"
-	}
-	mux.HandleFunc(base, s.handleWhatsAppBridgeWS)
-	mux.HandleFunc(joinServerRoute(base, "ws"), s.handleWhatsAppBridgeWS)
-	mux.HandleFunc(joinServerRoute(base, "status"), s.handleWhatsAppBridgeStatus)
-	mux.HandleFunc(joinServerRoute(base, "logout"), s.handleWhatsAppBridgeLogout)
 	s.server = &http.Server{Addr: s.addr, Handler: s.withCORS(mux)}
 	go func() {
 		<-ctx.Done()
@@ -425,9 +435,23 @@ func (s *Server) persistWebUIConfig(cfg *cfgpkg.Config) error {
 		return err
 	}
 	if s.onConfigAfter != nil {
-		return s.onConfigAfter(false)
+		if err := s.onConfigAfter(false); err != nil {
+			return err
+		}
+		s.broadcastEvent(map[string]interface{}{
+			"type":   "config_changed",
+			"source": "webui",
+		})
+		return nil
 	}
-	return requestSelfReloadSignal()
+	if err := requestSelfReloadSignal(); err != nil {
+		return err
+	}
+	s.broadcastEvent(map[string]interface{}{
+		"type":   "config_changed",
+		"source": "webui",
+	})
+	return nil
 }
 
 func mergeJSONMap(base, override map[string]interface{}) map[string]interface{} {
@@ -1181,154 +1205,6 @@ func (s *Server) handleWebUIVersion(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleWebUIWhatsAppStatus(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	payload, code := s.webUIWhatsAppStatusPayload(r.Context())
-	writeJSONStatus(w, code, payload)
-}
-
-func (s *Server) handleWebUIWhatsAppLogout(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	cfg, err := s.loadConfig()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	logoutURL, err := channels.BridgeLogoutURL(s.resolveWhatsAppBridgeURL(cfg))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, logoutURL, nil)
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		return
-	}
-}
-
-func (s *Server) handleWebUIWhatsAppQR(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	payload, code := s.webUIWhatsAppStatusPayload(r.Context())
-	status, _ := payload["status"].(map[string]interface{})
-	qrCode := ""
-	if status != nil {
-		qrCode = stringFromMap(status, "qr_code")
-	}
-	if code != http.StatusOK || strings.TrimSpace(qrCode) == "" {
-		http.Error(w, "qr unavailable", http.StatusNotFound)
-		return
-	}
-	qrCode = strings.TrimSpace(qrCode)
-	qrImage, err := qr.Encode(qrCode, qr.M)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("Content-Type", "image/svg+xml")
-	_, _ = io.WriteString(w, renderQRCodeSVG(qrImage, 8, 24))
-}
-
-func (s *Server) webUIWhatsAppStatusPayload(ctx context.Context) (map[string]interface{}, int) {
-	cfg, err := s.loadConfig()
-	if err != nil {
-		return map[string]interface{}{
-			"ok":    false,
-			"error": err.Error(),
-		}, http.StatusInternalServerError
-	}
-	waCfg := cfg.Channels.WhatsApp
-	bridgeURL := s.resolveWhatsAppBridgeURL(cfg)
-	statusURL, err := channels.BridgeStatusURL(bridgeURL)
-	if err != nil {
-		return map[string]interface{}{
-			"ok":         false,
-			"enabled":    waCfg.Enabled,
-			"bridge_url": bridgeURL,
-			"error":      err.Error(),
-		}, http.StatusBadRequest
-	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
-	resp, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
-	if err != nil {
-		return map[string]interface{}{
-			"ok":             false,
-			"enabled":        waCfg.Enabled,
-			"bridge_url":     bridgeURL,
-			"bridge_running": false,
-			"error":          err.Error(),
-		}, http.StatusOK
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return map[string]interface{}{
-			"ok":             false,
-			"enabled":        waCfg.Enabled,
-			"bridge_url":     bridgeURL,
-			"bridge_running": false,
-			"error":          strings.TrimSpace(string(body)),
-		}, http.StatusOK
-	}
-	var status channels.WhatsAppBridgeStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return map[string]interface{}{
-			"ok":             false,
-			"enabled":        waCfg.Enabled,
-			"bridge_url":     bridgeURL,
-			"bridge_running": false,
-			"error":          err.Error(),
-		}, http.StatusOK
-	}
-	return map[string]interface{}{
-		"ok":             true,
-		"enabled":        waCfg.Enabled,
-		"bridge_url":     bridgeURL,
-		"bridge_running": true,
-		"status": map[string]interface{}{
-			"state":        status.State,
-			"connected":    status.Connected,
-			"logged_in":    status.LoggedIn,
-			"bridge_addr":  status.BridgeAddr,
-			"user_jid":     status.UserJID,
-			"push_name":    status.PushName,
-			"platform":     status.Platform,
-			"qr_available": status.QRAvailable,
-			"qr_code":      status.QRCode,
-			"last_event":   status.LastEvent,
-			"last_error":   status.LastError,
-			"updated_at":   status.UpdatedAt,
-		},
-	}, http.StatusOK
-}
-
 func (s *Server) handleWebUIWeixinStatus(w http.ResponseWriter, r *http.Request) {
 	if !s.checkAuth(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -1560,60 +1436,6 @@ func (s *Server) loadConfig() (*cfgpkg.Config, error) {
 		return nil, err
 	}
 	return cfg, nil
-}
-
-func (s *Server) resolveWhatsAppBridgeURL(cfg *cfgpkg.Config) string {
-	if cfg == nil {
-		return ""
-	}
-	raw := strings.TrimSpace(cfg.Channels.WhatsApp.BridgeURL)
-	if raw == "" {
-		return embeddedWhatsAppBridgeURL(cfg.Gateway.Host, cfg.Gateway.Port)
-	}
-	hostPort := comparableBridgeHostPort(raw)
-	if hostPort == "" {
-		return raw
-	}
-	if hostPort == "127.0.0.1:3001" || hostPort == "localhost:3001" {
-		return embeddedWhatsAppBridgeURL(cfg.Gateway.Host, cfg.Gateway.Port)
-	}
-	if hostPort == comparableGatewayHostPort(cfg.Gateway.Host, cfg.Gateway.Port) {
-		return embeddedWhatsAppBridgeURL(cfg.Gateway.Host, cfg.Gateway.Port)
-	}
-	return raw
-}
-
-func embeddedWhatsAppBridgeURL(host string, port int) string {
-	host = strings.TrimSpace(host)
-	switch host {
-	case "", "0.0.0.0", "::", "[::]":
-		host = "127.0.0.1"
-	}
-	return fmt.Sprintf("ws://%s:%d/whatsapp/ws", host, port)
-}
-
-func comparableBridgeHostPort(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	if !strings.Contains(raw, "://") {
-		return strings.ToLower(raw)
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(u.Host))
-}
-
-func comparableGatewayHostPort(host string, port int) string {
-	host = strings.TrimSpace(strings.ToLower(host))
-	switch host {
-	case "", "0.0.0.0", "::", "[::]":
-		host = "127.0.0.1"
-	}
-	return fmt.Sprintf("%s:%d", host, port)
 }
 
 func renderQRCodeSVG(code *qr.Code, scale, quietZone int) string {
@@ -1898,7 +1720,7 @@ type mcpInstallSpec struct {
 
 func inferMCPInstallSpec(server cfgpkg.MCPServerConfig) mcpInstallSpec {
 	if pkgName := strings.TrimSpace(server.Package); pkgName != "" {
-		return mcpInstallSpec{Installer: "npm", Package: pkgName, AutoInstallSupported: true}
+		return mcpInstallSpec{Package: pkgName, AutoInstallSupported: false}
 	}
 	command := strings.TrimSpace(server.Command)
 	args := make([]string, 0, len(server.Args))
@@ -1910,7 +1732,7 @@ func inferMCPInstallSpec(server cfgpkg.MCPServerConfig) mcpInstallSpec {
 	base := filepath.Base(command)
 	switch base {
 	case "npx":
-		return mcpInstallSpec{Installer: "npm", Package: firstNonFlagArg(args), AutoInstallSupported: firstNonFlagArg(args) != ""}
+		return mcpInstallSpec{Package: firstNonFlagArg(args), AutoInstallSupported: false}
 	case "uvx":
 		pkgName := firstNonFlagArg(args)
 		return mcpInstallSpec{Installer: "uv", Package: pkgName, AutoInstallSupported: pkgName != ""}
@@ -2250,20 +2072,6 @@ func (s *Server) handleWebUISkills(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		action := strings.ToLower(stringFromMap(body, "action"))
-		if action == "install_clawhub" {
-			output, err := ensureClawHubReady(r.Context())
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			writeJSON(w, map[string]interface{}{
-				"ok":           true,
-				"output":       output,
-				"installed":    true,
-				"clawhub_path": resolveClawHubBinary(r.Context()),
-			})
-			return
-		}
 		id := stringFromMap(body, "id")
 		name := stringFromMap(body, "name")
 		if strings.TrimSpace(name) == "" {
@@ -2639,17 +2447,9 @@ func resolveClawHubBinary(ctx context.Context) string {
 	if p, err := exec.LookPath("clawhub"); err == nil {
 		return p
 	}
-	prefix := strings.TrimSpace(npmGlobalPrefix(ctx))
-	if prefix != "" {
-		cand := filepath.Join(prefix, "bin", "clawhub")
-		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
-			return cand
-		}
-	}
 	cands := []string{
 		"/usr/local/bin/clawhub",
 		"/opt/homebrew/bin/clawhub",
-		filepath.Join(os.Getenv("HOME"), ".npm-global", "bin", "clawhub"),
 	}
 	for _, cand := range cands {
 		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
@@ -2657,16 +2457,6 @@ func resolveClawHubBinary(ctx context.Context) string {
 		}
 	}
 	return ""
-}
-
-func npmGlobalPrefix(ctx context.Context) string {
-	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(cctx, "npm", "config", "get", "prefix").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
 }
 
 func runInstallCommand(ctx context.Context, cmdline string) (string, error) {
@@ -2684,142 +2474,9 @@ func runInstallCommand(ctx context.Context, cmdline string) (string, error) {
 	return msg, nil
 }
 
-func ensureNodeRuntime(ctx context.Context) (string, error) {
-	if nodePath, err := exec.LookPath("node"); err == nil {
-		if _, err := exec.LookPath("npm"); err == nil {
-			if major, verr := detectNodeMajor(ctx, nodePath); verr == nil && major == 22 {
-				return "node@22 and npm already installed", nil
-			}
-		}
-	}
-
-	var output []string
-	switch runtime.GOOS {
-	case "darwin":
-		if _, err := exec.LookPath("brew"); err != nil {
-			return strings.Join(output, "\n"), fmt.Errorf("nodejs/npm missing and Homebrew not found; please install Homebrew then retry")
-		}
-		out, err := runInstallCommand(ctx, "brew install node@22 && brew link --overwrite --force node@22")
-		if out != "" {
-			output = append(output, out)
-		}
-		if err != nil {
-			return strings.Join(output, "\n"), err
-		}
-	case "linux":
-		var out string
-		var err error
-		switch {
-		case commandExists("apt-get"):
-			if commandExists("curl") {
-				out, err = runInstallCommand(ctx, "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs")
-			} else if commandExists("wget") {
-				out, err = runInstallCommand(ctx, "wget -qO- https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs")
-			} else {
-				err = fmt.Errorf("missing curl/wget required for NodeSource setup_22.x")
-			}
-		case commandExists("dnf"):
-			if commandExists("curl") {
-				out, err = runInstallCommand(ctx, "curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && dnf install -y nodejs")
-			} else if commandExists("wget") {
-				out, err = runInstallCommand(ctx, "wget -qO- https://rpm.nodesource.com/setup_22.x | bash - && dnf install -y nodejs")
-			} else {
-				err = fmt.Errorf("missing curl/wget required for NodeSource setup_22.x")
-			}
-		case commandExists("yum"):
-			if commandExists("curl") {
-				out, err = runInstallCommand(ctx, "curl -fsSL https://rpm.nodesource.com/setup_22.x | bash - && yum install -y nodejs")
-			} else if commandExists("wget") {
-				out, err = runInstallCommand(ctx, "wget -qO- https://rpm.nodesource.com/setup_22.x | bash - && yum install -y nodejs")
-			} else {
-				err = fmt.Errorf("missing curl/wget required for NodeSource setup_22.x")
-			}
-		case commandExists("pacman"):
-			out, err = runInstallCommand(ctx, "pacman -Sy --noconfirm nodejs npm")
-		case commandExists("apk"):
-			out, err = runInstallCommand(ctx, "apk add --no-cache nodejs npm")
-		default:
-			return strings.Join(output, "\n"), fmt.Errorf("nodejs/npm missing and no supported package manager found")
-		}
-		if out != "" {
-			output = append(output, out)
-		}
-		if err != nil {
-			return strings.Join(output, "\n"), err
-		}
-	default:
-		return strings.Join(output, "\n"), fmt.Errorf("unsupported OS for auto install: %s", runtime.GOOS)
-	}
-
-	if _, err := exec.LookPath("node"); err != nil {
-		return strings.Join(output, "\n"), fmt.Errorf("node installation completed but `node` still not found in PATH")
-	}
-	if _, err := exec.LookPath("npm"); err != nil {
-		return strings.Join(output, "\n"), fmt.Errorf("node installation completed but `npm` still not found in PATH")
-	}
-	nodePath, _ := exec.LookPath("node")
-	major, err := detectNodeMajor(ctx, nodePath)
-	if err != nil {
-		return strings.Join(output, "\n"), fmt.Errorf("failed to detect node major version: %w", err)
-	}
-	if major != 22 {
-		return strings.Join(output, "\n"), fmt.Errorf("node version is %d, expected 22", major)
-	}
-	output = append(output, "node@22/npm installed")
-	return strings.Join(output, "\n"), nil
-}
-
 func commandExists(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
-}
-
-func detectNodeMajor(ctx context.Context, nodePath string) (int, error) {
-	nodePath = strings.TrimSpace(nodePath)
-	if nodePath == "" {
-		return 0, fmt.Errorf("node path empty")
-	}
-	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(cctx, nodePath, "-p", "process.versions.node.split('.')[0]").Output()
-	if err != nil {
-		return 0, err
-	}
-	majorStr := strings.TrimSpace(string(out))
-	if majorStr == "" {
-		return 0, fmt.Errorf("empty node major version")
-	}
-	v, err := strconv.Atoi(majorStr)
-	if err != nil {
-		return 0, err
-	}
-	return v, nil
-}
-
-func ensureClawHubReady(ctx context.Context) (string, error) {
-	outs := make([]string, 0, 4)
-	if p := resolveClawHubBinary(ctx); p != "" {
-		return "clawhub already installed at: " + p, nil
-	}
-	nodeOut, err := ensureNodeRuntime(ctx)
-	if nodeOut != "" {
-		outs = append(outs, nodeOut)
-	}
-	if err != nil {
-		return strings.Join(outs, "\n"), err
-	}
-	clawOut, err := runInstallCommand(ctx, "npm i -g clawhub")
-	if clawOut != "" {
-		outs = append(outs, clawOut)
-	}
-	if err != nil {
-		return strings.Join(outs, "\n"), err
-	}
-	if p := resolveClawHubBinary(ctx); p != "" {
-		outs = append(outs, "clawhub installed at: "+p)
-		return strings.Join(outs, "\n"), nil
-	}
-	return strings.Join(outs, "\n"), fmt.Errorf("installed clawhub but executable still not found in PATH")
 }
 
 func ensureMCPPackageInstalledWithInstaller(ctx context.Context, pkgName, installer string) (output string, binName string, binPath string, err error) {
@@ -2829,29 +2486,10 @@ func ensureMCPPackageInstalledWithInstaller(ctx context.Context, pkgName, instal
 	}
 	installer = strings.ToLower(strings.TrimSpace(installer))
 	if installer == "" {
-		installer = "npm"
+		installer = "uv"
 	}
 	outs := make([]string, 0, 4)
 	switch installer {
-	case "npm":
-		nodeOut, err := ensureNodeRuntime(ctx)
-		if nodeOut != "" {
-			outs = append(outs, nodeOut)
-		}
-		if err != nil {
-			return strings.Join(outs, "\n"), "", "", err
-		}
-		installOut, err := runInstallCommand(ctx, "npm i -g "+shellEscapeArg(pkgName))
-		if installOut != "" {
-			outs = append(outs, installOut)
-		}
-		if err != nil {
-			return strings.Join(outs, "\n"), "", "", err
-		}
-		binName, err = resolveNpmPackageBin(ctx, pkgName)
-		if err != nil {
-			return strings.Join(outs, "\n"), "", "", err
-		}
 	case "uv":
 		if !commandExists("uv") {
 			return "", "", "", fmt.Errorf("uv is not installed; install uv first to auto-install %s", pkgName)
@@ -2897,35 +2535,8 @@ func guessSimpleCommandName(pkgName string) string {
 	return strings.TrimSpace(pkgName)
 }
 
-func resolveNpmPackageBin(ctx context.Context, pkgName string) (string, error) {
-	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, "npm", "view", pkgName, "bin", "--json")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to query npm bin for %s: %w", pkgName, err)
-	}
-	trimmed := strings.TrimSpace(string(out))
-	if trimmed == "" || trimmed == "null" {
-		return "", fmt.Errorf("npm package %s does not expose a bin", pkgName)
-	}
-	var obj map[string]interface{}
-	if err := json.Unmarshal(out, &obj); err == nil && len(obj) > 0 {
-		keys := make([]string, 0, len(obj))
-		for key := range obj {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		return keys[0], nil
-	}
-	var text string
-	if err := json.Unmarshal(out, &text); err == nil && strings.TrimSpace(text) != "" {
-		return strings.TrimSpace(text), nil
-	}
-	return "", fmt.Errorf("unable to resolve bin for npm package %s", pkgName)
-}
-
 func resolveInstalledBinary(ctx context.Context, binName string) string {
+	_ = ctx
 	binName = strings.TrimSpace(binName)
 	if binName == "" {
 		return ""
@@ -2933,17 +2544,9 @@ func resolveInstalledBinary(ctx context.Context, binName string) string {
 	if p, err := exec.LookPath(binName); err == nil {
 		return p
 	}
-	prefix := strings.TrimSpace(npmGlobalPrefix(ctx))
-	if prefix != "" {
-		cand := filepath.Join(prefix, "bin", binName)
-		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
-			return cand
-		}
-	}
 	cands := []string{
 		filepath.Join("/usr/local/bin", binName),
 		filepath.Join("/opt/homebrew/bin", binName),
-		filepath.Join(os.Getenv("HOME"), ".npm-global", "bin", binName),
 	}
 	for _, cand := range cands {
 		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
@@ -3341,8 +2944,6 @@ func isUserFacingSessionKey(key string) bool {
 		return false
 	case strings.HasPrefix(k, "hook:"):
 		return false
-	case strings.HasPrefix(k, "node:"):
-		return false
 	default:
 		return true
 	}
@@ -3610,7 +3211,7 @@ func hotReloadFieldInfo() []map[string]interface{} {
 		{"path": "agents.*", "name": "Agent", "description": "Models, policies, and default behavior"},
 		{"path": "models.providers.*", "name": "Providers", "description": "LLM provider registry and auth settings"},
 		{"path": "tools.*", "name": "Tools", "description": "Tool toggles and runtime options"},
-		{"path": "channels.*", "name": "Channels", "description": "Telegram and other channel settings"},
+		{"path": "channels.*", "name": "Channels", "description": "Weixin, Feishu, and Telegram channel settings"},
 		{"path": "cron.*", "name": "Cron", "description": "Global cron runtime settings"},
 		{"path": "agents.defaults.heartbeat.*", "name": "Heartbeat", "description": "Heartbeat interval and prompt template"},
 		{"path": "gateway.*", "name": "Gateway", "description": "Mostly hot-reloadable; host/port may require restart"},

@@ -177,7 +177,7 @@ func normalizeSubagentProfile(in SubagentProfile) SubagentProfile {
 	if p.Name == "" {
 		p.Name = p.AgentID
 	}
-	p.Transport = normalizeProfileTransport(p.Transport)
+
 	p.ParentAgentID = normalizeSubagentIdentifier(p.ParentAgentID)
 	p.NotifyMainPolicy = normalizeNotifyMainPolicy(p.NotifyMainPolicy)
 	p.Role = strings.TrimSpace(p.Role)
@@ -204,17 +204,6 @@ func normalizeProfileStatus(s string) string {
 		return v
 	default:
 		return "active"
-	}
-}
-
-func normalizeProfileTransport(s string) string {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "local":
-		return "local"
-	case "node":
-		return "node"
-	default:
-		return "local"
 	}
 }
 

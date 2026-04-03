@@ -3,31 +3,7 @@ package channels
 import "sort"
 
 func CompiledChannelKeys() []string {
-	out := make([]string, 0, 8)
-	if weixinCompiled {
-		out = append(out, "weixin")
-	}
-	if telegramCompiled {
-		out = append(out, "telegram")
-	}
-	if whatsappCompiled {
-		out = append(out, "whatsapp")
-	}
-	if discordCompiled {
-		out = append(out, "discord")
-	}
-	if feishuCompiled {
-		out = append(out, "feishu")
-	}
-	if qqCompiled {
-		out = append(out, "qq")
-	}
-	if dingtalkCompiled {
-		out = append(out, "dingtalk")
-	}
-	if maixcamCompiled {
-		out = append(out, "maixcam")
-	}
+	out := []string{"weixin", "telegram", "feishu"}
 	sort.Strings(out)
 	return out
 }

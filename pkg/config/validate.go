@@ -190,31 +190,12 @@ func Validate(cfg *Config) []error {
 	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token == "" {
 		errs = append(errs, fmt.Errorf("channels.telegram.token is required when channels.telegram.enabled=true"))
 	}
-	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token == "" {
-		errs = append(errs, fmt.Errorf("channels.discord.token is required when channels.discord.enabled=true"))
-	}
-	if cfg.Channels.DingTalk.Enabled {
-		if cfg.Channels.DingTalk.ClientID == "" {
-			errs = append(errs, fmt.Errorf("channels.dingtalk.client_id is required when channels.dingtalk.enabled=true"))
-		}
-		if cfg.Channels.DingTalk.ClientSecret == "" {
-			errs = append(errs, fmt.Errorf("channels.dingtalk.client_secret is required when channels.dingtalk.enabled=true"))
-		}
-	}
 	if cfg.Channels.Feishu.Enabled {
 		if cfg.Channels.Feishu.AppID == "" {
 			errs = append(errs, fmt.Errorf("channels.feishu.app_id is required when channels.feishu.enabled=true"))
 		}
 		if cfg.Channels.Feishu.AppSecret == "" {
 			errs = append(errs, fmt.Errorf("channels.feishu.app_secret is required when channels.feishu.enabled=true"))
-		}
-	}
-	if cfg.Channels.QQ.Enabled {
-		if cfg.Channels.QQ.AppID == "" {
-			errs = append(errs, fmt.Errorf("channels.qq.app_id is required when channels.qq.enabled=true"))
-		}
-		if cfg.Channels.QQ.AppSecret == "" {
-			errs = append(errs, fmt.Errorf("channels.qq.app_secret is required when channels.qq.enabled=true"))
 		}
 	}
 

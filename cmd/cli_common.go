@@ -96,7 +96,6 @@ func printHelp() {
 	fmt.Println("  config      Get/set config values")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  channel     Test and manage messaging channels")
-	fmt.Println("  node        Register remote node metadata and heartbeat")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	if tuiEnabled {
 		fmt.Println("  tui         Chat in terminal using the gateway chat API")

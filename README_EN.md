@@ -6,7 +6,7 @@ ClawGo is not just another chat wrapper. It is a long-running, observable, recov
 
 - 👀 **Observable**: agent topology, internal streams, task audit, and runtime visibility
 - 🔁 **Recoverable**: persisted runtime state and restart recovery
-- 🧩 **Orchestrated**: `main agent -> subagent -> main`, with local and remote node branches
+- 🧩 **Orchestrated**: `main agent -> subagent -> main`, with local subagent branches
 - ⚙️ **Operational**: `config.json`, `AGENT.md`, hot reload, WebUI, declarative registry
 
 [中文](./README.md)
@@ -23,7 +23,7 @@ ClawGo focuses on runtime capabilities:
 
 - `main agent` handles entry, routing, dispatch, and merge
 - `subagents` execute coding, testing, product, docs, and other focused tasks
-- `node branches` attach remote nodes as controlled agent branches
+- `subagent branches` execute as controlled local branches
 - `runtime store` persists runs, events, threads, messages, and memory
 
 In one line:
@@ -34,7 +34,7 @@ In one line:
 
 ### 1. Observable multi-agent topology
 
-- unified view of `main / subagents / remote branches`
+- unified view of `main / subagents`
 - internal subagent streams are visible
 - user-facing chat stays clean while internal collaboration remains inspectable
 
@@ -160,16 +160,14 @@ ClawGo currently has four layers:
    user-facing entry, routing, dispatch, and merge
 2. `local subagents`
    declared in `config.json -> agents.subagents`, with isolated sessions and memory namespaces
-3. `node-backed branches`
-   remote nodes mounted as controlled agent branches
-4. `runtime store`
+3. `runtime store`
    persisted runtime, threads, messages, events, and audit data
 
 ## What It Is Good For
 
 - 🤖 long-running local personal agents
 - 🧪 multi-agent flows like `pm -> coder -> tester`
-- 🌐 local control with remote node branches
+- 🌐 local control with isolated subagent branches
 - 🔍 systems that need strong observability, auditability, and recovery
 - 🏭 teams that want agent config, prompts, tool permissions, and runtime policy managed as code
 
@@ -223,10 +221,6 @@ Notes:
 - keep runtime config changes in `config.json`
 - runtime panels now consume the unified `runtime snapshot / runtime live`
 - enabled local subagents must define `system_prompt_file`
-- remote branches require:
-  - `transport: "node"`
-  - `node_id`
-  - `parent_agent_id`
 
 See [config.example.json](/Users/lpf/Desktop/project/clawgo/config.example.json) for a full example.
 

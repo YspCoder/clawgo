@@ -3,14 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,73 +15,6 @@ import (
 	cfgpkg "github.com/YspCoder/clawgo/pkg/config"
 	"github.com/gorilla/websocket"
 )
-
-func TestHandleWebUIWhatsAppStatusMapsLegacyBridgeURLToEmbeddedPath(t *testing.T) {
-	t.Parallel()
-
-	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/whatsapp/status":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"state":        "connected",
-				"connected":    true,
-				"logged_in":    true,
-				"bridge_addr":  "127.0.0.1:7788",
-				"user_jid":     "8613012345678@s.whatsapp.net",
-				"qr_available": false,
-				"last_event":   "connected",
-				"updated_at":   "2026-03-09T12:00:00+08:00",
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer bridge.Close()
-
-	u, err := url.Parse(bridge.URL)
-	if err != nil {
-		t.Fatalf("parse bridge url: %v", err)
-	}
-	host, portRaw, err := net.SplitHostPort(u.Host)
-	if err != nil {
-		t.Fatalf("split host port: %v", err)
-	}
-	port, err := strconv.Atoi(portRaw)
-	if err != nil {
-		t.Fatalf("atoi port: %v", err)
-	}
-
-	tmp := t.TempDir()
-	cfgPath := filepath.Join(tmp, "config.json")
-	cfg := cfgpkg.DefaultConfig()
-	cfg.Logging.Enabled = false
-	cfg.Gateway.Host = host
-	cfg.Gateway.Port = port
-	cfg.Channels.WhatsApp.Enabled = true
-	cfg.Channels.WhatsApp.BridgeURL = "ws://localhost:3001"
-	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
-
-	srv := NewServer("127.0.0.1", 0, "")
-	srv.SetConfigPath(cfgPath)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/whatsapp/status", nil)
-	rec := httptest.NewRecorder()
-	srv.handleWebUIWhatsAppStatus(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("unmarshal payload: %v", err)
-	}
-	bridgeURL, _ := payload["bridge_url"].(string)
-	if !strings.HasSuffix(bridgeURL, "/whatsapp/ws") {
-		t.Fatalf("expected embedded whatsapp bridge url, got: %s", rec.Body.String())
-	}
-}
 
 func TestHandleWebUIConfigPostSavesRawConfig(t *testing.T) {
 	t.Parallel()
@@ -128,6 +58,35 @@ func TestHandleWebUIConfigPostSavesRawConfig(t *testing.T) {
 	}
 	if !updated.Channels.Telegram.Enabled {
 		t.Fatalf("expected telegram channel to remain editable")
+	}
+}
+
+func TestHandleWebUIConfigPostReturnsErrorWhenReloadHookFails(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetConfigPath(cfgPath)
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error {
+		return context.DeadlineExceeded
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/config", strings.NewReader(`{"gateway":{"host":"127.0.0.1","port":7788,"token":"abc"},"logging":{"enabled":true,"dir":"logs","filename":"app.log","max_size_mb":20,"retention_days":3}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.handleWebUIConfig(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when reload hook fails, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), context.DeadlineExceeded.Error()) {
+		t.Fatalf("expected response body to include reload hook error, got: %s", rec.Body.String())
 	}
 }
 

@@ -1,5 +1,3 @@
-//go:build !omit_telegram
-
 package channels
 
 import (
@@ -37,8 +35,6 @@ const (
 	telegramStreamSplitMaxRunes    = 3000
 	telegramStreamMaxRetries       = 4
 )
-
-const telegramCompiled = true
 
 type TelegramChannel struct {
 	*BaseChannel

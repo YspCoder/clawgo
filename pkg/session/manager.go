@@ -359,8 +359,6 @@ func detectSessionKind(key string) string {
 		return "subagent"
 	case strings.HasPrefix(k, "hook:"):
 		return "hook"
-	case strings.HasPrefix(k, "node:"):
-		return "node"
 	case strings.Contains(k, ":"):
 		return "main"
 	default:
@@ -444,7 +442,7 @@ func mapKindToChatType(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "main":
 		return "direct"
-	case "cron", "subagent", "hook", "node":
+	case "cron", "subagent", "hook":
 		return "internal"
 	default:
 		return "unknown"

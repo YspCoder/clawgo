@@ -171,21 +171,8 @@ type ChannelsConfig struct {
 	InboundContentDedupeWindowSeconds int            `json:"inbound_content_dedupe_window_seconds" env:"CLAWGO_CHANNELS_INBOUND_CONTENT_DEDUPE_WINDOW_SECONDS"`
 	OutboundDedupeWindowSeconds       int            `json:"outbound_dedupe_window_seconds" env:"CLAWGO_CHANNELS_OUTBOUND_DEDUPE_WINDOW_SECONDS"`
 	Weixin                            WeixinConfig   `json:"weixin"`
-	WhatsApp                          WhatsAppConfig `json:"whatsapp"`
 	Telegram                          TelegramConfig `json:"telegram"`
 	Feishu                            FeishuConfig   `json:"feishu"`
-	Discord                           DiscordConfig  `json:"discord"`
-	MaixCam                           MaixCamConfig  `json:"maixcam"`
-	QQ                                QQConfig       `json:"qq"`
-	DingTalk                          DingTalkConfig `json:"dingtalk"`
-}
-
-type WhatsAppConfig struct {
-	Enabled                bool     `json:"enabled" env:"CLAWGO_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL              string   `json:"bridge_url" env:"CLAWGO_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	AllowFrom              []string `json:"allow_from" env:"CLAWGO_CHANNELS_WHATSAPP_ALLOW_FROM"`
-	EnableGroups           bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_WHATSAPP_ENABLE_GROUPS"`
-	RequireMentionInGroups bool     `json:"require_mention_in_groups" env:"CLAWGO_CHANNELS_WHATSAPP_REQUIRE_MENTION_IN_GROUPS"`
 }
 
 type WeixinConfig struct {
@@ -229,33 +216,6 @@ type FeishuConfig struct {
 	AllowChats             []string `json:"allow_chats" env:"CLAWGO_CHANNELS_FEISHU_ALLOW_CHATS"`
 	EnableGroups           bool     `json:"enable_groups" env:"CLAWGO_CHANNELS_FEISHU_ENABLE_GROUPS"`
 	RequireMentionInGroups bool     `json:"require_mention_in_groups" env:"CLAWGO_CHANNELS_FEISHU_REQUIRE_MENTION_IN_GROUPS"`
-}
-
-type DiscordConfig struct {
-	Enabled   bool     `json:"enabled" env:"CLAWGO_CHANNELS_DISCORD_ENABLED"`
-	Token     string   `json:"token" env:"CLAWGO_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom []string `json:"allow_from" env:"CLAWGO_CHANNELS_DISCORD_ALLOW_FROM"`
-}
-
-type MaixCamConfig struct {
-	Enabled   bool     `json:"enabled" env:"CLAWGO_CHANNELS_MAIXCAM_ENABLED"`
-	Host      string   `json:"host" env:"CLAWGO_CHANNELS_MAIXCAM_HOST"`
-	Port      int      `json:"port" env:"CLAWGO_CHANNELS_MAIXCAM_PORT"`
-	AllowFrom []string `json:"allow_from" env:"CLAWGO_CHANNELS_MAIXCAM_ALLOW_FROM"`
-}
-
-type QQConfig struct {
-	Enabled   bool     `json:"enabled" env:"CLAWGO_CHANNELS_QQ_ENABLED"`
-	AppID     string   `json:"app_id" env:"CLAWGO_CHANNELS_QQ_APP_ID"`
-	AppSecret string   `json:"app_secret" env:"CLAWGO_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom []string `json:"allow_from" env:"CLAWGO_CHANNELS_QQ_ALLOW_FROM"`
-}
-
-type DingTalkConfig struct {
-	Enabled      bool     `json:"enabled" env:"CLAWGO_CHANNELS_DINGTALK_ENABLED"`
-	ClientID     string   `json:"client_id" env:"CLAWGO_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret string   `json:"client_secret" env:"CLAWGO_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom    []string `json:"allow_from" env:"CLAWGO_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
 type ModelsConfig struct {
@@ -494,13 +454,6 @@ func DefaultConfig() *Config {
 				Accounts:     []WeixinAccountConfig{},
 				AllowFrom:    []string{},
 			},
-			WhatsApp: WhatsAppConfig{
-				Enabled:                false,
-				BridgeURL:              "",
-				AllowFrom:              []string{},
-				EnableGroups:           true,
-				RequireMentionInGroups: true,
-			},
 			Telegram: TelegramConfig{
 				Enabled:                false,
 				Token:                  "",
@@ -520,29 +473,6 @@ func DefaultConfig() *Config {
 				AllowChats:             []string{},
 				EnableGroups:           true,
 				RequireMentionInGroups: true,
-			},
-			Discord: DiscordConfig{
-				Enabled:   false,
-				Token:     "",
-				AllowFrom: []string{},
-			},
-			MaixCam: MaixCamConfig{
-				Enabled:   false,
-				Host:      "0.0.0.0",
-				Port:      18790,
-				AllowFrom: []string{},
-			},
-			QQ: QQConfig{
-				Enabled:   false,
-				AppID:     "",
-				AppSecret: "",
-				AllowFrom: []string{},
-			},
-			DingTalk: DingTalkConfig{
-				Enabled:      false,
-				ClientID:     "",
-				ClientSecret: "",
-				AllowFrom:    []string{},
 			},
 		},
 		Models: ModelsConfig{

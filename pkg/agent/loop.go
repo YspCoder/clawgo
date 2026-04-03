@@ -371,19 +371,6 @@ func (al *AgentLoop) buildSubagentRunInput(run *tools.SubagentRun) string {
 	return taskText
 }
 
-func nodeAgentTaskResult(payload map[string]interface{}) string {
-	if len(payload) == 0 {
-		return ""
-	}
-	if result := tools.MapStringArg(payload, "result"); result != "" {
-		return result
-	}
-	if content := tools.MapStringArg(payload, "content"); content != "" {
-		return content
-	}
-	return ""
-}
-
 func (al *AgentLoop) readSubagentPromptFile(relPath string) string {
 	if al == nil {
 		return ""

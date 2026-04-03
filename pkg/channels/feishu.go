@@ -1,5 +1,3 @@
-//go:build !omit_feishu
-
 package channels
 
 import (
@@ -44,8 +42,6 @@ type FeishuChannel struct {
 	tenantTokenExpire time.Time
 	tenantTokenErr    error
 }
-
-const feishuCompiled = true
 
 func (c *FeishuChannel) SupportsAction(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
@@ -409,7 +405,6 @@ func (c *FeishuChannel) buildFeishuMediaOutbound(ctx context.Context, media stri
 	b, _ := json.Marshal(fileResp.Data)
 	return larkim.MsgTypeFile, string(b), nil
 }
-
 
 func readFeishuMedia(media string) (string, []byte, error) {
 	if strings.HasPrefix(media, "http://") || strings.HasPrefix(media, "https://") {

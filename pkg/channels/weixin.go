@@ -23,12 +23,22 @@ import (
 )
 
 const (
-	weixinCompiled       = true
 	weixinDefaultBaseURL = "https://ilinkai.weixin.qq.com"
 	weixinDefaultTimeout = 45 * time.Second
 	weixinRetryDelay     = 2 * time.Second
-	weixinChannelVersion = "1.0.2"
-	weixinPersistDelay   = 1200 * time.Millisecond
+	weixinBackoffDelay   = 30 * time.Second
+	weixinChannelVersion = "2.1.1"
+	weixinIlinkAppID     = "bot"
+	// 2.1.1 encoded as 0x00MMNNPP => 0x00020101 => 131329
+	weixinClientVersion       = "131329"
+	weixinMaxConsecutiveFails = 3
+	weixinPersistDelay        = 1200 * time.Millisecond
+	weixinDefaultPollTimeout  = 35 * time.Second
+	weixinSessionExpiredCode  = -14
+	weixinSessionPauseWindow  = time.Hour
+	weixinConfigCacheTTL      = 24 * time.Hour
+	weixinConfigRetryInitial  = 2 * time.Second
+	weixinConfigRetryMax      = time.Hour
 )
 
 type WeixinChannel struct {
@@ -38,6 +48,7 @@ type WeixinChannel struct {
 	httpClient *http.Client
 	runCancel  cancelGuard
 	runCtx     context.Context
+	onPersist  func(string)
 
 	mu            sync.RWMutex
 	accounts      map[string]*weixinAccountState
@@ -48,6 +59,16 @@ type WeixinChannel struct {
 	pendingLogins map[string]*WeixinPendingLogin
 	loginOrder    []string
 	persistTimer  *time.Timer
+	typingMu      sync.Mutex
+	typingCache   map[string]weixinTypingCacheEntry
+	pauseMu       sync.Mutex
+	pauseUntil    time.Time
+}
+
+type weixinTypingCacheEntry struct {
+	ticket      string
+	nextFetchAt time.Time
+	retryDelay  time.Duration
 }
 
 type WeixinAccountSnapshot struct {
@@ -115,6 +136,17 @@ type weixinAPIResponse struct {
 	ErrMsg  string `json:"err_msg"`
 }
 
+type weixinAPIStatusError struct {
+	Operation string
+	Ret       int
+	Errcode   int
+	Message   string
+}
+
+func (e *weixinAPIStatusError) Error() string {
+	return fmt.Sprintf("%s failed: ret=%d errcode=%d msg=%s", e.Operation, e.Ret, e.Errcode, e.Message)
+}
+
 type weixinQRCodeResponse struct {
 	QRcode           string `json:"qrcode"`
 	QRcodeImgContent string `json:"qrcode_img_content"`
@@ -144,6 +176,7 @@ func NewWeixinChannel(cfg config.WeixinConfig, messageBus *bus.MessageBus) (*Wei
 		chatContexts:  map[string]string{},
 		pollers:       map[string]context.CancelFunc{},
 		pendingLogins: map[string]*WeixinPendingLogin{},
+		typingCache:   map[string]weixinTypingCacheEntry{},
 	}
 	for _, account := range normalizeWeixinAccounts(cfg) {
 		ch.accounts[account.BotID] = &weixinAccountState{cfg: account}
@@ -168,6 +201,12 @@ func (c *WeixinChannel) SetConfigPath(path string) {
 	c.configPath = strings.TrimSpace(path)
 }
 
+func (c *WeixinChannel) SetPersistHook(fn func(string)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onPersist = fn
+}
+
 func (c *WeixinChannel) Start(ctx context.Context) error {
 	if c.IsRunning() {
 		return nil
@@ -182,11 +221,11 @@ func (c *WeixinChannel) Start(ctx context.Context) error {
 		"base_url": c.config.BaseURL,
 	})
 
-	c.mu.Lock()
+	c.mu.RLock()
 	accountIDs := append([]string(nil), c.accountOrder...)
-	c.mu.Unlock()
+	c.mu.RUnlock()
 	for _, botID := range accountIDs {
-		c.startAccountPollerLocked(botID)
+		c.startAccountPoller(botID)
 	}
 	return nil
 }
@@ -215,6 +254,9 @@ func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	if !c.IsRunning() {
 		return fmt.Errorf("weixin channel not running")
 	}
+	if err := c.ensureSessionActive(); err != nil {
+		return err
+	}
 
 	action := strings.ToLower(strings.TrimSpace(msg.Action))
 	switch action {
@@ -232,6 +274,7 @@ func (c *WeixinChannel) StartLogin(ctx context.Context) (*WeixinPendingLogin, er
 	if err != nil {
 		return nil, err
 	}
+	c.applyHeaders(req, false, "", false)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -433,8 +476,10 @@ func (c *WeixinChannel) sendMessage(ctx context.Context, msg bus.OutboundMessage
 		c.updateAccountError(account.cfg.BotID, err)
 		return err
 	}
-	if resp.Ret != 0 || resp.Errcode != 0 {
-		err := fmt.Errorf("sendmessage failed: ret=%d errcode=%d msg=%s", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg))
+	if err := c.validateAPIStatus("sendmessage", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg)); err != nil {
+		if c.isSessionExpiredError(err) {
+			c.pauseSession("sendmessage", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg))
+		}
 		c.updateAccountError(account.cfg.BotID, err)
 		return err
 	}
@@ -443,6 +488,9 @@ func (c *WeixinChannel) sendMessage(ctx context.Context, msg bus.OutboundMessage
 }
 
 func (c *WeixinChannel) sendTyping(ctx context.Context, chatID string, status int) error {
+	if err := c.ensureSessionActive(); err != nil {
+		return err
+	}
 	account, _, contextToken, err := c.resolveAccountForChat(chatID)
 	if err != nil {
 		return err
@@ -461,7 +509,7 @@ func (c *WeixinChannel) sendTyping(ctx context.Context, chatID string, status in
 		"typing_ticket": ticket,
 		"status":        status,
 		"base_info": map[string]string{
-			"channel_version": "1.0.0",
+			"channel_version": weixinChannelVersion,
 		},
 	}
 
@@ -469,60 +517,128 @@ func (c *WeixinChannel) sendTyping(ctx context.Context, chatID string, status in
 	if err := c.doJSON(ctx, "/ilink/bot/sendtyping", reqBody, &resp, account.cfg.BotToken); err != nil {
 		return err
 	}
-	if resp.Ret != 0 {
-		return fmt.Errorf("sendtyping failed: ret=%d", resp.Ret)
+	if err := c.validateAPIStatus("sendtyping", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg)); err != nil {
+		if c.isSessionExpiredError(err) {
+			c.pauseSession("sendtyping", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg))
+		}
+		return err
 	}
 	return nil
 }
 
 func (c *WeixinChannel) getTypingTicket(ctx context.Context, account config.WeixinAccountConfig, contextToken string) (string, error) {
+	key := strings.TrimSpace(account.BotID)
+	if key == "" {
+		key = strings.TrimSpace(account.IlinkUserID)
+	}
+	now := time.Now()
+	c.typingMu.Lock()
+	entry, ok := c.typingCache[key]
+	if ok && now.Before(entry.nextFetchAt) {
+		ticket := entry.ticket
+		c.typingMu.Unlock()
+		return ticket, nil
+	}
+	cachedTicket := entry.ticket
+	retryDelay := entry.retryDelay
+	c.typingMu.Unlock()
+
 	reqBody := map[string]interface{}{
 		"ilink_user_id": account.IlinkUserID,
 		"context_token": contextToken,
 		"base_info": map[string]string{
-			"channel_version": "1.0.0",
+			"channel_version": weixinChannelVersion,
 		},
 	}
 	var resp struct {
 		Ret          int    `json:"ret"`
+		Errcode      int    `json:"errcode"`
+		Errmsg       string `json:"errmsg"`
+		ErrMsg       string `json:"err_msg"`
 		TypingTicket string `json:"typing_ticket"`
 	}
 	if err := c.doJSON(ctx, "/ilink/bot/getconfig", reqBody, &resp, account.BotToken); err != nil {
+		c.storeTypingCacheFailure(key, cachedTicket, retryDelay, now)
+		if cachedTicket != "" {
+			return cachedTicket, nil
+		}
 		return "", err
 	}
-	if resp.Ret != 0 || strings.TrimSpace(resp.TypingTicket) == "" {
-		return "", fmt.Errorf("getconfig failed: ret=%d", resp.Ret)
+	if err := c.validateAPIStatus("getconfig", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg)); err != nil {
+		c.storeTypingCacheFailure(key, cachedTicket, retryDelay, now)
+		if c.isSessionExpiredError(err) {
+			c.pauseSession("getconfig", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg))
+		}
+		if cachedTicket != "" {
+			return cachedTicket, nil
+		}
+		return "", err
 	}
-	return strings.TrimSpace(resp.TypingTicket), nil
+	ticket := strings.TrimSpace(resp.TypingTicket)
+	if ticket == "" {
+		c.storeTypingCacheFailure(key, cachedTicket, retryDelay, now)
+		if cachedTicket != "" {
+			return cachedTicket, nil
+		}
+		return "", fmt.Errorf("getconfig failed: empty typing_ticket")
+	}
+	c.typingMu.Lock()
+	c.typingCache[key] = weixinTypingCacheEntry{
+		ticket:      ticket,
+		nextFetchAt: now.Add(weixinConfigCacheTTL),
+		retryDelay:  weixinConfigRetryInitial,
+	}
+	c.typingMu.Unlock()
+	return ticket, nil
 }
 
 func (c *WeixinChannel) pollAccount(ctx context.Context, botID string) {
+	consecutiveFails := 0
+	pollTimeout := weixinDefaultPollTimeout
 	for {
 		if ctx.Err() != nil {
+			return
+		}
+		if err := c.waitWhileSessionPaused(ctx); err != nil {
 			return
 		}
 		account, ok := c.accountConfig(botID)
 		if !ok {
 			return
 		}
-		resp, err := c.getUpdates(ctx, account)
+		resp, err := c.getUpdates(ctx, account, pollTimeout)
 		if err != nil {
 			c.updateAccountError(botID, err)
-			if !sleepWithContext(ctx, weixinRetryDelay) {
+			consecutiveFails++
+			if c.isSessionExpiredError(err) {
+				continue
+			}
+			delay := pollDelayForAttempt(consecutiveFails)
+			logger.WarnCF("weixin", 0, map[string]interface{}{
+				"operation": "getupdates",
+				"bot_id":    botID,
+				"attempt":   consecutiveFails,
+				"delay_ms":  delay.Milliseconds(),
+				"error":     err.Error(),
+			})
+			if !sleepWithContext(ctx, delay) {
 				return
 			}
 			continue
 		}
+		consecutiveFails = 0
 
 		if resp.LongpollingTimeoutMs > 0 {
-			c.httpClient.Timeout = time.Duration(resp.LongpollingTimeoutMs+10000) * time.Millisecond
+			pollTimeout = time.Duration(resp.LongpollingTimeoutMs+5000) * time.Millisecond
 		}
 
 		if next := strings.TrimSpace(resp.GetUpdatesBuf); next != "" {
 			c.mu.Lock()
 			if state := c.accounts[botID]; state != nil {
-				state.cfg.GetUpdatesBuf = next
-				c.schedulePersistLocked()
+				if state.cfg.GetUpdatesBuf != next {
+					state.cfg.GetUpdatesBuf = next
+					c.schedulePersistLocked()
+				}
 			}
 			c.mu.Unlock()
 		}
@@ -534,7 +650,7 @@ func (c *WeixinChannel) pollAccount(ctx context.Context, botID string) {
 	}
 }
 
-func (c *WeixinChannel) getUpdates(ctx context.Context, account config.WeixinAccountConfig) (*weixinGetUpdatesResponse, error) {
+func (c *WeixinChannel) getUpdates(ctx context.Context, account config.WeixinAccountConfig, timeout time.Duration) (*weixinGetUpdatesResponse, error) {
 	reqBody := map[string]interface{}{
 		"get_updates_buf": strings.TrimSpace(account.GetUpdatesBuf),
 		"base_info": map[string]string{
@@ -543,11 +659,14 @@ func (c *WeixinChannel) getUpdates(ctx context.Context, account config.WeixinAcc
 	}
 
 	var resp weixinGetUpdatesResponse
-	if err := c.doJSON(ctx, "/ilink/bot/getupdates", reqBody, &resp, account.BotToken); err != nil {
+	if err := c.doJSONWithTimeout(ctx, "/ilink/bot/getupdates", reqBody, &resp, account.BotToken, timeout); err != nil {
 		return nil, err
 	}
-	if resp.Ret != 0 || resp.Errcode != 0 {
-		return nil, fmt.Errorf("getupdates failed: ret=%d errcode=%d msg=%s", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg))
+	if err := c.validateAPIStatus("getupdates", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg)); err != nil {
+		if c.isSessionExpiredError(err) {
+			c.pauseSession("getupdates", resp.Ret, resp.Errcode, firstNonEmpty(resp.Errmsg, resp.ErrMsg))
+		}
+		return nil, err
 	}
 	return &resp, nil
 }
@@ -566,7 +685,7 @@ func (c *WeixinChannel) handleInboundMessage(botID string, msg weixinInboundMess
 	}
 	c.chatBindings[chatID] = botID
 	if state := c.accounts[botID]; state != nil {
-		if contextToken != "" {
+		if contextToken != "" && state.cfg.ContextToken != contextToken {
 			state.cfg.ContextToken = contextToken
 			c.schedulePersistLocked()
 		}
@@ -670,6 +789,7 @@ func (c *WeixinChannel) addOrUpdateAccount(account config.WeixinAccountConfig) e
 		return fmt.Errorf("bot_id and bot_token are required")
 	}
 
+	shouldStartPoller := false
 	c.mu.Lock()
 	if state := c.accounts[account.BotID]; state != nil {
 		state.cfg = mergeWeixinAccount(state.cfg, account)
@@ -681,13 +801,12 @@ func (c *WeixinChannel) addOrUpdateAccount(account config.WeixinAccountConfig) e
 	if strings.TrimSpace(c.config.DefaultBotID) == "" {
 		c.config.DefaultBotID = account.BotID
 	}
+	shouldStartPoller = c.IsRunning()
 	c.schedulePersistLocked()
 	c.mu.Unlock()
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.IsRunning() {
-		c.startAccountPollerLocked(account.BotID)
+	if shouldStartPoller {
+		c.startAccountPoller(account.BotID)
 	}
 	return nil
 }
@@ -710,6 +829,7 @@ func (c *WeixinChannel) persistAccounts() error {
 	configPath := strings.TrimSpace(c.configPath)
 	cfgCopy := c.config
 	accounts := c.accountConfigsLocked()
+	onPersist := c.onPersist
 	c.mu.RUnlock()
 	if configPath == "" {
 		return nil
@@ -736,6 +856,9 @@ func (c *WeixinChannel) persistAccounts() error {
 		c.persistTimer = nil
 	}
 	c.mu.Unlock()
+	if err == nil && onPersist != nil {
+		onPersist("weixin")
+	}
 	return err
 }
 
@@ -749,6 +872,12 @@ func (c *WeixinChannel) accountConfigsLocked() []config.WeixinAccountConfig {
 		out = append(out, state.cfg)
 	}
 	return out
+}
+
+func (c *WeixinChannel) startAccountPoller(botID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.startAccountPollerLocked(botID)
 }
 
 func (c *WeixinChannel) startAccountPollerLocked(botID string) {
@@ -804,8 +933,7 @@ func (c *WeixinChannel) refreshLoginStatus(ctx context.Context, loginID string) 
 	if err != nil {
 		return err
 	}
-	c.applyHeaders(req, false, "")
-	req.Header.Set("iLink-App-ClientVersion", "1")
+	c.applyHeaders(req, false, "", false)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -887,7 +1015,109 @@ func (c *WeixinChannel) updateAccountError(botID string, err error) {
 	c.updateAccountEvent(botID, "error", false, err)
 }
 
+func (c *WeixinChannel) validateAPIStatus(operation string, ret, errcode int, msg string) error {
+	if ret == 0 && errcode == 0 {
+		return nil
+	}
+	return &weixinAPIStatusError{
+		Operation: operation,
+		Ret:       ret,
+		Errcode:   errcode,
+		Message:   strings.TrimSpace(msg),
+	}
+}
+
+func (c *WeixinChannel) isSessionExpiredError(err error) bool {
+	apiErr, ok := err.(*weixinAPIStatusError)
+	return ok && (apiErr.Ret == weixinSessionExpiredCode || apiErr.Errcode == weixinSessionExpiredCode)
+}
+
+func (c *WeixinChannel) pauseSession(operation string, ret, errcode int, errmsg string) time.Duration {
+	c.pauseMu.Lock()
+	defer c.pauseMu.Unlock()
+	until := time.Now().Add(weixinSessionPauseWindow)
+	if until.After(c.pauseUntil) {
+		c.pauseUntil = until
+	}
+	remaining := time.Until(c.pauseUntil)
+	logger.ErrorCF("weixin", 0, map[string]interface{}{
+		"operation":   operation,
+		"ret":         ret,
+		"errcode":     errcode,
+		"errmsg":      strings.TrimSpace(errmsg),
+		"pause_until": c.pauseUntil.UTC().Format(time.RFC3339),
+		"minutes":     int((remaining + time.Minute - 1) / time.Minute),
+	})
+	return remaining
+}
+
+func (c *WeixinChannel) remainingPause() time.Duration {
+	c.pauseMu.Lock()
+	defer c.pauseMu.Unlock()
+	if c.pauseUntil.IsZero() {
+		return 0
+	}
+	remaining := time.Until(c.pauseUntil)
+	if remaining <= 0 {
+		c.pauseUntil = time.Time{}
+		return 0
+	}
+	return remaining
+}
+
+func (c *WeixinChannel) waitWhileSessionPaused(ctx context.Context) error {
+	remaining := c.remainingPause()
+	if remaining <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(remaining)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (c *WeixinChannel) ensureSessionActive() error {
+	remaining := c.remainingPause()
+	if remaining <= 0 {
+		return nil
+	}
+	return fmt.Errorf("weixin session paused (%d min remaining)", int((remaining+time.Minute-1)/time.Minute))
+}
+
+func pollDelayForAttempt(attempt int) time.Duration {
+	if attempt >= weixinMaxConsecutiveFails {
+		return weixinBackoffDelay
+	}
+	return weixinRetryDelay
+}
+
+func (c *WeixinChannel) storeTypingCacheFailure(key, cachedTicket string, retryDelay time.Duration, now time.Time) {
+	if retryDelay <= 0 {
+		retryDelay = weixinConfigRetryInitial
+	} else {
+		retryDelay *= 2
+		if retryDelay > weixinConfigRetryMax {
+			retryDelay = weixinConfigRetryMax
+		}
+	}
+	c.typingMu.Lock()
+	c.typingCache[key] = weixinTypingCacheEntry{
+		ticket:      cachedTicket,
+		nextFetchAt: now.Add(retryDelay),
+		retryDelay:  retryDelay,
+	}
+	c.typingMu.Unlock()
+}
+
 func (c *WeixinChannel) doJSON(ctx context.Context, path string, payload interface{}, out interface{}, token string) error {
+	return c.doJSONWithTimeout(ctx, path, payload, out, token, 0)
+}
+
+func (c *WeixinChannel) doJSONWithTimeout(ctx context.Context, path string, payload interface{}, out interface{}, token string, timeout time.Duration) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
@@ -897,9 +1127,15 @@ func (c *WeixinChannel) doJSON(ctx context.Context, path string, payload interfa
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
-	c.applyHeaders(req, true, token)
+	c.applyHeaders(req, true, token, true)
 
-	resp, err := c.httpClient.Do(req)
+	client := c.httpClient
+	if timeout > 0 {
+		clone := *c.httpClient
+		clone.Timeout = timeout
+		client = &clone
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -920,14 +1156,18 @@ func (c *WeixinChannel) doJSON(ctx context.Context, path string, payload interfa
 	return nil
 }
 
-func (c *WeixinChannel) applyHeaders(req *http.Request, jsonBody bool, token string) {
+func (c *WeixinChannel) applyHeaders(req *http.Request, jsonBody bool, token string, withAuth bool) {
 	if jsonBody {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("AuthorizationType", "ilink_bot_token")
-	req.Header.Set("X-WECHAT-UIN", randomWeixinUIN())
-	if strings.TrimSpace(token) != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	req.Header.Set("iLink-App-Id", weixinIlinkAppID)
+	req.Header.Set("iLink-App-ClientVersion", weixinClientVersion)
+	if withAuth {
+		req.Header.Set("AuthorizationType", "ilink_bot_token")
+		req.Header.Set("X-WECHAT-UIN", randomWeixinUIN())
+		if strings.TrimSpace(token) != "" {
+			req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+		}
 	}
 }
 

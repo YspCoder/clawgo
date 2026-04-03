@@ -107,22 +107,6 @@ func (m *Manager) initChannels() error {
 		}
 	}
 
-	if m.config.Channels.WhatsApp.Enabled {
-		if m.config.Channels.WhatsApp.BridgeURL == "" {
-			logger.WarnC("channels", logger.C0009)
-		} else {
-			whatsapp, err := NewWhatsAppChannel(m.config.Channels.WhatsApp, m.bus)
-			if err != nil {
-				logger.ErrorCF("channels", logger.C0010, map[string]interface{}{
-					logger.FieldError: err.Error(),
-				})
-			} else {
-				m.channels["whatsapp"] = whatsapp
-				logger.InfoC("channels", logger.C0011)
-			}
-		}
-	}
-
 	if m.config.Channels.Feishu.Enabled {
 		feishu, err := NewFeishuChannel(m.config.Channels.Feishu, m.bus)
 		if err != nil {
@@ -132,62 +116,6 @@ func (m *Manager) initChannels() error {
 		} else {
 			m.channels["feishu"] = feishu
 			logger.InfoC("channels", logger.C0013)
-		}
-	}
-
-	if m.config.Channels.Discord.Enabled {
-		if m.config.Channels.Discord.Token == "" {
-			logger.WarnC("channels", logger.C0014)
-		} else {
-			discord, err := NewDiscordChannel(m.config.Channels.Discord, m.bus)
-			if err != nil {
-				logger.ErrorCF("channels", logger.C0015, map[string]interface{}{
-					logger.FieldError: err.Error(),
-				})
-			} else {
-				m.channels["discord"] = discord
-				logger.InfoC("channels", logger.C0016)
-			}
-		}
-	}
-
-	if m.config.Channels.MaixCam.Enabled {
-		maixcam, err := NewMaixCamChannel(m.config.Channels.MaixCam, m.bus)
-		if err != nil {
-			logger.ErrorCF("channels", logger.C0017, map[string]interface{}{
-				logger.FieldError: err.Error(),
-			})
-		} else {
-			m.channels["maixcam"] = maixcam
-			logger.InfoC("channels", logger.C0018)
-		}
-	}
-
-	if m.config.Channels.QQ.Enabled {
-		qq, err := NewQQChannel(m.config.Channels.QQ, m.bus)
-		if err != nil {
-			logger.ErrorCF("channels", logger.C0019, map[string]interface{}{
-				logger.FieldError: err.Error(),
-			})
-		} else {
-			m.channels["qq"] = qq
-			logger.InfoC("channels", logger.C0020)
-		}
-	}
-
-	if m.config.Channels.DingTalk.Enabled {
-		if m.config.Channels.DingTalk.ClientID == "" {
-			logger.WarnC("channels", logger.C0021)
-		} else {
-			dingtalk, err := NewDingTalkChannel(m.config.Channels.DingTalk, m.bus)
-			if err != nil {
-				logger.ErrorCF("channels", logger.C0022, map[string]interface{}{
-					logger.FieldError: err.Error(),
-				})
-			} else {
-				m.channels["dingtalk"] = dingtalk
-				logger.InfoC("channels", logger.C0023)
-			}
 		}
 	}
 
