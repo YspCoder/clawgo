@@ -241,6 +241,32 @@ func (s *Server) effectiveWeixinRuntime(persisted cfgpkg.WeixinConfig) (cfgpkg.W
 	return cloneWeixinConfig(persisted), s.weixinChannel, false
 }
 
+func (s *Server) ensureWeixinRuntimeForLogin(persisted cfgpkg.WeixinConfig) (cfgpkg.WeixinConfig, *channels.WeixinChannel, bool, error) {
+	s.draftMu.Lock()
+	defer s.draftMu.Unlock()
+	if s.channelDrafts.Weixin != nil {
+		s.syncWeixinDraftLocked()
+		effective := cloneWeixinConfig(*s.channelDrafts.Weixin)
+		return effective, s.channelDrafts.weixinRuntime, true, nil
+	}
+	if s.weixinChannel != nil {
+		return cloneWeixinConfig(persisted), s.weixinChannel, false, nil
+	}
+
+	bootstrap := cloneWeixinConfig(persisted)
+	bootstrap.Enabled = true
+	if strings.TrimSpace(bootstrap.BaseURL) == "" {
+		bootstrap.BaseURL = "https://ilinkai.weixin.qq.com"
+	}
+	s.channelDrafts.Weixin = &bootstrap
+	if err := s.replaceWeixinDraftRuntimeLocked(&bootstrap); err != nil {
+		return cloneWeixinConfig(persisted), nil, true, err
+	}
+	s.syncWeixinDraftLocked()
+	effective := cloneWeixinConfig(*s.channelDrafts.Weixin)
+	return effective, s.channelDrafts.weixinRuntime, true, nil
+}
+
 func (s *Server) currentChannelDraftPayload(cfg *cfgpkg.Config, channel string) map[string]interface{} {
 	channel = strings.ToLower(strings.TrimSpace(channel))
 	payload := map[string]interface{}{
@@ -765,7 +791,12 @@ func (s *Server) saveWebUIConfig(r *http.Request) error {
 		if err := json.NewDecoder(r.Body).Decode(cfg); err != nil {
 			return fmt.Errorf("decode config: %w", err)
 		}
-		return s.persistWebUIConfig(cfg)
+		s.applyChannelDrafts(cfg)
+		if err := s.persistWebUIConfig(cfg); err != nil {
+			return err
+		}
+		s.clearChannelDrafts()
+		return nil
 	case "normalized":
 		cfg, err := cfgpkg.LoadConfig(s.configPath)
 		if err != nil {
@@ -776,7 +807,12 @@ func (s *Server) saveWebUIConfig(r *http.Request) error {
 			return fmt.Errorf("decode normalized config: %w", err)
 		}
 		cfg.ApplyNormalizedView(view)
-		return s.persistWebUIConfig(cfg)
+		s.applyChannelDrafts(cfg)
+		if err := s.persistWebUIConfig(cfg); err != nil {
+			return err
+		}
+		s.clearChannelDrafts()
+		return nil
 	default:
 		return fmt.Errorf("unsupported config mode: %s", mode)
 	}
@@ -1597,7 +1633,11 @@ func (s *Server) handleWebUIWeixinLoginStart(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_, ch, _ := s.effectiveWeixinRuntime(cfg.Channels.Weixin)
+	_, ch, _, err := s.ensureWeixinRuntimeForLogin(cfg.Channels.Weixin)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
 	if ch == nil {
 		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
 		return

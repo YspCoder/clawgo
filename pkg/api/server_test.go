@@ -234,6 +234,103 @@ func TestHandleWebUIWeixinStatusReflectsDraftRuntime(t *testing.T) {
 	}
 }
 
+func TestHandleWebUIConfigPostPersistsChannelDrafts(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Channels.Weixin.Enabled = false
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetConfigPath(cfgPath)
+	srv.SetMessageBus(bus.NewMessageBus())
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error { return nil })
+
+	draftReq := httptest.NewRequest(http.MethodPost, "/api/channels/draft", strings.NewReader(`{"channel":"weixin","config":{"enabled":true,"base_url":"https://ilinkai.weixin.qq.com"}}`))
+	draftReq.Header.Set("Content-Type", "application/json")
+	draftRec := httptest.NewRecorder()
+	srv.handleWebUIChannelDraft(draftRec, draftReq)
+	if draftRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from weixin draft save, got %d: %s", draftRec.Code, draftRec.Body.String())
+	}
+
+	saveReq := httptest.NewRequest(http.MethodPost, "/api/config", strings.NewReader(`{"gateway":{"host":"127.0.0.1","port":7788,"token":"abc"},"logging":{"enabled":false,"persist":false,"level":"debug","file":"logs/app.log","format":"text"},"models":{"providers":{"openai":{"api_base":"https://api.openai.com/v1","auth":"bearer","api_key":"secret","models":["gpt-5"],"timeout_sec":120}}},"tools":{"shell":{"enabled":true},"mcp":{"enabled":false}},"agents":{"defaults":{"model":{"primary":"openai/gpt-5"},"max_tool_iterations":10,"execution":{"run_state_ttl_seconds":3600,"run_state_max":128,"tool_parallel_safe_names":[],"tool_max_parallel_calls":4}},"router":{"enabled":false,"policy":{"intent_max_input_chars":2000,"max_rounds_without_user":3}},"subagents":{}},"channels":{"telegram":{"enabled":true,"token":"bot-token"}},"cron":{"enabled":false},"sentinel":{"enabled":false}}`))
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveRec := httptest.NewRecorder()
+	srv.handleWebUIConfig(saveRec, saveReq)
+	if saveRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from config save, got %d: %s", saveRec.Code, saveRec.Body.String())
+	}
+
+	updated, err := cfgpkg.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if !updated.Channels.Weixin.Enabled {
+		t.Fatalf("expected weixin enabled after config save with drafts")
+	}
+
+	srv.draftMu.Lock()
+	defer srv.draftMu.Unlock()
+	if srv.channelDrafts.Weixin != nil {
+		t.Fatalf("expected weixin draft cleared after config save")
+	}
+}
+
+func TestHandleWebUIWeixinLoginStartBootstrapsDraftRuntime(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/ilink/bot/get_bot_qrcode" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"qrcode":             "wx-qr",
+			"qrcode_img_content": "wx-qr-img",
+		})
+	}))
+	defer upstream.Close()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Channels.Weixin.Enabled = false
+	cfg.Channels.Weixin.BaseURL = upstream.URL
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetConfigPath(cfgPath)
+	srv.SetMessageBus(bus.NewMessageBus())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/weixin/login/start", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUIWeixinLoginStart(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from login start, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["draft_dirty"] != true {
+		t.Fatalf("expected draft_dirty=true, got %#v", payload["draft_dirty"])
+	}
+	if payload["config_enabled"] != false {
+		t.Fatalf("expected config_enabled=false, got %#v", payload["config_enabled"])
+	}
+	if payload["runtime_enabled"] != true {
+		t.Fatalf("expected runtime_enabled=true, got %#v", payload["runtime_enabled"])
+	}
+}
+
 func TestWithCORSEchoesPreflightHeaders(t *testing.T) {
 	t.Parallel()
 
