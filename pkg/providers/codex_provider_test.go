@@ -214,6 +214,27 @@ func TestCodexProviderChatFallsBackToHTTPStreamResponse(t *testing.T) {
 	}
 }
 
+func TestCodexProviderChatMergesLateUsageFromStreamingCompletion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output_text\":\"hello\"}}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"total_tokens\":3}}}\n\n")
+	}))
+	defer server.Close()
+
+	provider := NewCodexProvider("codex", "test-api-key", server.URL, "gpt-5.4", false, "", 5*time.Second, nil)
+	resp, err := provider.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-5.4", nil)
+	if err != nil {
+		t.Fatalf("Chat error: %v", err)
+	}
+	if resp.Content != "hello" {
+		t.Fatalf("unexpected response content: %q", resp.Content)
+	}
+	if resp.Usage == nil || resp.Usage.PromptTokens != 1 || resp.Usage.CompletionTokens != 2 || resp.Usage.TotalTokens != 3 {
+		t.Fatalf("unexpected usage: %#v", resp.Usage)
+	}
+}
+
 func TestCodexHandleAttemptFailureMarksAPIKeyCooldown(t *testing.T) {
 	provider := NewCodexProvider("codex-websocket-failure", "test-api-key", "", "gpt-5.4", false, "", 5*time.Second, nil)
 	provider.handleAttemptFailure(authAttempt{kind: "api_key", token: "test-api-key"}, http.StatusTooManyRequests, []byte(`{"error":{"message":"rate limit exceeded"}}`))

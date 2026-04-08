@@ -1022,15 +1022,13 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 				if err := json.Unmarshal([]byte(payload), &obj); err == nil {
 					if typ := strings.TrimSpace(fmt.Sprintf("%v", obj["type"])); typ == "response.completed" {
 						if respObj, ok := obj["response"]; ok {
-							if b, err := json.Marshal(respObj); err == nil {
-								finalJSON = b
-							}
+							finalJSON = mergeStreamFinalJSON(finalJSON, respObj)
 						}
 					}
 					if choices, ok := obj["choices"]; ok {
-						if b, err := json.Marshal(map[string]interface{}{"choices": choices, "usage": obj["usage"]}); err == nil {
-							finalJSON = b
-						}
+						finalJSON = mergeStreamFinalJSON(finalJSON, map[string]interface{}{"choices": choices, "usage": obj["usage"]})
+					} else if _, ok := obj["usage"]; ok && len(finalJSON) > 0 {
+						finalJSON = mergeStreamFinalJSON(finalJSON, map[string]interface{}{"usage": obj["usage"]})
 					}
 				}
 			}
@@ -1047,6 +1045,56 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 		finalJSON = []byte("{}")
 	}
 	return finalJSON, resp.StatusCode, ctype, false, nil
+}
+
+func mergeStreamFinalJSON(existing []byte, incoming interface{}) []byte {
+	if incoming == nil {
+		return existing
+	}
+	incomingMap, ok := incoming.(map[string]interface{})
+	if !ok {
+		data, err := json.Marshal(incoming)
+		if err != nil {
+			return existing
+		}
+		return data
+	}
+	if len(existing) == 0 {
+		data, err := json.Marshal(incomingMap)
+		if err != nil {
+			return existing
+		}
+		return data
+	}
+	var merged map[string]interface{}
+	if err := json.Unmarshal(existing, &merged); err != nil || merged == nil {
+		merged = map[string]interface{}{}
+	}
+	merged = mergeStringAnyMaps(merged, incomingMap)
+	data, err := json.Marshal(merged)
+	if err != nil {
+		return existing
+	}
+	return data
+}
+
+func mergeStringAnyMaps(dst, src map[string]interface{}) map[string]interface{} {
+	if dst == nil {
+		dst = map[string]interface{}{}
+	}
+	for key, value := range src {
+		if value == nil {
+			continue
+		}
+		if nestedSrc, ok := value.(map[string]interface{}); ok {
+			if nestedDst, ok := dst[key].(map[string]interface{}); ok {
+				dst[key] = mergeStringAnyMaps(nestedDst, nestedSrc)
+				continue
+			}
+		}
+		dst[key] = value
+	}
+	return dst
 }
 
 func shouldRetryOAuthQuota(status int, body []byte) bool {

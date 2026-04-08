@@ -478,6 +478,9 @@ func validateProviderConfig(path string, p ProviderConfig) []error {
 	if p.TimeoutSec <= 0 {
 		errs = append(errs, fmt.Errorf("%s.timeout_sec must be > 0", path))
 	}
+	if p.MaxTokens < 0 {
+		errs = append(errs, fmt.Errorf("%s.max_tokens must be >= 0", path))
+	}
 	switch authMode {
 	case "", "bearer", "oauth", "none", "hybrid":
 	default:

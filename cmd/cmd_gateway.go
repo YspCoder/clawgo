@@ -275,6 +275,7 @@ func gatewayCmd() {
 	registryServer.SetConfigAfterHook(func(forceRuntimeReload bool) error {
 		return triggerReload("api", forceRuntimeReload)
 	})
+	registryServer.SetMessageBus(msgBus)
 	if rawWeixin, ok := channelManager.GetChannel("weixin"); ok {
 		if weixinChannel, ok := rawWeixin.(*channels.WeixinChannel); ok {
 			weixinChannel.SetConfigPath(getConfigPath())

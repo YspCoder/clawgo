@@ -53,6 +53,8 @@ type NormalizedRuntimeRouterConfig struct {
 type NormalizedRuntimeProviderConfig struct {
 	Auth               string                  `json:"auth,omitempty"`
 	APIBase            string                  `json:"api_base,omitempty"`
+	MaxTokens          int                     `json:"max_tokens,omitempty"`
+	Temperature        float64                 `json:"temperature,omitempty"`
 	TimeoutSec         int                     `json:"timeout_sec,omitempty"`
 	OAuth              ProviderOAuthConfig     `json:"oauth,omitempty"`
 	RuntimePersist     bool                    `json:"runtime_persist,omitempty"`
@@ -143,6 +145,8 @@ func (c *Config) NormalizedView() NormalizedConfig {
 		view.Runtime.Providers[name] = NormalizedRuntimeProviderConfig{
 			Auth:               pc.Auth,
 			APIBase:            pc.APIBase,
+			MaxTokens:          pc.MaxTokens,
+			Temperature:        pc.Temperature,
 			TimeoutSec:         pc.TimeoutSec,
 			OAuth:              pc.OAuth,
 			RuntimePersist:     pc.RuntimePersist,
@@ -232,6 +236,12 @@ func (c *Config) ApplyNormalizedView(view NormalizedConfig) {
 		current := c.Models.Providers[name]
 		current.Auth = strings.TrimSpace(item.Auth)
 		current.APIBase = strings.TrimSpace(item.APIBase)
+		if item.MaxTokens > 0 {
+			current.MaxTokens = item.MaxTokens
+		} else if item.MaxTokens == 0 {
+			current.MaxTokens = 0
+		}
+		current.Temperature = item.Temperature
 		if item.TimeoutSec > 0 {
 			current.TimeoutSec = item.TimeoutSec
 		}

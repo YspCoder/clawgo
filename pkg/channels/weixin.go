@@ -389,6 +389,22 @@ func (c *WeixinChannel) ListAccounts() []WeixinAccountSnapshot {
 	return out
 }
 
+func (c *WeixinChannel) SnapshotConfig() config.WeixinConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	cfgCopy := c.config
+	cfgCopy.AllowFrom = append([]string(nil), cfgCopy.AllowFrom...)
+	cfgCopy.Accounts = append([]config.WeixinAccountConfig(nil), c.accountConfigsLocked()...)
+	cfgCopy.DefaultBotID = strings.TrimSpace(c.defaultBotIDLocked())
+	cfgCopy.BotID = ""
+	cfgCopy.BotToken = ""
+	cfgCopy.IlinkUserID = ""
+	cfgCopy.ContextToken = ""
+	cfgCopy.GetUpdatesBuf = ""
+	return cfgCopy
+}
+
 func (c *WeixinChannel) SetDefaultAccount(botID string) error {
 	botID = strings.TrimSpace(botID)
 	if botID == "" {

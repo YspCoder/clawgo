@@ -40,6 +40,8 @@ type AgentLoop struct {
 	provider             providers.LLMProvider
 	workspace            string
 	model                string
+	maxTokens            int
+	temperature          float64
 	maxIterations        int
 	sessions             *session.SessionManager
 	contextBuilder       *ContextBuilder
@@ -56,6 +58,8 @@ type AgentLoop struct {
 	providerNames        []string
 	providerPool         map[string]providers.LLMProvider
 	providerResponses    map[string]config.ProviderResponsesConfig
+	providerMaxTokens    map[string]int
+	providerTemperatures map[string]float64
 	telegramStreaming    bool
 	providerMu           sync.RWMutex
 	sessionProvider      map[string]string
@@ -222,6 +226,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		provider:             provider,
 		workspace:            workspace,
 		model:                provider.GetDefaultModel(),
+		maxTokens:            cfg.Agents.Defaults.MaxTokens,
+		temperature:          cfg.Agents.Defaults.Temperature,
 		maxIterations:        cfg.Agents.Defaults.MaxToolIterations,
 		sessions:             sessionsManager,
 		contextBuilder:       NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
@@ -237,6 +243,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		sessionProvider:      map[string]string{},
 		sessionStreamed:      map[string]bool{},
 		providerResponses:    map[string]config.ProviderResponsesConfig{},
+		providerMaxTokens:    map[string]int{},
+		providerTemperatures: map[string]float64{},
 		telegramStreaming:    cfg.Channels.Telegram.Streaming,
 		subagentManager:      subagentManager,
 		subagentRouter:       subagentRouter,
@@ -265,6 +273,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	loop.providerNames = append(loop.providerNames, primaryName)
 	if pc, ok := config.ProviderConfigByName(cfg, primaryName); ok {
 		loop.providerResponses[primaryName] = pc.Responses
+		loop.providerMaxTokens[primaryName] = pc.MaxTokens
+		loop.providerTemperatures[primaryName] = pc.Temperature
 	}
 	seenProviders := map[string]struct{}{primaryName: {}}
 	providerConfigs := config.AllProviderConfigs(cfg)
@@ -304,6 +314,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 				modelName = strings.TrimSpace(pc.Models[0])
 			}
 			loop.providerResponses[providerName] = pc.Responses
+			loop.providerMaxTokens[providerName] = pc.MaxTokens
+			loop.providerTemperatures[providerName] = pc.Temperature
 		}
 		seenProviders[providerName] = struct{}{}
 		loop.providerNames = append(loop.providerNames, providerName)
@@ -464,7 +476,7 @@ func (al *AgentLoop) buildSessionShards(ctx context.Context) []chan bus.InboundM
 	return shards
 }
 
-func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMessage, messages []providers.Message, toolDefs []providers.ToolDefinition, options map[string]interface{}, primaryErr error) (*providers.LLMResponse, string, error) {
+func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMessage, messages []providers.Message, toolDefs []providers.ToolDefinition, primaryErr error) (*providers.LLMResponse, string, error) {
 	if len(al.providerChain) <= 1 {
 		return nil, "", primaryErr
 	}
@@ -495,8 +507,10 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 			lastErr = err
 			continue
 		}
-		resp, err := p.Chat(ctx, messages, toolDefs, candidateModel, options)
+		fallbackOptions := al.buildResponsesOptionsForProvider(msg.SessionKey, candidate.name, int64(al.maxTokensForProvider(candidate.name)), al.temperatureForProvider(candidate.name))
+		resp, err := p.Chat(ctx, messages, toolDefs, candidateModel, fallbackOptions)
 		if err == nil {
+			al.setSessionProvider(msg.SessionKey, candidate.name)
 			logger.WarnCF("agent", logger.C0150, map[string]interface{}{"provider": candidate.name, "model": candidateModel, "ref": candidate.ref})
 			return resp, candidate.name, nil
 		}
@@ -548,6 +562,76 @@ func (al *AgentLoop) ensureProviderCandidate(candidate providerCandidate) (provi
 	al.providerPool[name] = created
 	al.providerMu.Unlock()
 	return created, model, nil
+}
+
+func (al *AgentLoop) providerCandidateByName(name string) (providerCandidate, bool) {
+	if al == nil {
+		return providerCandidate{}, false
+	}
+	target := strings.TrimSpace(name)
+	if target == "" {
+		return providerCandidate{}, false
+	}
+	for _, candidate := range al.providerChain {
+		if strings.EqualFold(strings.TrimSpace(candidate.name), target) {
+			return candidate, true
+		}
+	}
+	return providerCandidate{}, false
+}
+
+func (al *AgentLoop) defaultProviderName() string {
+	if al == nil || len(al.providerNames) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(al.providerNames[0])
+}
+
+func (al *AgentLoop) sessionProviderName(sessionKey string) string {
+	name := strings.TrimSpace(al.getSessionProvider(sessionKey))
+	if name == "" {
+		name = al.defaultProviderName()
+	}
+	return name
+}
+
+func (al *AgentLoop) isKnownProviderName(name string) bool {
+	target := strings.TrimSpace(name)
+	if target == "" {
+		return false
+	}
+	for _, item := range al.providerNames {
+		if strings.EqualFold(strings.TrimSpace(item), target) {
+			return true
+		}
+	}
+	return false
+}
+
+func (al *AgentLoop) activeProviderForSession(sessionKey string) (providers.LLMProvider, string, string, error) {
+	if al == nil {
+		return nil, "", "", fmt.Errorf("agent loop is nil")
+	}
+	name := al.sessionProviderName(sessionKey)
+	if name == "" {
+		return al.provider, al.model, "", nil
+	}
+	if strings.EqualFold(name, al.defaultProviderName()) {
+		model := strings.TrimSpace(al.model)
+		if model == "" && al.provider != nil {
+			model = strings.TrimSpace(al.provider.GetDefaultModel())
+		}
+		return al.provider, model, name, nil
+	}
+	candidate, ok := al.providerCandidateByName(name)
+	if !ok {
+		return al.provider, al.model, name, nil
+	}
+	p, model, err := al.ensureProviderCandidate(candidate)
+	if err != nil {
+		return nil, "", name, err
+	}
+	return p, model, name, nil
 }
 
 func automaticFallbackPriority(name string) int {
@@ -610,10 +694,22 @@ func (al *AgentLoop) getSessionProvider(sessionKey string) string {
 }
 
 func (al *AgentLoop) syncSessionDefaultProvider(sessionKey string) {
-	if al == nil || len(al.providerNames) == 0 {
+	if al == nil {
 		return
 	}
-	al.setSessionProvider(sessionKey, al.providerNames[0])
+	current := strings.TrimSpace(al.getSessionProvider(sessionKey))
+	if current == "" {
+		if name := al.defaultProviderName(); name != "" {
+			al.setSessionProvider(sessionKey, name)
+		}
+		return
+	}
+	if al.isKnownProviderName(current) {
+		return
+	}
+	if name := al.defaultProviderName(); name != "" {
+		al.setSessionProvider(sessionKey, name)
+	}
 }
 
 func (al *AgentLoop) markSessionStreamed(sessionKey string) {
@@ -707,6 +803,8 @@ func sessionShardIndex(sessionKey string, shardCount int) int {
 	return int(h.Sum32() % uint32(shardCount))
 }
 
+var thinkTagPattern = regexp.MustCompile(`(?s)<think>.*?</think>`)
+
 func (al *AgentLoop) getTrigger(msg bus.InboundMessage) string {
 	if msg.Metadata != nil {
 		if t := strings.TrimSpace(msg.Metadata["trigger"]); t != "" {
@@ -746,6 +844,413 @@ func (al *AgentLoop) shouldSuppressOutbound(msg bus.InboundMessage, response str
 		maxChars = 64
 	}
 	return len(r) <= maxChars
+}
+
+type llmTurnLoopConfig struct {
+	ctx               context.Context
+	triggerMsg        bus.InboundMessage
+	sessionKey        string
+	toolChannel       string
+	toolChatID        string
+	messages          []providers.Message
+	media             []string
+	mediaItems        []bus.MediaItem
+	enableStreaming   bool
+	errorLogCode      logger.CodeID
+	logDirectResponse bool
+}
+
+type llmTurnLoopResult struct {
+	messages        []providers.Message
+	pendingPersist  []providers.Message
+	finalContent    string
+	iteration       int
+	hasToolActivity bool
+}
+
+func logLLMTurnRequest(iteration, maxIterations int, providerName, activeModel string, messages []providers.Message, providerToolDefs []providers.ToolDefinition, maxTokens int, temperature float64) {
+	systemPromptLen := 0
+	if len(messages) > 0 {
+		systemPromptLen = len(messages[0].Content)
+	}
+	logger.DebugCF("agent", logger.C0152, map[string]interface{}{
+		"iteration":         iteration,
+		"max":               maxIterations,
+		"provider":          providerName,
+		"model":             activeModel,
+		"messages_count":    len(messages),
+		"tools_count":       len(providerToolDefs),
+		"max_tokens":        maxTokens,
+		"temperature":       temperature,
+		"system_prompt_len": systemPromptLen,
+	})
+	if iteration == 1 {
+		logger.DebugCF("agent", logger.C0153, map[string]interface{}{
+			"iteration":     iteration,
+			"messages_json": formatMessagesForLog(messages),
+			"tools_json":    formatToolsForLog(providerToolDefs),
+		})
+	}
+}
+
+func logLLMDirectResponse(iteration int, finalContent string) {
+	logger.InfoCF("agent", logger.C0156, map[string]interface{}{
+		"iteration":     iteration,
+		"content_chars": len(finalContent),
+	})
+}
+
+func logLLMToolCalls(iteration int, toolCalls []providers.ToolCall) {
+	toolNames := make([]string, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		toolNames = append(toolNames, tc.Name)
+	}
+	logger.InfoCF("agent", logger.C0157, map[string]interface{}{
+		"tools":     toolNames,
+		"count":     len(toolNames),
+		"iteration": iteration,
+	})
+}
+
+func buildAssistantToolCallMessage(response *providers.LLMResponse) providers.Message {
+	assistantMsg := providers.Message{
+		Role:    "assistant",
+		Content: response.Content,
+	}
+	if response == nil {
+		return assistantMsg
+	}
+	for _, tc := range response.ToolCalls {
+		argumentsJSON, _ := json.Marshal(tc.Arguments)
+		assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
+			ID:   tc.ID,
+			Type: "function",
+			Function: &providers.FunctionCall{
+				Name:      tc.Name,
+				Arguments: string(argumentsJSON),
+			},
+		})
+	}
+	return assistantMsg
+}
+
+func (al *AgentLoop) executeResponseToolCalls(cfg llmTurnLoopConfig, iteration int, response *providers.LLMResponse) []providers.Message {
+	if response == nil || len(response.ToolCalls) == 0 {
+		return nil
+	}
+	results := make([]providers.Message, 0, len(response.ToolCalls))
+	for _, tc := range response.ToolCalls {
+		argsJSON, _ := json.Marshal(tc.Arguments)
+		logger.InfoCF("agent", logger.C0172, map[string]interface{}{
+			"tool":      tc.Name,
+			"args":      truncate(string(argsJSON), 200),
+			"iteration": iteration,
+		})
+		execArgs := withToolContextArgs(tc.Name, tc.Arguments, cfg.toolChannel, cfg.toolChatID)
+		toolResult, toolErr := al.executeToolCall(cfg.ctx, tc.Name, execArgs, cfg.toolChannel, cfg.toolChatID)
+		if toolErr != nil {
+			toolResult = fmt.Sprintf("Error: %v", toolErr)
+		}
+		results = append(results, providers.Message{
+			Role:       "tool",
+			Content:    toolResult,
+			ToolCallID: tc.ID,
+		})
+	}
+	return results
+}
+
+func (al *AgentLoop) requestLLMResponse(cfg llmTurnLoopConfig, activeProvider providers.LLMProvider, activeModel string, messages []providers.Message, providerToolDefs []providers.ToolDefinition, options map[string]interface{}) (*providers.LLMResponse, error) {
+	if cfg.enableStreaming {
+		if sp, ok := activeProvider.(providers.StreamingLLMProvider); ok {
+			streamText := ""
+			lastPush := time.Now().Add(-time.Second)
+			return sp.ChatStream(cfg.ctx, messages, providerToolDefs, activeModel, options, func(delta string) {
+				if strings.TrimSpace(delta) == "" {
+					return
+				}
+				streamText += delta
+				if time.Since(lastPush) < 450*time.Millisecond {
+					return
+				}
+				if !shouldFlushTelegramStreamSnapshot(streamText) {
+					return
+				}
+				lastPush = time.Now()
+				replyID := ""
+				if cfg.triggerMsg.Metadata != nil {
+					replyID = cfg.triggerMsg.Metadata["message_id"]
+				}
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:   cfg.toolChannel,
+					ChatID:    cfg.toolChatID,
+					Content:   streamText,
+					Action:    "stream",
+					ReplyToID: replyID,
+				})
+				al.markSessionStreamed(cfg.sessionKey)
+			})
+		}
+	}
+	return activeProvider.Chat(cfg.ctx, messages, providerToolDefs, activeModel, options)
+}
+
+func (al *AgentLoop) runLLMTurnLoop(cfg llmTurnLoopConfig) (llmTurnLoopResult, error) {
+	result := llmTurnLoopResult{
+		messages:       append([]providers.Message(nil), cfg.messages...),
+		pendingPersist: make([]providers.Message, 0, 16),
+	}
+	maxAllowed := al.maxIterations
+	if maxAllowed < 1 {
+		maxAllowed = 1
+	}
+	toolDefs := al.filteredToolDefinitionsForContext(cfg.ctx)
+	providerToolDefs := al.buildProviderToolDefs(toolDefs)
+	result.messages = injectResponsesMediaParts(result.messages, cfg.media, cfg.mediaItems)
+
+	for result.iteration < maxAllowed {
+		result.iteration++
+		activeProvider, activeModel, providerName, err := al.activeProviderForSession(cfg.sessionKey)
+		if err != nil {
+			logger.ErrorCF("agent", cfg.errorLogCode, map[string]interface{}{
+				"iteration": result.iteration,
+				"error":     err.Error(),
+			})
+			return result, fmt.Errorf("resolve active provider: %w", err)
+		}
+		if activeProvider == nil {
+			return result, fmt.Errorf("active provider unavailable for session %s", strings.TrimSpace(cfg.sessionKey))
+		}
+
+		maxTokens := al.maxTokensForProvider(providerName)
+		temperature := al.temperatureForProvider(providerName)
+		logLLMTurnRequest(result.iteration, al.maxIterations, providerName, activeModel, result.messages, providerToolDefs, maxTokens, temperature)
+
+		options := al.buildResponsesOptions(cfg.sessionKey, int64(maxTokens), temperature)
+		response, err := al.requestLLMResponse(cfg, activeProvider, activeModel, result.messages, providerToolDefs, options)
+
+		if err != nil {
+			if fb, _, ferr := al.tryFallbackProviders(cfg.ctx, cfg.triggerMsg, result.messages, providerToolDefs, err); ferr == nil && fb != nil {
+				response = fb
+				err = nil
+			} else {
+				err = ferr
+			}
+		}
+		if err != nil {
+			logger.ErrorCF("agent", cfg.errorLogCode, map[string]interface{}{
+				"iteration": result.iteration,
+				"error":     err.Error(),
+			})
+			return result, fmt.Errorf("LLM call failed: %w", err)
+		}
+
+		if len(response.ToolCalls) == 0 {
+			result.finalContent = response.Content
+			if cfg.logDirectResponse {
+				logLLMDirectResponse(result.iteration, result.finalContent)
+			}
+			return result, nil
+		}
+
+		logLLMToolCalls(result.iteration, response.ToolCalls)
+
+		assistantMsg := buildAssistantToolCallMessage(response)
+		result.messages = append(result.messages, assistantMsg)
+		result.pendingPersist = append(result.pendingPersist, assistantMsg)
+		result.hasToolActivity = true
+		if maxAllowed < result.iteration+al.maxIterations {
+			maxAllowed = result.iteration + al.maxIterations
+		}
+
+		for _, toolResultMsg := range al.executeResponseToolCalls(cfg, result.iteration, response) {
+			result.messages = append(result.messages, toolResultMsg)
+			result.pendingPersist = append(result.pendingPersist, toolResultMsg)
+		}
+	}
+
+	return result, nil
+}
+
+func (al *AgentLoop) logInboundMessageStart(msg bus.InboundMessage) {
+	logger.InfoCF("agent", logger.C0171, map[string]interface{}{
+		"channel":     msg.Channel,
+		"chat_id":     msg.ChatID,
+		"sender_id":   msg.SenderID,
+		"session_key": msg.SessionKey,
+		"preview":     truncate(msg.Content, 80),
+	})
+}
+
+func (al *AgentLoop) prepareUserMessageContext(msg bus.InboundMessage, memoryNamespace string) ([]providers.Message, string) {
+	history := al.sessions.GetHistory(msg.SessionKey)
+	summary := al.sessions.GetSummary(msg.SessionKey)
+	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
+	if explicitPref := ExtractLanguagePreference(msg.Content); explicitPref != "" {
+		al.sessions.SetPreferredLanguage(msg.SessionKey, explicitPref)
+	}
+	preferredLang, lastLang := al.sessions.GetLanguagePreferences(msg.SessionKey)
+	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
+	messages := al.contextBuilder.BuildMessagesWithMemoryNamespace(
+		history,
+		summary,
+		msg.Content,
+		nil,
+		msg.Channel,
+		msg.ChatID,
+		responseLang,
+		memoryNamespace,
+	)
+	return messages, responseLang
+}
+
+func (al *AgentLoop) finalizeUserMessage(sessionKey, responseLang string, pendingPersist []providers.Message, finalContent string) {
+	for _, persisted := range pendingPersist {
+		al.sessions.AddMessageFull(sessionKey, persisted)
+	}
+	al.sessions.AddMessageFull(sessionKey, providers.Message{
+		Role:    "assistant",
+		Content: finalContent,
+	})
+	al.sessions.SetLastLanguage(sessionKey, responseLang)
+	al.compactSessionIfNeeded(sessionKey)
+	_ = al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+}
+
+func (al *AgentLoop) prepareSystemMessageContext(sessionKey string, msg bus.InboundMessage, originChannel, originChatID string) ([]providers.Message, string) {
+	history := al.sessions.GetHistory(sessionKey)
+	summary := al.sessions.GetSummary(sessionKey)
+	preferredLang, lastLang := al.sessions.GetLanguagePreferences(sessionKey)
+	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
+	messages := al.contextBuilder.BuildMessages(
+		history,
+		summary,
+		msg.Content,
+		nil,
+		originChannel,
+		originChatID,
+		responseLang,
+	)
+	return messages, responseLang
+}
+
+func (al *AgentLoop) finalizeSystemMessage(sessionKey, responseLang string, msg bus.InboundMessage, pendingPersist []providers.Message, finalContent string) {
+	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
+	for _, persisted := range pendingPersist {
+		al.sessions.AddMessageFull(sessionKey, persisted)
+	}
+	al.sessions.AddMessageFull(sessionKey, providers.Message{
+		Role:    "assistant",
+		Content: finalContent,
+	})
+	al.sessions.SetLastLanguage(sessionKey, responseLang)
+	al.compactSessionIfNeeded(sessionKey)
+	_ = al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+}
+
+func (al *AgentLoop) startSpecTaskForMessage(msg bus.InboundMessage) specCodingTaskRef {
+	specTaskRef := specCodingTaskRef{}
+	if err := al.maybeEnsureSpecCodingDocs(msg.Content); err != nil {
+		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+			"session_key": msg.SessionKey,
+			"error":       err.Error(),
+		})
+	}
+	taskRef, err := al.maybeStartSpecCodingTask(msg.Content)
+	if err != nil {
+		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+			"session_key": msg.SessionKey,
+			"error":       err.Error(),
+		})
+		return specTaskRef
+	}
+	return normalizeSpecCodingTaskRef(taskRef)
+}
+
+func (al *AgentLoop) reopenSpecTaskOnError(specTaskRef specCodingTaskRef, msg bus.InboundMessage, err error) {
+	if specTaskRef.Summary == "" || err == nil {
+		return
+	}
+	if rerr := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, err.Error()); rerr != nil {
+		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+			"session_key": msg.SessionKey,
+			"error":       rerr.Error(),
+		})
+	}
+}
+
+func (al *AgentLoop) completeSpecTaskOnSuccess(specTaskRef specCodingTaskRef, msg bus.InboundMessage, output string) {
+	if specTaskRef.Summary == "" {
+		return
+	}
+	if err := al.maybeCompleteSpecCodingTask(specTaskRef, output); err != nil {
+		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+			"session_key": msg.SessionKey,
+			"error":       err.Error(),
+		})
+	}
+}
+
+func (al *AgentLoop) recoverFinalContentAfterToolCalls(ctx context.Context, sessionKey string, messages []providers.Message, hasToolActivity bool) string {
+	if !hasToolActivity {
+		return ""
+	}
+	activeProvider, activeModel, providerName, err := al.activeProviderForSession(sessionKey)
+	if err != nil {
+		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+			"session_key": sessionKey,
+			"error":       err.Error(),
+		})
+		return ""
+	}
+	if activeProvider == nil {
+		return ""
+	}
+	options := al.buildResponsesOptionsForProvider(sessionKey, providerName, int64(al.maxTokensForProvider(providerName)), 0.2)
+	forced, ferr := activeProvider.Chat(ctx, messages, nil, activeModel, options)
+	if ferr != nil || forced == nil {
+		if ferr != nil {
+			logger.WarnCF("agent", logger.C0172, map[string]interface{}{
+				"session_key": sessionKey,
+				"error":       ferr.Error(),
+			})
+		}
+		return ""
+	}
+	return forced.Content
+}
+
+func sanitizeUserVisibleContent(finalContent string, iteration int) string {
+	userContent := thinkTagPattern.ReplaceAllString(finalContent, "")
+	if userContent == "" && finalContent != "" && iteration == 1 {
+		return "Thinking process completed."
+	}
+	return userContent
+}
+
+func (al *AgentLoop) finalizeUserTurnResponse(ctx context.Context, msg bus.InboundMessage, responseLang string, loopResult llmTurnLoopResult) (string, string) {
+	finalContent := loopResult.finalContent
+	if finalContent == "" {
+		if recovered := al.recoverFinalContentAfterToolCalls(ctx, msg.SessionKey, loopResult.messages, loopResult.hasToolActivity); recovered != "" {
+			finalContent = recovered
+		}
+	}
+	userContent := sanitizeUserVisibleContent(finalContent, loopResult.iteration)
+	al.finalizeUserMessage(msg.SessionKey, responseLang, loopResult.pendingPersist, userContent)
+	return finalContent, userContent
+}
+
+func (al *AgentLoop) maybeHandleAutoRoute(ctx context.Context, msg bus.InboundMessage, specTaskRef specCodingTaskRef) (string, error, bool) {
+	routed, ok, routeErr := al.maybeAutoRoute(ctx, msg)
+	if !ok {
+		return "", nil, false
+	}
+	if routeErr != nil {
+		al.reopenSpecTaskOnError(specTaskRef, msg, routeErr)
+		return routed, routeErr, true
+	}
+	al.completeSpecTaskOnSuccess(specTaskRef, msg, routed)
+	return routed, nil, true
 }
 
 func loadHeartbeatAckToken(workspace string) string {
@@ -879,282 +1384,37 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 	defer release()
 	al.syncSessionDefaultProvider(msg.SessionKey)
-	// Add message preview to log
-	preview := truncate(msg.Content, 80)
-	logger.InfoCF("agent", logger.C0171,
-		map[string]interface{}{
-			"channel":     msg.Channel,
-			"chat_id":     msg.ChatID,
-			"sender_id":   msg.SenderID,
-			"session_key": msg.SessionKey,
-			"preview":     preview,
-		})
+	al.logInboundMessageStart(msg)
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
 	}
-	specTaskRef := specCodingTaskRef{}
-	if err := al.maybeEnsureSpecCodingDocs(msg.Content); err != nil {
-		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-			"session_key": msg.SessionKey,
-			"error":       err.Error(),
-		})
-	}
-	if taskRef, err := al.maybeStartSpecCodingTask(msg.Content); err != nil {
-		logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-			"session_key": msg.SessionKey,
-			"error":       err.Error(),
-		})
-	} else {
-		specTaskRef = normalizeSpecCodingTaskRef(taskRef)
-	}
-	if routed, ok, routeErr := al.maybeAutoRoute(ctx, msg); ok {
-		if routeErr != nil && specTaskRef.Summary != "" {
-			if err := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, routeErr.Error()); err != nil {
-				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-					"session_key": msg.SessionKey,
-					"error":       err.Error(),
-				})
-			}
-		}
-		if routeErr == nil && specTaskRef.Summary != "" {
-			if err := al.maybeCompleteSpecCodingTask(specTaskRef, routed); err != nil {
-				logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-					"session_key": msg.SessionKey,
-					"error":       err.Error(),
-				})
-			}
-		}
+	specTaskRef := al.startSpecTaskForMessage(msg)
+	if routed, routeErr, handled := al.maybeHandleAutoRoute(ctx, msg, specTaskRef); handled {
 		return routed, routeErr
 	}
 
-	history := al.sessions.GetHistory(msg.SessionKey)
-	summary := al.sessions.GetSummary(msg.SessionKey)
-	if explicitPref := ExtractLanguagePreference(msg.Content); explicitPref != "" {
-		al.sessions.SetPreferredLanguage(msg.SessionKey, explicitPref)
-	}
-	preferredLang, lastLang := al.sessions.GetLanguagePreferences(msg.SessionKey)
-	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
+	messages, responseLang := al.prepareUserMessageContext(msg, memoryNamespace)
 
-	messages := al.contextBuilder.BuildMessagesWithMemoryNamespace(
-		history,
-		summary,
-		msg.Content,
-		nil,
-		msg.Channel,
-		msg.ChatID,
-		responseLang,
-		memoryNamespace,
-	)
-
-	iteration := 0
-	var finalContent string
-	hasToolActivity := false
-	lastToolOutputs := make([]string, 0, 4)
-	maxAllowed := al.maxIterations
-	if maxAllowed < 1 {
-		maxAllowed = 1
-	}
-	for iteration < maxAllowed {
-		iteration++
-
-		logger.DebugCF("agent", logger.C0151,
-			map[string]interface{}{
-				"iteration": iteration,
-				"max":       al.maxIterations,
-			})
-
-		toolDefs := al.filteredToolDefinitionsForContext(ctx)
-		providerToolDefs := al.buildProviderToolDefs(toolDefs)
-
-		// Log LLM request details
-		logger.DebugCF("agent", logger.C0152,
-			map[string]interface{}{
-				"iteration":         iteration,
-				"model":             al.model,
-				"messages_count":    len(messages),
-				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
-				"system_prompt_len": len(messages[0].Content),
-			})
-
-		// Log full messages (detailed)
-		logger.DebugCF("agent", logger.C0153,
-			map[string]interface{}{
-				"iteration":     iteration,
-				"messages_json": formatMessagesForLog(messages),
-				"tools_json":    formatToolsForLog(providerToolDefs),
-			})
-
-		messages = injectResponsesMediaParts(messages, msg.Media, msg.MediaItems)
-		options := al.buildResponsesOptions(msg.SessionKey, 8192, 0.7)
-		var response *providers.LLMResponse
-		var err error
-		if msg.Channel == "telegram" && al.telegramStreaming {
-			if sp, ok := al.provider.(providers.StreamingLLMProvider); ok {
-				streamText := ""
-				lastPush := time.Now().Add(-time.Second)
-				response, err = sp.ChatStream(ctx, messages, providerToolDefs, al.model, options, func(delta string) {
-					if strings.TrimSpace(delta) == "" {
-						return
-					}
-					streamText += delta
-					if time.Since(lastPush) < 450*time.Millisecond {
-						return
-					}
-					if !shouldFlushTelegramStreamSnapshot(streamText) {
-						return
-					}
-					lastPush = time.Now()
-					replyID := ""
-					if msg.Metadata != nil {
-						replyID = msg.Metadata["message_id"]
-					}
-					// Stream with formatted rendering once snapshot is syntactically safe.
-					al.bus.PublishOutbound(bus.OutboundMessage{Channel: msg.Channel, ChatID: msg.ChatID, Content: streamText, Action: "stream", ReplyToID: replyID})
-					al.markSessionStreamed(msg.SessionKey)
-				})
-			} else {
-				response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
-			}
-		} else {
-			response, err = al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
-		}
-
-		if err != nil {
-			if fb, _, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
-				response = fb
-				err = nil
-			} else {
-				err = ferr
-			}
-		}
-		if err != nil {
-			logger.ErrorCF("agent", logger.C0155,
-				map[string]interface{}{
-					"iteration": iteration,
-					"error":     err.Error(),
-				})
-			if specTaskRef.Summary != "" {
-				if rerr := al.maybeReopenSpecCodingTask(specTaskRef, msg.Content, err.Error()); rerr != nil {
-					logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-						"session_key": msg.SessionKey,
-						"error":       rerr.Error(),
-					})
-				}
-			}
-			return "", fmt.Errorf("LLM call failed: %w", err)
-		}
-
-		if len(response.ToolCalls) == 0 {
-			finalContent = response.Content
-			logger.InfoCF("agent", logger.C0156,
-				map[string]interface{}{
-					"iteration":     iteration,
-					"content_chars": len(finalContent),
-				})
-			break
-		}
-
-		toolNames := make([]string, 0, len(response.ToolCalls))
-		for _, tc := range response.ToolCalls {
-			toolNames = append(toolNames, tc.Name)
-		}
-		logger.InfoCF("agent", logger.C0157,
-			map[string]interface{}{
-				"tools":     toolNames,
-				"count":     len(toolNames),
-				"iteration": iteration,
-			})
-
-		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
-		}
-
-		for _, tc := range response.ToolCalls {
-			argumentsJSON, _ := json.Marshal(tc.Arguments)
-			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
-				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
-				},
-			})
-		}
-		messages = append(messages, assistantMsg)
-		// Persist assistant message with tool calls.
-		al.sessions.AddMessageFull(msg.SessionKey, assistantMsg)
-
-		hasToolActivity = true
-		// Extend rolling window as long as tools keep chaining.
-		if maxAllowed < iteration+al.maxIterations {
-			maxAllowed = iteration + al.maxIterations
-		}
-		for _, tc := range response.ToolCalls {
-			// Log tool call with arguments preview
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := truncate(string(argsJSON), 200)
-			logger.InfoCF("agent", logger.C0172,
-				map[string]interface{}{
-					"tool":      tc.Name,
-					"args":      argsPreview,
-					"iteration": iteration,
-				})
-
-			execArgs := withToolContextArgs(tc.Name, tc.Arguments, msg.Channel, msg.ChatID)
-			result, err := al.executeToolCall(ctx, tc.Name, execArgs, msg.Channel, msg.ChatID)
-			if err != nil {
-				result = fmt.Sprintf("Error: %v", err)
-			}
-			if len(lastToolOutputs) < 4 {
-				lastToolOutputs = append(lastToolOutputs, fmt.Sprintf("%s: %s", tc.Name, truncate(strings.ReplaceAll(result, "\n", " "), 180)))
-			}
-			toolResultMsg := providers.Message{
-				Role:       "tool",
-				Content:    result,
-				ToolCallID: tc.ID,
-			}
-			messages = append(messages, toolResultMsg)
-			// Persist tool result message.
-			al.sessions.AddMessageFull(msg.SessionKey, toolResultMsg)
-		}
-	}
-
-	if finalContent == "" && hasToolActivity {
-		forced, ferr := al.provider.Chat(ctx, messages, nil, al.model, map[string]interface{}{"max_tokens": 8192, "temperature": 0.2})
-		if ferr == nil && forced != nil && forced.Content != "" {
-			finalContent = forced.Content
-		}
-	}
-
-	// Filter out <think>...</think> content from user-facing response
-	// Keep full content in debug logs if needed, but remove from final output
-	re := regexp.MustCompile(`(?s)<think>.*?</think>`)
-	userContent := re.ReplaceAllString(finalContent, "")
-	if userContent == "" && finalContent != "" {
-		// If only thoughts were present, maybe provide a generic "Done" or keep something?
-		// For now, let's assume thoughts are auxiliary and empty response is okay if tools did work.
-		// If no tools ran and only thoughts, user might be confused.
-		if iteration == 1 {
-			userContent = "Thinking process completed."
-		}
-	}
-
-	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
-
-	// Persist full assistant response (including reasoning/tool flow outcomes when present).
-	al.sessions.AddMessageFull(msg.SessionKey, providers.Message{
-		Role:    "assistant",
-		Content: userContent,
+	loopResult, err := al.runLLMTurnLoop(llmTurnLoopConfig{
+		ctx:               ctx,
+		triggerMsg:        msg,
+		sessionKey:        msg.SessionKey,
+		toolChannel:       msg.Channel,
+		toolChatID:        msg.ChatID,
+		messages:          messages,
+		media:             msg.Media,
+		mediaItems:        msg.MediaItems,
+		enableStreaming:   msg.Channel == "telegram" && al.telegramStreaming,
+		errorLogCode:      logger.C0155,
+		logDirectResponse: true,
 	})
-	al.sessions.SetLastLanguage(msg.SessionKey, responseLang)
-	al.compactSessionIfNeeded(msg.SessionKey)
-
-	al.sessions.Save(al.sessions.GetOrCreate(msg.SessionKey))
+	if err != nil {
+		al.reopenSpecTaskOnError(specTaskRef, msg, err)
+		return "", err
+	}
+	finalContent, userContent := al.finalizeUserTurnResponse(ctx, msg, responseLang, loopResult)
 
 	// Log response preview (original content)
 	responsePreview := truncate(finalContent, 120)
@@ -1163,19 +1423,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"channel":      msg.Channel,
 			"sender_id":    msg.SenderID,
 			"preview":      responsePreview,
-			"iterations":   iteration,
+			"iterations":   loopResult.iteration,
 			"final_length": len(finalContent),
 			"user_length":  len(userContent),
 		})
 
-	if specTaskRef.Summary != "" {
-		if err := al.maybeCompleteSpecCodingTask(specTaskRef, userContent); err != nil {
-			logger.WarnCF("agent", logger.C0172, map[string]interface{}{
-				"session_key": msg.SessionKey,
-				"error":       err.Error(),
-			})
-		}
-	}
+	al.completeSpecTaskOnSuccess(specTaskRef, msg, userContent)
 	al.appendDailySummaryLog(msg, userContent)
 	return userContent, nil
 }
@@ -1327,130 +1580,30 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 	// Use the origin session for context
 	sessionKey := fmt.Sprintf("%s:%s", originChannel, originChatID)
 
-	// Build messages with the announce content
-	history := al.sessions.GetHistory(sessionKey)
-	summary := al.sessions.GetSummary(sessionKey)
-	preferredLang, lastLang := al.sessions.GetLanguagePreferences(sessionKey)
-	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
-	messages := al.contextBuilder.BuildMessages(
-		history,
-		summary,
-		msg.Content,
-		nil,
-		originChannel,
-		originChatID,
-		responseLang,
-	)
+	messages, responseLang := al.prepareSystemMessageContext(sessionKey, msg, originChannel, originChatID)
 
-	iteration := 0
-	var finalContent string
-
-	for iteration < al.maxIterations {
-		iteration++
-
-		toolDefs := al.filteredToolDefinitionsForContext(ctx)
-		providerToolDefs := al.buildProviderToolDefs(toolDefs)
-
-		// Log LLM request details
-		logger.DebugCF("agent", logger.C0152,
-			map[string]interface{}{
-				"iteration":         iteration,
-				"model":             al.model,
-				"messages_count":    len(messages),
-				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
-				"system_prompt_len": len(messages[0].Content),
-			})
-
-		// Log full messages (detailed)
-		logger.DebugCF("agent", logger.C0153,
-			map[string]interface{}{
-				"iteration":     iteration,
-				"messages_json": formatMessagesForLog(messages),
-				"tools_json":    formatToolsForLog(providerToolDefs),
-			})
-
-		options := al.buildResponsesOptions(sessionKey, 8192, 0.7)
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, options)
-
-		if err != nil {
-			if fb, _, ferr := al.tryFallbackProviders(ctx, msg, messages, providerToolDefs, options, err); ferr == nil && fb != nil {
-				response = fb
-				err = nil
-			} else {
-				err = ferr
-			}
-		}
-		if err != nil {
-			logger.ErrorCF("agent", logger.C0162,
-				map[string]interface{}{
-					"iteration": iteration,
-					"error":     err.Error(),
-				})
-			return "", fmt.Errorf("LLM call failed: %w", err)
-		}
-
-		if len(response.ToolCalls) == 0 {
-			finalContent = response.Content
-			break
-		}
-
-		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
-		}
-
-		for _, tc := range response.ToolCalls {
-			argumentsJSON, _ := json.Marshal(tc.Arguments)
-			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
-				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
-				},
-			})
-		}
-		messages = append(messages, assistantMsg)
-		// Persist assistant message with tool calls.
-		al.sessions.AddMessageFull(sessionKey, assistantMsg)
-
-		for _, tc := range response.ToolCalls {
-			execArgs := withToolContextArgs(tc.Name, tc.Arguments, originChannel, originChatID)
-			result, err := al.executeToolCall(ctx, tc.Name, execArgs, originChannel, originChatID)
-			if err != nil {
-				result = fmt.Sprintf("Error: %v", err)
-			}
-
-			toolResultMsg := providers.Message{
-				Role:       "tool",
-				Content:    result,
-				ToolCallID: tc.ID,
-			}
-			messages = append(messages, toolResultMsg)
-			// Persist tool result message.
-			al.sessions.AddMessageFull(sessionKey, toolResultMsg)
-		}
+	loopResult, err := al.runLLMTurnLoop(llmTurnLoopConfig{
+		ctx:               ctx,
+		triggerMsg:        msg,
+		sessionKey:        sessionKey,
+		toolChannel:       originChannel,
+		toolChatID:        originChatID,
+		messages:          messages,
+		errorLogCode:      logger.C0162,
+		logDirectResponse: false,
+	})
+	if err != nil {
+		return "", err
 	}
+	iteration := loopResult.iteration
+	finalContent := loopResult.finalContent
+	pendingPersist := loopResult.pendingPersist
 
 	if finalContent == "" {
 		finalContent = "Background task completed."
 	}
 
-	// Save to session with system message marker
-	al.sessions.AddMessage(sessionKey, "user", fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content))
-
-	// If finalContent has no tool calls (last LLM turn is direct text),
-	// earlier steps were already persisted in-loop; this stores the final reply.
-	al.sessions.AddMessageFull(sessionKey, providers.Message{
-		Role:    "assistant",
-		Content: finalContent,
-	})
-	al.sessions.SetLastLanguage(sessionKey, responseLang)
-	al.compactSessionIfNeeded(sessionKey)
-
-	al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+	al.finalizeSystemMessage(sessionKey, responseLang, msg, pendingPersist, finalContent)
 
 	logger.InfoCF("agent", logger.C0163,
 		map[string]interface{}{
@@ -1564,16 +1717,30 @@ func filterToolDefinitionsByContext(ctx context.Context, toolDefs []map[string]i
 }
 
 func (al *AgentLoop) buildResponsesOptions(sessionKey string, maxTokens int64, temperature float64) map[string]interface{} {
+	providerName := strings.TrimSpace(al.getSessionProvider(sessionKey))
+	if providerName == "" && len(al.providerNames) > 0 {
+		providerName = al.providerNames[0]
+	}
+	return al.buildResponsesOptionsForProvider(sessionKey, providerName, maxTokens, temperature)
+}
+
+func (al *AgentLoop) buildResponsesOptionsForProvider(sessionKey, providerName string, maxTokens int64, temperature float64) map[string]interface{} {
+	if maxTokens <= 0 {
+		maxTokens = int64(al.maxTokensForProvider(providerName))
+	}
+	if math.IsNaN(temperature) {
+		temperature = al.temperatureForProvider(providerName)
+	}
 	options := map[string]interface{}{
 		"max_tokens":  maxTokens,
 		"temperature": temperature,
 	}
-	if strings.EqualFold(strings.TrimSpace(al.getSessionProvider(sessionKey)), "codex") {
+	if strings.EqualFold(strings.TrimSpace(providerName), "codex") {
 		if key := strings.TrimSpace(sessionKey); key != "" {
 			options["codex_execution_session"] = key
 		}
 	}
-	responsesCfg := al.responsesConfigForSession(sessionKey)
+	responsesCfg := al.responsesConfigForProvider(providerName)
 	responseTools := make([]map[string]interface{}, 0, 2)
 	if responsesCfg.WebSearchEnabled {
 		webTool := map[string]interface{}{"type": "web_search"}
@@ -1604,6 +1771,60 @@ func (al *AgentLoop) buildResponsesOptions(sessionKey string, maxTokens int64, t
 	return options
 }
 
+func (al *AgentLoop) maxTokensForProvider(name string) int {
+	if al == nil {
+		return 8192
+	}
+	providerName := strings.TrimSpace(name)
+	if providerName != "" {
+		if limit, ok := al.providerMaxTokens[providerName]; ok && limit > 0 {
+			return limit
+		}
+	}
+	if al.maxTokens > 0 {
+		return al.maxTokens
+	}
+	return 8192
+}
+
+func (al *AgentLoop) maxTokensForSession(sessionKey string) int {
+	if al == nil {
+		return 8192
+	}
+	name := strings.TrimSpace(al.getSessionProvider(sessionKey))
+	if name == "" && len(al.providerNames) > 0 {
+		name = al.providerNames[0]
+	}
+	return al.maxTokensForProvider(name)
+}
+
+func (al *AgentLoop) temperatureForProvider(name string) float64 {
+	if al == nil {
+		return 0.7
+	}
+	providerName := strings.TrimSpace(name)
+	if providerName != "" {
+		if value, ok := al.providerTemperatures[providerName]; ok && value != 0 {
+			return value
+		}
+	}
+	if al.temperature != 0 {
+		return al.temperature
+	}
+	return 0.7
+}
+
+func (al *AgentLoop) temperatureForSession(sessionKey string) float64 {
+	if al == nil {
+		return 0.7
+	}
+	name := strings.TrimSpace(al.getSessionProvider(sessionKey))
+	if name == "" && len(al.providerNames) > 0 {
+		name = al.providerNames[0]
+	}
+	return al.temperatureForProvider(name)
+}
+
 func (al *AgentLoop) responsesConfigForSession(sessionKey string) config.ProviderResponsesConfig {
 	if al == nil {
 		return config.ProviderResponsesConfig{}
@@ -1611,6 +1832,13 @@ func (al *AgentLoop) responsesConfigForSession(sessionKey string) config.Provide
 	name := strings.TrimSpace(al.getSessionProvider(sessionKey))
 	if name == "" && len(al.providerNames) > 0 {
 		name = al.providerNames[0]
+	}
+	return al.responsesConfigForProvider(name)
+}
+
+func (al *AgentLoop) responsesConfigForProvider(name string) config.ProviderResponsesConfig {
+	if al == nil {
+		return config.ProviderResponsesConfig{}
 	}
 	if name == "" {
 		return config.ProviderResponsesConfig{}

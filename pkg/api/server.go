@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YspCoder/clawgo/pkg/bus"
 	"github.com/YspCoder/clawgo/pkg/channels"
 	cfgpkg "github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/providers"
@@ -50,6 +51,7 @@ type Server struct {
 	onConfigAfter  func(forceRuntimeReload bool) error
 	onCron         func(action string, args map[string]interface{}) (interface{}, error)
 	onToolsCatalog func() interface{}
+	messageBus     *bus.MessageBus
 	weixinChannel  *channels.WeixinChannel
 	oauthFlowMu    sync.Mutex
 	oauthFlows     map[string]*providers.OAuthPendingFlow
@@ -57,6 +59,15 @@ type Server struct {
 	extraRoutes    map[string]http.Handler
 	eventSubsMu    sync.Mutex
 	eventSubs      map[*websocket.Conn]struct{}
+	draftMu        sync.RWMutex
+	channelDrafts  channelDraftStore
+}
+
+type channelDraftStore struct {
+	Weixin        *cfgpkg.WeixinConfig
+	Telegram      *cfgpkg.TelegramConfig
+	Feishu        *cfgpkg.FeishuConfig
+	weixinRuntime *channels.WeixinChannel
 }
 
 func NewServer(host string, port int, token string) *Server {
@@ -86,6 +97,7 @@ func (s *Server) SetChatHandler(fn func(ctx context.Context, sessionKey, content
 func (s *Server) SetChatHistoryHandler(fn func(sessionKey string) []map[string]interface{}) {
 	s.onChatHistory = fn
 }
+func (s *Server) SetMessageBus(mb *bus.MessageBus)                          { s.messageBus = mb }
 func (s *Server) SetConfigAfterHook(fn func(forceRuntimeReload bool) error) { s.onConfigAfter = fn }
 func (s *Server) SetCronHandler(fn func(action string, args map[string]interface{}) (interface{}, error)) {
 	s.onCron = fn
@@ -115,6 +127,356 @@ func (s *Server) SetWeixinChannel(ch *channels.WeixinChannel) {
 			})
 		})
 	}
+}
+
+func cloneWeixinConfig(cfg cfgpkg.WeixinConfig) cfgpkg.WeixinConfig {
+	cp := cfg
+	cp.AllowFrom = append([]string(nil), cfg.AllowFrom...)
+	cp.Accounts = append([]cfgpkg.WeixinAccountConfig(nil), cfg.Accounts...)
+	return cp
+}
+
+func cloneTelegramConfig(cfg cfgpkg.TelegramConfig) cfgpkg.TelegramConfig {
+	cp := cfg
+	cp.AllowFrom = append([]string(nil), cfg.AllowFrom...)
+	cp.AllowChats = append([]string(nil), cfg.AllowChats...)
+	return cp
+}
+
+func cloneFeishuConfig(cfg cfgpkg.FeishuConfig) cfgpkg.FeishuConfig {
+	cp := cfg
+	cp.AllowFrom = append([]string(nil), cfg.AllowFrom...)
+	cp.AllowChats = append([]string(nil), cfg.AllowChats...)
+	return cp
+}
+
+func validChannelDraftName(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "weixin", "telegram", "feishu":
+		return true
+	default:
+		return false
+	}
+}
+
+func decodeMergedJSON[T any](current T, raw json.RawMessage) (T, error) {
+	out := current
+	if len(raw) == 0 || string(raw) == "null" {
+		return out, nil
+	}
+	baseBytes, err := json.Marshal(current)
+	if err != nil {
+		return out, err
+	}
+	merged := map[string]interface{}{}
+	if err := json.Unmarshal(baseBytes, &merged); err != nil {
+		return out, err
+	}
+	patch := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		return out, err
+	}
+	merged = mergeJSONMap(merged, patch)
+	mergedBytes, err := json.Marshal(merged)
+	if err != nil {
+		return out, err
+	}
+	if err := json.Unmarshal(mergedBytes, &out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func (s *Server) syncWeixinDraftLocked() {
+	if s.channelDrafts.Weixin == nil || s.channelDrafts.weixinRuntime == nil {
+		return
+	}
+	snapshot := s.channelDrafts.weixinRuntime.SnapshotConfig()
+	s.channelDrafts.Weixin = &snapshot
+}
+
+func (s *Server) replaceWeixinDraftRuntimeLocked(cfg *cfgpkg.WeixinConfig) error {
+	if s.channelDrafts.weixinRuntime != nil {
+		_ = s.channelDrafts.weixinRuntime.Stop(context.Background())
+		s.channelDrafts.weixinRuntime = nil
+	}
+	if cfg == nil || !cfg.Enabled {
+		return nil
+	}
+	if s.messageBus == nil {
+		return fmt.Errorf("message bus not configured")
+	}
+	ch, err := channels.NewWeixinChannel(cloneWeixinConfig(*cfg), s.messageBus)
+	if err != nil {
+		return err
+	}
+	if err := ch.Start(context.Background()); err != nil {
+		return err
+	}
+	s.channelDrafts.weixinRuntime = ch
+	return nil
+}
+
+func (s *Server) clearChannelDraftsLocked() {
+	if s.channelDrafts.weixinRuntime != nil {
+		_ = s.channelDrafts.weixinRuntime.Stop(context.Background())
+	}
+	s.channelDrafts = channelDraftStore{}
+}
+
+func (s *Server) clearChannelDrafts() {
+	s.draftMu.Lock()
+	defer s.draftMu.Unlock()
+	s.clearChannelDraftsLocked()
+}
+
+func (s *Server) effectiveWeixinRuntime(persisted cfgpkg.WeixinConfig) (cfgpkg.WeixinConfig, *channels.WeixinChannel, bool) {
+	s.draftMu.Lock()
+	defer s.draftMu.Unlock()
+	if s.channelDrafts.Weixin != nil {
+		s.syncWeixinDraftLocked()
+		effective := cloneWeixinConfig(*s.channelDrafts.Weixin)
+		return effective, s.channelDrafts.weixinRuntime, true
+	}
+	return cloneWeixinConfig(persisted), s.weixinChannel, false
+}
+
+func (s *Server) currentChannelDraftPayload(cfg *cfgpkg.Config, channel string) map[string]interface{} {
+	channel = strings.ToLower(strings.TrimSpace(channel))
+	payload := map[string]interface{}{
+		"ok":      true,
+		"channel": channel,
+	}
+	s.draftMu.Lock()
+	defer s.draftMu.Unlock()
+	switch channel {
+	case "weixin":
+		persisted := cloneWeixinConfig(cfg.Channels.Weixin)
+		var draft interface{}
+		effective := persisted
+		dirty := s.channelDrafts.Weixin != nil
+		if dirty {
+			s.syncWeixinDraftLocked()
+			effective = cloneWeixinConfig(*s.channelDrafts.Weixin)
+			draft = effective
+		}
+		payload["persisted"] = persisted
+		payload["draft"] = draft
+		payload["effective"] = effective
+		payload["dirty"] = dirty
+		payload["runtime_enabled"] = s.channelDrafts.weixinRuntime != nil && s.channelDrafts.weixinRuntime.IsRunning()
+	case "telegram":
+		persisted := cloneTelegramConfig(cfg.Channels.Telegram)
+		var draft interface{}
+		effective := persisted
+		dirty := s.channelDrafts.Telegram != nil
+		if dirty {
+			effective = cloneTelegramConfig(*s.channelDrafts.Telegram)
+			draft = effective
+		}
+		payload["persisted"] = persisted
+		payload["draft"] = draft
+		payload["effective"] = effective
+		payload["dirty"] = dirty
+	case "feishu":
+		persisted := cloneFeishuConfig(cfg.Channels.Feishu)
+		var draft interface{}
+		effective := persisted
+		dirty := s.channelDrafts.Feishu != nil
+		if dirty {
+			effective = cloneFeishuConfig(*s.channelDrafts.Feishu)
+			draft = effective
+		}
+		payload["persisted"] = persisted
+		payload["draft"] = draft
+		payload["effective"] = effective
+		payload["dirty"] = dirty
+	}
+	return payload
+}
+
+func (s *Server) applyChannelDrafts(cfg *cfgpkg.Config) {
+	if cfg == nil {
+		return
+	}
+	s.draftMu.Lock()
+	defer s.draftMu.Unlock()
+	s.syncWeixinDraftLocked()
+	if s.channelDrafts.Weixin != nil {
+		cfg.Channels.Weixin = cloneWeixinConfig(*s.channelDrafts.Weixin)
+	}
+	if s.channelDrafts.Telegram != nil {
+		cfg.Channels.Telegram = cloneTelegramConfig(*s.channelDrafts.Telegram)
+	}
+	if s.channelDrafts.Feishu != nil {
+		cfg.Channels.Feishu = cloneFeishuConfig(*s.channelDrafts.Feishu)
+	}
+}
+
+func (s *Server) handleWebUIChannelDraft(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		channel := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("channel")))
+		if channel == "" {
+			writeJSON(w, map[string]interface{}{
+				"ok": true,
+				"channels": map[string]interface{}{
+					"weixin":   s.currentChannelDraftPayload(cfg, "weixin"),
+					"telegram": s.currentChannelDraftPayload(cfg, "telegram"),
+					"feishu":   s.currentChannelDraftPayload(cfg, "feishu"),
+				},
+			})
+			return
+		}
+		if !validChannelDraftName(channel) {
+			http.Error(w, "unsupported channel", http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, s.currentChannelDraftPayload(cfg, channel))
+	case http.MethodPost:
+		var body struct {
+			Channel string          `json:"channel"`
+			Config  json.RawMessage `json:"config"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		channel := strings.ToLower(strings.TrimSpace(body.Channel))
+		if !validChannelDraftName(channel) {
+			http.Error(w, "unsupported channel", http.StatusBadRequest)
+			return
+		}
+		s.draftMu.Lock()
+		switch channel {
+		case "weixin":
+			current := cfg.Channels.Weixin
+			if s.channelDrafts.Weixin != nil {
+				s.syncWeixinDraftLocked()
+				current = cloneWeixinConfig(*s.channelDrafts.Weixin)
+			}
+			next, err := decodeMergedJSON(current, body.Config)
+			if err != nil {
+				s.draftMu.Unlock()
+				http.Error(w, "invalid weixin config", http.StatusBadRequest)
+				return
+			}
+			next = cloneWeixinConfig(next)
+			if err := s.replaceWeixinDraftRuntimeLocked(&next); err != nil {
+				s.draftMu.Unlock()
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			s.channelDrafts.Weixin = &next
+		case "telegram":
+			current := cfg.Channels.Telegram
+			if s.channelDrafts.Telegram != nil {
+				current = cloneTelegramConfig(*s.channelDrafts.Telegram)
+			}
+			next, err := decodeMergedJSON(current, body.Config)
+			if err != nil {
+				s.draftMu.Unlock()
+				http.Error(w, "invalid telegram config", http.StatusBadRequest)
+				return
+			}
+			next = cloneTelegramConfig(next)
+			s.channelDrafts.Telegram = &next
+		case "feishu":
+			current := cfg.Channels.Feishu
+			if s.channelDrafts.Feishu != nil {
+				current = cloneFeishuConfig(*s.channelDrafts.Feishu)
+			}
+			next, err := decodeMergedJSON(current, body.Config)
+			if err != nil {
+				s.draftMu.Unlock()
+				http.Error(w, "invalid feishu config", http.StatusBadRequest)
+				return
+			}
+			next = cloneFeishuConfig(next)
+			s.channelDrafts.Feishu = &next
+		}
+		s.draftMu.Unlock()
+		s.broadcastEvent(map[string]interface{}{
+			"type":    "channel_draft_changed",
+			"channel": channel,
+		})
+		writeJSON(w, s.currentChannelDraftPayload(cfg, channel))
+	case http.MethodDelete:
+		channel := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("channel")))
+		s.draftMu.Lock()
+		if channel == "" {
+			s.clearChannelDraftsLocked()
+			s.draftMu.Unlock()
+			writeJSON(w, map[string]interface{}{"ok": true, "cleared": "all"})
+			return
+		}
+		if !validChannelDraftName(channel) {
+			s.draftMu.Unlock()
+			http.Error(w, "unsupported channel", http.StatusBadRequest)
+			return
+		}
+		switch channel {
+		case "weixin":
+			if s.channelDrafts.weixinRuntime != nil {
+				_ = s.channelDrafts.weixinRuntime.Stop(context.Background())
+				s.channelDrafts.weixinRuntime = nil
+			}
+			s.channelDrafts.Weixin = nil
+		case "telegram":
+			s.channelDrafts.Telegram = nil
+		case "feishu":
+			s.channelDrafts.Feishu = nil
+		}
+		s.draftMu.Unlock()
+		s.broadcastEvent(map[string]interface{}{
+			"type":    "channel_draft_changed",
+			"channel": channel,
+		})
+		writeJSON(w, map[string]interface{}{"ok": true, "channel": channel, "cleared": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleWebUIChannelDraftCommit(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.applyChannelDrafts(cfg)
+	if err := s.persistWebUIConfig(cfg); err != nil {
+		var validationErr *configValidationError
+		if errors.As(err, &validationErr) {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]interface{}{
+				"ok":     false,
+				"error":  validationErr.Error(),
+				"errors": validationErr.Fields,
+			})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.clearChannelDrafts()
+	writeJSON(w, map[string]interface{}{"ok": true, "committed": true})
 }
 
 func (s *Server) handleWebUIEventsLive(w http.ResponseWriter, r *http.Request) {
@@ -225,11 +587,14 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/sessions", s.handleWebUISessions)
 	mux.HandleFunc("/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/api/workspace_file", s.handleWebUIWorkspaceFile)
+	mux.HandleFunc("/api/workspace_docs", s.handleWebUIWorkspaceDocs)
 	mux.HandleFunc("/api/tool_allowlist_groups", s.handleWebUIToolAllowlistGroups)
 	mux.HandleFunc("/api/tools", s.handleWebUITools)
 	mux.HandleFunc("/api/mcp/install", s.handleWebUIMCPInstall)
 	mux.HandleFunc("/api/logs/live", s.handleWebUILogsLive)
 	mux.HandleFunc("/api/logs/recent", s.handleWebUILogsRecent)
+	mux.HandleFunc("/api/channels/draft", s.handleWebUIChannelDraft)
+	mux.HandleFunc("/api/channels/draft/commit", s.handleWebUIChannelDraftCommit)
 	s.extraRoutesMu.RLock()
 	for path, handler := range s.extraRoutes {
 		routePath := path
@@ -1227,11 +1592,17 @@ func (s *Server) handleWebUIWeixinLoginStart(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.weixinChannel == nil {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, ch, _ := s.effectiveWeixinRuntime(cfg.Channels.Weixin)
+	if ch == nil {
 		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if _, err := s.weixinChannel.StartLogin(r.Context()); err != nil {
+	if _, err := ch.StartLogin(r.Context()); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -1248,7 +1619,13 @@ func (s *Server) handleWebUIWeixinLoginCancel(w http.ResponseWriter, r *http.Req
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.weixinChannel == nil {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, ch, _ := s.effectiveWeixinRuntime(cfg.Channels.Weixin)
+	if ch == nil {
 		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1259,7 +1636,7 @@ func (s *Server) handleWebUIWeixinLoginCancel(w http.ResponseWriter, r *http.Req
 		http.Error(w, "invalid json body", http.StatusBadRequest)
 		return
 	}
-	if !s.weixinChannel.CancelPendingLogin(body.LoginID) {
+	if !ch.CancelPendingLogin(body.LoginID) {
 		http.Error(w, "login_id not found", http.StatusNotFound)
 		return
 	}
@@ -1283,8 +1660,14 @@ func (s *Server) handleWebUIWeixinQR(w http.ResponseWriter, r *http.Request) {
 	}
 	qrCode := ""
 	loginID := strings.TrimSpace(r.URL.Query().Get("login_id"))
-	if loginID != "" && s.weixinChannel != nil {
-		if pending := s.weixinChannel.PendingLoginByID(loginID); pending != nil {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, ch, _ := s.effectiveWeixinRuntime(cfg.Channels.Weixin)
+	if loginID != "" && ch != nil {
+		if pending := ch.PendingLoginByID(loginID); pending != nil {
 			qrCode = fallbackString(pending.QRCodeImgContent, pending.QRCode)
 		}
 	}
@@ -1318,7 +1701,13 @@ func (s *Server) handleWebUIWeixinAccountRemove(w http.ResponseWriter, r *http.R
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.weixinChannel == nil {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, ch, _ := s.effectiveWeixinRuntime(cfg.Channels.Weixin)
+	if ch == nil {
 		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1329,7 +1718,7 @@ func (s *Server) handleWebUIWeixinAccountRemove(w http.ResponseWriter, r *http.R
 		http.Error(w, "invalid json body", http.StatusBadRequest)
 		return
 	}
-	if err := s.weixinChannel.RemoveAccount(body.BotID); err != nil {
+	if err := ch.RemoveAccount(body.BotID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -1346,7 +1735,13 @@ func (s *Server) handleWebUIWeixinAccountDefault(w http.ResponseWriter, r *http.
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.weixinChannel == nil {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, ch, _ := s.effectiveWeixinRuntime(cfg.Channels.Weixin)
+	if ch == nil {
 		http.Error(w, "weixin channel unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -1357,7 +1752,7 @@ func (s *Server) handleWebUIWeixinAccountDefault(w http.ResponseWriter, r *http.
 		http.Error(w, "invalid json body", http.StatusBadRequest)
 		return
 	}
-	if err := s.weixinChannel.SetDefaultAccount(body.BotID); err != nil {
+	if err := ch.SetDefaultAccount(body.BotID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -1373,25 +1768,35 @@ func (s *Server) webUIWeixinStatusPayload(ctx context.Context) (map[string]inter
 			"error": err.Error(),
 		}, http.StatusInternalServerError
 	}
-	weixinCfg := cfg.Channels.Weixin
-	if s.weixinChannel == nil {
+	persistedCfg := cloneWeixinConfig(cfg.Channels.Weixin)
+	weixinCfg, ch, usingDraft := s.effectiveWeixinRuntime(persistedCfg)
+	if ch == nil {
 		return map[string]interface{}{
-			"ok":       false,
-			"enabled":  weixinCfg.Enabled,
-			"base_url": weixinCfg.BaseURL,
-			"error":    "weixin channel unavailable",
+			"ok":              false,
+			"enabled":         weixinCfg.Enabled,
+			"config_enabled":  persistedCfg.Enabled,
+			"runtime_enabled": false,
+			"draft_dirty":     usingDraft,
+			"base_url":        weixinCfg.BaseURL,
+			"error":           "weixin channel unavailable",
 		}, http.StatusOK
 	}
-	pendingLogins, err := s.weixinChannel.RefreshLoginStatuses(ctx)
+	pendingLogins, err := ch.RefreshLoginStatuses(ctx)
 	if err != nil {
 		return map[string]interface{}{
-			"ok":       false,
-			"enabled":  weixinCfg.Enabled,
-			"base_url": weixinCfg.BaseURL,
-			"error":    err.Error(),
+			"ok":              false,
+			"enabled":         weixinCfg.Enabled,
+			"config_enabled":  persistedCfg.Enabled,
+			"runtime_enabled": ch.IsRunning(),
+			"draft_dirty":     usingDraft,
+			"base_url":        weixinCfg.BaseURL,
+			"error":           err.Error(),
 		}, http.StatusOK
 	}
-	accounts := s.weixinChannel.ListAccounts()
+	if usingDraft {
+		weixinCfg = ch.SnapshotConfig()
+	}
+	accounts := ch.ListAccounts()
 	pendingPayload := make([]map[string]interface{}, 0, len(pendingLogins))
 	for _, pending := range pendingLogins {
 		pendingPayload = append(pendingPayload, map[string]interface{}{
@@ -1409,10 +1814,13 @@ func (s *Server) webUIWeixinStatusPayload(ctx context.Context) (map[string]inter
 		firstPending = pendingLogins[0]
 	}
 	return map[string]interface{}{
-		"ok":             true,
-		"enabled":        weixinCfg.Enabled,
-		"base_url":       fallbackString(weixinCfg.BaseURL, "https://ilinkai.weixin.qq.com"),
-		"pending_logins": pendingPayload,
+		"ok":              true,
+		"enabled":         weixinCfg.Enabled,
+		"config_enabled":  persistedCfg.Enabled,
+		"runtime_enabled": ch.IsRunning(),
+		"draft_dirty":     usingDraft,
+		"base_url":        fallbackString(weixinCfg.BaseURL, "https://ilinkai.weixin.qq.com"),
+		"pending_logins":  pendingPayload,
 		"pending_login": map[string]interface{}{
 			"login_id":            pendingString(firstPending, "login_id"),
 			"qr_code":             pendingString(firstPending, "qr_code"),
@@ -2976,9 +3384,6 @@ func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimSpace(r.URL.Query().Get("path"))
 		if path == "" {
 			files := make([]string, 0, 16)
-			if _, err := os.Stat(filepath.Join(s.workspacePath, "MEMORY.md")); err == nil {
-				files = append(files, "MEMORY.md")
-			}
 			entries, err := os.ReadDir(memoryDir)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -2993,11 +3398,7 @@ func (s *Server) handleWebUIMemory(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, map[string]interface{}{"ok": true, "files": files})
 			return
 		}
-		baseDir := memoryDir
-		if strings.EqualFold(path, "MEMORY.md") {
-			baseDir = strings.TrimSpace(s.workspacePath)
-		}
-		clean, content, found, err := readRelativeTextFile(baseDir, path)
+		clean, content, found, err := readRelativeTextFile(memoryDir, path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -3071,6 +3472,70 @@ func (s *Server) handleWebUIWorkspaceFile(w http.ResponseWriter, r *http.Request
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+var workspaceDocFiles = []string{
+	"AGENTS.md",
+	"BOOT.md",
+	"BOOTSTRAP.md",
+	"HEARTBEAT.md",
+	"IDENTITY.md",
+	"MEMORY.md",
+	"SOUL.md",
+	"TOOLS.md",
+	"USER.md",
+}
+
+func (s *Server) handleWebUIWorkspaceDocs(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	workspace := strings.TrimSpace(s.workspacePath)
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
+	if path != "" {
+		if !isWorkspaceDocAllowed(path) {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
+		clean, content, found, err := readRelativeTextFile(workspace, path)
+		if err != nil {
+			http.Error(w, err.Error(), relativeFilePathStatus(err))
+			return
+		}
+		if !found {
+			http.Error(w, os.ErrNotExist.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]interface{}{"ok": true, "path": clean, "content": content})
+		return
+	}
+	files := make([]string, 0, len(workspaceDocFiles))
+	for _, name := range workspaceDocFiles {
+		_, _, found, err := readRelativeTextFile(workspace, name)
+		if err != nil {
+			http.Error(w, err.Error(), relativeFilePathStatus(err))
+			return
+		}
+		if !found {
+			continue
+		}
+		files = append(files, name)
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "files": files})
+}
+
+func isWorkspaceDocAllowed(name string) bool {
+	for _, allowed := range workspaceDocFiles {
+		if name == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleWebUILogsRecent(w http.ResponseWriter, r *http.Request) {

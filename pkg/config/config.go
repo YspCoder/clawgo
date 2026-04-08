@@ -226,6 +226,8 @@ type ProviderConfig struct {
 	APIKey                   string                  `json:"api_key" env:"CLAWGO_PROVIDERS_{{.Name}}_API_KEY"`
 	APIBase                  string                  `json:"api_base" env:"CLAWGO_PROVIDERS_{{.Name}}_API_BASE"`
 	Models                   []string                `json:"models" env:"CLAWGO_PROVIDERS_{{.Name}}_MODELS"`
+	MaxTokens                int                     `json:"max_tokens,omitempty"`
+	Temperature              float64                 `json:"temperature,omitempty"`
 	SupportsResponsesCompact bool                    `json:"supports_responses_compact" env:"CLAWGO_PROVIDERS_{{.Name}}_SUPPORTS_RESPONSES_COMPACT"`
 	Auth                     string                  `json:"auth" env:"CLAWGO_PROVIDERS_{{.Name}}_AUTH"`
 	TimeoutSec               int                     `json:"timeout_sec" env:"CLAWGO_PROVIDERS_PROXY_TIMEOUT_SEC"`

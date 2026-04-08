@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YspCoder/clawgo/pkg/bus"
 	cfgpkg "github.com/YspCoder/clawgo/pkg/config"
 	"github.com/gorilla/websocket"
 )
@@ -139,6 +140,100 @@ func TestHandleWebUIConfigPostSavesNormalizedConfig(t *testing.T) {
 	}
 }
 
+func TestHandleWebUIChannelDraftCommitPersistsDrafts(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetConfigPath(cfgPath)
+	srv.SetMessageBus(bus.NewMessageBus())
+	hookCalled := 0
+	srv.SetConfigAfterHook(func(forceRuntimeReload bool) error {
+		hookCalled++
+		return nil
+	})
+
+	draftReq := httptest.NewRequest(http.MethodPost, "/api/channels/draft", strings.NewReader(`{"channel":"telegram","config":{"enabled":true,"token":"bot-token","streaming":true}}`))
+	draftReq.Header.Set("Content-Type", "application/json")
+	draftRec := httptest.NewRecorder()
+	srv.handleWebUIChannelDraft(draftRec, draftReq)
+	if draftRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from draft save, got %d: %s", draftRec.Code, draftRec.Body.String())
+	}
+
+	commitReq := httptest.NewRequest(http.MethodPost, "/api/channels/draft/commit", nil)
+	commitRec := httptest.NewRecorder()
+	srv.handleWebUIChannelDraftCommit(commitRec, commitReq)
+	if commitRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from draft commit, got %d: %s", commitRec.Code, commitRec.Body.String())
+	}
+	if hookCalled != 1 {
+		t.Fatalf("expected reload hook once, got %d", hookCalled)
+	}
+
+	updated, err := cfgpkg.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if !updated.Channels.Telegram.Enabled {
+		t.Fatalf("expected telegram enabled after draft commit")
+	}
+	if updated.Channels.Telegram.Token != "bot-token" {
+		t.Fatalf("expected telegram token to persist, got %q", updated.Channels.Telegram.Token)
+	}
+}
+
+func TestHandleWebUIWeixinStatusReflectsDraftRuntime(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "config.json")
+	cfg := cfgpkg.DefaultConfig()
+	cfg.Channels.Weixin.Enabled = false
+	if err := cfgpkg.SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetConfigPath(cfgPath)
+	srv.SetMessageBus(bus.NewMessageBus())
+
+	draftReq := httptest.NewRequest(http.MethodPost, "/api/channels/draft", strings.NewReader(`{"channel":"weixin","config":{"enabled":true,"base_url":"https://ilinkai.weixin.qq.com"}}`))
+	draftReq.Header.Set("Content-Type", "application/json")
+	draftRec := httptest.NewRecorder()
+	srv.handleWebUIChannelDraft(draftRec, draftReq)
+	if draftRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from weixin draft save, got %d: %s", draftRec.Code, draftRec.Body.String())
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/weixin/status", nil)
+	statusRec := httptest.NewRecorder()
+	srv.handleWebUIWeixinStatus(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from status, got %d: %s", statusRec.Code, statusRec.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if payload["draft_dirty"] != true {
+		t.Fatalf("expected draft_dirty=true, got %#v", payload["draft_dirty"])
+	}
+	if payload["config_enabled"] != false {
+		t.Fatalf("expected config_enabled=false, got %#v", payload["config_enabled"])
+	}
+	if payload["runtime_enabled"] != true {
+		t.Fatalf("expected runtime_enabled=true, got %#v", payload["runtime_enabled"])
+	}
+}
+
 func TestWithCORSEchoesPreflightHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -255,13 +350,10 @@ func TestSaveProviderConfigForcesRuntimeReload(t *testing.T) {
 	}
 }
 
-func TestHandleWebUIMemoryListsAndReadsWorkspaceMemoryFile(t *testing.T) {
+func TestHandleWebUIMemoryListsAndReadsMemoryDirFile(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmp, "MEMORY.md"), []byte("# long-term\n"), 0o644); err != nil {
-		t.Fatalf("write workspace memory: %v", err)
-	}
 	if err := os.MkdirAll(filepath.Join(tmp, "memory"), 0o755); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
@@ -285,11 +377,11 @@ func TestHandleWebUIMemoryListsAndReadsWorkspaceMemoryFile(t *testing.T) {
 	if err := json.Unmarshal(listRec.Body.Bytes(), &listPayload); err != nil {
 		t.Fatalf("decode list payload: %v", err)
 	}
-	if len(listPayload.Files) < 2 || listPayload.Files[0] != "MEMORY.md" {
-		t.Fatalf("expected MEMORY.md in memory file list, got %+v", listPayload.Files)
+	if len(listPayload.Files) != 1 || listPayload.Files[0] != "2026-03-19.md" {
+		t.Fatalf("expected only memory dir files, got %+v", listPayload.Files)
 	}
 
-	readReq := httptest.NewRequest(http.MethodGet, "/api/memory?path=MEMORY.md", nil)
+	readReq := httptest.NewRequest(http.MethodGet, "/api/memory?path=2026-03-19.md", nil)
 	readRec := httptest.NewRecorder()
 	srv.handleWebUIMemory(readRec, readReq)
 	if readRec.Code != http.StatusOK {
@@ -303,8 +395,68 @@ func TestHandleWebUIMemoryListsAndReadsWorkspaceMemoryFile(t *testing.T) {
 	if err := json.Unmarshal(readRec.Body.Bytes(), &readPayload); err != nil {
 		t.Fatalf("decode read payload: %v", err)
 	}
-	if readPayload.Path != "MEMORY.md" || readPayload.Content != "# long-term\n" {
+	if readPayload.Path != "2026-03-19.md" || readPayload.Content != "daily\n" {
 		t.Fatalf("unexpected memory payload: %+v", readPayload)
+	}
+}
+
+func TestHandleWebUIWorkspaceDocsListAndRead(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "AGENTS.md"), []byte("agents\n"), 0o644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "MEMORY.md"), []byte("memory\n"), 0o644); err != nil {
+		t.Fatalf("write MEMORY.md: %v", err)
+	}
+
+	srv := NewServer("127.0.0.1", 0, "")
+	srv.SetWorkspacePath(tmp)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/workspace_docs", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUIWorkspaceDocs(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		OK    bool     `json:"ok"`
+		Files []string `json:"files"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if !payload.OK {
+		t.Fatalf("expected ok=true, got %+v", payload)
+	}
+	if len(payload.Files) != 2 {
+		t.Fatalf("expected 2 existing docs, got %+v", payload.Files)
+	}
+	if payload.Files[0] != "AGENTS.md" {
+		t.Fatalf("unexpected first doc payload: %+v", payload.Files[0])
+	}
+	if payload.Files[1] != "MEMORY.md" {
+		t.Fatalf("unexpected second doc payload: %+v", payload.Files[1])
+	}
+
+	readReq := httptest.NewRequest(http.MethodGet, "/api/workspace_docs?path=AGENTS.md", nil)
+	readRec := httptest.NewRecorder()
+	srv.handleWebUIWorkspaceDocs(readRec, readReq)
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", readRec.Code, readRec.Body.String())
+	}
+	var readPayload struct {
+		OK      bool   `json:"ok"`
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(readRec.Body.Bytes(), &readPayload); err != nil {
+		t.Fatalf("decode read payload: %v", err)
+	}
+	if readPayload.Path != "AGENTS.md" || readPayload.Content != "agents\n" {
+		t.Fatalf("unexpected read payload: %+v", readPayload)
 	}
 }
 

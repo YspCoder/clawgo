@@ -197,6 +197,44 @@ func TestHTTPProviderOAuthSwitchesAccountOnQuota(t *testing.T) {
 	}
 }
 
+func TestHTTPProviderOpenAICompatStreamMergesLateUsage(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"index\":0,\"message\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":2,\"total_tokens\":3}}\n\n"))
+	}))
+	defer server.Close()
+
+	provider := NewHTTPProvider("openai", "token", server.URL+"/v1", "gpt-test", false, "api_key", 5*time.Second, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+"/v1/chat/completions", nil)
+	if err != nil {
+		t.Fatalf("new request failed: %v", err)
+	}
+	body, status, _, _, err := provider.doStreamAttempt(req, authAttempt{kind: "api_key", token: "token"}, nil)
+	if err != nil {
+		t.Fatalf("stream attempt failed: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("unexpected status: %d", status)
+	}
+	resp, err := parseOpenAICompatResponse(body)
+	if err != nil {
+		t.Fatalf("parse response failed: %v", err)
+	}
+	if resp.Content != "hello" {
+		t.Fatalf("unexpected response content: %q", resp.Content)
+	}
+	if resp.Usage == nil || resp.Usage.PromptTokens != 1 || resp.Usage.CompletionTokens != 2 || resp.Usage.TotalTokens != 3 {
+		t.Fatalf("unexpected usage: %#v", resp.Usage)
+	}
+}
+
 func TestOAuthManagerPreRefreshesExpiringSession(t *testing.T) {
 	t.Parallel()
 
