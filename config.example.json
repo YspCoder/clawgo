@@ -149,8 +149,7 @@
       "enabled": false,
       "base_url": "https://ilinkai.weixin.qq.com",
       "default_bot_id": "",
-      "accounts": [],
-      "allow_from": []
+      "accounts": []
     },
     "telegram": {
       "enabled": false,
