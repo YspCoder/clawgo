@@ -408,6 +408,73 @@ func TestHandleWebUISessionsHidesInternalSessionsByDefault(t *testing.T) {
 	}
 }
 
+func TestHandleWebUIChatHistorySupportsWindowQuery(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "")
+	var got ChatHistoryQuery
+	srv.SetChatHistoryHandler(func(query ChatHistoryQuery) []map[string]interface{} {
+		got = query
+		return []map[string]interface{}{{"role": "assistant", "content": "ok"}}
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/chat/history?session=alpha&after=2&limit=3", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUIChatHistory(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got.Session != "alpha" || got.After != 2 || got.Limit != 3 {
+		t.Fatalf("unexpected query: %+v", got)
+	}
+}
+
+func TestHandleWebUISessionSearchReturnsResults(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer("127.0.0.1", 0, "")
+	var got SessionSearchQuery
+	srv.SetSessionSearchHandler(func(query SessionSearchQuery) []map[string]interface{} {
+		got = query
+		return []map[string]interface{}{
+			{
+				"key":        "main",
+				"kind":       "main",
+				"updated_at": int64(123),
+				"summary":    "deploy notes",
+				"score":      2,
+				"snippets":   []map[string]interface{}{{"seq": 3, "content": "deploy timeout"}},
+			},
+		}
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/search?query=deploy&kinds=main,cron&exclude_current=1&session=current&limit=7", nil)
+	rec := httptest.NewRecorder()
+	srv.handleWebUISessionSearch(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if got.Query != "deploy" || got.Session != "current" || !got.ExcludeCurrent || got.Limit != 7 {
+		t.Fatalf("unexpected search query: %+v", got)
+	}
+	if len(got.Kinds) != 2 || got.Kinds[0] != "main" || got.Kinds[1] != "cron" {
+		t.Fatalf("unexpected kinds: %+v", got.Kinds)
+	}
+
+	var payload struct {
+		OK      bool                     `json:"ok"`
+		Results []map[string]interface{} `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if !payload.OK || len(payload.Results) != 1 {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
 func TestSaveProviderConfigForcesRuntimeReload(t *testing.T) {
 	t.Parallel()
 

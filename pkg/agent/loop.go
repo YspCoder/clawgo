@@ -26,6 +26,7 @@ import (
 	"github.com/YspCoder/clawgo/pkg/bus"
 	"github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/cron"
+	"github.com/YspCoder/clawgo/pkg/lifecycle"
 	"github.com/YspCoder/clawgo/pkg/logger"
 	"github.com/YspCoder/clawgo/pkg/providers"
 	"github.com/YspCoder/clawgo/pkg/runtimecfg"
@@ -35,45 +36,57 @@ import (
 )
 
 type AgentLoop struct {
-	bus                  *bus.MessageBus
-	cfg                  *config.Config
-	provider             providers.LLMProvider
-	workspace            string
-	model                string
-	maxTokens            int
-	temperature          float64
-	maxIterations        int
-	sessions             *session.SessionManager
-	contextBuilder       *ContextBuilder
-	tools                *tools.ToolRegistry
-	compactionEnabled    bool
-	compactionTrigger    int
-	compactionKeepRecent int
-	heartbeatAckMaxChars int
-	heartbeatAckToken    string
-	audit                *triggerAudit
-	running              bool
-	sessionScheduler     *SessionScheduler
-	providerChain        []providerCandidate
-	providerNames        []string
-	providerPool         map[string]providers.LLMProvider
-	providerResponses    map[string]config.ProviderResponsesConfig
-	providerMaxTokens    map[string]int
-	providerTemperatures map[string]float64
-	telegramStreaming    bool
-	providerMu           sync.RWMutex
-	sessionProvider      map[string]string
-	streamMu             sync.Mutex
-	sessionStreamed      map[string]bool
-	subagentManager      *tools.SubagentManager
-	subagentRouter       *tools.SubagentRouter
-	configPath           string
-	subagentDigestMu     sync.Mutex
-	subagentDigestDelay  time.Duration
-	subagentDigests      map[string]*subagentDigestState
-	runMu                sync.Mutex
-	runCancel            context.CancelFunc
-	runWG                sync.WaitGroup
+	bus                          *bus.MessageBus
+	cfg                          *config.Config
+	provider                     providers.LLMProvider
+	workspace                    string
+	model                        string
+	maxTokens                    int
+	temperature                  float64
+	maxIterations                int
+	sessions                     *session.SessionManager
+	contextBuilder               *ContextBuilder
+	tools                        *tools.ToolRegistry
+	compactionEnabled            bool
+	compactionTrigger            int
+	compactionKeepRecent         int
+	compactionProtectLastN       int
+	compactionTargetRatio        float64
+	compactionPressureThreshold  float64
+	compactionMaxSummaryChars    int
+	compactionMaxTranscriptChars int
+	heartbeatAckMaxChars         int
+	heartbeatAckToken            string
+	audit                        *triggerAudit
+	running                      bool
+	sessionScheduler             *SessionScheduler
+	providerChain                []providerCandidate
+	providerNames                []string
+	providerPool                 map[string]providers.LLMProvider
+	providerResponses            map[string]config.ProviderResponsesConfig
+	providerMaxTokens            map[string]int
+	providerTemperatures         map[string]float64
+	telegramStreaming            bool
+	providerMu                   sync.RWMutex
+	sessionProvider              map[string]string
+	streamMu                     sync.Mutex
+	sessionStreamed              map[string]bool
+	subagentManager              *tools.SubagentManager
+	subagentRouter               *tools.SubagentRouter
+	configPath                   string
+	subagentDigestMu             sync.Mutex
+	subagentDigestDelay          time.Duration
+	subagentDigests              map[string]*subagentDigestState
+	compactionRunner             *lifecycle.LoopRunner
+	compactionMu                 sync.Mutex
+	compactionSignal             chan struct{}
+	compactionQueue              []string
+	compactionQueued             map[string]struct{}
+	compactionInflight           map[string]struct{}
+	compactionDirty              map[string]struct{}
+	runMu                        sync.Mutex
+	runCancel                    context.CancelFunc
+	runWG                        sync.WaitGroup
 }
 
 type providerCandidate struct {
@@ -198,6 +211,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 			return h
 		},
 	))
+	toolsRegistry.Register(tools.NewSessionSearchTool(sessionsManager))
 
 	// Register edit file tool
 	editFileTool := tools.NewEditFileTool(workspace)
@@ -221,35 +235,45 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry.Register(tools.NewSystemInfoTool())
 
 	loop := &AgentLoop{
-		bus:                  msgBus,
-		cfg:                  cfg,
-		provider:             provider,
-		workspace:            workspace,
-		model:                provider.GetDefaultModel(),
-		maxTokens:            cfg.Agents.Defaults.MaxTokens,
-		temperature:          cfg.Agents.Defaults.Temperature,
-		maxIterations:        cfg.Agents.Defaults.MaxToolIterations,
-		sessions:             sessionsManager,
-		contextBuilder:       NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
-		tools:                toolsRegistry,
-		compactionEnabled:    cfg.Agents.Defaults.ContextCompaction.Enabled,
-		compactionTrigger:    cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
-		compactionKeepRecent: cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
-		heartbeatAckMaxChars: cfg.Agents.Defaults.Heartbeat.AckMaxChars,
-		heartbeatAckToken:    loadHeartbeatAckToken(workspace),
-		audit:                newTriggerAudit(workspace),
-		running:              false,
-		sessionScheduler:     NewSessionScheduler(0),
-		sessionProvider:      map[string]string{},
-		sessionStreamed:      map[string]bool{},
-		providerResponses:    map[string]config.ProviderResponsesConfig{},
-		providerMaxTokens:    map[string]int{},
-		providerTemperatures: map[string]float64{},
-		telegramStreaming:    cfg.Channels.Telegram.Streaming,
-		subagentManager:      subagentManager,
-		subagentRouter:       subagentRouter,
-		subagentDigestDelay:  5 * time.Second,
-		subagentDigests:      map[string]*subagentDigestState{},
+		bus:                          msgBus,
+		cfg:                          cfg,
+		provider:                     provider,
+		workspace:                    workspace,
+		model:                        provider.GetDefaultModel(),
+		maxTokens:                    cfg.Agents.Defaults.MaxTokens,
+		temperature:                  cfg.Agents.Defaults.Temperature,
+		maxIterations:                cfg.Agents.Defaults.MaxToolIterations,
+		sessions:                     sessionsManager,
+		contextBuilder:               NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
+		tools:                        toolsRegistry,
+		compactionEnabled:            cfg.Agents.Defaults.ContextCompaction.Enabled,
+		compactionTrigger:            cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
+		compactionKeepRecent:         cfg.Agents.Defaults.ContextCompaction.KeepRecentMessages,
+		compactionProtectLastN:       normalizePositiveInt(cfg.Agents.Defaults.ContextCompaction.ProtectLastN, 12),
+		compactionTargetRatio:        normalizeCompactionRatio(cfg.Agents.Defaults.ContextCompaction.TargetRatio, 0.35),
+		compactionPressureThreshold:  normalizeCompactionRatio(cfg.Agents.Defaults.ContextCompaction.PressureThreshold, 0.8),
+		compactionMaxSummaryChars:    normalizePositiveInt(cfg.Agents.Defaults.ContextCompaction.MaxSummaryChars, 6000),
+		compactionMaxTranscriptChars: normalizePositiveInt(cfg.Agents.Defaults.ContextCompaction.MaxTranscriptChars, 20000),
+		heartbeatAckMaxChars:         cfg.Agents.Defaults.Heartbeat.AckMaxChars,
+		heartbeatAckToken:            loadHeartbeatAckToken(workspace),
+		audit:                        newTriggerAudit(workspace),
+		running:                      false,
+		sessionScheduler:             NewSessionScheduler(0),
+		sessionProvider:              map[string]string{},
+		sessionStreamed:              map[string]bool{},
+		providerResponses:            map[string]config.ProviderResponsesConfig{},
+		providerMaxTokens:            map[string]int{},
+		providerTemperatures:         map[string]float64{},
+		telegramStreaming:            cfg.Channels.Telegram.Streaming,
+		subagentManager:              subagentManager,
+		subagentRouter:               subagentRouter,
+		subagentDigestDelay:          5 * time.Second,
+		subagentDigests:              map[string]*subagentDigestState{},
+		compactionRunner:             lifecycle.NewLoopRunner(),
+		compactionSignal:             make(chan struct{}, 1),
+		compactionQueued:             map[string]struct{}{},
+		compactionInflight:           map[string]struct{}{},
+		compactionDirty:              map[string]struct{}{},
 	}
 	if _, primaryModel := config.ParseProviderModelRef(cfg.Agents.Defaults.Model.Primary); strings.TrimSpace(primaryModel) != "" {
 		loop.model = strings.TrimSpace(primaryModel)
@@ -334,6 +358,9 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	subagentManager.SetRunFunc(func(ctx context.Context, run *tools.SubagentRun) (string, error) {
 		if run == nil {
 			return "", fmt.Errorf("subagent run is nil")
+		}
+		if run.MaxToolIterations <= 0 {
+			run.MaxToolIterations = loop.maxIterations
 		}
 		sessionKey := strings.TrimSpace(run.SessionKey)
 		if sessionKey == "" {
@@ -457,6 +484,9 @@ func (al *AgentLoop) Stop() {
 	}
 	al.running = false
 	al.runWG.Wait()
+	if al.compactionRunner != nil {
+		al.compactionRunner.Stop()
+	}
 }
 
 func (al *AgentLoop) buildSessionShards(ctx context.Context) []chan bus.InboundMessage {
@@ -476,11 +506,12 @@ func (al *AgentLoop) buildSessionShards(ctx context.Context) []chan bus.InboundM
 	return shards
 }
 
-func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMessage, messages []providers.Message, toolDefs []providers.ToolDefinition, primaryErr error) (*providers.LLMResponse, string, error) {
+func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMessage, messages []providers.Message, toolDefs []providers.ToolDefinition, primaryErr error) (*providers.LLMResponse, string, int, error) {
 	if len(al.providerChain) <= 1 {
-		return nil, "", primaryErr
+		return nil, "", 0, primaryErr
 	}
 	lastErr := primaryErr
+	attempts := 0
 	candidateNames := make([]string, 0, len(al.providerChain)-1)
 	for _, candidate := range al.providerChain[1:] {
 		candidateNames = append(candidateNames, candidate.name)
@@ -507,16 +538,17 @@ func (al *AgentLoop) tryFallbackProviders(ctx context.Context, msg bus.InboundMe
 			lastErr = err
 			continue
 		}
+		attempts++
 		fallbackOptions := al.buildResponsesOptionsForProvider(msg.SessionKey, candidate.name, int64(al.maxTokensForProvider(candidate.name)), al.temperatureForProvider(candidate.name))
 		resp, err := p.Chat(ctx, messages, toolDefs, candidateModel, fallbackOptions)
 		if err == nil {
 			al.setSessionProvider(msg.SessionKey, candidate.name)
 			logger.WarnCF("agent", logger.C0150, map[string]interface{}{"provider": candidate.name, "model": candidateModel, "ref": candidate.ref})
-			return resp, candidate.name, nil
+			return resp, candidate.name, attempts, nil
 		}
 		lastErr = err
 	}
-	return nil, "", lastErr
+	return nil, "", attempts, lastErr
 }
 
 func (al *AgentLoop) ensureProviderCandidate(candidate providerCandidate) (providers.LLMProvider, string, error) {
@@ -865,6 +897,9 @@ type llmTurnLoopResult struct {
 	pendingPersist  []providers.Message
 	finalContent    string
 	iteration       int
+	attemptCount    int
+	restartCount    int
+	failureCode     string
 	hasToolActivity bool
 }
 
@@ -960,39 +995,150 @@ func (al *AgentLoop) executeResponseToolCalls(cfg llmTurnLoopConfig, iteration i
 	return results
 }
 
-func (al *AgentLoop) requestLLMResponse(cfg llmTurnLoopConfig, activeProvider providers.LLMProvider, activeModel string, messages []providers.Message, providerToolDefs []providers.ToolDefinition, options map[string]interface{}) (*providers.LLMResponse, error) {
+func (al *AgentLoop) requestLLMResponse(cfg llmTurnLoopConfig, activeProvider providers.LLMProvider, activeModel string, messages []providers.Message, providerToolDefs []providers.ToolDefinition, options map[string]interface{}) (*providers.LLMResponse, int, error) {
 	if cfg.enableStreaming {
 		if sp, ok := activeProvider.(providers.StreamingLLMProvider); ok {
-			streamText := ""
-			lastPush := time.Now().Add(-time.Second)
-			return sp.ChatStream(cfg.ctx, messages, providerToolDefs, activeModel, options, func(delta string) {
-				if strings.TrimSpace(delta) == "" {
-					return
-				}
-				streamText += delta
-				if time.Since(lastPush) < 450*time.Millisecond {
-					return
-				}
-				if !shouldFlushTelegramStreamSnapshot(streamText) {
-					return
-				}
-				lastPush = time.Now()
-				replyID := ""
-				if cfg.triggerMsg.Metadata != nil {
-					replyID = cfg.triggerMsg.Metadata["message_id"]
-				}
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel:   cfg.toolChannel,
-					ChatID:    cfg.toolChatID,
-					Content:   streamText,
-					Action:    "stream",
-					ReplyToID: replyID,
-				})
-				al.markSessionStreamed(cfg.sessionKey)
-			})
+			return al.requestStreamingLLMResponse(cfg, sp, activeProvider, activeModel, messages, providerToolDefs, options)
 		}
 	}
-	return activeProvider.Chat(cfg.ctx, messages, providerToolDefs, activeModel, options)
+	resp, err := activeProvider.Chat(cfg.ctx, messages, providerToolDefs, activeModel, options)
+	return resp, 1, err
+}
+
+func (al *AgentLoop) requestStreamingLLMResponse(cfg llmTurnLoopConfig, streamer providers.StreamingLLMProvider, fallbackProvider providers.LLMProvider, activeModel string, messages []providers.Message, providerToolDefs []providers.ToolDefinition, options map[string]interface{}) (*providers.LLMResponse, int, error) {
+	streamText := ""
+	lastPush := time.Now().Add(-time.Second)
+	type streamResult struct {
+		resp *providers.LLMResponse
+		err  error
+	}
+	streamCtx, cancel := context.WithCancel(cfg.ctx)
+	defer cancel()
+	resultCh := make(chan streamResult, 1)
+	var deltaMu sync.Mutex
+	firstDeltaSeen := false
+	lastDeltaAt := time.Now()
+	go func() {
+		resp, err := streamer.ChatStream(streamCtx, messages, providerToolDefs, activeModel, options, func(delta string) {
+			if strings.TrimSpace(delta) == "" {
+				return
+			}
+			deltaMu.Lock()
+			firstDeltaSeen = true
+			lastDeltaAt = time.Now()
+			deltaMu.Unlock()
+			streamText += delta
+			if time.Since(lastPush) < 450*time.Millisecond {
+				return
+			}
+			if !shouldFlushTelegramStreamSnapshot(streamText) {
+				return
+			}
+			lastPush = time.Now()
+			replyID := ""
+			if cfg.triggerMsg.Metadata != nil {
+				replyID = cfg.triggerMsg.Metadata["message_id"]
+			}
+			al.bus.PublishOutbound(bus.OutboundMessage{
+				Channel:   cfg.toolChannel,
+				ChatID:    cfg.toolChatID,
+				Content:   streamText,
+				Action:    "stream",
+				ReplyToID: replyID,
+			})
+			al.markSessionStreamed(cfg.sessionKey)
+		})
+		resultCh <- streamResult{resp: resp, err: err}
+	}()
+
+	firstDeltaTimeout, idleDeltaTimeout := streamMonitorTimeouts(cfg.ctx)
+	staleTriggered := false
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case result := <-resultCh:
+			if result.err == nil {
+				return result.resp, 1, nil
+			}
+			deltaMu.Lock()
+			streamStarted := firstDeltaSeen
+			deltaMu.Unlock()
+			if staleTriggered && streamStarted {
+				return nil, 1, providers.NewProviderExecutionError("stream_stale", result.err.Error(), "stream", true, "")
+			}
+			if !streamStarted {
+				resp, err := fallbackProvider.Chat(cfg.ctx, messages, providerToolDefs, activeModel, options)
+				return resp, 2, err
+			}
+			return nil, 1, result.err
+		case <-ticker.C:
+			deltaMu.Lock()
+			streamStarted := firstDeltaSeen
+			idleFor := time.Since(lastDeltaAt)
+			deltaMu.Unlock()
+			timeout := firstDeltaTimeout
+			if streamStarted {
+				timeout = idleDeltaTimeout
+			}
+			if timeout > 0 && idleFor > timeout {
+				staleTriggered = true
+				cancel()
+			}
+		case <-cfg.ctx.Done():
+			cancel()
+			return nil, 1, cfg.ctx.Err()
+		}
+	}
+}
+
+func streamMonitorTimeouts(ctx context.Context) (time.Duration, time.Duration) {
+	first := 20 * time.Second
+	idle := 45 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining > 0 {
+			firstMin := 5 * time.Second
+			idleMin := 15 * time.Second
+			if remaining < firstMin {
+				firstMin = maxDuration(100*time.Millisecond, remaining/4)
+			}
+			if remaining < idleMin {
+				idleMin = maxDuration(250*time.Millisecond, remaining/3)
+			}
+			first = clampDuration(remaining/4, firstMin, first)
+			idle = clampDuration(remaining/3, idleMin, idle)
+		}
+	}
+	return first, idle
+}
+
+func clampDuration(value, min, max time.Duration) time.Duration {
+	if value < min {
+		return min
+	}
+	if max > 0 && value > max {
+		return max
+	}
+	return value
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (al *AgentLoop) maxIterationsForContext(ctx context.Context) int {
+	limit := al.maxIterations
+	if limit < 1 {
+		limit = 1
+	}
+	if budget, ok := tools.SubagentIterationBudget(ctx); ok && budget > 0 {
+		return budget
+	}
+	return limit
 }
 
 func (al *AgentLoop) runLLMTurnLoop(cfg llmTurnLoopConfig) (llmTurnLoopResult, error) {
@@ -1000,7 +1146,7 @@ func (al *AgentLoop) runLLMTurnLoop(cfg llmTurnLoopConfig) (llmTurnLoopResult, e
 		messages:       append([]providers.Message(nil), cfg.messages...),
 		pendingPersist: make([]providers.Message, 0, 16),
 	}
-	maxAllowed := al.maxIterations
+	maxAllowed := al.maxIterationsForContext(cfg.ctx)
 	if maxAllowed < 1 {
 		maxAllowed = 1
 	}
@@ -1027,14 +1173,19 @@ func (al *AgentLoop) runLLMTurnLoop(cfg llmTurnLoopConfig) (llmTurnLoopResult, e
 		logLLMTurnRequest(result.iteration, al.maxIterations, providerName, activeModel, result.messages, providerToolDefs, maxTokens, temperature)
 
 		options := al.buildResponsesOptions(cfg.sessionKey, int64(maxTokens), temperature)
-		response, err := al.requestLLMResponse(cfg, activeProvider, activeModel, result.messages, providerToolDefs, options)
+		response, attempts, err := al.requestLLMResponse(cfg, activeProvider, activeModel, result.messages, providerToolDefs, options)
+		result.attemptCount += attempts
 
 		if err != nil {
-			if fb, _, ferr := al.tryFallbackProviders(cfg.ctx, cfg.triggerMsg, result.messages, providerToolDefs, err); ferr == nil && fb != nil {
+			result.failureCode = classifyLLMFailureCode(err)
+			if fb, _, fallbackAttempts, ferr := al.tryFallbackProviders(cfg.ctx, cfg.triggerMsg, result.messages, providerToolDefs, err); ferr == nil && fb != nil {
 				response = fb
+				result.attemptCount += fallbackAttempts
 				err = nil
 			} else {
+				result.attemptCount += fallbackAttempts
 				err = ferr
+				result.failureCode = classifyLLMFailureCode(err)
 			}
 		}
 		if err != nil {
@@ -1059,9 +1210,6 @@ func (al *AgentLoop) runLLMTurnLoop(cfg llmTurnLoopConfig) (llmTurnLoopResult, e
 		result.messages = append(result.messages, assistantMsg)
 		result.pendingPersist = append(result.pendingPersist, assistantMsg)
 		result.hasToolActivity = true
-		if maxAllowed < result.iteration+al.maxIterations {
-			maxAllowed = result.iteration + al.maxIterations
-		}
 
 		for _, toolResultMsg := range al.executeResponseToolCalls(cfg, result.iteration, response) {
 			result.messages = append(result.messages, toolResultMsg)
@@ -1069,7 +1217,8 @@ func (al *AgentLoop) runLLMTurnLoop(cfg llmTurnLoopConfig) (llmTurnLoopResult, e
 		}
 	}
 
-	return result, nil
+	result.failureCode = "retry_limit"
+	return result, fmt.Errorf("max tool iterations exceeded (%d)", maxAllowed)
 }
 
 func (al *AgentLoop) logInboundMessageStart(msg bus.InboundMessage) {
@@ -1083,7 +1232,7 @@ func (al *AgentLoop) logInboundMessageStart(msg bus.InboundMessage) {
 }
 
 func (al *AgentLoop) prepareUserMessageContext(msg bus.InboundMessage, memoryNamespace string) ([]providers.Message, string) {
-	history := al.sessions.GetHistory(msg.SessionKey)
+	history := al.sessions.GetPromptHistory(msg.SessionKey)
 	summary := al.sessions.GetSummary(msg.SessionKey)
 	al.sessions.AddMessage(msg.SessionKey, "user", msg.Content)
 	if explicitPref := ExtractLanguagePreference(msg.Content); explicitPref != "" {
@@ -1113,12 +1262,11 @@ func (al *AgentLoop) finalizeUserMessage(sessionKey, responseLang string, pendin
 		Content: finalContent,
 	})
 	al.sessions.SetLastLanguage(sessionKey, responseLang)
-	al.compactSessionIfNeeded(sessionKey)
-	_ = al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+	al.enqueueSessionCompaction(sessionKey)
 }
 
 func (al *AgentLoop) prepareSystemMessageContext(sessionKey string, msg bus.InboundMessage, originChannel, originChatID string) ([]providers.Message, string) {
-	history := al.sessions.GetHistory(sessionKey)
+	history := al.sessions.GetPromptHistory(sessionKey)
 	summary := al.sessions.GetSummary(sessionKey)
 	preferredLang, lastLang := al.sessions.GetLanguagePreferences(sessionKey)
 	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
@@ -1144,8 +1292,7 @@ func (al *AgentLoop) finalizeSystemMessage(sessionKey, responseLang string, msg 
 		Content: finalContent,
 	})
 	al.sessions.SetLastLanguage(sessionKey, responseLang)
-	al.compactSessionIfNeeded(sessionKey)
-	_ = al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+	al.enqueueSessionCompaction(sessionKey)
 }
 
 func (al *AgentLoop) startSpecTaskForMessage(msg bus.InboundMessage) specCodingTaskRef {
@@ -1372,6 +1519,14 @@ func (al *AgentLoop) GetSessionHistory(sessionKey string) []providers.Message {
 	return al.sessions.GetHistory(sessionKey)
 }
 
+func (al *AgentLoop) GetSessionHistoryWindow(sessionKey string, around, before, after, limit int) []providers.Message {
+	return al.sessions.GetHistoryWindow(sessionKey, around, before, after, limit)
+}
+
+func (al *AgentLoop) SearchSessions(query string, kinds []string, excludeKey string, limit int) []session.SessionSearchResult {
+	return al.sessions.Search(query, kinds, excludeKey, limit)
+}
+
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
 	if msg.SessionKey == "" {
 		msg.SessionKey = "main"
@@ -1411,9 +1566,20 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		logDirectResponse: true,
 	})
 	if err != nil {
+		tools.RecordSubagentExecutionStats(ctx, tools.SubagentExecutionStats{
+			Iterations:  loopResult.iteration,
+			Attempts:    loopResult.attemptCount,
+			Restarts:    loopResult.restartCount,
+			FailureCode: classifyLLMFailureCode(err),
+		})
 		al.reopenSpecTaskOnError(specTaskRef, msg, err)
 		return "", err
 	}
+	tools.RecordSubagentExecutionStats(ctx, tools.SubagentExecutionStats{
+		Iterations: loopResult.iteration,
+		Attempts:   loopResult.attemptCount,
+		Restarts:   loopResult.restartCount,
+	})
 	finalContent, userContent := al.finalizeUserTurnResponse(ctx, msg, responseLang, loopResult)
 
 	// Log response preview (original content)
@@ -1940,32 +2106,215 @@ func isRemoteReference(ref string) bool {
 		strings.HasPrefix(trimmed, "data:")
 }
 
-// GetStartupInfo returns information about loaded tools and skills for logging.
-func (al *AgentLoop) compactSessionIfNeeded(sessionKey string) {
-	if !al.compactionEnabled {
+func (al *AgentLoop) ensureCompactionRunnerStarted() {
+	if al == nil || !al.compactionEnabled || al.compactionRunner == nil {
 		return
 	}
+	al.compactionRunner.Start(func(stop <-chan struct{}) {
+		al.runCompactionLoop(stop)
+	})
+}
+
+func (al *AgentLoop) signalCompactionWorker() {
+	if al == nil || al.compactionSignal == nil {
+		return
+	}
+	select {
+	case al.compactionSignal <- struct{}{}:
+	default:
+	}
+}
+
+func (al *AgentLoop) enqueueSessionCompaction(sessionKey string) {
+	if al == nil || !al.compactionEnabled {
+		return
+	}
+	key := strings.TrimSpace(sessionKey)
+	if key == "" {
+		return
+	}
+	al.compactionMu.Lock()
+	if _, ok := al.compactionInflight[key]; ok {
+		al.compactionDirty[key] = struct{}{}
+		al.compactionMu.Unlock()
+		al.signalCompactionWorker()
+		return
+	}
+	if _, ok := al.compactionQueued[key]; ok {
+		al.compactionMu.Unlock()
+		al.signalCompactionWorker()
+		return
+	}
+	al.compactionQueue = append(al.compactionQueue, key)
+	al.compactionQueued[key] = struct{}{}
+	al.compactionMu.Unlock()
+	al.ensureCompactionRunnerStarted()
+	al.signalCompactionWorker()
+}
+
+func (al *AgentLoop) dequeueSessionCompaction() (string, bool) {
+	if al == nil {
+		return "", false
+	}
+	al.compactionMu.Lock()
+	defer al.compactionMu.Unlock()
+	if len(al.compactionQueue) == 0 {
+		return "", false
+	}
+	key := al.compactionQueue[0]
+	al.compactionQueue = al.compactionQueue[1:]
+	delete(al.compactionQueued, key)
+	al.compactionInflight[key] = struct{}{}
+	return key, true
+}
+
+func (al *AgentLoop) finishSessionCompaction(sessionKey string, retry bool) {
+	if al == nil {
+		return
+	}
+	key := strings.TrimSpace(sessionKey)
+	if key == "" {
+		return
+	}
+	shouldWake := false
+	al.compactionMu.Lock()
+	delete(al.compactionInflight, key)
+	if _, dirty := al.compactionDirty[key]; dirty {
+		delete(al.compactionDirty, key)
+		retry = true
+	}
+	if retry {
+		if _, queued := al.compactionQueued[key]; !queued {
+			al.compactionQueue = append(al.compactionQueue, key)
+			al.compactionQueued[key] = struct{}{}
+			shouldWake = true
+		}
+	}
+	al.compactionMu.Unlock()
+	if shouldWake {
+		al.signalCompactionWorker()
+	}
+}
+
+func (al *AgentLoop) runCompactionLoop(stop <-chan struct{}) {
+	if al == nil {
+		return
+	}
+	for {
+		key, ok := al.dequeueSessionCompaction()
+		if !ok {
+			select {
+			case <-stop:
+				return
+			case <-al.compactionSignal:
+				continue
+			}
+		}
+		retry := al.runSessionCompactionJob(stop, key)
+		al.finishSessionCompaction(key, retry)
+	}
+}
+
+func (al *AgentLoop) runSessionCompactionJob(stop <-chan struct{}, sessionKey string) bool {
+	if al == nil || strings.TrimSpace(sessionKey) == "" {
+		return false
+	}
+	jobCtx, cancel := al.newBackgroundCompactionContext(stop, sessionKey)
+	defer cancel()
+	applied, changed, needsRetry := al.compactSessionIfNeeded(jobCtx, sessionKey)
+	if changed && !applied {
+		return true
+	}
+	return needsRetry
+}
+
+func (al *AgentLoop) newBackgroundCompactionContext(stop <-chan struct{}, sessionKey string) (context.Context, context.CancelFunc) {
+	base, baseCancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-stop:
+			baseCancel()
+		case <-done:
+		}
+	}()
+	timeout := al.compactionTimeoutForSession(sessionKey)
+	ctx, timeoutCancel := context.WithTimeout(base, timeout)
+	return ctx, func() {
+		close(done)
+		timeoutCancel()
+		baseCancel()
+	}
+}
+
+func (al *AgentLoop) compactionTimeoutForSession(sessionKey string) time.Duration {
+	timeout := 30 * time.Second
+	if al != nil && al.cfg != nil {
+		name := strings.TrimSpace(al.getSessionProvider(sessionKey))
+		if name == "" && len(al.providerNames) > 0 {
+			name = al.providerNames[0]
+		}
+		if pc, ok := config.ProviderConfigByName(al.cfg, name); ok && pc.TimeoutSec > 0 {
+			providerTimeout := time.Duration(pc.TimeoutSec) * time.Second
+			if providerTimeout < timeout {
+				timeout = providerTimeout
+			}
+		}
+	}
+	if timeout < 5*time.Second {
+		timeout = 5 * time.Second
+	}
+	return timeout
+}
+
+func (al *AgentLoop) shouldCompactSnapshot(ctx context.Context, sessionKey string, snapshot session.SessionCompactionSnapshot) (bool, int, float64) {
 	trigger := al.compactionTrigger
 	if trigger <= 0 {
 		trigger = 60
 	}
-	keepRecent := al.compactionKeepRecent
-	if keepRecent <= 0 || keepRecent >= trigger {
-		keepRecent = trigger / 2
-		if keepRecent < 10 {
-			keepRecent = 10
-		}
+	pressure := al.estimateCompactionPressure(ctx, sessionKey, snapshot.History, snapshot.Summary)
+	if len(snapshot.History) <= trigger && pressure < al.compactionPressureThreshold {
+		return false, trigger, pressure
 	}
-	h := al.sessions.GetHistory(sessionKey)
-	if len(h) <= trigger {
-		return
+	return true, trigger, pressure
+}
+
+// GetStartupInfo returns information about loaded tools and skills for logging.
+func (al *AgentLoop) compactSessionIfNeeded(ctx context.Context, sessionKey string) (applied bool, changed bool, needsRetry bool) {
+	if !al.compactionEnabled {
+		return false, false, false
 	}
-	removed := len(h) - keepRecent
-	tpl := "[runtime-compaction] removed %d old messages, kept %d recent messages"
-	note := fmt.Sprintf(tpl, removed, keepRecent)
-	if al.sessions.CompactSession(sessionKey, keepRecent, note) {
-		_ = al.sessions.Save(al.sessions.GetOrCreate(sessionKey))
+	if ctx == nil {
+		ctx = context.Background()
 	}
+	snapshot := al.sessions.CompactionSnapshot(sessionKey)
+	if len(snapshot.History) == 0 {
+		return false, false, false
+	}
+	shouldCompact, trigger, _ := al.shouldCompactSnapshot(ctx, sessionKey, snapshot)
+	if !shouldCompact {
+		return false, false, false
+	}
+	keepRecent := al.compactionKeepCount(len(snapshot.History), trigger)
+	if keepRecent >= len(snapshot.History) {
+		return false, false, false
+	}
+	removed := len(snapshot.History) - keepRecent
+	older := append([]providers.Message(nil), snapshot.History[:removed]...)
+	recent := append([]providers.Message(nil), snapshot.History[removed:]...)
+	summary := al.buildCompactionSummary(ctx, sessionKey, older, snapshot.Summary)
+	if ctx.Err() != nil {
+		return false, false, true
+	}
+	if summary == "" {
+		summary = fmt.Sprintf("Key Facts\n- Runtime compaction removed %d older messages.\n\nDecisions\n\nOpen Items\n\nNext Steps", removed)
+	}
+	if al.sessions.ApplyCompactionIfUnchanged(sessionKey, snapshot.NextSeq, snapshot.Summary, recent, summary) {
+		return true, false, false
+	}
+	next := al.sessions.CompactionSnapshot(sessionKey)
+	shouldRetry, _, _ := al.shouldCompactSnapshot(context.Background(), sessionKey, next)
+	return false, true, shouldRetry
 }
 
 // RunStartupSelfCheckAllSessions runs startup compaction checks across loaded sessions.
@@ -1975,40 +2324,216 @@ func (al *AgentLoop) RunStartupSelfCheckAllSessions(ctx context.Context) Startup
 		return report
 	}
 
-	trigger := al.compactionTrigger
-	if trigger <= 0 {
-		trigger = 60
-	}
-	keepRecent := al.compactionKeepRecent
-	if keepRecent <= 0 || keepRecent >= trigger {
-		keepRecent = trigger / 2
-		if keepRecent < 10 {
-			keepRecent = 10
-		}
-	}
-
 	for _, key := range al.sessions.Keys() {
 		select {
 		case <-ctx.Done():
 			return report
 		default:
 		}
-
-		history := al.sessions.GetHistory(key)
-		if len(history) <= trigger {
-			continue
-		}
-
-		removed := len(history) - keepRecent
-		tpl := "[startup-compaction] removed %d old messages, kept %d recent messages"
-		note := fmt.Sprintf(tpl, removed, keepRecent)
-		if al.sessions.CompactSession(key, keepRecent, note) {
-			al.sessions.Save(al.sessions.GetOrCreate(key))
+		jobCtx, cancel := context.WithTimeout(ctx, al.compactionTimeoutForSession(key))
+		applied, _, _ := al.compactSessionIfNeeded(jobCtx, key)
+		cancel()
+		if applied {
 			report.CompactedSessions++
 		}
 	}
 
 	return report
+}
+
+func (al *AgentLoop) buildCompactionSummary(ctx context.Context, sessionKey string, older []providers.Message, existingSummary string) string {
+	if al == nil || al.provider == nil || len(older) == 0 {
+		return strings.TrimSpace(existingSummary)
+	}
+	pruned := pruneCompactionMessages(older, al.compactionMaxTranscriptChars)
+	if compactor, ok := al.provider.(providers.ResponsesCompactor); ok && compactor.SupportsResponsesCompact() {
+		if summary, err := compactor.BuildSummaryViaResponsesCompact(ctx, al.model, existingSummary, pruned, al.compactionMaxSummaryChars); err == nil {
+			return strings.TrimSpace(summary)
+		}
+	}
+
+	payload, err := json.Marshal(compactionTranscript(pruned))
+	if err != nil {
+		return strings.TrimSpace(existingSummary)
+	}
+	resp, err := al.provider.Chat(ctx, []providers.Message{
+		{
+			Role: "system",
+			Content: "You are compacting a previous conversation window for a future handoff. " +
+				"Return concise markdown with exactly these sections: Key Facts, Decisions, Open Items, Next Steps. " +
+				"Preserve concrete decisions, file paths, errors, and pending work. Do not address the user.",
+		},
+		{
+			Role:    "user",
+			Content: "Existing summary:\n" + strings.TrimSpace(existingSummary) + "\n\nEarlier conversation JSON:\n" + string(payload),
+		},
+	}, nil, al.model, map[string]interface{}{"max_tokens": 900})
+	if err != nil || resp == nil {
+		return strings.TrimSpace(existingSummary)
+	}
+	out := strings.TrimSpace(resp.Content)
+	if al.compactionMaxSummaryChars > 0 && len(out) > al.compactionMaxSummaryChars {
+		out = out[:al.compactionMaxSummaryChars]
+	}
+	return out
+}
+
+func pruneCompactionMessages(messages []providers.Message, maxTranscriptChars int) []providers.Message {
+	out := make([]providers.Message, 0, len(messages))
+	remaining := maxTranscriptChars
+	for _, msg := range messages {
+		cp := msg
+		if strings.EqualFold(strings.TrimSpace(cp.Role), "tool") && len(cp.Content) > 400 {
+			cp.Content = "[older tool output trimmed during context compaction]"
+		} else if len(cp.Content) > 2000 {
+			cp.Content = cp.Content[:2000] + "\n...[truncated for compaction]..."
+		}
+		if remaining > 0 && len(cp.Content) > remaining {
+			cp.Content = strings.TrimSpace(cp.Content[:remaining]) + "\n...[truncated for compaction budget]..."
+		}
+		if remaining > 0 {
+			remaining -= len(cp.Content)
+			if remaining <= 0 {
+				out = append(out, cp)
+				break
+			}
+		}
+		out = append(out, cp)
+	}
+	return out
+}
+
+func compactionTranscript(messages []providers.Message) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(messages))
+	for _, msg := range messages {
+		entry := map[string]interface{}{
+			"role":    msg.Role,
+			"content": strings.TrimSpace(msg.Content),
+		}
+		if strings.TrimSpace(msg.ToolCallID) != "" {
+			entry["tool_call_id"] = msg.ToolCallID
+		}
+		if len(msg.ToolCalls) > 0 {
+			entry["tool_calls"] = msg.ToolCalls
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func (al *AgentLoop) compactionKeepCount(historyLen, trigger int) int {
+	if historyLen <= 0 {
+		return 0
+	}
+	keep := al.compactionProtectLastN
+	if keep <= 0 {
+		keep = al.compactionKeepRecent
+	}
+	if keep <= 0 {
+		keep = 12
+	}
+	if ratio := al.compactionTargetRatio; ratio > 0 {
+		ratioKeep := int(math.Ceil(float64(historyLen) * ratio))
+		if ratioKeep > keep {
+			keep = ratioKeep
+		}
+	}
+	if trigger > 0 && keep >= trigger {
+		keep = maxLoopInt(trigger-1, al.compactionProtectLastN, 1)
+	}
+	if keep >= historyLen {
+		keep = historyLen - 1
+	}
+	if keep < 1 {
+		keep = 1
+	}
+	return keep
+}
+
+func (al *AgentLoop) estimateCompactionPressure(ctx context.Context, sessionKey string, history []providers.Message, summary string) float64 {
+	maxTokens := al.maxTokensForSession(sessionKey)
+	if maxTokens <= 0 {
+		return 0
+	}
+	estimateMessages := make([]providers.Message, 0, len(history)+1)
+	estimateMessages = append(estimateMessages, history...)
+	if strings.TrimSpace(summary) != "" {
+		estimateMessages = append([]providers.Message{{
+			Role:    "system",
+			Content: "Handoff summary:\n" + strings.TrimSpace(summary),
+		}}, estimateMessages...)
+	}
+	if activeProvider, activeModel, _, err := al.activeProviderForSession(sessionKey); err == nil {
+		if counter, ok := activeProvider.(providers.TokenCounter); ok {
+			if usage, err := counter.CountTokens(ctx, estimateMessages, nil, activeModel, nil); err == nil && usage != nil {
+				total := usage.TotalTokens
+				if total <= 0 {
+					total = usage.PromptTokens
+				}
+				if total > 0 {
+					return float64(total) / float64(maxTokens)
+				}
+			}
+		}
+	}
+	charCount := 0
+	for _, msg := range estimateMessages {
+		charCount += len(msg.Content)
+	}
+	approxTokens := charCount / 4
+	if approxTokens <= 0 && charCount > 0 {
+		approxTokens = 1
+	}
+	return float64(approxTokens) / float64(maxTokens)
+}
+
+func normalizePositiveInt(value, fallback int) int {
+	if value > 0 {
+		return value
+	}
+	return fallback
+}
+
+func normalizeCompactionRatio(value, fallback float64) float64 {
+	if value > 0 && value <= 1 {
+		return value
+	}
+	return fallback
+}
+
+func maxLoopInt(values ...int) int {
+	best := 0
+	for _, value := range values {
+		if value > best {
+			best = value
+		}
+	}
+	return best
+}
+
+func classifyLLMFailureCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if code := providers.ExecutionErrorCode(err); strings.TrimSpace(code) != "" {
+		return strings.TrimSpace(code)
+	}
+	lower := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(lower, "max tool iterations"):
+		return "retry_limit"
+	case strings.Contains(lower, "stream stale"):
+		return "stream_stale"
+	case strings.Contains(lower, "stream failed"):
+		return "stream_failed"
+	case strings.Contains(lower, "thinking budget exhausted"), strings.Contains(lower, "continuation exhausted"):
+		return "continuation_exhausted"
+	default:
+		return ""
+	}
 }
 
 func (al *AgentLoop) GetStartupInfo() map[string]interface{} {

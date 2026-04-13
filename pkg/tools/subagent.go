@@ -15,37 +15,42 @@ import (
 )
 
 type SubagentRun struct {
-	ID               string                 `json:"id"`
-	Task             string                 `json:"task"`
-	Label            string                 `json:"label"`
-	Role             string                 `json:"role"`
-	AgentID          string                 `json:"agent_id"`
-	Transport        string                 `json:"transport,omitempty"`
-	ParentAgentID    string                 `json:"parent_agent_id,omitempty"`
-	NotifyMainPolicy string                 `json:"notify_main_policy,omitempty"`
-	SessionKey       string                 `json:"session_key"`
-	MemoryNS         string                 `json:"memory_ns"`
-	SystemPromptFile string                 `json:"system_prompt_file,omitempty"`
-	ToolAllowlist    []string               `json:"tool_allowlist,omitempty"`
-	MaxRetries       int                    `json:"max_retries,omitempty"`
-	RetryBackoff     int                    `json:"retry_backoff,omitempty"`
-	TimeoutSec       int                    `json:"timeout_sec,omitempty"`
-	MaxTaskChars     int                    `json:"max_task_chars,omitempty"`
-	MaxResultChars   int                    `json:"max_result_chars,omitempty"`
-	RetryCount       int                    `json:"retry_count,omitempty"`
-	ThreadID         string                 `json:"thread_id,omitempty"`
-	CorrelationID    string                 `json:"correlation_id,omitempty"`
-	ParentRunID      string                 `json:"parent_run_id,omitempty"`
-	LastMessageID    string                 `json:"last_message_id,omitempty"`
-	WaitingReply     bool                   `json:"waiting_for_reply,omitempty"`
-	SharedState      map[string]interface{} `json:"shared_state,omitempty"`
-	OriginChannel    string                 `json:"origin_channel,omitempty"`
-	OriginChatID     string                 `json:"origin_chat_id,omitempty"`
-	Status           string                 `json:"status"`
-	Result           string                 `json:"result,omitempty"`
-	Steering         []string               `json:"steering,omitempty"`
-	Created          int64                  `json:"created"`
-	Updated          int64                  `json:"updated"`
+	ID                string                 `json:"id"`
+	Task              string                 `json:"task"`
+	Label             string                 `json:"label"`
+	Role              string                 `json:"role"`
+	AgentID           string                 `json:"agent_id"`
+	Transport         string                 `json:"transport,omitempty"`
+	ParentAgentID     string                 `json:"parent_agent_id,omitempty"`
+	NotifyMainPolicy  string                 `json:"notify_main_policy,omitempty"`
+	SessionKey        string                 `json:"session_key"`
+	MemoryNS          string                 `json:"memory_ns"`
+	SystemPromptFile  string                 `json:"system_prompt_file,omitempty"`
+	ToolAllowlist     []string               `json:"tool_allowlist,omitempty"`
+	MaxRetries        int                    `json:"max_retries,omitempty"`
+	RetryBackoff      int                    `json:"retry_backoff,omitempty"`
+	TimeoutSec        int                    `json:"timeout_sec,omitempty"`
+	MaxToolIterations int                    `json:"max_tool_iterations,omitempty"`
+	MaxTaskChars      int                    `json:"max_task_chars,omitempty"`
+	MaxResultChars    int                    `json:"max_result_chars,omitempty"`
+	RetryCount        int                    `json:"retry_count,omitempty"`
+	IterationCount    int                    `json:"iteration_count,omitempty"`
+	AttemptCount      int                    `json:"attempt_count,omitempty"`
+	RestartCount      int                    `json:"restart_count,omitempty"`
+	LastFailureCode   string                 `json:"last_failure_code,omitempty"`
+	ThreadID          string                 `json:"thread_id,omitempty"`
+	CorrelationID     string                 `json:"correlation_id,omitempty"`
+	ParentRunID       string                 `json:"parent_run_id,omitempty"`
+	LastMessageID     string                 `json:"last_message_id,omitempty"`
+	WaitingReply      bool                   `json:"waiting_for_reply,omitempty"`
+	SharedState       map[string]interface{} `json:"shared_state,omitempty"`
+	OriginChannel     string                 `json:"origin_channel,omitempty"`
+	OriginChatID      string                 `json:"origin_chat_id,omitempty"`
+	Status            string                 `json:"status"`
+	Result            string                 `json:"result,omitempty"`
+	Steering          []string               `json:"steering,omitempty"`
+	Created           int64                  `json:"created"`
+	Updated           int64                  `json:"updated"`
 }
 
 type SubagentManager struct {
@@ -66,21 +71,22 @@ type SubagentManager struct {
 }
 
 type SubagentSpawnOptions struct {
-	Task             string
-	Label            string
-	Role             string
-	AgentID          string
-	NotifyMainPolicy string
-	MaxRetries       int
-	RetryBackoff     int
-	TimeoutSec       int
-	MaxTaskChars     int
-	MaxResultChars   int
-	OriginChannel    string
-	OriginChatID     string
-	ThreadID         string
-	CorrelationID    string
-	ParentRunID      string
+	Task              string
+	Label             string
+	Role              string
+	AgentID           string
+	NotifyMainPolicy  string
+	MaxRetries        int
+	RetryBackoff      int
+	TimeoutSec        int
+	MaxToolIterations int
+	MaxTaskChars      int
+	MaxResultChars    int
+	OriginChannel     string
+	OriginChatID      string
+	ThreadID          string
+	CorrelationID     string
+	ParentRunID       string
 }
 
 func NewSubagentManager(provider providers.LLMProvider, workspace string, bus *bus.MessageBus) *SubagentManager {
@@ -173,6 +179,7 @@ func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptio
 	maxRetries := 0
 	retryBackoff := 1000
 	timeoutSec := 0
+	maxToolIterations := 0
 	maxTaskChars := 0
 	maxResultChars := 0
 	if profile == nil && sm.profileStore != nil {
@@ -206,6 +213,7 @@ func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptio
 		maxRetries = profile.MaxRetries
 		retryBackoff = profile.RetryBackoff
 		timeoutSec = profile.TimeoutSec
+		maxToolIterations = profile.MaxToolIterations
 		maxTaskChars = profile.MaxTaskChars
 		maxResultChars = profile.MaxResultChars
 	}
@@ -217,6 +225,9 @@ func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptio
 	}
 	if opts.TimeoutSec > 0 {
 		timeoutSec = opts.TimeoutSec
+	}
+	if opts.MaxToolIterations > 0 {
+		maxToolIterations = opts.MaxToolIterations
 	}
 	if opts.MaxTaskChars > 0 {
 		maxTaskChars = opts.MaxTaskChars
@@ -230,6 +241,7 @@ func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptio
 	maxRetries = normalizePositiveBound(maxRetries, 0, 8)
 	retryBackoff = normalizePositiveBound(retryBackoff, 500, 120000)
 	timeoutSec = normalizePositiveBound(timeoutSec, 0, 3600)
+	maxToolIterations = normalizePositiveBound(maxToolIterations, 0, 200)
 	maxTaskChars = normalizePositiveBound(maxTaskChars, 0, 400000)
 	maxResultChars = normalizePositiveBound(maxResultChars, 0, 400000)
 	if role == "" {
@@ -270,32 +282,33 @@ func (sm *SubagentManager) spawnRun(ctx context.Context, opts SubagentSpawnOptio
 		}
 	}
 	subagentRun := &SubagentRun{
-		ID:               runID,
-		Task:             task,
-		Label:            label,
-		Role:             role,
-		AgentID:          agentID,
-		Transport:        transport,
-		ParentAgentID:    parentAgentID,
-		NotifyMainPolicy: notifyMainPolicy,
-		SessionKey:       sessionKey,
-		MemoryNS:         memoryNS,
-		SystemPromptFile: systemPromptFile,
-		ToolAllowlist:    toolAllowlist,
-		MaxRetries:       maxRetries,
-		RetryBackoff:     retryBackoff,
-		TimeoutSec:       timeoutSec,
-		MaxTaskChars:     maxTaskChars,
-		MaxResultChars:   maxResultChars,
-		RetryCount:       0,
-		ThreadID:         threadID,
-		CorrelationID:    correlationID,
-		ParentRunID:      parentRunID,
-		OriginChannel:    originChannel,
-		OriginChatID:     originChatID,
-		Status:           RuntimeStatusRouting,
-		Created:          now,
-		Updated:          now,
+		ID:                runID,
+		Task:              task,
+		Label:             label,
+		Role:              role,
+		AgentID:           agentID,
+		Transport:         transport,
+		ParentAgentID:     parentAgentID,
+		NotifyMainPolicy:  notifyMainPolicy,
+		SessionKey:        sessionKey,
+		MemoryNS:          memoryNS,
+		SystemPromptFile:  systemPromptFile,
+		ToolAllowlist:     toolAllowlist,
+		MaxRetries:        maxRetries,
+		RetryBackoff:      retryBackoff,
+		TimeoutSec:        timeoutSec,
+		MaxToolIterations: maxToolIterations,
+		MaxTaskChars:      maxTaskChars,
+		MaxResultChars:    maxResultChars,
+		RetryCount:        0,
+		ThreadID:          threadID,
+		CorrelationID:     correlationID,
+		ParentRunID:       parentRunID,
+		OriginChannel:     originChannel,
+		OriginChatID:      originChatID,
+		Status:            RuntimeStatusRouting,
+		Created:           now,
+		Updated:           now,
 	}
 	taskCtx, cancel := context.WithCancel(ctx)
 	sm.runs[runID] = subagentRun
@@ -335,6 +348,7 @@ func (sm *SubagentManager) runSubagent(ctx context.Context, run *SubagentRun) {
 	sm.mu.Lock()
 	if runErr != nil {
 		run.Status = RuntimeStatusFailed
+		run.LastFailureCode = classifySubagentFailureCode(runErr)
 		run.Result = fmt.Sprintf("Error: %v", runErr)
 		run.Result = applySubagentResultQuota(run.Result, run.MaxResultChars)
 		run.Updated = time.Now().UnixMilli()
@@ -354,6 +368,7 @@ func (sm *SubagentManager) runSubagent(ctx context.Context, run *SubagentRun) {
 		sm.notifyRunWaitersLocked(run.ID)
 	} else {
 		run.Status = RuntimeStatusCompleted
+		run.LastFailureCode = ""
 		run.Result = applySubagentResultQuota(result, run.MaxResultChars)
 		run.Updated = time.Now().UnixMilli()
 		run.WaitingReply = false
@@ -383,16 +398,17 @@ func (sm *SubagentManager) runSubagent(ctx context.Context, run *SubagentRun) {
 			SessionKey: run.SessionKey,
 			Content:    announceContent,
 			Metadata: map[string]string{
-				"trigger":       "subagent",
-				"subagent_id":   run.ID,
-				"agent_id":      run.AgentID,
-				"role":          run.Role,
-				"session_key":   run.SessionKey,
-				"memory_ns":     run.MemoryNS,
-				"retry_count":   fmt.Sprintf("%d", run.RetryCount),
-				"timeout_sec":   fmt.Sprintf("%d", run.TimeoutSec),
-				"status":        run.Status,
-				"notify_reason": notifyReason,
+				"trigger":         "subagent",
+				"subagent_id":     run.ID,
+				"agent_id":        run.AgentID,
+				"role":            run.Role,
+				"session_key":     run.SessionKey,
+				"memory_ns":       run.MemoryNS,
+				"retry_count":     fmt.Sprintf("%d", run.RetryCount),
+				"iteration_count": fmt.Sprintf("%d", run.IterationCount),
+				"timeout_sec":     fmt.Sprintf("%d", run.TimeoutSec),
+				"status":          run.Status,
+				"notify_reason":   notifyReason,
 			},
 		})
 	}
@@ -504,6 +520,10 @@ func (sm *SubagentManager) runWithRetry(ctx context.Context, run *SubagentRun) (
 
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if remaining := sm.remainingIterations(run); remaining == 0 && run.MaxToolIterations > 0 {
+			run.LastFailureCode = "retry_limit"
+			return "", fmt.Errorf("subagent iteration budget exhausted")
+		}
 		runCtx := ctx
 		var cancel context.CancelFunc
 		if timeoutSec > 0 {
@@ -516,18 +536,20 @@ func (sm *SubagentManager) runWithRetry(ctx context.Context, run *SubagentRun) (
 		if err == nil {
 			sm.mu.Lock()
 			run.RetryCount = attempt
+			run.LastFailureCode = ""
 			run.Updated = time.Now().UnixMilli()
 			sm.persistRunLocked(run, "attempt_succeeded", "")
 			sm.mu.Unlock()
 			return result, nil
 		}
 		lastErr = err
+		run.LastFailureCode = classifySubagentFailureCode(err)
 		sm.mu.Lock()
 		run.RetryCount = attempt
 		run.Updated = time.Now().UnixMilli()
 		sm.persistRunLocked(run, "attempt_failed", err.Error())
 		sm.mu.Unlock()
-		if attempt >= maxRetries {
+		if attempt >= maxRetries || !shouldRetrySubagentError(err) {
 			break
 		}
 		select {
@@ -547,8 +569,14 @@ func (sm *SubagentManager) executeRunOnce(ctx context.Context, run *SubagentRun)
 		return "", fmt.Errorf("subagent run is nil")
 	}
 	pending, consumedIDs := sm.consumeThreadInbox(run)
+	stats := &SubagentExecutionStats{}
+	ctx = WithSubagentExecutionStats(ctx, stats)
 	if sm.runFunc != nil {
+		if remaining := sm.remainingIterations(run); remaining > 0 {
+			ctx = WithSubagentIterationBudget(ctx, remaining)
+		}
 		result, err := sm.runFunc(ctx, run)
+		sm.applyExecutionStats(run, stats)
 		if err != nil {
 			sm.restoreMessageStatuses(consumedIDs)
 		} else {
@@ -582,6 +610,8 @@ func (sm *SubagentManager) executeRunOnce(ctx context.Context, run *SubagentRun)
 	response, err := sm.provider.Chat(ctx, messages, nil, sm.provider.GetDefaultModel(), map[string]interface{}{
 		"max_tokens": 4096,
 	})
+	stats.Attempts++
+	sm.applyExecutionStats(run, stats)
 	if err != nil {
 		sm.restoreMessageStatuses(consumedIDs)
 		return "", err
@@ -723,15 +753,16 @@ func (sm *SubagentManager) RuntimeSnapshot(limit int) RuntimeSnapshot {
 		if evts, err := sm.Events(run.ID, limit); err == nil {
 			for _, evt := range evts {
 				snapshot.Events = append(snapshot.Events, EventRecord{
-					ID:         EventRecordID(evt.RunID, evt.Type, evt.At),
-					RunID:      evt.RunID,
-					RequestID:  evt.RunID,
-					AgentID:    evt.AgentID,
-					Type:       evt.Type,
-					Status:     evt.Status,
-					Message:    evt.Message,
-					RetryCount: evt.RetryCount,
-					At:         evt.At,
+					ID:          EventRecordID(evt.RunID, evt.Type, evt.At),
+					RunID:       evt.RunID,
+					RequestID:   evt.RunID,
+					AgentID:     evt.AgentID,
+					Type:        evt.Type,
+					Status:      evt.Status,
+					FailureCode: evt.FailureCode,
+					Message:     evt.Message,
+					RetryCount:  evt.RetryCount,
+					At:          evt.At,
 				})
 			}
 		}
@@ -823,6 +854,71 @@ func applySubagentResultQuota(result string, maxChars int) string {
 	return strings.TrimSpace(trimmed) + suffix
 }
 
+func (sm *SubagentManager) remainingIterations(run *SubagentRun) int {
+	if run == nil || run.MaxToolIterations <= 0 {
+		return 0
+	}
+	remaining := run.MaxToolIterations - run.IterationCount
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+func (sm *SubagentManager) applyExecutionStats(run *SubagentRun, stats *SubagentExecutionStats) {
+	if run == nil || stats == nil {
+		return
+	}
+	run.IterationCount += stats.Iterations
+	run.AttemptCount += stats.Attempts
+	run.RestartCount += stats.Restarts
+	if strings.TrimSpace(stats.FailureCode) != "" {
+		run.LastFailureCode = strings.TrimSpace(stats.FailureCode)
+	}
+}
+
+func shouldRetrySubagentError(err error) bool {
+	code := classifySubagentFailureCode(err)
+	switch code {
+	case "", "timeout", "stream_failed", "stream_stale", "context_compacted":
+		return true
+	case "continuation_exhausted", "retry_limit":
+		return false
+	default:
+		return !errors.Is(err, context.Canceled)
+	}
+}
+
+func classifySubagentFailureCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	var execErr *providers.ProviderExecutionError
+	if errors.As(err, &execErr) && execErr != nil {
+		if strings.TrimSpace(execErr.Code) != "" {
+			return strings.TrimSpace(execErr.Code)
+		}
+	}
+	lower := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(lower, "max tool iterations"), strings.Contains(lower, "iteration budget exhausted"):
+		return "retry_limit"
+	case strings.Contains(lower, "stream stale"):
+		return "stream_stale"
+	case strings.Contains(lower, "stream failed"):
+		return "stream_failed"
+	case strings.Contains(lower, "continuation exhausted"), strings.Contains(lower, "thinking budget exhausted"):
+		return "continuation_exhausted"
+	case strings.Contains(lower, "compaction"):
+		return "context_compacted"
+	default:
+		return ""
+	}
+}
+
 func normalizeSubagentIdentifier(in string) string {
 	in = strings.TrimSpace(strings.ToLower(in))
 	if in == "" {
@@ -867,13 +963,14 @@ func (sm *SubagentManager) persistRunLocked(run *SubagentRun, eventType, message
 	cp := cloneSubagentRun(run)
 	_ = sm.runStore.AppendRun(cp)
 	_ = sm.runStore.AppendEvent(SubagentRunEvent{
-		RunID:      cp.ID,
-		AgentID:    cp.AgentID,
-		Type:       strings.TrimSpace(eventType),
-		Status:     cp.Status,
-		Message:    strings.TrimSpace(message),
-		RetryCount: cp.RetryCount,
-		At:         cp.Updated,
+		RunID:       cp.ID,
+		AgentID:     cp.AgentID,
+		Type:        strings.TrimSpace(eventType),
+		Status:      cp.Status,
+		FailureCode: strings.TrimSpace(cp.LastFailureCode),
+		Message:     strings.TrimSpace(message),
+		RetryCount:  cp.RetryCount,
+		At:          cp.Updated,
 	})
 }
 

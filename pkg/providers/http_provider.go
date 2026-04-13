@@ -983,7 +983,7 @@ func (p *HTTPProvider) doJSONAttempt(req *http.Request, attempt authAttempt) ([]
 	return body, resp.StatusCode, strings.TrimSpace(resp.Header.Get("Content-Type")), nil
 }
 
-func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, onEvent func(string)) ([]byte, int, string, bool, error) {
+func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, onEvent func(string), options *streamAttemptOptions, cancel context.CancelFunc) ([]byte, int, string, bool, error) {
 	client, err := p.httpClientForAttempt(attempt)
 	if err != nil {
 		return nil, 0, "", false, err
@@ -1006,7 +1006,39 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 	var dataLines []string
 	var finalJSON []byte
+	lastActivity := time.Now()
+	firstDeltaSeen := false
+	done := make(chan struct{})
+	if options != nil && cancel != nil {
+		go func() {
+			ticker := time.NewTicker(250 * time.Millisecond)
+			defer ticker.Stop()
+			defer close(done)
+			for {
+				select {
+				case <-req.Context().Done():
+					return
+				case <-ticker.C:
+					timeout := options.firstDeltaTimeout
+					if firstDeltaSeen {
+						timeout = options.idleDeltaTimeout
+					}
+					if timeout > 0 && time.Since(lastActivity) > timeout {
+						options.staleTriggered = true
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+	} else {
+		close(done)
+	}
+	defer func() {
+		<-done
+	}()
 	for scanner.Scan() {
+		lastActivity = time.Now()
 		line := scanner.Text()
 		if strings.TrimSpace(line) == "" {
 			if len(dataLines) > 0 {
@@ -1015,6 +1047,7 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 				if strings.TrimSpace(payload) == "[DONE]" {
 					continue
 				}
+				firstDeltaSeen = true
 				if onEvent != nil {
 					onEvent(payload)
 				}
@@ -1039,6 +1072,9 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if options != nil && options.staleTriggered {
+			return nil, resp.StatusCode, ctype, false, fmt.Errorf("stream stale: %w", err)
+		}
 		return nil, resp.StatusCode, ctype, false, fmt.Errorf("failed to read stream: %w", err)
 	}
 	if len(finalJSON) == 0 {

@@ -216,7 +216,7 @@ func TestHTTPProviderOpenAICompatStreamMergesLateUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request failed: %v", err)
 	}
-	body, status, _, _, err := provider.doStreamAttempt(req, authAttempt{kind: "api_key", token: "token"}, nil)
+	body, status, _, _, err := provider.doStreamAttempt(req, authAttempt{kind: "api_key", token: "token"}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("stream attempt failed: %v", err)
 	}

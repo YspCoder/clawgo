@@ -106,15 +106,16 @@ type SubagentToolsConfig struct {
 }
 
 type SubagentRuntimeConfig struct {
-	Provider        string  `json:"provider,omitempty"`
-	Model           string  `json:"model,omitempty"`
-	Temperature     float64 `json:"temperature,omitempty"`
-	TimeoutSec      int     `json:"timeout_sec,omitempty"`
-	MaxRetries      int     `json:"max_retries,omitempty"`
-	RetryBackoffMs  int     `json:"retry_backoff_ms,omitempty"`
-	MaxTaskChars    int     `json:"max_task_chars,omitempty"`
-	MaxResultChars  int     `json:"max_result_chars,omitempty"`
-	MaxParallelRuns int     `json:"max_parallel_runs,omitempty"`
+	Provider          string  `json:"provider,omitempty"`
+	Model             string  `json:"model,omitempty"`
+	Temperature       float64 `json:"temperature,omitempty"`
+	TimeoutSec        int     `json:"timeout_sec,omitempty"`
+	MaxRetries        int     `json:"max_retries,omitempty"`
+	RetryBackoffMs    int     `json:"retry_backoff_ms,omitempty"`
+	MaxTaskChars      int     `json:"max_task_chars,omitempty"`
+	MaxResultChars    int     `json:"max_result_chars,omitempty"`
+	MaxParallelRuns   int     `json:"max_parallel_runs,omitempty"`
+	MaxToolIterations int     `json:"max_tool_iterations,omitempty"`
 }
 
 type AgentDefaults struct {
@@ -158,12 +159,15 @@ type SystemSummaryPolicyConfig struct {
 }
 
 type ContextCompactionConfig struct {
-	Enabled            bool   `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_ENABLED"`
-	Mode               string `json:"mode" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MODE"`
-	TriggerMessages    int    `json:"trigger_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_TRIGGER_MESSAGES"`
-	KeepRecentMessages int    `json:"keep_recent_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_KEEP_RECENT_MESSAGES"`
-	MaxSummaryChars    int    `json:"max_summary_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_SUMMARY_CHARS"`
-	MaxTranscriptChars int    `json:"max_transcript_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_TRANSCRIPT_CHARS"`
+	Enabled            bool    `json:"enabled" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_ENABLED"`
+	Mode               string  `json:"mode" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MODE"`
+	TriggerMessages    int     `json:"trigger_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_TRIGGER_MESSAGES"`
+	KeepRecentMessages int     `json:"keep_recent_messages" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_KEEP_RECENT_MESSAGES"`
+	TargetRatio        float64 `json:"target_ratio" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_TARGET_RATIO"`
+	ProtectLastN       int     `json:"protect_last_n" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_PROTECT_LAST_N"`
+	PressureThreshold  float64 `json:"pressure_threshold" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_PRESSURE_THRESHOLD"`
+	MaxSummaryChars    int     `json:"max_summary_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_SUMMARY_CHARS"`
+	MaxTranscriptChars int     `json:"max_transcript_chars" env:"CLAWGO_AGENTS_DEFAULTS_CONTEXT_COMPACTION_MAX_TRANSCRIPT_CHARS"`
 }
 
 type ChannelsConfig struct {
@@ -402,6 +406,9 @@ func DefaultConfig() *Config {
 					Mode:               "summary",
 					TriggerMessages:    60,
 					KeepRecentMessages: 20,
+					TargetRatio:        0.35,
+					ProtectLastN:       12,
+					PressureThreshold:  0.8,
 					MaxSummaryChars:    6000,
 					MaxTranscriptChars: 20000,
 				},

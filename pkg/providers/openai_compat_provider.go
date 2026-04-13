@@ -143,7 +143,7 @@ func doOpenAICompatStreamWithAttempts(ctx context.Context, base *HTTPProvider, p
 					onDelta(txt)
 				}
 			}
-		})
+		}, nil, nil)
 		if err != nil {
 			return nil, 0, "", err
 		}

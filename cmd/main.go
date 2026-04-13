@@ -7,7 +7,6 @@
 package main
 
 import (
-	"embed"
 	"errors"
 	"fmt"
 	"os"
@@ -15,9 +14,6 @@ import (
 	"github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/logger"
 )
-
-//go:embed workspace
-var embeddedFiles embed.FS
 
 var version = "0.0.2"
 var buildTime = "unknown"

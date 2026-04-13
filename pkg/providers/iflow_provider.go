@@ -254,7 +254,7 @@ func doIFlowStreamWithAttempts(ctx context.Context, base *HTTPProvider, payload 
 					onDelta(txt)
 				}
 			}
-		})
+		}, nil, nil)
 		if err != nil {
 			return nil, 0, "", err
 		}

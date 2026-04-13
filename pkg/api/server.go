@@ -47,7 +47,8 @@ type Server struct {
 	workspacePath  string
 	logFilePath    string
 	onChat         func(ctx context.Context, sessionKey, content string) (string, error)
-	onChatHistory  func(sessionKey string) []map[string]interface{}
+	onChatHistory  func(query ChatHistoryQuery) []map[string]interface{}
+	onSessionSearch func(query SessionSearchQuery) []map[string]interface{}
 	onConfigAfter  func(forceRuntimeReload bool) error
 	onCron         func(action string, args map[string]interface{}) (interface{}, error)
 	onToolsCatalog func() interface{}
@@ -68,6 +69,22 @@ type channelDraftStore struct {
 	Telegram      *cfgpkg.TelegramConfig
 	Feishu        *cfgpkg.FeishuConfig
 	weixinRuntime *channels.WeixinChannel
+}
+
+type ChatHistoryQuery struct {
+	Session string
+	Around  int
+	Before  int
+	After   int
+	Limit   int
+}
+
+type SessionSearchQuery struct {
+	Query          string
+	Limit          int
+	Kinds          []string
+	ExcludeCurrent bool
+	Session        string
 }
 
 func NewServer(host string, port int, token string) *Server {
@@ -94,8 +111,11 @@ func (s *Server) SetToken(token string)        { s.token = strings.TrimSpace(tok
 func (s *Server) SetChatHandler(fn func(ctx context.Context, sessionKey, content string) (string, error)) {
 	s.onChat = fn
 }
-func (s *Server) SetChatHistoryHandler(fn func(sessionKey string) []map[string]interface{}) {
+func (s *Server) SetChatHistoryHandler(fn func(query ChatHistoryQuery) []map[string]interface{}) {
 	s.onChatHistory = fn
+}
+func (s *Server) SetSessionSearchHandler(fn func(query SessionSearchQuery) []map[string]interface{}) {
+	s.onSessionSearch = fn
 }
 func (s *Server) SetMessageBus(mb *bus.MessageBus)                          { s.messageBus = mb }
 func (s *Server) SetConfigAfterHook(fn func(forceRuntimeReload bool) error) { s.onConfigAfter = fn }
@@ -611,6 +631,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/cron", s.handleWebUICron)
 	mux.HandleFunc("/api/skills", s.handleWebUISkills)
 	mux.HandleFunc("/api/sessions", s.handleWebUISessions)
+	mux.HandleFunc("/api/sessions/search", s.handleWebUISessionSearch)
 	mux.HandleFunc("/api/memory", s.handleWebUIMemory)
 	mux.HandleFunc("/api/workspace_file", s.handleWebUIWorkspaceFile)
 	mux.HandleFunc("/api/workspace_docs", s.handleWebUIWorkspaceDocs)
@@ -1516,7 +1537,14 @@ func (s *Server) handleWebUIChatHistory(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, map[string]interface{}{"ok": true, "session": session, "messages": []interface{}{}})
 		return
 	}
-	writeJSON(w, map[string]interface{}{"ok": true, "session": session, "messages": s.onChatHistory(session)})
+	query := ChatHistoryQuery{
+		Session: session,
+		Around:  queryBoundedPositiveInt(r, "around", 0, 1_000_000),
+		Before:  queryBoundedPositiveInt(r, "before", 0, 1_000_000),
+		After:   queryBoundedPositiveInt(r, "after", 0, 1_000_000),
+		Limit:   queryBoundedPositiveInt(r, "limit", 200, 2000),
+	}
+	writeJSON(w, map[string]interface{}{"ok": true, "session": session, "messages": s.onChatHistory(query)})
 }
 
 func (s *Server) handleWebUIChatLive(w http.ResponseWriter, r *http.Request) {
@@ -3349,10 +3377,25 @@ func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			name := e.Name()
-			if !strings.HasSuffix(name, ".jsonl") || strings.Contains(name, ".deleted.") {
+			key := ""
+			switch {
+			case strings.HasSuffix(name, ".meta.json"):
+				key = strings.TrimSuffix(name, ".meta.json")
+			case strings.HasSuffix(name, ".active.jsonl"):
+				key = strings.TrimSuffix(name, ".active.jsonl")
+			case strings.HasSuffix(name, ".jsonl") && !strings.Contains(name, ".deleted."):
+				key = strings.TrimSuffix(name, ".jsonl")
+				if strings.HasSuffix(key, ".active") {
+					key = strings.TrimSuffix(key, ".active")
+				}
+				if idx := strings.LastIndex(key, "."); idx > 0 {
+					if seqPart := key[idx+1:]; len(seqPart) == 4 && regexp.MustCompile(`^\d{4}$`).MatchString(seqPart) {
+						key = key[:idx]
+					}
+				}
+			default:
 				continue
 			}
-			key := strings.TrimSuffix(name, ".jsonl")
 			if strings.TrimSpace(key) == "" {
 				continue
 			}
@@ -3374,6 +3417,65 @@ func (s *Server) handleWebUISessions(w http.ResponseWriter, r *http.Request) {
 		out = append(out, item{Key: "main", Channel: "main"})
 	}
 	writeJSON(w, map[string]interface{}{"ok": true, "sessions": out})
+}
+
+func (s *Server) handleWebUISessionSearch(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.onSessionSearch == nil {
+		writeJSON(w, map[string]interface{}{"ok": true, "results": []interface{}{}})
+		return
+	}
+	queryText := strings.TrimSpace(r.URL.Query().Get("query"))
+	if queryText == "" {
+		writeJSON(w, map[string]interface{}{"ok": true, "results": []interface{}{}})
+		return
+	}
+	kinds := splitCSVQueryParam(r.URL.Query()["kinds"])
+	if len(kinds) == 0 {
+		kinds = splitCSVQueryParam([]string{r.URL.Query().Get("kind")})
+	}
+	excludeCurrent := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("exclude_current")); raw != "" {
+		excludeCurrent = raw == "1" || strings.EqualFold(raw, "true") || strings.EqualFold(raw, "yes")
+	}
+	query := SessionSearchQuery{
+		Query:          queryText,
+		Limit:          queryBoundedPositiveInt(r, "limit", 5, 100),
+		Kinds:          kinds,
+		ExcludeCurrent: excludeCurrent,
+		Session:        strings.TrimSpace(r.URL.Query().Get("session")),
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":      true,
+		"query":   query.Query,
+		"results": s.onSessionSearch(query),
+	})
+}
+
+func splitCSVQueryParam(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			if _, ok := seen[item]; ok {
+				continue
+			}
+			seen[item] = struct{}{}
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func isUserFacingSessionKey(key string) bool {

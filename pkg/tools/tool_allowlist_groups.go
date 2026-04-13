@@ -27,9 +27,9 @@ var defaultToolAllowlistGroups = []ToolAllowlistGroup{
 	},
 	{
 		Name:        "memory_read",
-		Description: "Read-only memory tools",
+		Description: "Read-only memory and session recall tools",
 		Aliases:     []string{"mem_read"},
-		Tools:       []string{"memory_search", "memory_get"},
+		Tools:       []string{"memory_search", "memory_get", "session_search"},
 	},
 	{
 		Name:        "memory_write",

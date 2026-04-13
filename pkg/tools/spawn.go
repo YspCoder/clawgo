@@ -61,6 +61,10 @@ func (t *SpawnTool) Parameters() map[string]interface{} {
 				"type":        "integer",
 				"description": "Optional per-attempt timeout in seconds.",
 			},
+			"max_tool_iterations": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional independent tool-calling iteration budget.",
+			},
 			"max_task_chars": map[string]interface{}{
 				"type":        "integer",
 				"description": "Optional task size quota in characters.",
@@ -101,6 +105,7 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 	maxRetries := MapIntArg(args, "max_retries", 0)
 	retryBackoff := MapIntArg(args, "retry_backoff_ms", 0)
 	timeoutSec := MapIntArg(args, "timeout_sec", 0)
+	maxToolIterations := MapIntArg(args, "max_tool_iterations", 0)
 	maxTaskChars := MapIntArg(args, "max_task_chars", 0)
 	maxResultChars := MapIntArg(args, "max_result_chars", 0)
 	if label == "" && role != "" {
@@ -129,17 +134,18 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) (s
 	}
 
 	result, err := t.manager.Spawn(ctx, SubagentSpawnOptions{
-		Task:           task,
-		Label:          label,
-		Role:           role,
-		AgentID:        agentID,
-		MaxRetries:     maxRetries,
-		RetryBackoff:   retryBackoff,
-		TimeoutSec:     timeoutSec,
-		MaxTaskChars:   maxTaskChars,
-		MaxResultChars: maxResultChars,
-		OriginChannel:  originChannel,
-		OriginChatID:   originChatID,
+		Task:              task,
+		Label:             label,
+		Role:              role,
+		AgentID:           agentID,
+		MaxRetries:        maxRetries,
+		RetryBackoff:      retryBackoff,
+		TimeoutSec:        timeoutSec,
+		MaxToolIterations: maxToolIterations,
+		MaxTaskChars:      maxTaskChars,
+		MaxResultChars:    maxResultChars,
+		OriginChannel:     originChannel,
+		OriginChatID:      originChatID,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to spawn subagent: %w", err)

@@ -193,9 +193,12 @@ func TestTryFallbackProvidersUsesFallbackProviderOptionsAndPersistsSelection(t *
 		},
 	}
 
-	resp, providerName, err := loop.tryFallbackProviders(context.Background(), bus.InboundMessage{SessionKey: "chat-1"}, nil, nil, errors.New("primary failed"))
+	resp, providerName, attempts, err := loop.tryFallbackProviders(context.Background(), bus.InboundMessage{SessionKey: "chat-1"}, nil, nil, errors.New("primary failed"))
 	if err != nil {
 		t.Fatalf("expected fallback success, got %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected one fallback attempt, got %d", attempts)
 	}
 	if resp == nil || resp.Content != "fallback" {
 		t.Fatalf("unexpected fallback response: %#v", resp)

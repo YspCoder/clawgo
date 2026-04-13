@@ -151,8 +151,11 @@ func gatewayCmd() {
 			}
 			return loop.ProcessDirect(cctx, content, sessionKey)
 		})
-		registryServer.SetChatHistoryHandler(func(sessionKey string) []map[string]interface{} {
-			h := loop.GetSessionHistory(sessionKey)
+		registryServer.SetChatHistoryHandler(func(query api.ChatHistoryQuery) []map[string]interface{} {
+			h := loop.GetSessionHistory(query.Session)
+			if query.Around > 0 || query.Before > 0 || query.After > 0 || query.Limit > 0 {
+				h = loop.GetSessionHistoryWindow(query.Session, query.Around, query.Before, query.After, query.Limit)
+			}
 			out := make([]map[string]interface{}, 0, len(h))
 			for _, m := range h {
 				entry := map[string]interface{}{"role": m.Role, "content": m.Content}
@@ -162,6 +165,35 @@ func gatewayCmd() {
 				if len(m.ToolCalls) > 0 {
 					entry["tool_calls"] = m.ToolCalls
 				}
+				out = append(out, entry)
+			}
+			return out
+		})
+		registryServer.SetSessionSearchHandler(func(query api.SessionSearchQuery) []map[string]interface{} {
+			excludeKey := ""
+			if query.ExcludeCurrent {
+				excludeKey = strings.TrimSpace(query.Session)
+			}
+			results := loop.SearchSessions(query.Query, query.Kinds, excludeKey, query.Limit)
+			out := make([]map[string]interface{}, 0, len(results))
+			for _, item := range results {
+				entry := map[string]interface{}{
+					"key":        item.Key,
+					"kind":       item.Kind,
+					"updated_at": item.UpdatedAt.UnixMilli(),
+					"summary":    item.Summary,
+					"score":      item.Score,
+				}
+				snippets := make([]map[string]interface{}, 0, len(item.Snippets))
+				for _, snippet := range item.Snippets {
+					snippets = append(snippets, map[string]interface{}{
+						"seq":     snippet.Seq,
+						"role":    snippet.Role,
+						"segment": snippet.Segment,
+						"content": snippet.Content,
+					})
+				}
+				entry["snippets"] = snippets
 				out = append(out, entry)
 			}
 			return out

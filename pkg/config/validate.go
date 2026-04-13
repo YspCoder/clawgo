@@ -76,6 +76,15 @@ func Validate(cfg *Config) []error {
 		if cc.KeepRecentMessages <= 0 {
 			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.keep_recent_messages must be > 0 when enabled=true"))
 		}
+		if cc.TargetRatio <= 0 || cc.TargetRatio >= 1 {
+			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.target_ratio must be > 0 and < 1 when enabled=true"))
+		}
+		if cc.ProtectLastN <= 0 {
+			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.protect_last_n must be > 0 when enabled=true"))
+		}
+		if cc.PressureThreshold <= 0 || cc.PressureThreshold > 1 {
+			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.pressure_threshold must be > 0 and <= 1 when enabled=true"))
+		}
 		if cc.TriggerMessages > 0 && cc.KeepRecentMessages >= cc.TriggerMessages {
 			errs = append(errs, fmt.Errorf("agents.defaults.context_compaction.keep_recent_messages must be < trigger_messages"))
 		}
@@ -394,6 +403,9 @@ func validateSubagents(cfg *Config) []error {
 		}
 		if raw.Runtime.MaxParallelRuns < 0 {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.max_parallel_runs must be >= 0", id))
+		}
+		if raw.Runtime.MaxToolIterations < 0 {
+			errs = append(errs, fmt.Errorf("agents.subagents.%s.runtime.max_tool_iterations must be >= 0", id))
 		}
 		if raw.Tools.MaxParallelCalls < 0 {
 			errs = append(errs, fmt.Errorf("agents.subagents.%s.tools.max_parallel_calls must be >= 0", id))
