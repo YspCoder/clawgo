@@ -2,8 +2,10 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YspCoder/clawgo/pkg/bus"
 )
@@ -64,5 +66,65 @@ func TestProcessToolParsesStringIntegers(t *testing.T) {
 	}
 	if !strings.HasPrefix(strings.TrimSpace(out), "[") {
 		t.Fatalf("expected json list output, got %s", out)
+	}
+}
+
+func TestProcessToolWatchPatternsMatchesLog(t *testing.T) {
+	t.Parallel()
+
+	pm := NewProcessManager(t.TempDir())
+	id, err := pm.Start(context.Background(), "printf 'READY\\n'; sleep 0.05", "")
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	tool := NewProcessTool(pm)
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":      "watch_patterns",
+		"session_id":  id,
+		"patterns":    []interface{}{"ready"},
+		"timeout_ms":  2000,
+		"interval_ms": 50,
+	})
+	if err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("invalid json output: %v (%s)", err, out)
+	}
+	if matched, _ := payload["matched"].(bool); !matched {
+		t.Fatalf("expected matched response, got %v", payload)
+	}
+}
+
+func TestProcessToolWatchPatternsTimesOut(t *testing.T) {
+	t.Parallel()
+
+	pm := NewProcessManager(t.TempDir())
+	id, err := pm.Start(context.Background(), "sleep 0.3", "")
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+	tool := NewProcessTool(pm)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	out, err := tool.Execute(ctx, map[string]interface{}{
+		"action":      "watch_patterns",
+		"session_id":  id,
+		"patterns":    "nomatch",
+		"timeout_ms":  "120",
+		"interval_ms": "30",
+	})
+	if err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("invalid json output: %v (%s)", err, out)
+	}
+	if timedOut, _ := payload["timed_out"].(bool); !timedOut {
+		t.Fatalf("expected timed_out=true, got %v", payload)
 	}
 }

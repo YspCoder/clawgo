@@ -406,6 +406,12 @@ func providerLoginCmd() {
 		fmt.Printf("Provider %s is not configured with auth=oauth/hybrid\n", providerName)
 		os.Exit(1)
 	}
+	oauthProvider := strings.ToLower(strings.TrimSpace(pc.OAuth.Provider))
+	if oauthProvider == "codex" {
+		// Codex login is device-code only; callback/browser modes are no longer used.
+		manual = false
+		noBrowser = true
+	}
 	if manual {
 		noBrowser = true
 	}
@@ -460,8 +466,10 @@ func providerLoginCmd() {
 	fmt.Printf("OAuth login succeeded for provider %s\n", providerName)
 	if manual {
 		fmt.Println("Mode: manual callback URL paste")
-	} else if noBrowser {
+	} else if noBrowser && oauthProvider != "codex" {
 		fmt.Println("Mode: local callback listener without auto-opening browser")
+	} else if oauthProvider == "codex" {
+		fmt.Println("Mode: device-code")
 	}
 	if session.Email != "" {
 		fmt.Printf("Account: %s\n", session.Email)

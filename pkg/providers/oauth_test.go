@@ -323,6 +323,7 @@ func TestResolveOAuthConfigSupportsAdditionalProviders(t *testing.T) {
 		want     string
 		flow     string
 	}{
+		{name: "codex", provider: "codex", want: "codex", flow: oauthFlowDevice},
 		{name: "anthropic-alias", provider: "anthropic", want: "claude", flow: oauthFlowCallback},
 		{name: "antigravity", provider: "antigravity", want: "antigravity", flow: oauthFlowCallback},
 		{name: "gemini", provider: "gemini", want: "gemini", flow: oauthFlowCallback},
@@ -947,6 +948,97 @@ func TestOAuthDeviceFlowQwenManualCompletes(t *testing.T) {
 		t.Fatalf("expected qwen label, got %#v", session)
 	}
 	if len(models) != 1 || models[0] != "qwen-test" {
+		t.Fatalf("unexpected models: %#v", models)
+	}
+}
+
+func TestOAuthDeviceFlowCodexStartAndComplete(t *testing.T) {
+	t.Parallel()
+
+	var pollAttempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			if got := r.Header.Get("Content-Type"); !strings.Contains(strings.ToLower(got), "application/json") {
+				t.Fatalf("expected json content type, got %s", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"user_code":"U-CODE","device_auth_id":"dev-auth-1","interval":0,"expires_in":60}`))
+		case "/api/accounts/deviceauth/token":
+			attempt := atomic.AddInt32(&pollAttempts, 1)
+			if attempt == 1 {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"authorization_code":"auth-code-1","code_verifier":"verifier-1"}`))
+		case "/oauth/token":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form failed: %v", err)
+			}
+			if got := r.Form.Get("grant_type"); got != "authorization_code" {
+				t.Fatalf("unexpected grant_type: %s", got)
+			}
+			if got := r.Form.Get("code"); got != "auth-code-1" {
+				t.Fatalf("unexpected code: %s", got)
+			}
+			if got := r.Form.Get("code_verifier"); got != "verifier-1" {
+				t.Fatalf("unexpected code_verifier: %s", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"codex-at","refresh_token":"codex-rt","expires_in":3600}`))
+		case "/models":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"gpt-5.4"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	manager, err := newOAuthManager(config.ProviderConfig{
+		APIBase: server.URL,
+		Auth:    "oauth",
+		OAuth: config.ProviderOAuthConfig{
+			Provider:       "codex",
+			AuthURL:        server.URL + "/api/accounts/deviceauth/usercode",
+			TokenURL:       server.URL + "/oauth/token",
+			RedirectURL:    server.URL + "/deviceauth/callback",
+			CredentialFile: filepath.Join(dir, "codex.json"),
+		},
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("new oauth manager failed: %v", err)
+	}
+	defer manager.bgCancel()
+
+	flow, err := manager.startDeviceFlow(context.Background(), OAuthLoginOptions{})
+	if err != nil {
+		t.Fatalf("start device flow failed: %v", err)
+	}
+	if flow.Mode != oauthFlowDevice {
+		t.Fatalf("unexpected flow mode: %s", flow.Mode)
+	}
+	if flow.UserCode != "U-CODE" || flow.DeviceCode != "dev-auth-1" {
+		t.Fatalf("unexpected flow payload: %#v", flow)
+	}
+	if flow.IntervalSec < 1 {
+		t.Fatalf("expected normalized poll interval >=1, got %d", flow.IntervalSec)
+	}
+
+	session, models, err := manager.completeDeviceFlow(context.Background(), server.URL, flow, OAuthLoginOptions{})
+	if err != nil {
+		t.Fatalf("complete device flow failed: %v", err)
+	}
+	if session.AccessToken != "codex-at" || session.RefreshToken != "codex-rt" {
+		t.Fatalf("unexpected session tokens: %#v", session)
+	}
+	if atomic.LoadInt32(&pollAttempts) < 2 {
+		t.Fatalf("expected polling retries, got %d", pollAttempts)
+	}
+	if len(models) != 1 || models[0] != "gpt-5.4" {
 		t.Fatalf("unexpected models: %#v", models)
 	}
 }

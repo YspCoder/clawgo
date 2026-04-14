@@ -3,10 +3,13 @@ package tools
 import "context"
 
 type SubagentExecutionStats struct {
-	Iterations  int
-	Attempts    int
-	Restarts    int
-	FailureCode string
+	Iterations       int
+	Attempts         int
+	Restarts         int
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+	FailureCode      string
 }
 
 type subagentExecutionStatsKey struct{}
@@ -30,6 +33,9 @@ func RecordSubagentExecutionStats(ctx context.Context, delta SubagentExecutionSt
 	stats.Iterations += delta.Iterations
 	stats.Attempts += delta.Attempts
 	stats.Restarts += delta.Restarts
+	stats.PromptTokens += delta.PromptTokens
+	stats.CompletionTokens += delta.CompletionTokens
+	stats.TotalTokens += delta.TotalTokens
 	if delta.FailureCode != "" {
 		stats.FailureCode = delta.FailureCode
 	}

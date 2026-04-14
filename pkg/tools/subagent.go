@@ -37,6 +37,9 @@ type SubagentRun struct {
 	IterationCount    int                    `json:"iteration_count,omitempty"`
 	AttemptCount      int                    `json:"attempt_count,omitempty"`
 	RestartCount      int                    `json:"restart_count,omitempty"`
+	PromptTokens      int                    `json:"prompt_tokens,omitempty"`
+	CompletionTokens  int                    `json:"completion_tokens,omitempty"`
+	TotalTokens       int                    `json:"total_tokens,omitempty"`
 	LastFailureCode   string                 `json:"last_failure_code,omitempty"`
 	ThreadID          string                 `json:"thread_id,omitempty"`
 	CorrelationID     string                 `json:"correlation_id,omitempty"`
@@ -872,6 +875,9 @@ func (sm *SubagentManager) applyExecutionStats(run *SubagentRun, stats *Subagent
 	run.IterationCount += stats.Iterations
 	run.AttemptCount += stats.Attempts
 	run.RestartCount += stats.Restarts
+	run.PromptTokens += stats.PromptTokens
+	run.CompletionTokens += stats.CompletionTokens
+	run.TotalTokens += stats.TotalTokens
 	if strings.TrimSpace(stats.FailureCode) != "" {
 		run.LastFailureCode = strings.TrimSpace(stats.FailureCode)
 	}

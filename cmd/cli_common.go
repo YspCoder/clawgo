@@ -97,6 +97,7 @@ func printHelp() {
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  channel     Test and manage messaging channels")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
+	fmt.Println("  backup      Unified backup/import for config, sessions, memory, skills")
 	if tuiEnabled {
 		fmt.Println("  tui         Chat in terminal using the gateway chat API")
 	}

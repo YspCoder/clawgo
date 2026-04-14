@@ -46,6 +46,7 @@ type AgentLoop struct {
 	maxIterations                int
 	sessions                     *session.SessionManager
 	contextBuilder               *ContextBuilder
+	contextEngine                ContextEngine
 	tools                        *tools.ToolRegistry
 	compactionEnabled            bool
 	compactionTrigger            int
@@ -115,6 +116,18 @@ func (al *AgentLoop) SetConfigPath(path string) {
 		return
 	}
 	al.configPath = strings.TrimSpace(path)
+}
+
+func (al *AgentLoop) SetContextEngine(engine ContextEngine) {
+	if al == nil {
+		return
+	}
+	al.runMu.Lock()
+	defer al.runMu.Unlock()
+	if engine == nil && al.contextBuilder != nil {
+		engine = NewDefaultContextEngine(al.contextBuilder)
+	}
+	al.contextEngine = engine
 }
 
 // StartupCompactionReport provides startup memory/session maintenance stats.
@@ -234,6 +247,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	// Register system info tool
 	toolsRegistry.Register(tools.NewSystemInfoTool())
 
+	contextBuilder := NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() })
 	loop := &AgentLoop{
 		bus:                          msgBus,
 		cfg:                          cfg,
@@ -244,7 +258,8 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		temperature:                  cfg.Agents.Defaults.Temperature,
 		maxIterations:                cfg.Agents.Defaults.MaxToolIterations,
 		sessions:                     sessionsManager,
-		contextBuilder:               NewContextBuilder(workspace, func() []string { return toolsRegistry.GetSummaries() }),
+		contextBuilder:               contextBuilder,
+		contextEngine:                NewDefaultContextEngine(contextBuilder),
 		tools:                        toolsRegistry,
 		compactionEnabled:            cfg.Agents.Defaults.ContextCompaction.Enabled,
 		compactionTrigger:            cfg.Agents.Defaults.ContextCompaction.TriggerMessages,
@@ -893,14 +908,17 @@ type llmTurnLoopConfig struct {
 }
 
 type llmTurnLoopResult struct {
-	messages        []providers.Message
-	pendingPersist  []providers.Message
-	finalContent    string
-	iteration       int
-	attemptCount    int
-	restartCount    int
-	failureCode     string
-	hasToolActivity bool
+	messages         []providers.Message
+	pendingPersist   []providers.Message
+	finalContent     string
+	iteration        int
+	attemptCount     int
+	restartCount     int
+	promptTokens     int
+	completionTokens int
+	totalTokens      int
+	failureCode      string
+	hasToolActivity  bool
 }
 
 func logLLMTurnRequest(iteration, maxIterations int, providerName, activeModel string, messages []providers.Message, providerToolDefs []providers.ToolDefinition, maxTokens int, temperature float64) {
@@ -945,6 +963,63 @@ func logLLMToolCalls(iteration int, toolCalls []providers.ToolCall) {
 		"count":     len(toolNames),
 		"iteration": iteration,
 	})
+}
+
+func mergeUsageTotals(dst *llmTurnLoopResult, usage *providers.UsageInfo) {
+	if dst == nil || usage == nil {
+		return
+	}
+	prompt := usage.PromptTokens
+	completion := usage.CompletionTokens
+	total := usage.TotalTokens
+	if total <= 0 {
+		total = prompt + completion
+	}
+	dst.promptTokens += prompt
+	dst.completionTokens += completion
+	dst.totalTokens += total
+}
+
+func estimateResponseUsage(ctx context.Context, provider providers.LLMProvider, model string, prompt []providers.Message, toolDefs []providers.ToolDefinition, response *providers.LLMResponse) *providers.UsageInfo {
+	if response == nil {
+		return nil
+	}
+	if response.Usage != nil {
+		return response.Usage
+	}
+	counter, ok := provider.(providers.TokenCounter)
+	if !ok {
+		return nil
+	}
+	usage, err := counter.CountTokens(ctx, prompt, toolDefs, model, nil)
+	if err != nil || usage == nil {
+		return nil
+	}
+	promptTokens := usage.TotalTokens
+	if promptTokens <= 0 {
+		promptTokens = usage.PromptTokens
+	}
+	if promptTokens <= 0 {
+		return nil
+	}
+	completionChars := len(strings.TrimSpace(response.Content))
+	for _, tc := range response.ToolCalls {
+		completionChars += len(strings.TrimSpace(tc.Name))
+		if tc.Arguments != nil {
+			if b, err := json.Marshal(tc.Arguments); err == nil {
+				completionChars += len(b)
+			}
+		}
+	}
+	completionTokens := completionChars / 4
+	if completionTokens <= 0 && completionChars > 0 {
+		completionTokens = 1
+	}
+	return &providers.UsageInfo{
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      promptTokens + completionTokens,
+	}
 }
 
 func buildAssistantToolCallMessage(response *providers.LLMResponse) providers.Message {
@@ -1195,6 +1270,7 @@ func (al *AgentLoop) runLLMTurnLoop(cfg llmTurnLoopConfig) (llmTurnLoopResult, e
 			})
 			return result, fmt.Errorf("LLM call failed: %w", err)
 		}
+		mergeUsageTotals(&result, estimateResponseUsage(cfg.ctx, activeProvider, activeModel, result.messages, providerToolDefs, response))
 
 		if len(response.ToolCalls) == 0 {
 			result.finalContent = response.Content
@@ -1240,16 +1316,30 @@ func (al *AgentLoop) prepareUserMessageContext(msg bus.InboundMessage, memoryNam
 	}
 	preferredLang, lastLang := al.sessions.GetLanguagePreferences(msg.SessionKey)
 	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
-	messages := al.contextBuilder.BuildMessagesWithMemoryNamespace(
-		history,
-		summary,
-		msg.Content,
-		nil,
-		msg.Channel,
-		msg.ChatID,
-		responseLang,
-		memoryNamespace,
-	)
+	messages := []providers.Message(nil)
+	if al.contextEngine != nil {
+		messages = al.contextEngine.BuildMessages(ContextBuildRequest{
+			History:          history,
+			Summary:          summary,
+			CurrentMessage:   msg.Content,
+			Channel:          msg.Channel,
+			ChatID:           msg.ChatID,
+			ResponseLanguage: responseLang,
+			MemoryNamespace:  memoryNamespace,
+		})
+	}
+	if len(messages) == 0 && al.contextBuilder != nil {
+		messages = al.contextBuilder.BuildMessagesWithMemoryNamespace(
+			history,
+			summary,
+			msg.Content,
+			nil,
+			msg.Channel,
+			msg.ChatID,
+			responseLang,
+			memoryNamespace,
+		)
+	}
 	return messages, responseLang
 }
 
@@ -1270,15 +1360,29 @@ func (al *AgentLoop) prepareSystemMessageContext(sessionKey string, msg bus.Inbo
 	summary := al.sessions.GetSummary(sessionKey)
 	preferredLang, lastLang := al.sessions.GetLanguagePreferences(sessionKey)
 	responseLang := DetectResponseLanguage(msg.Content, preferredLang, lastLang)
-	messages := al.contextBuilder.BuildMessages(
-		history,
-		summary,
-		msg.Content,
-		nil,
-		originChannel,
-		originChatID,
-		responseLang,
-	)
+	messages := []providers.Message(nil)
+	if al.contextEngine != nil {
+		messages = al.contextEngine.BuildMessages(ContextBuildRequest{
+			History:          history,
+			Summary:          summary,
+			CurrentMessage:   msg.Content,
+			Channel:          originChannel,
+			ChatID:           originChatID,
+			ResponseLanguage: responseLang,
+			MemoryNamespace:  "main",
+		})
+	}
+	if len(messages) == 0 && al.contextBuilder != nil {
+		messages = al.contextBuilder.BuildMessages(
+			history,
+			summary,
+			msg.Content,
+			nil,
+			originChannel,
+			originChatID,
+			responseLang,
+		)
+	}
 	return messages, responseLang
 }
 
@@ -1567,18 +1671,24 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	})
 	if err != nil {
 		tools.RecordSubagentExecutionStats(ctx, tools.SubagentExecutionStats{
-			Iterations:  loopResult.iteration,
-			Attempts:    loopResult.attemptCount,
-			Restarts:    loopResult.restartCount,
-			FailureCode: classifyLLMFailureCode(err),
+			Iterations:       loopResult.iteration,
+			Attempts:         loopResult.attemptCount,
+			Restarts:         loopResult.restartCount,
+			PromptTokens:     loopResult.promptTokens,
+			CompletionTokens: loopResult.completionTokens,
+			TotalTokens:      loopResult.totalTokens,
+			FailureCode:      classifyLLMFailureCode(err),
 		})
 		al.reopenSpecTaskOnError(specTaskRef, msg, err)
 		return "", err
 	}
 	tools.RecordSubagentExecutionStats(ctx, tools.SubagentExecutionStats{
-		Iterations: loopResult.iteration,
-		Attempts:   loopResult.attemptCount,
-		Restarts:   loopResult.restartCount,
+		Iterations:       loopResult.iteration,
+		Attempts:         loopResult.attemptCount,
+		Restarts:         loopResult.restartCount,
+		PromptTokens:     loopResult.promptTokens,
+		CompletionTokens: loopResult.completionTokens,
+		TotalTokens:      loopResult.totalTokens,
 	})
 	finalContent, userContent := al.finalizeUserTurnResponse(ctx, msg, responseLang, loopResult)
 
@@ -1590,8 +1700,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"sender_id":    msg.SenderID,
 			"preview":      responsePreview,
 			"iterations":   loopResult.iteration,
+			"attempts":     loopResult.attemptCount,
 			"final_length": len(finalContent),
 			"user_length":  len(userContent),
+			"token_usage": map[string]int{
+				"prompt":     loopResult.promptTokens,
+				"completion": loopResult.completionTokens,
+				"total":      loopResult.totalTokens,
+			},
 		})
 
 	al.completeSpecTaskOnSuccess(specTaskRef, msg, userContent)
@@ -2547,7 +2663,11 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 	}
 
 	// Skills info
-	info["skills"] = al.contextBuilder.GetSkillsInfo()
+	if al.contextEngine != nil {
+		info["skills"] = al.contextEngine.SkillsInfo()
+	} else if al.contextBuilder != nil {
+		info["skills"] = al.contextBuilder.GetSkillsInfo()
+	}
 
 	return info
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
-var version = "0.0.2"
+var version = "1.2.0"
 var buildTime = "unknown"
 
 const logo = ">"
@@ -65,6 +65,8 @@ func main() {
 		channelCmd()
 	case "skills":
 		skillsCmd()
+	case "backup":
+		backupCmd()
 	case "tui":
 		tuiCmd()
 	case "version", "--version", "-v":

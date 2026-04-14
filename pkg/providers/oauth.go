@@ -33,11 +33,12 @@ const (
 	oauthStyleJSON = "json"
 
 	defaultCodexOAuthProvider       = "codex"
-	defaultCodexAuthURL             = "https://auth.openai.com/oauth/authorize"
+	defaultCodexAuthURL             = "https://auth.openai.com/codex/device"
+	defaultCodexDeviceCodeURL       = "https://auth.openai.com/api/accounts/deviceauth/usercode"
+	defaultCodexDeviceTokenPollURL  = "https://auth.openai.com/api/accounts/deviceauth/token"
+	defaultCodexDeviceRedirectURL   = "https://auth.openai.com/deviceauth/callback"
 	defaultCodexTokenURL            = "https://auth.openai.com/oauth/token"
 	defaultCodexClientID            = "app_EMoamEEZ73f0CkXaXp7hrann"
-	defaultCodexCallbackPort        = 1455
-	defaultCodexRedirectPath        = "/auth/callback"
 	defaultClaudeOAuthProvider      = "claude"
 	defaultClaudeAuthURL            = "https://claude.ai/oauth/authorize"
 	defaultClaudeTokenURL           = "https://api.anthropic.com/v1/oauth/token"
@@ -90,14 +91,14 @@ var (
 )
 
 var (
-	defaultAntigravityClientIDValue = "1071006060591-" + "tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+	defaultAntigravityClientIDValue     = "1071006060591-" + "tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
 	defaultAntigravityClientSecretValue = "GOCSPX-" + "K58FWR486LdLJ1mLB8sXC4z6qDAf"
-	defaultGeminiClientIDValue = "681255809395-" + "oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
-	defaultGeminiClientSecretValue = "GOCSPX-" + "4uHgMPm-1o7Sk-geV6Cu5clXFsxl"
-	defaultAntigravityClientID     = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_ANTIGRAVITY_CLIENT_ID")), defaultAntigravityClientIDValue)
-	defaultAntigravityClientSecret = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_ANTIGRAVITY_CLIENT_SECRET")), defaultAntigravityClientSecretValue)
-	defaultGeminiClientID          = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_GEMINI_CLIENT_ID")), defaultGeminiClientIDValue)
-	defaultGeminiClientSecret      = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_GEMINI_CLIENT_SECRET")), defaultGeminiClientSecretValue)
+	defaultGeminiClientIDValue          = "681255809395-" + "oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+	defaultGeminiClientSecretValue      = "GOCSPX-" + "4uHgMPm-1o7Sk-geV6Cu5clXFsxl"
+	defaultAntigravityClientID          = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_ANTIGRAVITY_CLIENT_ID")), defaultAntigravityClientIDValue)
+	defaultAntigravityClientSecret      = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_ANTIGRAVITY_CLIENT_SECRET")), defaultAntigravityClientSecretValue)
+	defaultGeminiClientID               = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_GEMINI_CLIENT_ID")), defaultGeminiClientIDValue)
+	defaultGeminiClientSecret           = firstNonEmpty(strings.TrimSpace(os.Getenv("CLAWGO_GEMINI_CLIENT_SECRET")), defaultGeminiClientSecretValue)
 )
 
 var (
@@ -152,6 +153,7 @@ type oauthConfig struct {
 	AuthURL         string
 	TokenURL        string
 	DeviceCodeURL   string
+	DeviceTokenURL  string
 	UserInfoURL     string
 	RedirectURL     string
 	RedirectPath    string
@@ -611,11 +613,20 @@ func resolveOAuthConfig(pc config.ProviderConfig) (oauthConfig, error) {
 	}
 	switch provider {
 	case defaultCodexOAuthProvider:
-		cfg.CallbackPort = defaultInt(cfg.CallbackPort, defaultCodexCallbackPort)
+		cfg.FlowKind = oauthFlowDevice
 		cfg.ClientID = firstNonEmpty(cfg.ClientID, defaultCodexClientID)
-		cfg.AuthURL = firstNonEmpty(cfg.AuthURL, defaultCodexAuthURL)
+		cfg.AuthURL = firstNonEmpty(defaultCodexAuthURL)
 		cfg.TokenURL = firstNonEmpty(cfg.TokenURL, defaultCodexTokenURL)
-		cfg.RedirectPath = defaultCodexRedirectPath
+		deviceURL := strings.TrimSpace(pc.OAuth.AuthURL)
+		if deviceURL == "" || strings.Contains(strings.ToLower(deviceURL), "/oauth/authorize") {
+			deviceURL = defaultCodexDeviceCodeURL
+		}
+		cfg.DeviceCodeURL = deviceURL
+		if strings.Contains(strings.ToLower(deviceURL), "/usercode") {
+			cfg.DeviceTokenURL = strings.Replace(deviceURL, "/usercode", "/token", 1)
+		}
+		cfg.DeviceTokenURL = firstNonEmpty(cfg.DeviceTokenURL, defaultCodexDeviceTokenPollURL)
+		cfg.RedirectURL = firstNonEmpty(strings.TrimSpace(pc.OAuth.RedirectURL), defaultCodexDeviceRedirectURL)
 		if len(cfg.Scopes) == 0 {
 			cfg.Scopes = append([]string(nil), defaultCodexScopes...)
 		}
@@ -743,11 +754,15 @@ func (m *oauthManager) login(ctx context.Context, apiBase string, opts OAuthLogi
 		if err != nil {
 			return nil, nil, err
 		}
-		fmt.Printf("Open this URL to continue OAuth login:\n%s\n", flow.AuthURL)
+		if m.cfg.Provider == defaultCodexOAuthProvider {
+			fmt.Printf("To continue Codex login:\n1) Open: %s\n2) Enter code: %s\n", flow.AuthURL, strings.TrimSpace(flow.UserCode))
+		} else {
+			fmt.Printf("Open this URL to continue OAuth login:\n%s\n", flow.AuthURL)
+		}
 		if strings.TrimSpace(flow.UserCode) != "" {
 			fmt.Printf("User code: %s\n", flow.UserCode)
 		}
-		if !opts.NoBrowser {
+		if !opts.NoBrowser && m.cfg.Provider != defaultCodexOAuthProvider {
 			if err := openBrowser(flow.AuthURL); err != nil {
 				fmt.Printf("Automatic browser open failed: %v\n", err)
 			}
@@ -2379,6 +2394,32 @@ func (m *oauthManager) startDeviceFlow(ctx context.Context, opts OAuthLoginOptio
 	form := url.Values{}
 	form.Set("client_id", m.cfg.ClientID)
 	switch m.cfg.Provider {
+	case defaultCodexOAuthProvider:
+		body, _ := json.Marshal(map[string]any{"client_id": m.cfg.ClientID})
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.DeviceCodeURL, strings.NewReader(string(body)))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		raw, err := m.doJSONRequest(req, "oauth device request", opts.NetworkProxy)
+		if err != nil {
+			return nil, err
+		}
+		userCode := strings.TrimSpace(asString(raw["user_code"]))
+		deviceAuthID := strings.TrimSpace(asString(raw["device_auth_id"]))
+		if userCode == "" || deviceAuthID == "" {
+			return nil, fmt.Errorf("oauth device flow missing user_code/device_auth_id")
+		}
+		return &OAuthPendingFlow{
+			Mode:         oauthFlowDevice,
+			AuthURL:      firstNonEmpty(strings.TrimSpace(m.cfg.AuthURL), defaultCodexAuthURL),
+			UserCode:     userCode,
+			DeviceCode:   deviceAuthID,
+			IntervalSec:  defaultInt(asInt(raw["interval"]), 5),
+			ExpiresAt:    deviceExpiry(asInt(raw["expires_in"])),
+			Instructions: "Open the verification URL, enter the user code, and approve the device login.",
+		}, nil
 	case defaultQwenOAuthProvider:
 		verifier, challenge, err := generatePKCE()
 		if err != nil {
@@ -2428,6 +2469,26 @@ func (m *oauthManager) startDeviceFlow(ctx context.Context, opts OAuthLoginOptio
 	default:
 		return nil, fmt.Errorf("oauth device flow not implemented for provider %s", m.cfg.Provider)
 	}
+}
+
+func asInt(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case json.Number:
+		if parsed, err := n.Int64(); err == nil {
+			return int(parsed)
+		}
+	case string:
+		if parsed, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func (m *oauthManager) doFormDeviceRequest(ctx context.Context, endpoint string, form url.Values, proxyURL string) (map[string]any, error) {
@@ -2513,6 +2574,9 @@ func (m *oauthManager) pollDeviceToken(ctx context.Context, flow *OAuthPendingFl
 	if flow == nil || strings.TrimSpace(flow.DeviceCode) == "" {
 		return nil, fmt.Errorf("oauth device flow missing device code")
 	}
+	if m.cfg.Provider == defaultCodexOAuthProvider {
+		return m.pollCodexDeviceToken(ctx, flow, proxyURL)
+	}
 	interval := time.Duration(defaultInt(flow.IntervalSec, 5)) * time.Second
 	deadline := time.Now().Add(m.cfg.DevicePollMax)
 	if expireAt, err := time.Parse(time.RFC3339, strings.TrimSpace(flow.ExpiresAt)); err == nil && expireAt.Before(deadline) {
@@ -2557,6 +2621,81 @@ func (m *oauthManager) pollDeviceToken(ctx context.Context, flow *OAuthPendingFl
 			return nil, fmt.Errorf("oauth device code expired")
 		default:
 			return nil, err
+		}
+	}
+}
+
+func (m *oauthManager) pollCodexDeviceToken(ctx context.Context, flow *OAuthPendingFlow, proxyURL string) (*oauthSession, error) {
+	interval := time.Duration(defaultInt(flow.IntervalSec, 5)) * time.Second
+	if interval < 3*time.Second {
+		interval = 3 * time.Second
+	}
+	deadline := time.Now().Add(m.cfg.DevicePollMax)
+	if expireAt, err := time.Parse(time.RFC3339, strings.TrimSpace(flow.ExpiresAt)); err == nil && expireAt.Before(deadline) {
+		deadline = expireAt
+	}
+	for {
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("oauth device flow timed out")
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(interval):
+		}
+		payload, _ := json.Marshal(map[string]any{
+			"device_auth_id": strings.TrimSpace(flow.DeviceCode),
+			"user_code":      strings.TrimSpace(flow.UserCode),
+		})
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.DeviceTokenURL, strings.NewReader(string(payload)))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		client, err := m.httpClientForProxy(proxyURL)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("oauth device poll request failed: %w", err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("oauth device poll read failed: %w", readErr)
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var raw map[string]any
+			if err := json.Unmarshal(body, &raw); err != nil {
+				return nil, fmt.Errorf("oauth device poll decode failed: %w", err)
+			}
+			authCode := strings.TrimSpace(asString(raw["authorization_code"]))
+			verifier := strings.TrimSpace(asString(raw["code_verifier"]))
+			if authCode == "" || verifier == "" {
+				return nil, fmt.Errorf("oauth device auth response missing authorization_code/code_verifier")
+			}
+			form := url.Values{}
+			form.Set("grant_type", "authorization_code")
+			form.Set("code", authCode)
+			form.Set("redirect_uri", m.cfg.RedirectURL)
+			form.Set("client_id", m.cfg.ClientID)
+			form.Set("code_verifier", verifier)
+			tokenRaw, err := m.doFormTokenRequest(ctx, form, proxyURL)
+			if err != nil {
+				return nil, err
+			}
+			session, err := sessionFromTokenPayload(m.cfg.Provider, tokenRaw)
+			if err != nil {
+				return nil, err
+			}
+			return m.enrichSession(ctx, session)
+		case http.StatusForbidden, http.StatusNotFound:
+			continue
+		default:
+			return nil, fmt.Errorf("oauth device poll failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
 		}
 	}
 }
