@@ -15,7 +15,7 @@ func TestRemindTool_UsesToolContextForDeliveryTarget(t *testing.T) {
 	tool.SetContext("telegram", "chat-123")
 
 	_, err := tool.Execute(context.Background(), map[string]interface{}{
-		"message":   "鍠濇按",
+		"message":   "喝水",
 		"time_expr": "10m",
 	})
 	if err != nil {

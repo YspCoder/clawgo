@@ -27,7 +27,7 @@ func TestResolveDispatchDecisionRulesFirst(t *testing.T) {
 	cfg.Agents.Router.Strategy = "rules_first"
 	cfg.Agents.Subagents["coder"] = config.SubagentConfig{Enabled: true, Role: "coding", SystemPromptFile: "agents/coder/AGENT.md"}
 	cfg.Agents.Subagents["tester"] = config.SubagentConfig{Enabled: true, Role: "testing", SystemPromptFile: "agents/tester/AGENT.md"}
-	cfg.Agents.Router.Rules = []config.AgentRouteRule{{AgentID: "coder", Keywords: []string{"鐧诲綍", "bug"}}}
+	cfg.Agents.Router.Rules = []config.AgentRouteRule{{AgentID: "coder", Keywords: []string{"登录", "bug"}}}
 
 	decision := resolveDispatchDecision(cfg, "please fix the login bug and update the code")
 	if decision.TargetAgent != "coder" || decision.TaskText == "" {

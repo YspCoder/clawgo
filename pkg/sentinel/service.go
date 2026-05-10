@@ -16,6 +16,11 @@ import (
 
 type AlertFunc func(msg string)
 
+type channelHealthManager interface {
+	CheckHealth(ctx context.Context) map[string]error
+	RestartChannel(ctx context.Context, name string) error
+}
+
 type Service struct {
 	cfgPath         string
 	workspace       string
@@ -25,7 +30,7 @@ type Service struct {
 	runner          *lifecycle.LoopRunner
 	mu              sync.RWMutex
 	lastAlerts      map[string]time.Time
-	mgr             *channels.Manager
+	mgr             channelHealthManager
 	healingChannels map[string]bool
 }
 

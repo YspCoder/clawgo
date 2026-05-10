@@ -135,6 +135,8 @@ WebUI：
 http://<host>:<port>/?token=<gateway.token>
 ```
 
+Gateway API docs: `docs/API.md`
+
 ## 架构概览
 
 默认协作模式：

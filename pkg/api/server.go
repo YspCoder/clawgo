@@ -153,17 +153,24 @@ func (s *Server) broadcastEvent(payload map[string]interface{}) {
 		subs = append(subs, conn)
 	}
 	s.eventSubsMu.Unlock()
+	var failed []*websocket.Conn
 	for _, conn := range subs {
 		if conn == nil {
 			continue
 		}
 		if err := conn.WriteJSON(payload); err != nil {
-			s.eventSubsMu.Lock()
-			delete(s.eventSubs, conn)
-			s.eventSubsMu.Unlock()
+			failed = append(failed, conn)
 			_ = conn.Close()
 		}
 	}
+	if len(failed) == 0 {
+		return
+	}
+	s.eventSubsMu.Lock()
+	for _, conn := range failed {
+		delete(s.eventSubs, conn)
+	}
+	s.eventSubsMu.Unlock()
 }
 
 func writeJSON(w http.ResponseWriter, payload interface{}) {

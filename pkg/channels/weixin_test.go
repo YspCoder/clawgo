@@ -72,6 +72,50 @@ func TestWeixinHandleInboundMessageUsesCompositeSessionChatID(t *testing.T) {
 	}
 }
 
+func TestWeixinHandleInboundMessageBuildsMetadataAndContent(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewWeixinChannel(config.WeixinConfig{
+		BaseURL: "https://ilinkai.weixin.qq.com",
+		Accounts: []config.WeixinAccountConfig{
+			{BotID: "bot-a", BotToken: "token-a"},
+		},
+	}, mb)
+	if err != nil {
+		t.Fatalf("new weixin channel: %v", err)
+	}
+
+	ch.handleInboundMessage("bot-a", weixinInboundMessage{
+		FromUserID:   "wx-user-1",
+		ContextToken: "ctx-1",
+		ItemList: []weixinMessageItem{
+			{Type: 2},
+			{Type: 1, TextItem: struct {
+				Text string `json:"text"`
+			}{Text: "hello"}},
+			{Type: 1, TextItem: struct {
+				Text string `json:"text"`
+			}{Text: " world "}},
+			{Type: 3},
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	msg, ok := mb.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatalf("expected inbound message")
+	}
+	if msg.Content != "hello\nworld" {
+		t.Fatalf("unexpected content: %q", msg.Content)
+	}
+	if got := msg.Metadata["item_types"]; got != "2,1,1,3" {
+		t.Fatalf("unexpected item_types: %q", got)
+	}
+	if got := msg.Metadata["context_token"]; got != "ctx-1" {
+		t.Fatalf("unexpected context_token: %q", got)
+	}
+}
+
 func TestWeixinResolveAccountForCompositeChatID(t *testing.T) {
 	mb := bus.NewMessageBus()
 	ch, err := NewWeixinChannel(config.WeixinConfig{
@@ -132,6 +176,56 @@ func TestWeixinSetDefaultAccount(t *testing.T) {
 	}
 	if defaultCount != 1 {
 		t.Fatalf("expected exactly one default account, got %d", defaultCount)
+	}
+}
+
+func TestWeixinRemoveAccountReturnsErrorWhenMissing(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewWeixinChannel(config.WeixinConfig{
+		BaseURL: "https://ilinkai.weixin.qq.com",
+		Accounts: []config.WeixinAccountConfig{
+			{BotID: "bot-a", BotToken: "token-a"},
+		},
+	}, mb)
+	if err != nil {
+		t.Fatalf("new weixin channel: %v", err)
+	}
+
+	err = ch.RemoveAccount("bot-missing")
+	if err == nil {
+		t.Fatalf("expected remove missing account to fail")
+	}
+	if !strings.Contains(err.Error(), "bot_id not found") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWeixinRemoveAccountReassignsDefault(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewWeixinChannel(config.WeixinConfig{
+		BaseURL:      "https://ilinkai.weixin.qq.com",
+		DefaultBotID: "bot-b",
+		Accounts: []config.WeixinAccountConfig{
+			{BotID: "bot-a", BotToken: "token-a"},
+			{BotID: "bot-b", BotToken: "token-b"},
+		},
+	}, mb)
+	if err != nil {
+		t.Fatalf("new weixin channel: %v", err)
+	}
+
+	if err := ch.RemoveAccount("bot-b"); err != nil {
+		t.Fatalf("remove account: %v", err)
+	}
+	accounts := ch.ListAccounts()
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 account after removal, got %d", len(accounts))
+	}
+	if accounts[0].BotID != "bot-a" {
+		t.Fatalf("expected remaining account bot-a, got %s", accounts[0].BotID)
+	}
+	if !accounts[0].Default {
+		t.Fatalf("expected remaining account to become default")
 	}
 }
 
@@ -420,5 +514,36 @@ func TestWeixinValidateAPIStatusErrorShape(t *testing.T) {
 	b, _ := json.Marshal(apiErr.Error())
 	if len(b) == 0 {
 		t.Fatalf("marshal error text")
+	}
+}
+
+func TestWeixinDoJSONWithTimeoutSetsRequestDeadline(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewWeixinChannel(config.WeixinConfig{
+		BaseURL: "https://ilinkai.weixin.qq.com",
+		Accounts: []config.WeixinAccountConfig{
+			{BotID: "bot-a", BotToken: "token-a"},
+		},
+	}, mb)
+	if err != nil {
+		t.Fatalf("new weixin channel: %v", err)
+	}
+
+	ch.httpClient = &http.Client{Transport: weixinRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if _, ok := req.Context().Deadline(); !ok {
+			t.Fatalf("expected request context to have deadline")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ret":0,"errcode":0}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	var out weixinAPIResponse
+	if err := ch.doJSONWithTimeout(context.Background(), "/ilink/bot/sendmessage", map[string]interface{}{
+		"msg": map[string]interface{}{"item_list": []map[string]interface{}{}},
+	}, &out, "token-a", 50*time.Millisecond); err != nil {
+		t.Fatalf("doJSONWithTimeout: %v", err)
 	}
 }
