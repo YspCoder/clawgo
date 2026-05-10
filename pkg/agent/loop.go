@@ -112,109 +112,29 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 
 	sessionsManager := session.NewSessionManager(filepath.Join(filepath.Dir(cfg.WorkspacePath()), "agents", "main", "sessions"))
 
-	toolsRegistry := tools.NewToolRegistry()
-	processManager := tools.NewProcessManager(workspace)
-	readTool := tools.NewReadFileTool(workspace)
-	writeTool := tools.NewWriteFileTool(workspace)
-	listTool := tools.NewListDirTool(workspace)
-	toolsRegistry.Register(readTool)
-	toolsRegistry.Register(writeTool)
-	toolsRegistry.Register(listTool)
-	toolsRegistry.Register(tools.NewExecTool(cfg.Tools.Shell, workspace, processManager))
-	toolsRegistry.Register(tools.NewProcessTool(processManager))
-	toolsRegistry.Register(tools.NewSkillExecTool(workspace))
-
-	if cs != nil {
-		toolsRegistry.Register(tools.NewRemindTool(cs))
-		toolsRegistry.Register(tools.NewCronTool(cs))
-	}
-
-	maxParallelCalls := cfg.Agents.Defaults.Execution.ToolMaxParallelCalls
-	if maxParallelCalls <= 0 {
-		maxParallelCalls = 4
-	}
-	parallelSafe := make(map[string]struct{})
-	for _, name := range cfg.Agents.Defaults.Execution.ToolParallelSafeNames {
-		trimmed := strings.TrimSpace(name)
-		if trimmed != "" {
-			parallelSafe[trimmed] = struct{}{}
-		}
-	}
-
-	braveAPIKey := cfg.Tools.Web.Search.APIKey
-	toolsRegistry.Register(tools.NewWebSearchTool(braveAPIKey, cfg.Tools.Web.Search.MaxResults))
-	webFetchTool := tools.NewWebFetchTool(50000)
-	toolsRegistry.Register(webFetchTool)
-	toolsRegistry.Register(tools.NewParallelFetchTool(webFetchTool, maxParallelCalls, parallelSafe))
-	if cfg.Tools.MCP.Enabled {
-		mcpTool := tools.NewMCPTool(workspace, cfg.Tools.MCP)
-		toolsRegistry.Register(mcpTool)
-		discoveryCtx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Tools.MCP.RequestTimeoutSec)*time.Second)
-		for _, remoteTool := range mcpTool.DiscoverTools(discoveryCtx) {
-			toolsRegistry.Register(remoteTool)
-		}
-		cancel()
-	}
-
-	// Register message tool
-	messageTool := tools.NewMessageTool()
-	messageTool.SetSendCallback(func(channel, chatID, action, content, media, messageID, emoji string, buttons [][]bus.Button) error {
-		msgBus.PublishOutbound(bus.OutboundMessage{
-			Channel:   channel,
-			ChatID:    chatID,
-			Content:   content,
-			Media:     media,
-			Buttons:   buttons,
-			Action:    action,
-			MessageID: messageID,
-			Emoji:     emoji,
-		})
-		return nil
-	})
-	toolsRegistry.Register(messageTool)
-
-	// Register spawn tool
-	subagentManager := tools.NewSubagentManager(provider, workspace, msgBus)
-	subagentRouter := tools.NewSubagentRouter(subagentManager)
-	spawnTool := tools.NewSpawnTool(subagentManager)
-	toolsRegistry.Register(spawnTool)
-	if store := subagentManager.ProfileStore(); store != nil {
-		toolsRegistry.Register(tools.NewSubagentProfileTool(store))
-	}
-	toolsRegistry.Register(tools.NewSessionsTool(
-		func(limit int) []tools.SessionInfo {
-			sessions := alSessionListForTool(sessionsManager, limit)
-			return sessions
+	bootstrap, err := tools.BootstrapDefaultTools(context.Background(), tools.BootstrapOptions{
+		Config:      cfg,
+		Workspace:   workspace,
+		MessageBus:  msgBus,
+		CronService: cs,
+		Provider:    provider,
+		SessionList: func(limit int) []tools.SessionInfo {
+			return alSessionListForTool(sessionsManager, limit)
 		},
-		func(key string, limit int) []providers.Message {
+		SessionHistory: func(key string, limit int) []providers.Message {
 			h := sessionsManager.GetHistory(key)
 			if limit > 0 && len(h) > limit {
 				return h[len(h)-limit:]
 			}
 			return h
 		},
-	))
-
-	// Register edit file tool
-	editFileTool := tools.NewEditFileTool(workspace)
-	toolsRegistry.Register(editFileTool)
-
-	// Register memory tools
-	memorySearchTool := tools.NewMemorySearchTool(workspace)
-	toolsRegistry.Register(memorySearchTool)
-	toolsRegistry.Register(tools.NewMemoryGetTool(workspace))
-	toolsRegistry.Register(tools.NewMemoryWriteTool(workspace))
-
-	// Register parallel execution tool (leveraging Go's concurrency)
-	toolsRegistry.Register(tools.NewParallelTool(toolsRegistry, maxParallelCalls, parallelSafe))
-
-	// Register browser tool (integrated Chromium support)
-	toolsRegistry.Register(tools.NewBrowserTool())
-
-	// Register camera tool
-	toolsRegistry.Register(tools.NewCameraTool(workspace))
-	// Register system info tool
-	toolsRegistry.Register(tools.NewSystemInfoTool())
+	})
+	if err != nil {
+		panic(err)
+	}
+	toolsRegistry := bootstrap.Registry
+	subagentManager := bootstrap.SubagentManager
+	subagentRouter := bootstrap.SubagentRouter
 
 	loop := &AgentLoop{
 		bus:                  msgBus,

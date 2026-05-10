@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -412,6 +413,10 @@ func (c *WeixinChannel) RemoveAccount(botID string) error {
 	}
 
 	c.mu.Lock()
+	if c.accounts[botID] == nil {
+		c.mu.Unlock()
+		return fmt.Errorf("bot_id not found: %s", botID)
+	}
 	if cancel := c.pollers[botID]; cancel != nil {
 		cancel()
 		delete(c.pollers, botID)
@@ -430,8 +435,14 @@ func (c *WeixinChannel) RemoveAccount(botID string) error {
 			delete(c.chatContexts, chatID)
 		}
 	}
+	c.typingMu.Lock()
+	delete(c.typingCache, botID)
+	c.typingMu.Unlock()
 	if strings.TrimSpace(c.config.DefaultBotID) == botID {
 		c.config.DefaultBotID = ""
+		if len(c.accountOrder) > 0 {
+			c.config.DefaultBotID = c.accountOrder[0]
+		}
 	}
 	c.schedulePersistLocked()
 	c.mu.Unlock()
@@ -694,17 +705,23 @@ func (c *WeixinChannel) handleInboundMessage(botID string, msg weixinInboundMess
 	}
 	c.mu.Unlock()
 
-	var textParts []string
-	var itemTypes []string
+	var contentBuilder strings.Builder
+	var itemTypesBuilder strings.Builder
 	for _, item := range msg.ItemList {
-		itemTypes = append(itemTypes, fmt.Sprintf("%d", item.Type))
+		if itemTypesBuilder.Len() > 0 {
+			itemTypesBuilder.WriteByte(',')
+		}
+		itemTypesBuilder.WriteString(strconv.Itoa(item.Type))
 		if item.Type == 1 {
 			if text := strings.TrimSpace(item.TextItem.Text); text != "" {
-				textParts = append(textParts, text)
+				if contentBuilder.Len() > 0 {
+					contentBuilder.WriteByte('\n')
+				}
+				contentBuilder.WriteString(text)
 			}
 		}
 	}
-	content := strings.Join(textParts, "\n")
+	content := contentBuilder.String()
 	if content == "" {
 		return
 	}
@@ -717,7 +734,7 @@ func (c *WeixinChannel) handleInboundMessage(botID string, msg weixinInboundMess
 	metadata := map[string]string{
 		"bot_id":        botID,
 		"context_token": contextToken,
-		"item_types":    strings.Join(itemTypes, ","),
+		"item_types":    itemTypesBuilder.String(),
 		"raw_chat_id":   rawChatID,
 	}
 	c.HandleMessage(rawChatID, chatID, content, nil, metadata)
@@ -1118,24 +1135,25 @@ func (c *WeixinChannel) doJSON(ctx context.Context, path string, payload interfa
 }
 
 func (c *WeixinChannel) doJSONWithTimeout(ctx context.Context, path string, payload interface{}, out interface{}, token string, timeout time.Duration) error {
+	reqCtx := ctx
+	cancel := func() {}
+	if timeout > 0 {
+		reqCtx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
+
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.BaseURL+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, c.config.BaseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
 	c.applyHeaders(req, true, token, true)
 
-	client := c.httpClient
-	if timeout > 0 {
-		clone := *c.httpClient
-		clone.Timeout = timeout
-		client = &clone
-	}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

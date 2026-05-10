@@ -35,7 +35,15 @@ func (mb *MessageBus) PublishInbound(msg InboundMessage) {
 
 	select {
 	case mb.inbound <- msg:
-	case <-time.After(queueWriteTimeout):
+		return
+	default:
+	}
+
+	timer := time.NewTimer(queueWriteTimeout)
+	defer stopAndDrainTimer(timer)
+	select {
+	case mb.inbound <- msg:
+	case <-timer.C:
 		logger.ErrorCF("bus", logger.C0130, map[string]interface{}{
 			logger.FieldChannel: msg.Channel,
 			logger.FieldChatID:  msg.ChatID,
@@ -62,11 +70,32 @@ func (mb *MessageBus) PublishOutbound(msg OutboundMessage) {
 
 	select {
 	case mb.outbound <- msg:
-	case <-time.After(queueWriteTimeout):
+		return
+	default:
+	}
+
+	timer := time.NewTimer(queueWriteTimeout)
+	defer stopAndDrainTimer(timer)
+	select {
+	case mb.outbound <- msg:
+	case <-timer.C:
 		logger.ErrorCF("bus", logger.C0132, map[string]interface{}{
 			logger.FieldChannel: msg.Channel,
 			logger.FieldChatID:  msg.ChatID,
 		})
+	}
+}
+
+func stopAndDrainTimer(timer *time.Timer) {
+	if timer == nil {
+		return
+	}
+	if timer.Stop() {
+		return
+	}
+	select {
+	case <-timer.C:
+	default:
 	}
 }
 
