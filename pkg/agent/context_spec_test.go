@@ -89,3 +89,18 @@ func TestShouldUseSpecCodingRequiresExplicitAndNonTrivialCodingIntent(t *testing
 		}
 	}
 }
+
+func TestBuildMessagesIncludesSessionRecallGuidanceAndSummaryHandoff(t *testing.T) {
+	cb := NewContextBuilder(t.TempDir(), nil)
+	msgs := cb.BuildMessagesWithMemoryNamespace(nil, "Key Facts\n- prior work", "继续昨天那个改动", nil, "cli", "direct", "", "main")
+	if len(msgs) == 0 {
+		t.Fatalf("expected system message")
+	}
+	content := msgs[0].Content
+	if !strings.Contains(content, "session_search") {
+		t.Fatalf("expected session_search guidance in system prompt, got:\n%s", content)
+	}
+	if !strings.Contains(content, "handoff summary") {
+		t.Fatalf("expected handoff summary note, got:\n%s", content)
+	}
+}

@@ -40,6 +40,7 @@ const (
 	weixinConfigCacheTTL      = 24 * time.Hour
 	weixinConfigRetryInitial  = 2 * time.Second
 	weixinConfigRetryMax      = time.Hour
+	weixinLoginStatusMinGap   = 1200 * time.Millisecond
 )
 
 type WeixinChannel struct {
@@ -64,6 +65,9 @@ type WeixinChannel struct {
 	typingCache   map[string]weixinTypingCacheEntry
 	pauseMu       sync.Mutex
 	pauseUntil    time.Time
+	loginStatusMu sync.Mutex
+	loginStatusAt time.Time
+	loginStatusIn chan struct{}
 }
 
 type weixinTypingCacheEntry struct {
@@ -309,15 +313,51 @@ func (c *WeixinChannel) StartLogin(ctx context.Context) (*WeixinPendingLogin, er
 }
 
 func (c *WeixinChannel) RefreshLoginStatuses(ctx context.Context) ([]*WeixinPendingLogin, error) {
+	for {
+		c.loginStatusMu.Lock()
+		now := time.Now()
+		if !c.loginStatusAt.IsZero() && now.Sub(c.loginStatusAt) < weixinLoginStatusMinGap {
+			c.loginStatusMu.Unlock()
+			return c.PendingLogins(), nil
+		}
+		if wait := c.loginStatusIn; wait != nil {
+			c.loginStatusMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-wait:
+			}
+			continue
+		}
+		wait := make(chan struct{})
+		c.loginStatusIn = wait
+		c.loginStatusMu.Unlock()
+
+		err := c.refreshAllLoginStatuses(ctx)
+
+		c.loginStatusMu.Lock()
+		c.loginStatusAt = time.Now()
+		close(c.loginStatusIn)
+		c.loginStatusIn = nil
+		c.loginStatusMu.Unlock()
+
+		if err != nil {
+			return nil, err
+		}
+		return c.PendingLogins(), nil
+	}
+}
+
+func (c *WeixinChannel) refreshAllLoginStatuses(ctx context.Context) error {
 	c.mu.RLock()
 	loginIDs := append([]string(nil), c.loginOrder...)
 	c.mu.RUnlock()
 	for _, loginID := range loginIDs {
 		if err := c.refreshLoginStatus(ctx, loginID); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return c.PendingLogins(), nil
+	return nil
 }
 
 func (c *WeixinChannel) PendingLogins() []*WeixinPendingLogin {
@@ -388,6 +428,22 @@ func (c *WeixinChannel) ListAccounts() []WeixinAccountSnapshot {
 		})
 	}
 	return out
+}
+
+func (c *WeixinChannel) SnapshotConfig() config.WeixinConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	cfgCopy := c.config
+	cfgCopy.AllowFrom = append([]string(nil), cfgCopy.AllowFrom...)
+	cfgCopy.Accounts = append([]config.WeixinAccountConfig(nil), c.accountConfigsLocked()...)
+	cfgCopy.DefaultBotID = strings.TrimSpace(c.defaultBotIDLocked())
+	cfgCopy.BotID = ""
+	cfgCopy.BotToken = ""
+	cfgCopy.IlinkUserID = ""
+	cfgCopy.ContextToken = ""
+	cfgCopy.GetUpdatesBuf = ""
+	return cfgCopy
 }
 
 func (c *WeixinChannel) SetDefaultAccount(botID string) error {

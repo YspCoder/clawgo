@@ -66,16 +66,17 @@ type RunRecord struct {
 }
 
 type EventRecord struct {
-	ID         string        `json:"id,omitempty"`
-	RunID      string        `json:"run_id,omitempty"`
-	RequestID  string        `json:"request_id,omitempty"`
-	AgentID    string        `json:"agent_id,omitempty"`
-	Type       string        `json:"type"`
-	Status     string        `json:"status,omitempty"`
-	Message    string        `json:"message,omitempty"`
-	RetryCount int           `json:"retry_count,omitempty"`
-	Error      *RuntimeError `json:"error,omitempty"`
-	At         int64         `json:"ts"`
+	ID          string        `json:"id,omitempty"`
+	RunID       string        `json:"run_id,omitempty"`
+	RequestID   string        `json:"request_id,omitempty"`
+	AgentID     string        `json:"agent_id,omitempty"`
+	Type        string        `json:"type"`
+	Status      string        `json:"status,omitempty"`
+	FailureCode string        `json:"failure_code,omitempty"`
+	Message     string        `json:"message,omitempty"`
+	RetryCount  int           `json:"retry_count,omitempty"`
+	Error       *RuntimeError `json:"error,omitempty"`
+	At          int64         `json:"ts"`
 }
 
 type ArtifactRecord struct {

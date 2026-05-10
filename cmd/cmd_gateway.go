@@ -146,6 +146,7 @@ func gatewayCmd() {
 	registryServer.SetConfigAfterHook(func(forceRuntimeReload bool) error {
 		return triggerReload("api", forceRuntimeReload)
 	})
+	registryServer.SetMessageBus(msgBus)
 	(&gatewayReloader{state: state, registryServer: registryServer}).bindWeixinChannel()
 	bindCronHandler(registryServer, cronService)
 

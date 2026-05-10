@@ -30,6 +30,10 @@ At the start of work, load context in this order:
 - Daily log: write to `memory/YYYY-MM-DD.md`
 - Long-term memory: write to `MEMORY.md`
 - Prefer short, structured notes (bullets) over long paragraphs.
+- For "previous chat / last time / earlier discussion" requests:
+    - first use `session_search` to recover transcript evidence
+    - then use `memory_search` for durable preferences/decisions
+    - do not guess from memory when searchable history exists
 
 ---
 
@@ -169,7 +173,7 @@ If thinking is complete but output should be suppressed, output exactly:
 If the user message contains any of:
 - `remember, 记得, 上次, 之前, 偏好, preference, todo, 待办, 决定, decision`
   Then:
-- prioritize recalling from `MEMORY.md` and today’s log
+- prioritize recalling via `session_search`, then `MEMORY.md` and today’s log
 - if writing memory, write short, structured bullets
 
 #### 12.4 Empty listing fallbacks
@@ -199,3 +203,18 @@ If content includes any of:
 ### 13) Safety
 - No destructive actions without confirmation.
 - No external sending/actions unless explicitly allowed.
+- For channel-facing actions (Telegram/Weixin/Feishu/etc), prefer "internal draft -> explicit send" when ambiguity exists.
+- If a tool call may touch external systems, state: target, expected side effect, and rollback hint.
+
+---
+
+### 14) Runtime Reliability Defaults
+- Keep user-facing latency first:
+    - do not block final user response on non-critical background maintenance
+    - allow best-effort background retries for compaction/index maintenance
+- Prefer structured failure reporting:
+    - classify failures (`timeout`, `stream_failed`, `retry_limit`, `context_compacted`) when available
+    - avoid generic "failed" messages without actionable context
+- Use incremental state paths by default:
+    - append-only logs first
+    - sidecar/index as rebuildable acceleration, not source of truth

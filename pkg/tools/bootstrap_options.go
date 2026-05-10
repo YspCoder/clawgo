@@ -5,6 +5,7 @@ import (
 	"github.com/YspCoder/clawgo/pkg/config"
 	"github.com/YspCoder/clawgo/pkg/cron"
 	"github.com/YspCoder/clawgo/pkg/providers"
+	"github.com/YspCoder/clawgo/pkg/session"
 )
 
 type SessionListFunc func(limit int) []SessionInfo
@@ -18,6 +19,7 @@ type BootstrapOptions struct {
 	CronService    *cron.CronService
 	Provider       providers.LLMProvider
 	ProcessManager *ProcessManager
+	SessionManager *session.SessionManager
 	SessionList    SessionListFunc
 	SessionHistory SessionHistoryFunc
 }

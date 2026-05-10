@@ -101,6 +101,19 @@ type ProviderExecutionError struct {
 	Source    string `json:"source,omitempty"`
 }
 
+func (e *ProviderExecutionError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	if e.Code != "" {
+		return e.Code
+	}
+	return "provider execution error"
+}
+
 type ProviderExecutionResult struct {
 	Body        []byte                  `json:"-"`
 	StatusCode  int                     `json:"status_code,omitempty"`

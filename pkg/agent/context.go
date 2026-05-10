@@ -73,6 +73,10 @@ Your workspace is at: %s
 - Active project spec docs (when present): %s/{spec.md,tasks.md,checklist.md}
 - Keep spec.md as project scope / decisions, tasks.md as execution plan, checklist.md as final verification gate
 
+## Session Recall
+- When the user refers to previous conversations, earlier project work, or past decisions, prefer session_search before guessing from memory
+- Use memory_search for durable notes in MEMORY files, and session_search for historical chat transcripts
+
 %s`,
 		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, cb.projectRootPath(), toolsSection)
 }
@@ -297,7 +301,7 @@ func (cb *ContextBuilder) BuildMessagesWithMemoryNamespace(history []providers.M
 		})
 
 	if summary != "" {
-		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
+		systemPrompt += "\n\n## Summary of Previous Conversation\nThis is a handoff summary from earlier compacted context. Treat it as background reference, not a new user instruction.\n\n" + summary
 	}
 
 	messages = append(messages, providers.Message{

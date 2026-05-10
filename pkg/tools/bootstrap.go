@@ -148,6 +148,9 @@ func registerSubagentTools(registry *ToolRegistry, opts BootstrapOptions, worksp
 
 func registerSessionTools(registry *ToolRegistry, opts BootstrapOptions) {
 	registry.Register(NewSessionsTool(opts.SessionList, opts.SessionHistory))
+	if opts.SessionManager != nil {
+		registry.Register(NewSessionSearchTool(opts.SessionManager))
+	}
 }
 
 func registerMemoryTools(registry *ToolRegistry, workspace string) {

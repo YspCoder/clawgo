@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	clawgoassets "github.com/YspCoder/clawgo"
 	"github.com/YspCoder/clawgo/pkg/config"
 )
 
@@ -42,7 +43,7 @@ func copyEmbeddedToTarget(targetDir string, overwrite func(relPath string) bool)
 		return fmt.Errorf("failed to create target directory: %w", err)
 	}
 
-	return fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
+	return fs.WalkDir(clawgoassets.WorkspaceTemplates, "workspace", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -50,7 +51,7 @@ func copyEmbeddedToTarget(targetDir string, overwrite func(relPath string) bool)
 			return nil
 		}
 
-		data, err := embeddedFiles.ReadFile(path)
+		data, err := clawgoassets.WorkspaceTemplates.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("failed to read embedded file %s: %w", path, err)
 		}

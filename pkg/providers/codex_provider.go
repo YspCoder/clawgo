@@ -495,9 +495,7 @@ func (p *CodexProvider) doStreamAttempt(req *http.Request, attempt authAttempt, 
 				if typ := strings.TrimSpace(fmt.Sprintf("%v", obj["type"])); typ == "response.completed" {
 					completed = true
 					if respObj, ok := obj["response"]; ok {
-						if b, err := json.Marshal(respObj); err == nil {
-							finalJSON = b
-						}
+						finalJSON = mergeStreamFinalJSON(finalJSON, respObj)
 					}
 				}
 			}

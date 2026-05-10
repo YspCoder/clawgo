@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,13 +68,20 @@ func NewProcessManager(workspace string) *ProcessManager {
 	return m
 }
 
+func shellCommandContext(ctx context.Context, command string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.CommandContext(ctx, "cmd", "/C", command)
+	}
+	return exec.CommandContext(ctx, "sh", "-c", command)
+}
+
 func (m *ProcessManager) Start(parent context.Context, command, cwd string) (string, error) {
 	id := "p-" + strconv.FormatUint(atomic.AddUint64(&m.seq, 1), 10)
 	if parent == nil {
 		parent = context.Background()
 	}
 	procCtx, cancel := context.WithCancel(parent)
-	cmd := exec.CommandContext(procCtx, "sh", "-c", command)
+	cmd := shellCommandContext(procCtx, command)
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
@@ -95,7 +103,6 @@ func (m *ProcessManager) Start(parent context.Context, command, cwd string) (str
 	m.mu.Lock()
 	m.sessions[id] = s
 	m.mu.Unlock()
-	go m.logWriter(s)
 	m.persist()
 	m.events.Publish(ProcessEvent{Type: "start", SessionID: id, Command: command, At: time.Now().UTC()})
 
@@ -104,9 +111,11 @@ func (m *ProcessManager) Start(parent context.Context, command, cwd string) (str
 		m.mu.Lock()
 		delete(m.sessions, id)
 		m.mu.Unlock()
+		close(s.logQueue)
 		return "", err
 	}
 
+	go m.logWriter(s)
 	go m.capture(s, stdout)
 	go m.capture(s, stderr)
 	go func() {

@@ -299,7 +299,7 @@ func (p *HTTPProvider) doJSONAttempt(req *http.Request, attempt authAttempt) ([]
 	return body, resp.StatusCode, strings.TrimSpace(resp.Header.Get("Content-Type")), nil
 }
 
-func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, onEvent func(string)) ([]byte, int, string, bool, error) {
+func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, onEvent func(string), options *streamAttemptOptions, cancel context.CancelFunc) ([]byte, int, string, bool, error) {
 	client, err := p.httpClientForAttempt(attempt)
 	if err != nil {
 		return nil, 0, "", false, err
@@ -322,7 +322,39 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
 	var dataLines []string
 	var finalJSON []byte
+	lastActivity := time.Now()
+	firstDeltaSeen := false
+	done := make(chan struct{})
+	if options != nil && cancel != nil {
+		go func() {
+			ticker := time.NewTicker(250 * time.Millisecond)
+			defer ticker.Stop()
+			defer close(done)
+			for {
+				select {
+				case <-req.Context().Done():
+					return
+				case <-ticker.C:
+					timeout := options.firstDeltaTimeout
+					if firstDeltaSeen {
+						timeout = options.idleDeltaTimeout
+					}
+					if timeout > 0 && time.Since(lastActivity) > timeout {
+						options.staleTriggered = true
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+	} else {
+		close(done)
+	}
+	defer func() {
+		<-done
+	}()
 	for scanner.Scan() {
+		lastActivity = time.Now()
 		line := scanner.Text()
 		if strings.TrimSpace(line) == "" {
 			if len(dataLines) > 0 {
@@ -331,6 +363,7 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 				if strings.TrimSpace(payload) == "[DONE]" {
 					continue
 				}
+				firstDeltaSeen = true
 				if onEvent != nil {
 					onEvent(payload)
 				}
@@ -338,15 +371,13 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 				if err := json.Unmarshal([]byte(payload), &obj); err == nil {
 					if typ := strings.TrimSpace(fmt.Sprintf("%v", obj["type"])); typ == "response.completed" {
 						if respObj, ok := obj["response"]; ok {
-							if b, err := json.Marshal(respObj); err == nil {
-								finalJSON = b
-							}
+							finalJSON = mergeStreamFinalJSON(finalJSON, respObj)
 						}
 					}
 					if choices, ok := obj["choices"]; ok {
-						if b, err := json.Marshal(map[string]interface{}{"choices": choices, "usage": obj["usage"]}); err == nil {
-							finalJSON = b
-						}
+						finalJSON = mergeStreamFinalJSON(finalJSON, map[string]interface{}{"choices": choices, "usage": obj["usage"]})
+					} else if _, ok := obj["usage"]; ok && len(finalJSON) > 0 {
+						finalJSON = mergeStreamFinalJSON(finalJSON, map[string]interface{}{"usage": obj["usage"]})
 					}
 				}
 			}
@@ -357,12 +388,65 @@ func (p *HTTPProvider) doStreamAttempt(req *http.Request, attempt authAttempt, o
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if options != nil && options.staleTriggered {
+			return nil, resp.StatusCode, ctype, false, fmt.Errorf("stream stale: %w", err)
+		}
 		return nil, resp.StatusCode, ctype, false, fmt.Errorf("failed to read stream: %w", err)
 	}
 	if len(finalJSON) == 0 {
 		finalJSON = []byte("{}")
 	}
 	return finalJSON, resp.StatusCode, ctype, false, nil
+}
+
+func mergeStreamFinalJSON(existing []byte, incoming interface{}) []byte {
+	if incoming == nil {
+		return existing
+	}
+	incomingMap, ok := incoming.(map[string]interface{})
+	if !ok {
+		data, err := json.Marshal(incoming)
+		if err != nil {
+			return existing
+		}
+		return data
+	}
+	if len(existing) == 0 {
+		data, err := json.Marshal(incomingMap)
+		if err != nil {
+			return existing
+		}
+		return data
+	}
+	var merged map[string]interface{}
+	if err := json.Unmarshal(existing, &merged); err != nil || merged == nil {
+		merged = map[string]interface{}{}
+	}
+	merged = mergeStringAnyMaps(merged, incomingMap)
+	data, err := json.Marshal(merged)
+	if err != nil {
+		return existing
+	}
+	return data
+}
+
+func mergeStringAnyMaps(dst, src map[string]interface{}) map[string]interface{} {
+	if dst == nil {
+		dst = map[string]interface{}{}
+	}
+	for key, value := range src {
+		if value == nil {
+			continue
+		}
+		if nestedSrc, ok := value.(map[string]interface{}); ok {
+			if nestedDst, ok := dst[key].(map[string]interface{}); ok {
+				dst[key] = mergeStringAnyMaps(nestedDst, nestedSrc)
+				continue
+			}
+		}
+		dst[key] = value
+	}
+	return dst
 }
 
 func shouldRetryOAuthQuota(status int, body []byte) bool {
