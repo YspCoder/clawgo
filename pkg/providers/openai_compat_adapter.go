@@ -112,6 +112,18 @@ func (p *HTTPProvider) useOpenAICompatChatUpstream() bool {
 	}
 }
 
+func (p *HTTPProvider) useConfiguredOpenAICompatChat() bool {
+	if p == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(p.responsesAPI)) {
+	case "chat_completions":
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *HTTPProvider) compatBase() string {
 	switch p.oauthProvider() {
 	case defaultQwenOAuthProvider:

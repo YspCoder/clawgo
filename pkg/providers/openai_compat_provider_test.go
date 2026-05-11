@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -178,5 +179,39 @@ func TestBuildOpenAICompatChatRequestStripsKimiPrefixAndSuffix(t *testing.T) {
 	}
 	if got := body["reasoning_effort"]; got != "auto" {
 		t.Fatalf("reasoning_effort = %#v, want auto", got)
+	}
+}
+
+func TestHTTPProviderChatUsesConfiguredChatCompletionsAPI(t *testing.T) {
+	var gotPath string
+	var gotBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello from chat"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}`))
+	}))
+	defer server.Close()
+
+	provider := NewHTTPProvider("openai", "token", server.URL+"/v1", "gpt-5", false, "api_key", 5*time.Second, nil)
+	provider.responsesAPI = "chat_completions"
+
+	resp, err := provider.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-5", nil)
+	if err != nil {
+		t.Fatalf("Chat error: %v", err)
+	}
+	if gotPath != "/v1/chat/completions" {
+		t.Fatalf("path = %q, want /v1/chat/completions", gotPath)
+	}
+	if gotBody["model"] != "gpt-5" {
+		t.Fatalf("model = %#v, want gpt-5", gotBody["model"])
+	}
+	if resp.Content != "hello from chat" {
+		t.Fatalf("content = %q, want hello from chat", resp.Content)
+	}
+	if resp.Usage == nil || resp.Usage.TotalTokens != 3 {
+		t.Fatalf("usage = %#v, want total_tokens=3", resp.Usage)
 	}
 }

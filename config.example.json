@@ -180,6 +180,7 @@
         "max_tokens": 8192,
         "temperature": 0.7,
         "responses": {
+          "api": "responses",
           "web_search_enabled": false,
           "web_search_context_size": "",
           "file_search_vector_store_ids": [],
@@ -208,6 +209,7 @@
         "max_tokens": 8192,
         "temperature": 0.7,
         "responses": {
+          "api": "responses",
           "web_search_enabled": false,
           "web_search_context_size": "",
           "file_search_vector_store_ids": [],
@@ -237,6 +239,7 @@
         "max_tokens": 8192,
         "temperature": 0.7,
         "responses": {
+          "api": "responses",
           "web_search_enabled": false,
           "web_search_context_size": "",
           "file_search_vector_store_ids": [],
@@ -253,6 +256,7 @@
         "max_tokens": 8192,
         "temperature": 0.7,
         "responses": {
+          "api": "responses",
           "web_search_enabled": false,
           "web_search_context_size": "",
           "file_search_vector_store_ids": [],
@@ -280,6 +284,7 @@
         "max_tokens": 8192,
         "temperature": 0.7,
         "responses": {
+          "api": "responses",
           "web_search_enabled": false,
           "web_search_context_size": "",
           "file_search_vector_store_ids": [],
@@ -306,6 +311,7 @@
         "max_tokens": 8192,
         "temperature": 0.7,
         "responses": {
+          "api": "responses",
           "web_search_enabled": false,
           "web_search_context_size": "",
           "file_search_vector_store_ids": [],

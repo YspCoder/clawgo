@@ -116,7 +116,11 @@ func CreateProviderByName(cfg *config.Config, name string) (LLMProvider, error) 
 	if oauthProvider == defaultIFlowOAuthProvider || strings.EqualFold(routeName, defaultIFlowOAuthProvider) {
 		return NewIFlowProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
 	}
-	return NewHTTPProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth), nil
+	provider := NewHTTPProvider(routeName, pc.APIKey, pc.APIBase, defaultModel, pc.SupportsResponsesCompact, pc.Auth, time.Duration(pc.TimeoutSec)*time.Second, oauth)
+	if api := strings.TrimSpace(pc.Responses.API); api != "" {
+		provider.responsesAPI = api
+	}
+	return provider, nil
 }
 
 func ProviderSupportsResponsesCompact(cfg *config.Config, name string) bool {

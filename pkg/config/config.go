@@ -260,6 +260,7 @@ type ProviderOAuthConfig struct {
 }
 
 type ProviderResponsesConfig struct {
+	API                      string   `json:"api,omitempty"`
 	WebSearchEnabled         bool     `json:"web_search_enabled"`
 	WebSearchContextSize     string   `json:"web_search_context_size"`
 	FileSearchVectorStoreIDs []string `json:"file_search_vector_store_ids"`

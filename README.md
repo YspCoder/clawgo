@@ -108,6 +108,8 @@ clawgo provider login codex --manual
 - 额度或限流失败时自动切到 OAuth 账号池
 - 仍保留多账号轮换和后台刷新
 
+如果某个 OpenAI 兼容服务商只支持 `POST /v1/chat/completions`，可以在对应 provider 配置里设置 `responses.api: "chat_completions"`；默认值是 `responses`。
+
 ### 4. 启动
 
 交互模式：

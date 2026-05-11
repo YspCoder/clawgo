@@ -247,3 +247,27 @@ func TestValidateProviderHybridRequiresOAuthProvider(t *testing.T) {
 		t.Fatalf("expected oauth.provider validation error, got %v", errs)
 	}
 }
+
+func TestValidateProviderResponsesAPIRejectsUnknownValue(t *testing.T) {
+	t.Parallel()
+
+	cfg := DefaultConfig()
+	pc := cfg.Models.Providers["openai"]
+	pc.Responses.API = "legacy"
+	cfg.Models.Providers["openai"] = pc
+
+	errs := Validate(cfg)
+	if len(errs) == 0 {
+		t.Fatalf("expected validation errors")
+	}
+	found := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "models.providers.openai.responses.api") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected responses.api validation error, got %v", errs)
+	}
+}

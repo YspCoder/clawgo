@@ -44,7 +44,7 @@ func (p *HTTPProvider) callResponses(ctx context.Context, messages []Message, to
 	if prevID, ok := stringOption(options, "responses_previous_response_id"); ok && prevID != "" {
 		requestBody["previous_response_id"] = prevID
 	}
-	if p.useOpenAICompatChatUpstream() {
+	if p.useOpenAICompatChatUpstream() || p.useConfiguredOpenAICompatChat() {
 		chatBody := p.buildOpenAICompatChatRequest(messages, tools, model, options)
 		return p.postJSON(ctx, endpointFor(p.compatBase(), "/chat/completions"), chatBody)
 	}
@@ -309,7 +309,7 @@ func (p *HTTPProvider) callResponsesStream(ctx context.Context, messages []Messa
 	if streamOpts, ok := mapOption(options, "responses_stream_options"); ok && len(streamOpts) > 0 {
 		requestBody["stream_options"] = streamOpts
 	}
-	if p.useOpenAICompatChatUpstream() {
+	if p.useOpenAICompatChatUpstream() || p.useConfiguredOpenAICompatChat() {
 		chatBody := p.buildOpenAICompatChatRequest(messages, tools, model, options)
 		chatBody["stream"] = true
 		streamOptions := map[string]interface{}{"include_usage": true}

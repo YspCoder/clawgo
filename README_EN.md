@@ -119,6 +119,8 @@ If you have both an `API key` and OAuth accounts for the same upstream, prefer c
 - the provider runtime panel shows current candidate ordering, the most recent successful credential, and recent hit/error history
 - to persist runtime history across restarts, configure `runtime_persist`, `runtime_history_file`, and `runtime_history_max` on the provider
 
+If an OpenAI-compatible provider only supports `POST /v1/chat/completions`, set `responses.api: "chat_completions"` on that provider. The default remains `responses`.
+
 ### 4. Start
 
 Interactive mode:

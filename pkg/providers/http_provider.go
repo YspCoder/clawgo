@@ -31,6 +31,7 @@ type HTTPProvider struct {
 	apiBase                  string
 	defaultModel             string
 	supportsResponsesCompact bool
+	responsesAPI             string
 	authMode                 string
 	timeout                  time.Duration
 	httpClient               *http.Client
@@ -48,6 +49,7 @@ func NewHTTPProvider(providerName, apiKey, apiBase, defaultModel string, support
 		apiBase:                  normalizedBase,
 		defaultModel:             strings.TrimSpace(defaultModel),
 		supportsResponsesCompact: supportsResponsesCompact,
+		responsesAPI:             "responses",
 		authMode:                 authMode,
 		timeout:                  timeout,
 		httpClient:               &http.Client{Timeout: timeout},
@@ -79,7 +81,7 @@ func (p *HTTPProvider) Chat(ctx context.Context, messages []Message, tools []Too
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", statusCode, contentType, previewResponseBody(body))
 	}
-	if p.useOpenAICompatChatUpstream() {
+	if p.useOpenAICompatChatUpstream() || p.useConfiguredOpenAICompatChat() {
 		return parseOpenAICompatResponse(body)
 	}
 	return parseResponsesAPIResponse(body)
@@ -102,7 +104,7 @@ func (p *HTTPProvider) ChatStream(ctx context.Context, messages []Message, tools
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("API error (status %d, content-type %q): non-JSON response: %s", status, ctype, previewResponseBody(body))
 	}
-	if p.useOpenAICompatChatUpstream() {
+	if p.useOpenAICompatChatUpstream() || p.useConfiguredOpenAICompatChat() {
 		return parseOpenAICompatResponse(body)
 	}
 	return parseResponsesAPIResponse(body)

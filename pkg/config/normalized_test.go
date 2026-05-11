@@ -11,6 +11,9 @@ func TestNormalizedViewProjectsCoreAndRuntime(t *testing.T) {
 		MaxTokens:   12288,
 		Temperature: 0.35,
 		TimeoutSec:  90,
+		Responses: ProviderResponsesConfig{
+			API: "chat_completions",
+		},
 	}
 	cfg.Agents.Subagents["coder"] = SubagentConfig{
 		Enabled:          true,
@@ -39,5 +42,8 @@ func TestNormalizedViewProjectsCoreAndRuntime(t *testing.T) {
 	}
 	if got := view.Runtime.Providers["openai"].Temperature; got != 0.35 {
 		t.Fatalf("expected provider temperature in normalized runtime view, got %v", got)
+	}
+	if got := view.Runtime.Providers["openai"].Responses.API; got != "chat_completions" {
+		t.Fatalf("expected provider responses.api in normalized runtime view, got %q", got)
 	}
 }

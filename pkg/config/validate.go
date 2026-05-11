@@ -515,6 +515,13 @@ func validateProviderConfig(path string, p ProviderConfig) []error {
 	if p.OAuth.CooldownSec < 0 {
 		errs = append(errs, fmt.Errorf("%s.oauth.cooldown_sec must be >= 0", path))
 	}
+	if p.Responses.API != "" {
+		switch strings.TrimSpace(p.Responses.API) {
+		case "responses", "chat_completions":
+		default:
+			errs = append(errs, fmt.Errorf("%s.responses.api must be one of: responses, chat_completions", path))
+		}
+	}
 	if p.Responses.WebSearchContextSize != "" {
 		switch p.Responses.WebSearchContextSize {
 		case "low", "medium", "high":
