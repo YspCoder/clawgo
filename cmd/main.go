@@ -15,7 +15,7 @@ import (
 	"github.com/YspCoder/clawgo/pkg/logger"
 )
 
-var version = "1.2.3"
+var version = "1.2.9"
 var buildTime = "unknown"
 
 const logo = ">"

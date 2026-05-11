@@ -235,6 +235,48 @@ func TestCodexProviderChatMergesLateUsageFromStreamingCompletion(t *testing.T) {
 	}
 }
 
+func TestCodexProviderChatCollectsToolCallsFromWebsocketEvents(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"item_1\",\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"remind\",\"arguments\":\"\"}}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.function_call_arguments.done\",\"output_index\":0,\"item_id\":\"item_1\",\"call_id\":\"call_1\",\"name\":\"remind\",\"arguments\":\"{\\\"message\\\":\\\"开会\\\",\\\"time_expr\\\":\\\"10m\\\"}\"}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")
+	}))
+	defer server.Close()
+
+	provider := NewCodexProvider("codex", "test-api-key", server.URL, "gpt-5.4", false, "", 5*time.Second, nil)
+	resp, err := provider.Chat(t.Context(), []Message{{Role: "user", Content: "10分钟后通知我开会"}}, []ToolDefinition{{
+		Type: "function",
+		Function: ToolFunctionDefinition{
+			Name:        "remind",
+			Description: "Set a reminder",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"message":   map[string]interface{}{"type": "string"},
+					"time_expr": map[string]interface{}{"type": "string"},
+				},
+				"required": []string{"message", "time_expr"},
+			},
+		},
+	}}, "gpt-5.4", nil)
+	if err != nil {
+		t.Fatalf("Chat error: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("expected one tool call, got %#v", resp.ToolCalls)
+	}
+	if got := resp.ToolCalls[0].Name; got != "remind" {
+		t.Fatalf("tool name = %q, want remind", got)
+	}
+	if got := asString(resp.ToolCalls[0].Arguments["message"]); got != "开会" {
+		t.Fatalf("message arg = %q, want 开会", got)
+	}
+	if got := asString(resp.ToolCalls[0].Arguments["time_expr"]); got != "10m" {
+		t.Fatalf("time_expr arg = %q, want 10m", got)
+	}
+}
+
 func TestCodexHandleAttemptFailureMarksAPIKeyCooldown(t *testing.T) {
 	provider := NewCodexProvider("codex-websocket-failure", "test-api-key", "", "gpt-5.4", false, "", 5*time.Second, nil)
 	provider.handleAttemptFailure(authAttempt{kind: "api_key", token: "test-api-key"}, http.StatusTooManyRequests, []byte(`{"error":{"message":"rate limit exceeded"}}`))
