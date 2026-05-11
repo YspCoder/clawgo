@@ -67,10 +67,12 @@ func (r *gatewayReloader) trigger(source string, forceRuntimeReload bool) error 
 			r.state.cfg.Gateway.Host, r.state.cfg.Gateway.Port, newCfg.Gateway.Host, newCfg.Gateway.Port)
 	}
 
+	currentChannels := normalizeHotReloadChannelsConfig(r.state.cfg.Channels)
+	nextChannels := normalizeHotReloadChannelsConfig(newCfg.Channels)
 	runtimeSame := reflect.DeepEqual(r.state.cfg.Agents, newCfg.Agents) &&
 		reflect.DeepEqual(r.state.cfg.Models, newCfg.Models) &&
 		reflect.DeepEqual(r.state.cfg.Tools, newCfg.Tools) &&
-		reflect.DeepEqual(r.state.cfg.Channels, newCfg.Channels)
+		reflect.DeepEqual(currentChannels, nextChannels)
 
 	if runtimeSame && !forceRuntimeReload {
 		configureLogging(newCfg)
@@ -144,6 +146,16 @@ func (r *gatewayReloader) bindWeixinChannel() {
 	} else {
 		r.registryServer.SetWeixinChannel(nil)
 	}
+}
+
+func normalizeHotReloadChannelsConfig(cfg config.ChannelsConfig) config.ChannelsConfig {
+	cfg.Weixin.ContextToken = ""
+	cfg.Weixin.GetUpdatesBuf = ""
+	for i := range cfg.Weixin.Accounts {
+		cfg.Weixin.Accounts[i].ContextToken = ""
+		cfg.Weixin.Accounts[i].GetUpdatesBuf = ""
+	}
+	return cfg
 }
 
 type configFileFingerprint struct {

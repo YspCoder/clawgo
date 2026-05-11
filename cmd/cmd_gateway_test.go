@@ -4,9 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/YspCoder/clawgo/pkg/config"
 )
 
 func TestConfigFileFingerprintSameContentIgnoresTouch(t *testing.T) {
@@ -113,5 +116,45 @@ func TestGatewayConfigWatcherTouchDoesNotReload(t *testing.T) {
 	time.Sleep(400 * time.Millisecond)
 	if got := reloadCalls.Load(); got != 0 {
 		t.Fatalf("expected touch-only update to skip reload, got %d", got)
+	}
+}
+
+func TestNormalizeHotReloadChannelsConfigIgnoresWeixinRuntimeState(t *testing.T) {
+	t.Parallel()
+
+	base := config.ChannelsConfig{
+		Weixin: config.WeixinConfig{
+			Enabled:      true,
+			BaseURL:      "https://ilinkai.weixin.qq.com",
+			DefaultBotID: "bot-a",
+			Accounts: []config.WeixinAccountConfig{
+				{
+					BotID:         "bot-a",
+					BotToken:      "token-a",
+					IlinkUserID:   "u-1",
+					ContextToken:  "ctx-a",
+					GetUpdatesBuf: "buf-a",
+				},
+			},
+			ContextToken:  "root-ctx",
+			GetUpdatesBuf: "root-buf",
+		},
+	}
+	next := base
+	next.Weixin.ContextToken = "root-ctx-next"
+	next.Weixin.GetUpdatesBuf = "root-buf-next"
+	next.Weixin.Accounts[0].ContextToken = "ctx-b"
+	next.Weixin.Accounts[0].GetUpdatesBuf = "buf-b"
+
+	left := normalizeHotReloadChannelsConfig(base)
+	right := normalizeHotReloadChannelsConfig(next)
+	if !reflect.DeepEqual(left, right) {
+		t.Fatalf("expected weixin runtime state changes to be ignored during hot reload comparison")
+	}
+
+	next.Weixin.BaseURL = "https://redirect.example"
+	right = normalizeHotReloadChannelsConfig(next)
+	if reflect.DeepEqual(left, right) {
+		t.Fatalf("expected durable weixin config changes to remain visible to hot reload comparison")
 	}
 }
