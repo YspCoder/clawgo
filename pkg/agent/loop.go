@@ -944,8 +944,9 @@ func estimateResponseUsage(ctx context.Context, provider providers.LLMProvider, 
 
 func buildAssistantToolCallMessage(response *providers.LLMResponse) providers.Message {
 	assistantMsg := providers.Message{
-		Role:    "assistant",
-		Content: response.Content,
+		Role:             "assistant",
+		Content:          response.Content,
+		ReasoningContent: response.ReasoningContent,
 	}
 	if response == nil {
 		return assistantMsg

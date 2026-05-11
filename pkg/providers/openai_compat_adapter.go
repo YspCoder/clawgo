@@ -11,8 +11,9 @@ func parseOpenAICompatResponse(body []byte) (*LLMResponse, error) {
 	var payload struct {
 		Choices []struct {
 			Message struct {
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
+				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function struct {
@@ -37,8 +38,9 @@ func parseOpenAICompatResponse(body []byte) (*LLMResponse, error) {
 	}
 	choice := payload.Choices[0]
 	resp := &LLMResponse{
-		Content:      choice.Message.Content,
-		FinishReason: choice.FinishReason,
+		Content:          choice.Message.Content,
+		ReasoningContent: choice.Message.ReasoningContent,
+		FinishReason:     choice.FinishReason,
 	}
 	if payload.Usage.TotalTokens > 0 || payload.Usage.PromptTokens > 0 || payload.Usage.CompletionTokens > 0 {
 		resp.Usage = &UsageInfo{
@@ -170,6 +172,7 @@ func (p *HTTPProvider) buildOpenAICompatChatRequest(messages []Message, tools []
 	if temperature, ok := float64FromOption(options, "temperature"); ok {
 		requestBody["temperature"] = temperature
 	}
+	normalizeOpenAICompatThinkingMessages(requestBody)
 	return requestBody
 }
 
@@ -185,6 +188,9 @@ func openAICompatMessages(messages []Message) []map[string]interface{} {
 			out = append(out, map[string]interface{}{"role": "user", "content": content})
 		case "assistant":
 			item := map[string]interface{}{"role": "assistant", "content": content}
+			if reasoning := strings.TrimSpace(msg.ReasoningContent); reasoning != "" {
+				item["reasoning_content"] = reasoning
+			}
 			if len(msg.ToolCalls) > 0 {
 				toolCalls := make([]map[string]interface{}, 0, len(msg.ToolCalls))
 				for _, tc := range msg.ToolCalls {
@@ -223,6 +229,96 @@ func openAICompatMessages(messages []Message) []map[string]interface{} {
 		}
 	}
 	return out
+}
+
+func normalizeOpenAICompatThinkingMessages(body map[string]interface{}) {
+	var items []map[string]interface{}
+	switch raw := body["messages"].(type) {
+	case []map[string]interface{}:
+		items = raw
+	case []interface{}:
+		items = make([]map[string]interface{}, 0, len(raw))
+		for _, item := range raw {
+			msg, _ := item.(map[string]interface{})
+			if msg != nil {
+				items = append(items, msg)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return
+	}
+	latestReasoning := ""
+	hasLatestReasoning := false
+	for i := range items {
+		msg := items[i]
+		if !strings.EqualFold(strings.TrimSpace(fmt.Sprintf("%v", msg["role"])), "assistant") {
+			continue
+		}
+		if raw, ok := msg["reasoning_content"]; ok {
+			if reasoning := strings.TrimSpace(fmt.Sprintf("%v", raw)); reasoning != "" && reasoning != "<nil>" {
+				latestReasoning = reasoning
+				hasLatestReasoning = true
+			}
+		}
+		if !assistantMessageHasToolCalls(msg) {
+			continue
+		}
+		existingReasoning := strings.TrimSpace(fmt.Sprintf("%v", msg["reasoning_content"]))
+		if existingReasoning == "" || existingReasoning == "<nil>" {
+			msg["reasoning_content"] = fallbackAssistantReasoningContent(msg, hasLatestReasoning, latestReasoning)
+			if reasoning := strings.TrimSpace(fmt.Sprintf("%v", msg["reasoning_content"])); reasoning != "" && reasoning != "<nil>" {
+				latestReasoning = reasoning
+				hasLatestReasoning = true
+			}
+		}
+	}
+}
+
+func assistantMessageHasToolCalls(msg map[string]interface{}) bool {
+	switch raw := msg["tool_calls"].(type) {
+	case []interface{}:
+		return len(raw) > 0
+	case []map[string]interface{}:
+		return len(raw) > 0
+	default:
+		return false
+	}
+}
+
+func fallbackAssistantReasoningContent(msg map[string]interface{}, hasLatest bool, latest string) string {
+	if hasLatest && strings.TrimSpace(latest) != "" {
+		return latest
+	}
+	if text := strings.TrimSpace(fmt.Sprintf("%v", msg["content"])); text != "" && text != "<nil>" {
+		return text
+	}
+	switch content := msg["content"].(type) {
+	case []map[string]interface{}:
+		return joinAssistantTextParts(content)
+	case []interface{}:
+		parts := make([]map[string]interface{}, 0, len(content))
+		for _, raw := range content {
+			part, _ := raw.(map[string]interface{})
+			if part != nil {
+				parts = append(parts, part)
+			}
+		}
+		return joinAssistantTextParts(parts)
+	default:
+		return ""
+	}
+}
+
+func joinAssistantTextParts(parts []map[string]interface{}) string {
+	texts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		text := strings.TrimSpace(fmt.Sprintf("%v", part["text"]))
+		if text != "" && text != "<nil>" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 func openAICompatMessageContent(msg Message) interface{} {

@@ -215,3 +215,100 @@ func TestHTTPProviderChatUsesConfiguredChatCompletionsAPI(t *testing.T) {
 		t.Fatalf("usage = %#v, want total_tokens=3", resp.Usage)
 	}
 }
+
+func TestParseOpenAICompatResponseCapturesReasoningContent(t *testing.T) {
+	resp, err := parseOpenAICompatResponse([]byte(`{"choices":[{"message":{"content":"answer","reasoning_content":"hidden chain"},"finish_reason":"stop"}]}`))
+	if err != nil {
+		t.Fatalf("parseOpenAICompatResponse error: %v", err)
+	}
+	if resp.ReasoningContent != "hidden chain" {
+		t.Fatalf("ReasoningContent = %q, want hidden chain", resp.ReasoningContent)
+	}
+}
+
+func TestOpenAICompatMessagesIncludeReasoningContent(t *testing.T) {
+	msgs := openAICompatMessages([]Message{{
+		Role:             "assistant",
+		Content:          "tool plan",
+		ReasoningContent: "thinking trace",
+		ToolCalls: []ToolCall{{
+			ID:   "call_1",
+			Name: "read_file",
+			Function: &FunctionCall{
+				Name:      "read_file",
+				Arguments: `{"path":"a.txt"}`,
+			},
+		}},
+	}})
+	if len(msgs) != 1 {
+		t.Fatalf("messages len = %d", len(msgs))
+	}
+	if got := msgs[0]["reasoning_content"]; got != "thinking trace" {
+		t.Fatalf("reasoning_content = %#v, want thinking trace", got)
+	}
+}
+
+func TestNormalizeOpenAICompatThinkingMessagesBackfillsReasoningForToolCalls(t *testing.T) {
+	body := map[string]interface{}{
+		"messages": []map[string]interface{}{
+			{
+				"role": "assistant",
+				"tool_calls": []map[string]interface{}{
+					{"id": "call_1"},
+				},
+				"content": "thinking content",
+			},
+		},
+	}
+
+	normalizeOpenAICompatThinkingMessages(body)
+
+	msgs := body["messages"].([]map[string]interface{})
+	if got := msgs[0]["reasoning_content"]; got != "thinking content" {
+		t.Fatalf("reasoning_content = %#v, want thinking content", got)
+	}
+}
+
+func TestHTTPProviderChatConfiguredCompatBackfillsReasoningContentForToolHistory(t *testing.T) {
+	var gotBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	provider := NewHTTPProvider("openai", "token", server.URL+"/v1", "gpt-5", false, "api_key", 5*time.Second, nil)
+	provider.responsesAPI = "chat_completions"
+
+	_, err := provider.Chat(t.Context(), []Message{
+		{Role: "user", Content: "hello"},
+		{
+			Role:    "assistant",
+			Content: "thinking content",
+			ToolCalls: []ToolCall{{
+				ID:   "call_1",
+				Name: "read_file",
+				Function: &FunctionCall{
+					Name:      "read_file",
+					Arguments: `{"path":"a.txt"}`,
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_1", Content: "file body"},
+	}, nil, "gpt-5(high)", nil)
+	if err != nil {
+		t.Fatalf("Chat error: %v", err)
+	}
+
+	rawMsgs, _ := gotBody["messages"].([]interface{})
+	if len(rawMsgs) < 2 {
+		t.Fatalf("messages = %#v", gotBody["messages"])
+	}
+	assistant, _ := rawMsgs[1].(map[string]interface{})
+	if got := assistant["reasoning_content"]; got != "thinking content" {
+		t.Fatalf("reasoning_content = %#v, want thinking content", got)
+	}
+}
