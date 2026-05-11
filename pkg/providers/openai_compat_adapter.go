@@ -52,6 +52,10 @@ func parseOpenAICompatResponse(body []byte) (*LLMResponse, error) {
 	if len(choice.Message.ToolCalls) > 0 {
 		resp.ToolCalls = make([]ToolCall, 0, len(choice.Message.ToolCalls))
 		for _, tc := range choice.Message.ToolCalls {
+			args := map[string]interface{}{}
+			if strings.TrimSpace(tc.Function.Arguments) != "" {
+				_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+			}
 			resp.ToolCalls = append(resp.ToolCalls, ToolCall{
 				ID:   tc.ID,
 				Type: tc.Type,
@@ -59,7 +63,8 @@ func parseOpenAICompatResponse(body []byte) (*LLMResponse, error) {
 					Name:      tc.Function.Name,
 					Arguments: tc.Function.Arguments,
 				},
-				Name: tc.Function.Name,
+				Name:      tc.Function.Name,
+				Arguments: args,
 			})
 		}
 	}

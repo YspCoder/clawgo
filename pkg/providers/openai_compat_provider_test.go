@@ -226,6 +226,22 @@ func TestParseOpenAICompatResponseCapturesReasoningContent(t *testing.T) {
 	}
 }
 
+func TestParseOpenAICompatResponsePopulatesToolArgumentsMap(t *testing.T) {
+	resp, err := parseOpenAICompatResponse([]byte(`{"choices":[{"message":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"remind","arguments":"{\"message\":\"开会\",\"time_expr\":\"10m\"}"}}]},"finish_reason":"tool_calls"}]}`))
+	if err != nil {
+		t.Fatalf("parseOpenAICompatResponse error: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("tool calls = %#v, want one call", resp.ToolCalls)
+	}
+	if got := asString(resp.ToolCalls[0].Arguments["message"]); got != "开会" {
+		t.Fatalf("message = %q, want 开会", got)
+	}
+	if got := asString(resp.ToolCalls[0].Arguments["time_expr"]); got != "10m" {
+		t.Fatalf("time_expr = %q, want 10m", got)
+	}
+}
+
 func TestOpenAICompatMessagesIncludeReasoningContent(t *testing.T) {
 	msgs := openAICompatMessages([]Message{{
 		Role:             "assistant",
