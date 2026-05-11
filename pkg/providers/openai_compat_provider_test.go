@@ -312,3 +312,16 @@ func TestHTTPProviderChatConfiguredCompatBackfillsReasoningContentForToolHistory
 		t.Fatalf("reasoning_content = %#v, want thinking content", got)
 	}
 }
+
+func TestParseCompatFunctionCallsSupportsDSMLToolCalls(t *testing.T) {
+	calls, cleaned := parseCompatFunctionCalls(`<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="read_file"></｜｜DSML｜｜invoke></｜｜DSML｜｜tool_calls>`)
+	if len(calls) != 1 {
+		t.Fatalf("calls = %#v, want one tool call", calls)
+	}
+	if calls[0].Name != "read_file" {
+		t.Fatalf("tool name = %q, want read_file", calls[0].Name)
+	}
+	if strings.TrimSpace(cleaned) != "" {
+		t.Fatalf("cleaned = %q, want empty", cleaned)
+	}
+}

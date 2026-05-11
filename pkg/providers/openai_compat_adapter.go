@@ -415,17 +415,25 @@ func codexCompatRequestBody(requestBody map[string]interface{}) map[string]inter
 }
 
 func parseCompatFunctionCalls(content string) ([]ToolCall, string) {
-	if strings.TrimSpace(content) == "" || !strings.Contains(content, "<function_call>") {
+	if strings.TrimSpace(content) == "" || !containsCompatFunctionCallMarkup(content) {
 		return nil, content
 	}
-	blockRe := regexp.MustCompile(`(?is)<function_call>\s*(.*?)\s*</function_call>`)
-	blocks := blockRe.FindAllStringSubmatch(content, -1)
+	blockRe := regexp.MustCompile(`(?is)<function_call>\s*(.*?)\s*</function_call>|<｜｜DSML｜｜tool_calls>\s*(.*?)\s*</｜｜DSML｜｜tool_calls>`)
+	matches := blockRe.FindAllStringSubmatch(content, -1)
+	blocks := make([]string, 0, len(matches))
+	for _, match := range matches {
+		switch {
+		case len(match) > 1 && strings.TrimSpace(match[1]) != "":
+			blocks = append(blocks, match[1])
+		case len(match) > 2 && strings.TrimSpace(match[2]) != "":
+			blocks = append(blocks, match[2])
+		}
+	}
 	if len(blocks) == 0 {
 		return nil, content
 	}
 	toolCalls := make([]ToolCall, 0, len(blocks))
-	for i, block := range blocks {
-		raw := block[1]
+	for i, raw := range blocks {
 		invoke := extractTag(raw, "invoke")
 		if invoke != "" {
 			raw = invoke
@@ -433,6 +441,9 @@ func parseCompatFunctionCalls(content string) ([]ToolCall, string) {
 		name := extractTag(raw, "toolname")
 		if strings.TrimSpace(name) == "" {
 			name = extractTag(raw, "tool_name")
+		}
+		if strings.TrimSpace(name) == "" {
+			name = extractInvokeNameAttr(raw)
 		}
 		name = strings.TrimSpace(name)
 		if name == "" {
@@ -466,8 +477,25 @@ func parseCompatFunctionCalls(content string) ([]ToolCall, string) {
 	return toolCalls, cleaned
 }
 
+func containsCompatFunctionCallMarkup(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return false
+	}
+	return strings.Contains(trimmed, "<function_call>") || strings.Contains(trimmed, "<｜｜DSML｜｜tool_calls>")
+}
+
 func extractTag(src string, tag string) string {
 	re := regexp.MustCompile(fmt.Sprintf(`(?is)<%s>\s*(.*?)\s*</%s>`, regexp.QuoteMeta(tag), regexp.QuoteMeta(tag)))
+	m := re.FindStringSubmatch(src)
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
+
+func extractInvokeNameAttr(src string) string {
+	re := regexp.MustCompile(`(?is)<(?:invoke|｜｜DSML｜｜invoke)\b[^>]*\bname\s*=\s*"([^"]+)"[^>]*>`)
 	m := re.FindStringSubmatch(src)
 	if len(m) < 2 {
 		return ""
