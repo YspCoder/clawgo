@@ -159,6 +159,37 @@ func TestOpenAICompatMessagesPreserveMultimodalContentParts(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatMessagesDropsOrphanToolOutputs(t *testing.T) {
+	msgs := openAICompatMessages([]Message{
+		{Role: "user", Content: "hi"},
+		{Role: "tool", ToolCallID: "call-orphan", Content: "orphan output"},
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{{
+				ID:   "call-1",
+				Name: "read_file",
+				Function: &FunctionCall{
+					Name:      "read_file",
+					Arguments: `{"path":"README.md"}`,
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call-1", Content: "file content"},
+	})
+	if len(msgs) != 3 {
+		t.Fatalf("messages = %#v, want 3 items", msgs)
+	}
+	if got := msgs[1]["role"]; got != "assistant" {
+		t.Fatalf("second role = %#v, want assistant", got)
+	}
+	if got := msgs[2]["role"]; got != "tool" {
+		t.Fatalf("third role = %#v, want tool", got)
+	}
+	if got := msgs[2]["tool_call_id"]; got != "call-1" {
+		t.Fatalf("tool_call_id = %#v, want call-1", got)
+	}
+}
+
 func TestBuildOpenAICompatChatRequestAppliesThinkingSuffix(t *testing.T) {
 	base := NewHTTPProvider("openai", "token", "https://example.com/v1", "gpt-5", false, "api_key", 5*time.Second, nil)
 	body := base.buildOpenAICompatChatRequest([]Message{{Role: "user", Content: "hi"}}, nil, "gpt-5(high)", nil)

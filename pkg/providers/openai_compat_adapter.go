@@ -183,6 +183,7 @@ func (p *HTTPProvider) buildOpenAICompatChatRequest(messages []Message, tools []
 
 func openAICompatMessages(messages []Message) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(messages))
+	pendingCalls := map[string]struct{}{}
 	for _, msg := range messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
 		content := openAICompatMessageContent(msg)
@@ -199,6 +200,9 @@ func openAICompatMessages(messages []Message) []map[string]interface{} {
 			if len(msg.ToolCalls) > 0 {
 				toolCalls := make([]map[string]interface{}, 0, len(msg.ToolCalls))
 				for _, tc := range msg.ToolCalls {
+					if strings.TrimSpace(tc.ID) != "" {
+						pendingCalls[strings.TrimSpace(tc.ID)] = struct{}{}
+					}
 					args := ""
 					if tc.Function != nil {
 						args = tc.Function.Arguments
@@ -224,9 +228,17 @@ func openAICompatMessages(messages []Message) []map[string]interface{} {
 			}
 			out = append(out, item)
 		case "tool":
+			callID := strings.TrimSpace(msg.ToolCallID)
+			if callID == "" {
+				continue
+			}
+			if _, ok := pendingCalls[callID]; !ok {
+				continue
+			}
+			delete(pendingCalls, callID)
 			out = append(out, map[string]interface{}{
 				"role":         "tool",
-				"tool_call_id": msg.ToolCallID,
+				"tool_call_id": callID,
 				"content":      content,
 			})
 		default:
