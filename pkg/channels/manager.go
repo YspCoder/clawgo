@@ -9,6 +9,7 @@ package channels
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"strings"
@@ -339,6 +340,13 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 			go func(c Channel, outbound bus.OutboundMessage) {
 				defer func() { <-m.dispatchSem }()
 				if err := c.Send(ctx, outbound); err != nil {
+					if errors.Is(err, context.Canceled) {
+						logger.InfoCF("channels", logger.C0042, map[string]interface{}{
+							logger.FieldChannel: outbound.Channel,
+							"reason":            "context canceled",
+						})
+						return
+					}
 					logger.ErrorCF("channels", logger.C0042, map[string]interface{}{
 						logger.FieldChannel: outbound.Channel,
 						logger.FieldError:   err.Error(),

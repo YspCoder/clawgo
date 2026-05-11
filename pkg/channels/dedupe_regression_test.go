@@ -33,6 +33,21 @@ func (r *recordingChannel) count() int {
 	return len(r.sent)
 }
 
+type canceledChannel struct {
+	called chan struct{}
+}
+
+func (c *canceledChannel) Name() string                          { return "test" }
+func (c *canceledChannel) Start(ctx context.Context) error       { return nil }
+func (c *canceledChannel) Stop(ctx context.Context) error        { return nil }
+func (c *canceledChannel) IsRunning() bool                       { return true }
+func (c *canceledChannel) IsAllowed(senderID string) bool        { return true }
+func (c *canceledChannel) HealthCheck(ctx context.Context) error { return nil }
+func (c *canceledChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	close(c.called)
+	return context.Canceled
+}
+
 func TestDispatchOutbound_DeduplicatesRepeatedSend(t *testing.T) {
 	mb := bus.NewMessageBus()
 	mgr, err := NewManager(&config.Config{}, mb)
@@ -55,6 +70,28 @@ func TestDispatchOutbound_DeduplicatesRepeatedSend(t *testing.T) {
 
 	if got := rc.count(); got != 1 {
 		t.Fatalf("expected 1 send after dedupe, got %d", got)
+	}
+}
+
+func TestDispatchOutbound_TreatsCanceledSendAsLifecycleExit(t *testing.T) {
+	mb := bus.NewMessageBus()
+	mgr, err := NewManager(&config.Config{}, mb)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	cc := &canceledChannel{called: make(chan struct{})}
+	mgr.channels["test"] = cc
+	mgr.refreshSnapshot()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mgr.dispatchOutbound(ctx)
+
+	mb.PublishOutbound(bus.OutboundMessage{Channel: "test", ChatID: "c1", Content: "hello", Action: "send"})
+	select {
+	case <-cc.called:
+	case <-time.After(time.Second):
+		t.Fatalf("expected canceled send to be dispatched")
 	}
 }
 

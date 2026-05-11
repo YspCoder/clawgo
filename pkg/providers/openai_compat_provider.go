@@ -202,14 +202,5 @@ func applyAttemptFailure(base *HTTPProvider, attempt authAttempt, reason oauthFa
 }
 
 func estimateOpenAICompatTokenCount(body map[string]interface{}) (int, error) {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return 0, fmt.Errorf("failed to encode request for token count: %w", err)
-	}
-	const charsPerToken = 4
-	count := (len(data) + charsPerToken - 1) / charsPerToken
-	if count < 1 {
-		count = 1
-	}
-	return count, nil
+	return EstimateOpenAICompatRequestTokens(body)
 }
