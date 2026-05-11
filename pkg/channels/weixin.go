@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -95,6 +96,7 @@ type WeixinPendingLogin struct {
 	LoginID          string `json:"login_id,omitempty"`
 	QRCode           string `json:"qr_code,omitempty"`
 	QRCodeImgContent string `json:"qr_code_img_content,omitempty"`
+	BaseURL          string `json:"base_url,omitempty"`
 	Status           string `json:"status,omitempty"`
 	LastError        string `json:"last_error,omitempty"`
 	UpdatedAt        string `json:"updated_at,omitempty"`
@@ -132,6 +134,12 @@ type weixinMessageItem struct {
 	TextItem struct {
 		Text string `json:"text"`
 	} `json:"text_item"`
+	VoiceItem struct {
+		Text string `json:"text"`
+	} `json:"voice_item"`
+	FileItem struct {
+		FileName string `json:"file_name"`
+	} `json:"file_item"`
 }
 
 type weixinAPIResponse struct {
@@ -158,10 +166,12 @@ type weixinQRCodeResponse struct {
 }
 
 type weixinQRCodeStatusResponse struct {
-	Status      string `json:"status"`
-	BotToken    string `json:"bot_token"`
-	IlinkBotID  string `json:"ilink_bot_id"`
-	IlinkUserID string `json:"ilink_user_id"`
+	Status       string `json:"status"`
+	BotToken     string `json:"bot_token"`
+	IlinkBotID   string `json:"ilink_bot_id"`
+	IlinkUserID  string `json:"ilink_user_id"`
+	BaseURL      string `json:"baseurl"`
+	RedirectHost string `json:"redirect_host"`
 }
 
 func NewWeixinChannel(cfg config.WeixinConfig, messageBus *bus.MessageBus) (*WeixinChannel, error) {
@@ -301,6 +311,7 @@ func (c *WeixinChannel) StartLogin(ctx context.Context) (*WeixinPendingLogin, er
 		LoginID:          loginID,
 		QRCode:           strings.TrimSpace(payload.QRcode),
 		QRCodeImgContent: strings.TrimSpace(firstNonEmpty(payload.QRcodeImgContent, payload.QRcode)),
+		BaseURL:          c.config.BaseURL,
 		Status:           "wait",
 		UpdatedAt:        time.Now().UTC().Format(time.RFC3339),
 	}
@@ -675,6 +686,9 @@ func (c *WeixinChannel) pollAccount(ctx context.Context, botID string) {
 		}
 		resp, err := c.getUpdates(ctx, account, pollTimeout)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			c.updateAccountError(botID, err)
 			consecutiveFails++
 			if c.isSessionExpiredError(err) {
@@ -768,13 +782,30 @@ func (c *WeixinChannel) handleInboundMessage(botID string, msg weixinInboundMess
 			itemTypesBuilder.WriteByte(',')
 		}
 		itemTypesBuilder.WriteString(strconv.Itoa(item.Type))
-		if item.Type == 1 {
+		switch item.Type {
+		case 1:
 			if text := strings.TrimSpace(item.TextItem.Text); text != "" {
 				if contentBuilder.Len() > 0 {
 					contentBuilder.WriteByte('\n')
 				}
 				contentBuilder.WriteString(text)
 			}
+		case 2:
+			appendWeixinContentPart(&contentBuilder, "[image]")
+		case 3:
+			if text := strings.TrimSpace(item.VoiceItem.Text); text != "" {
+				appendWeixinContentPart(&contentBuilder, text)
+			} else {
+				appendWeixinContentPart(&contentBuilder, "[audio]")
+			}
+		case 4:
+			if name := strings.TrimSpace(item.FileItem.FileName); name != "" {
+				appendWeixinContentPart(&contentBuilder, fmt.Sprintf("[file: %s]", name))
+			} else {
+				appendWeixinContentPart(&contentBuilder, "[file]")
+			}
+		case 5:
+			appendWeixinContentPart(&contentBuilder, "[video]")
 		}
 	}
 	content := contentBuilder.String()
@@ -1001,7 +1032,8 @@ func (c *WeixinChannel) refreshLoginStatus(ctx context.Context, loginID string) 
 		return nil
 	}
 
-	reqURL := c.config.BaseURL + "/ilink/bot/get_qrcode_status?qrcode=" + url.QueryEscape(pending.QRCode)
+	baseURL := normalizeWeixinBaseURL(firstNonEmpty(pending.BaseURL, c.config.BaseURL))
+	reqURL := baseURL + "/ilink/bot/get_qrcode_status?qrcode=" + url.QueryEscape(pending.QRCode)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return err
@@ -1030,12 +1062,29 @@ func (c *WeixinChannel) refreshLoginStatus(ctx context.Context, loginID string) 
 			pl.LastError = ""
 			pl.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		})
+	case "scaned_but_redirect":
+		redirectBaseURL := redirectHostToWeixinBaseURL(status.RedirectHost)
+		if redirectBaseURL == "" {
+			c.updatePendingLogin(loginID, func(pl *WeixinPendingLogin) {
+				pl.Status = "scaned_but_redirect"
+				pl.LastError = "missing redirect_host"
+				pl.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			})
+			return nil
+		}
+		c.updatePendingLogin(loginID, func(pl *WeixinPendingLogin) {
+			pl.Status = "scaned_but_redirect"
+			pl.BaseURL = redirectBaseURL
+			pl.LastError = ""
+			pl.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		})
 	case "expired":
 		c.updatePendingLogin(loginID, func(pl *WeixinPendingLogin) {
 			pl.Status = "expired"
 			pl.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		})
 	case "confirmed":
+		nextBaseURL := normalizeWeixinBaseURL(status.BaseURL)
 		account := config.WeixinAccountConfig{
 			BotID:       strings.TrimSpace(status.IlinkBotID),
 			BotToken:    strings.TrimSpace(status.BotToken),
@@ -1046,6 +1095,14 @@ func (c *WeixinChannel) refreshLoginStatus(ctx context.Context, loginID string) 
 		}
 		if err := c.addOrUpdateAccount(account); err != nil {
 			return err
+		}
+		if nextBaseURL != "" {
+			c.mu.Lock()
+			if c.config.BaseURL != nextBaseURL {
+				c.config.BaseURL = nextBaseURL
+				c.schedulePersistLocked()
+			}
+			c.mu.Unlock()
 		}
 		c.deletePendingLogin(loginID)
 	default:
@@ -1309,6 +1366,17 @@ func mergeWeixinAccount(existing, next config.WeixinAccountConfig) config.Weixin
 	return out
 }
 
+func appendWeixinContentPart(builder *strings.Builder, part string) {
+	part = strings.TrimSpace(part)
+	if part == "" {
+		return
+	}
+	if builder.Len() > 0 {
+		builder.WriteByte('\n')
+	}
+	builder.WriteString(part)
+}
+
 func formatTime(ts time.Time) string {
 	if ts.IsZero() {
 		return ""
@@ -1353,6 +1421,25 @@ func splitWeixinChatID(chatID string) (string, string) {
 		return "", chatID
 	}
 	return botID, rawChatID
+}
+
+func normalizeWeixinBaseURL(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return ""
+	}
+	return strings.TrimRight(baseURL, "/")
+}
+
+func redirectHostToWeixinBaseURL(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+		return normalizeWeixinBaseURL(host)
+	}
+	return "https://" + strings.TrimRight(host, "/")
 }
 
 func firstNonEmpty(values ...string) string {

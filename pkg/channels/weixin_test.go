@@ -105,7 +105,7 @@ func TestWeixinHandleInboundMessageBuildsMetadataAndContent(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected inbound message")
 	}
-	if msg.Content != "hello\nworld" {
+	if msg.Content != "[image]\nhello\nworld\n[audio]" {
 		t.Fatalf("unexpected content: %q", msg.Content)
 	}
 	if got := msg.Metadata["item_types"]; got != "2,1,1,3" {
@@ -113,6 +113,45 @@ func TestWeixinHandleInboundMessageBuildsMetadataAndContent(t *testing.T) {
 	}
 	if got := msg.Metadata["context_token"]; got != "ctx-1" {
 		t.Fatalf("unexpected context_token: %q", got)
+	}
+}
+
+func TestWeixinHandleInboundMessageIncludesNonTextContent(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewWeixinChannel(config.WeixinConfig{
+		BaseURL: "https://ilinkai.weixin.qq.com",
+		Accounts: []config.WeixinAccountConfig{
+			{BotID: "bot-a", BotToken: "token-a"},
+		},
+	}, mb)
+	if err != nil {
+		t.Fatalf("new weixin channel: %v", err)
+	}
+
+	ch.handleInboundMessage("bot-a", weixinInboundMessage{
+		FromUserID:   "wx-user-1",
+		ContextToken: "ctx-1",
+		ItemList: []weixinMessageItem{
+			{Type: 2},
+			{Type: 3, VoiceItem: struct {
+				Text string `json:"text"`
+			}{Text: "voice text"}},
+			{Type: 4, FileItem: struct {
+				FileName string `json:"file_name"`
+			}{FileName: "report.pdf"}},
+			{Type: 5},
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	msg, ok := mb.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatalf("expected inbound message")
+	}
+	want := "[image]\nvoice text\n[file: report.pdf]\n[video]"
+	if msg.Content != want {
+		t.Fatalf("unexpected content:\nwant %q\n got %q", want, msg.Content)
 	}
 }
 
@@ -619,6 +658,95 @@ func TestWeixinRefreshLoginStatusesHonorsMinGap(t *testing.T) {
 	}
 }
 
+func TestWeixinRefreshLoginStatusFollowsRedirectHost(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewWeixinChannel(config.WeixinConfig{
+		BaseURL: "https://initial.example",
+	}, mb)
+	if err != nil {
+		t.Fatalf("new weixin channel: %v", err)
+	}
+	ch.pendingLogins["login-1"] = &WeixinPendingLogin{
+		LoginID:   "login-1",
+		QRCode:    "code-1",
+		BaseURL:   "https://initial.example",
+		Status:    "wait",
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	ch.loginOrder = []string{"login-1"}
+
+	var hosts []string
+	ch.httpClient = &http.Client{Transport: weixinRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		hosts = append(hosts, req.URL.Host)
+		body := `{"status":"wait"}`
+		if req.URL.Host == "initial.example" {
+			body = `{"status":"scaned_but_redirect","redirect_host":"redirect.example"}`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	if err := ch.refreshLoginStatus(context.Background(), "login-1"); err != nil {
+		t.Fatalf("first refresh: %v", err)
+	}
+	pending := ch.PendingLoginByID("login-1")
+	if pending == nil || pending.BaseURL != "https://redirect.example" {
+		t.Fatalf("expected redirected pending base url, got %#v", pending)
+	}
+	if err := ch.refreshLoginStatus(context.Background(), "login-1"); err != nil {
+		t.Fatalf("second refresh: %v", err)
+	}
+	if len(hosts) != 2 || hosts[0] != "initial.example" || hosts[1] != "redirect.example" {
+		t.Fatalf("unexpected status hosts: %#v", hosts)
+	}
+}
+
+func TestWeixinRefreshLoginStatusStoresConfirmedBaseURL(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewWeixinChannel(config.WeixinConfig{
+		BaseURL: "https://initial.example",
+	}, mb)
+	if err != nil {
+		t.Fatalf("new weixin channel: %v", err)
+	}
+	ch.pendingLogins["login-1"] = &WeixinPendingLogin{
+		LoginID:   "login-1",
+		QRCode:    "code-1",
+		BaseURL:   "https://redirect.example",
+		Status:    "wait",
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	ch.loginOrder = []string{"login-1"}
+	ch.httpClient = &http.Client{Transport: weixinRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `{"status":"confirmed","bot_token":"token-a","ilink_bot_id":"bot-a","ilink_user_id":"u-1","baseurl":"https://confirmed.example/"}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	if err := ch.refreshLoginStatus(context.Background(), "login-1"); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if got := ch.config.BaseURL; got != "https://confirmed.example" {
+		t.Fatalf("expected confirmed base url to be stored, got %q", got)
+	}
+	account, ok := ch.accountConfig("bot-a")
+	if !ok {
+		t.Fatalf("expected confirmed account")
+	}
+	if account.BotToken != "token-a" || account.IlinkUserID != "u-1" {
+		t.Fatalf("unexpected account: %#v", account)
+	}
+	if pending := ch.PendingLoginByID("login-1"); pending != nil {
+		t.Fatalf("expected pending login to be removed, got %#v", pending)
+	}
+}
+
 func TestPollDelayForAttempt(t *testing.T) {
 	if got := pollDelayForAttempt(1); got != weixinRetryDelay {
 		t.Fatalf("attempt 1 delay = %s", got)
@@ -676,5 +804,56 @@ func TestWeixinDoJSONWithTimeoutSetsRequestDeadline(t *testing.T) {
 		"msg": map[string]interface{}{"item_list": []map[string]interface{}{}},
 	}, &out, "token-a", 50*time.Millisecond); err != nil {
 		t.Fatalf("doJSONWithTimeout: %v", err)
+	}
+}
+
+func TestWeixinPollAccountIgnoresContextCancellation(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewWeixinChannel(config.WeixinConfig{
+		BaseURL: "https://ilinkai.weixin.qq.com",
+		Accounts: []config.WeixinAccountConfig{
+			{BotID: "bot-a", BotToken: "token-a"},
+		},
+	}, mb)
+	if err != nil {
+		t.Fatalf("new weixin channel: %v", err)
+	}
+	ch.BaseChannel.running.Store(true)
+
+	reqSeen := make(chan struct{})
+	release := make(chan struct{})
+	ch.httpClient = &http.Client{Transport: weixinRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		close(reqSeen)
+		<-release
+		return nil, req.Context().Err()
+	})}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ch.pollAccount(ctx, "bot-a")
+	}()
+
+	select {
+	case <-reqSeen:
+	case <-time.After(time.Second):
+		t.Fatalf("expected getupdates request")
+	}
+	cancel()
+	close(release)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatalf("pollAccount did not exit after context cancellation")
+	}
+
+	snapshots := ch.ListAccounts()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one account snapshot, got %d", len(snapshots))
+	}
+	if snapshots[0].LastError != "" {
+		t.Fatalf("expected cancellation to leave last error empty, got %q", snapshots[0].LastError)
 	}
 }
